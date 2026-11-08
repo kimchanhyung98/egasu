@@ -281,6 +281,8 @@ GPT-5.6 Sol의 할인 기간은 [OpenAI API 가격](https://developers.openai.co
   번들 사본은 첫 실행을 위해 다음 릴리스에 포함.
   **pricing-update skill**(`.agents/skills/pricing-update/`)은 에이전트가 동기화 전 과정(Cursor 페이지 가져오기, diff, 편집, 검증, PR 열기)을 따라가도록 안내.
 - **번들 스냅샷**(`pricing_litellm_snapshot.json`, `pricing_models_dev_snapshot.json`): 가끔(예: 릴리스 전) `script/update_pricing_snapshots.sh`로 재생성.
+  공개 가격표에서 사라진 기존 모델 단가는 과거 사용 기록 계산을 위해 보존.
+  같은 모델이 현재 가격표에도 있으면 현재 값으로 갱신.
   온라인 갱신에 성공하면 받은 가격을 다음 조회부터 사용.
   갱신 전이나 갱신 실패 시에는 번들·캐시의 기존 가격 사용.
   오래된 번들 가격이 추정값에 영향을 줄 수 있으므로 릴리스 전 갱신 여부 확인.

@@ -35,6 +35,7 @@ python3 - "$tmpdir" "$RESOURCES" << 'PY'
 import json
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 tmpdir, resources = sys.argv[1], sys.argv[2]
 retrieved_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -51,6 +52,13 @@ def compact_model(input_pm, output_pm, cache_write_pm, cache_read_pm, cache_read
 
 def number(value):
     return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+def retain_historical_models(filename, current):
+    path = Path(resources) / filename
+    if path.exists():
+        previous = json.loads(path.read_text())["models"]
+        return previous | current
+    return current
 
 # LiteLLM: costs are per token; entries without both input and output cost are stubs -> skipped.
 with open(f"{tmpdir}/litellm.json") as f:
@@ -78,6 +86,7 @@ for key, entry in litellm.items():
     )
 if not models:
     sys.exit("LiteLLM feed produced no usable entries - aborting.")
+models = retain_historical_models("pricing_litellm_snapshot.json", models)
 with open(f"{resources}/pricing_litellm_snapshot.json", "w") as f:
     json.dump({"retrieved_at": retrieved_at, "models": models}, f, sort_keys=True, separators=(",", ":"))
 print(f"pricing_litellm_snapshot.json: {len(models)} models")
@@ -106,6 +115,7 @@ for provider_name in sorted(models_dev):
         )
 if not models:
     sys.exit("models.dev feed produced no usable entries - aborting.")
+models = retain_historical_models("pricing_models_dev_snapshot.json", models)
 with open(f"{resources}/pricing_models_dev_snapshot.json", "w") as f:
     json.dump({"retrieved_at": retrieved_at, "models": models}, f, sort_keys=True, separators=(",", ":"))
 print(f"pricing_models_dev_snapshot.json: {len(models)} models")
