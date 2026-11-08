@@ -4,6 +4,20 @@ import XCTest
 final class GrokLogUsageScannerTests: XCTestCase {
     private let since = EgasuISO8601.date(from: "2026-06-01T00:00:00.000Z")!
 
+    func testOfficialBuildAliasesKeepNativeUsagePriced() throws {
+        for model in ["grok-code-fast", "xai/grok-code-fast", "grok-code-fast-1",
+                      "grok-code-fast-1-0825", "grok-build-0.1"] {
+            let log = """
+            {"pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"\(model)"}}
+            {"ts":"2026-06-10T10:00:00Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000,"completion_tokens":100}}
+            """
+            let usage = GrokLogUsageScanner.parse(log, since: since, pricing: TestPricing.bundled)
+            XCTAssertEqual(usage.series.daily.first?.totalTokens, 1_100, model)
+            XCTAssertEqual(try XCTUnwrap(usage.series.daily.first?.costUSD), 0.0012, accuracy: 1e-9, model)
+            XCTAssertTrue(usage.unknownModelsByDay.isEmpty, model)
+        }
+    }
+
     func testProviderQualifiedGrok46AliasesKeepUsagePriced() throws {
         // 일반 요청은 200k 초과 장문 단가(입력 4 + 출력 12), Fast는 명시 단가(입력 4 + 출력 12) 적용.
         for (model, expected) in [

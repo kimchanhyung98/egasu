@@ -2,6 +2,41 @@ import XCTest
 @testable import Egasu
 
 final class ZAIDetailMapperTests: XCTestCase {
+    func testBundledFreeCachedModelPreservesPaidDailyCost() throws {
+        let rates = try XCTUnwrap(TestPricing.bundled.resolve(model: "zai/glm-4.5-flash"))
+        XCTAssertTrue(rates.cacheReadIsExplicit)
+        XCTAssertEqual(rates.cacheReadPerMillion, 0)
+        for cached in [false, true] {
+            let parsed = try map(models: [
+                model("glm-5.3", input: 1_000_000),
+                model("glm-4.5-flash", input: cached ? 0 : 1, cached: cached ? 1 : 0)
+            ])
+            let day = try XCTUnwrap(parsed.days["2026-11-02"])
+            XCTAssertEqual(day.tokens, 1_000_001)
+            XCTAssertTrue(day.tokensComplete)
+            XCTAssertEqual(try XCTUnwrap(day.costUSD), 1.4, accuracy: 1e-9)
+        }
+    }
+
+    func testBundledFreeModelRemainsZeroWithCachedInputAndOutput() throws {
+        let parsed = try map(models: [model("glm-4.5-flash", input: 1, cached: 1, output: 1)])
+        let day = try XCTUnwrap(parsed.days["2026-11-02"])
+        XCTAssertEqual(day.tokens, 3)
+        XCTAssertTrue(day.tokensComplete)
+        XCTAssertEqual(day.costUSD, 0)
+    }
+
+    func testUnknownCachedModelStillMakesPaidDailyCostIncomplete() throws {
+        let parsed = try map(models: [
+            model("glm-5.3", input: 1_000_000),
+            model("glm-4.5-flash-unknown", cached: 1)
+        ])
+        let day = try XCTUnwrap(parsed.days["2026-11-02"])
+        XCTAssertEqual(day.tokens, 1_000_001)
+        XCTAssertTrue(day.tokensComplete)
+        XCTAssertNil(day.costUSD)
+    }
+
     func testAggregateBucketsMatchEveryModelAtEachAxisPosition() throws {
         let parsed = try map(buckets: [
             ["modelCode": "cached_input", "totalTokensUsage": [20, 40]],
@@ -22,6 +57,20 @@ final class ZAIDetailMapperTests: XCTestCase {
         XCTAssertThrowsError(try map(buckets: [
             ["modelCode": "cached_input", "totalTokensUsage": [40, 20]]
         ]))
+    }
+
+    private func model(_ code: String, input: Int = 0, cached: Int = 0, output: Int = 0) -> [String: Any] {
+        ["modelCode": code, "cachedInputTokensUsage": [cached],
+         "uncachedInputTokensUsage": [input], "outputTokensUsage": [output]]
+    }
+
+    private func map(models: [[String: Any]]) throws -> ZAIDetailMapper.Parsed {
+        let body = try JSONSerialization.data(withJSONObject: [
+            "data": ["modelUsage": ["xTime": ["2026-11-02"], "modelDataList": models]]
+        ])
+        return try ZAIDetailMapper.map(
+            body, window: ZAIDetailWindow(days: ["2026-11-02"], hourly: false), pricing: TestPricing.bundled
+        )
     }
 
     private func map(buckets: [[String: Any]]) throws -> ZAIDetailMapper.Parsed {

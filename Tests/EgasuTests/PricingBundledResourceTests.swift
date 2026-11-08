@@ -282,6 +282,25 @@ final class PricingBundledResourceTests: XCTestCase {
         XCTAssertEqual(pricing.resolve(model: "grok-composer-2.5-fast")?.inputPerMillion, 3)
     }
 
+    func testGrokBuildAliasesKeepPublishedBaseAndLongContextCosts() throws {
+        let models = ["grok-code-fast", "xai/grok-code-fast", "grok-code-fast-1",
+                      "grok-code-fast-1-0825", "grok-build-0.1"]
+        let cases: [(TokenBreakdown, Double)] = [
+            (.init(input: 1_000, output: 100), 0.0012),
+            (.init(input: 199_999, cacheRead: 1, output: 100), 0.2001992),
+            (.init(input: 150_000, cacheRead: 50_001, output: 100), 0.3204004)
+        ]
+        for source in [ModelPricing.Source.api, .cursor] {
+            for model in models {
+                for (tokens, expected) in cases {
+                    let cost = try XCTUnwrap(Self.pricing.estimatedCostDollars(model: model, tokens: tokens, source: source))
+                    XCTAssertEqual(cost, expected, accuracy: 1e-9, model)
+                }
+            }
+        }
+        XCTAssertNil(Self.pricing.resolve(model: "grok-code-fast-fast"))
+    }
+
     func testGrok45PricingAndAliases() throws {
         let pricing = Self.pricing
         let standard = try XCTUnwrap(pricing.resolve(model: "grok-4.5-high", source: .cursor))

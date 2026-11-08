@@ -75,6 +75,41 @@ final class PricingSupplementVersionTests: XCTestCase {
         XCTAssertEqual(modern.pricing["claude-haiku-5-5"]?.longContextThresholdTokens, 100_000)
     }
 
+    func testBundledGrokCodeAliasRemainsReadableByLegacyDecoder() throws {
+        let url = try XCTUnwrap(Bundle.egasuResources.url(forResource: "pricing_supplement", withExtension: "json"))
+        let data = try Data(contentsOf: url)
+        let legacy = try JSONDecoder().decode(LegacySupplement.self, from: data)
+        let modern = try PricingSupplement.decode(from: data)
+        for model in ["grok-code-fast", "xai/grok-code-fast"] {
+            let rule = try XCTUnwrap(legacy.aliasRules.first {
+                model.range(of: $0.pattern, options: .regularExpression) != nil
+            }, model)
+            XCTAssertEqual(rule.canonical, "grok-build-0.1", model)
+            XCTAssertEqual(modern.canonicalName(for: model), rule.canonical, model)
+        }
+        for model in ["reseller/grok-code-fast", "grok-code-fast-fast", "xai/grok-code-fast-unknown"] {
+            XCTAssertFalse(legacy.aliasRules.contains {
+                model.range(of: $0.pattern, options: .regularExpression) != nil
+            }, model)
+            XCTAssertNil(modern.canonicalName(for: model), model)
+        }
+    }
+
+    func testGrokCodeAliasOverridesStaleQualifiedCatalogRate() throws {
+        let staleRates = ModelRates(inputPerMillion: 0.2, outputPerMillion: 1.5,
+                                   cacheWritePerMillion: 0.2, cacheReadPerMillion: 0.02)
+        let pricing = ModelPricing(
+            supplement: TestPricing.bundled.supplement,
+            primary: PricingCatalog(entries: ["xai/grok-code-fast": staleRates]),
+            secondary: PricingCatalog()
+        )
+
+        let cost = try XCTUnwrap(pricing.estimatedCostDollars(
+            model: "xai/grok-code-fast", tokens: .init(input: 1_000, output: 100)
+        ))
+        XCTAssertEqual(cost, 0.0012, accuracy: 1e-9)
+    }
+
     private var fixture: Data {
         Data(
             #"""

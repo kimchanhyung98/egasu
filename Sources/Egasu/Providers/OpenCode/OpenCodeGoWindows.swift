@@ -1,6 +1,6 @@
 import Foundation
 
-/// OpenCode Go plan의 세 window — 공표 cap($12/rolling 5h, $30/week, $60/month) 대비 로컬 관측 spend.
+/// OpenCode Go의 로컬 추정용 세 기간 — 5시간 $12·주간 $30·월간 $60 분모에 대응하는 로컬 관측 사용액.
 /// `OpenCodeGoWindowMath`가 로컬 `opencode-go` 메시지에서 생성 — meter 전용, spend tile은 hosted 합산 spend 사용.
 struct OpenCodeGoWindows: Sendable, Equatable {
     var sessionSpend: Double

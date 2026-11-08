@@ -23,7 +23,8 @@ enum CopilotUsageMapper {
     }
 
     static func map(body: [String: Any]) throws -> CopilotMappedUsage {
-        let plan = planLabel(body["copilot_plan"])
+        let isKnownFree = body["access_type_sku"] as? String == "free_limited_copilot"
+        let plan = isKnownFree ? "Free" : planLabel(body["copilot_plan"])
         let resetsAt = parseResetDate(body["quota_reset_date"])
             ?? parseResetDate(body["limited_user_reset_date"])
 
@@ -54,7 +55,7 @@ enum CopilotUsageMapper {
             return CopilotMappedUsage(plan: plan, lines: lines)
         }
         // 실제 quota가 없는 org 관리 좌석만 개인 count로 보완 — 할당량·초기화 시각을 임의 생성하지 않음.
-        guard ProviderParse.bool(body["token_based_billing"]) == true else {
+        guard !isKnownFree, ProviderParse.bool(body["token_based_billing"]) == true else {
             throw CopilotUsageError.quotaUnavailable
         }
         var mapped = CopilotMappedUsage(plan: plan, lines: [], isOrgManagedSeat: true)

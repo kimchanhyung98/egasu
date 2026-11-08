@@ -234,7 +234,7 @@ final class CopilotUsageMapperTests: XCTestCase {
 
         let mapped = try CopilotUsageMapper.map(body: body)
 
-        XCTAssertEqual(mapped.plan, "Individual")
+        XCTAssertEqual(mapped.plan, "Free")
         XCTAssertNil(progress(mapped.lines, "Credits"))
         XCTAssertNil(mapped.lines.first(where: { $0.label == "Extra Usage" }))
         XCTAssertEqual(progress(mapped.lines, "Chat")?.used ?? -1, 9, accuracy: 0.0001)
