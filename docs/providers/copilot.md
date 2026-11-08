@@ -19,6 +19,8 @@ Credits와 Extra Usage는 기본적으로 Always Visible이며, Org Credits, Org
 할당량 미터에는 사용 백분율과 응답에 포함된 경우 다음 재설정까지의 카운트다운 표시.
 개인·조직 크레딧 수에는 한도나 백분율을 임의로 붙이지 않음.
 요금제 이름(Pro, Business, Free, …)은 프로바이더 옆에 표시.
+응답의 `access_type_sku=free_limited_copilot`은 `Free`로 표시.
+이 값이 없거나 다른 값이면 기존 `copilot_plan` 이름을 사용하며 `individual`만으로 무료 여부를 추정하지 않음.
 현행 Free·Student·Pro·Pro+·Max·Business·Enterprise·Copilot access의 가격과 크레딧은 [구독 요금제](/docs/pricing.md#구독-요금제) 참조.
 
 할당량 API의 응답에 따라 계정별 표시 내용이 달라짐.

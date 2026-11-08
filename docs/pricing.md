@@ -36,7 +36,7 @@
 | - | Teams Ultra | $200/좌석 | - | 좌석별 등급 혼합 가능 |
 | - | Enterprise | 문의 | 문의 | [Cursor 기업 계약](https://cursor.com/pricing) |
 | [Antigravity](https://antigravity.google/pricing) | Individuals | $0 | - | 기본 주간 한도 |
-| - | Google AI Pro | $19.99 | - | [미국 판매 가격](https://gemini.google/us/subscriptions/?hl=en) |
+| - | Google AI Pro | $19.99 | $199.99 | [미국 월 결제·연간 선결제 가격](https://one.google.com/intl/en_us/about/google-ai-plans/) |
 | - | Google AI Ultra, 5배 등급 | $99.99 | - | Pro 대비 5배, 미국 판매 가격 |
 | - | Google AI Ultra, 20배 등급 | $199.99 | - | Pro 대비 20배, 미국 판매 가격 |
 | - | Business: Gemini Enterprise Standard / Plus | $30/좌석부터 | 계약 확인 | 적격 Google Cloud 고객, 사용료·계약 조건 별도 |
@@ -201,8 +201,8 @@ Z.ai는 확인된 전체 활동 토큰을 유지하고 모델 분해·가격이 
 ## 추정치에 포함되는 것
 
 비용은 사용 이벤트별로 네 가지 토큰 묶음 — 일반 입력, 캐시 쓰기, 캐시 읽기, 출력 — 에 모델의 백만 토큰당 요금을 적용해 계산하며, 1시간 캐시 쓰기 가격, 긴 컨텍스트 구간, fast 변형 배율까지 반영.
-Claude 로그는 기본 모델명을 그대로 두고 요청의 `speed` 필드로 fast 모드를 표시할 수 있으므로, `-fast` 별칭뿐 아니라 기본 항목도 그 배율을 함께 가짐.
-대부분의 카탈로그 구간은 프롬프트 토큰 200k 초과부터 시작하고, GPT-5.4·GPT-5.5와 해당 Pro 모델, GPT-5.6 Sol·Terra·Luna, GPT-6 Astra·Sol·Luna, GPT-6.1 Sol·Terra의 Codex 요청은 입력 토큰 272k 초과에서 전환.
+Claude 로그는 기본 모델명을 그대로 두고 응답 사용량의 `usage.speed`로 실제 fast 실행 여부를 표시할 수 있으므로, `-fast` 별칭뿐 아니라 기본 항목도 그 배율을 함께 가짐.
+대부분의 카탈로그 구간은 프롬프트 토큰 200k 초과부터 시작하고, GPT-5.4·GPT-5.5와 해당 Pro 모델, GPT-5.6 Sol·Terra·Luna, GPT-6 Astra·Sol·Luna·Rosalind, GPT-6.1 Sol·Terra의 Codex 요청은 입력 토큰 272k 초과에서 전환.
 Codex 로그와 Pi·OMP의 Codex 추정에는 같은 요청별 규칙을 사용하며, 일반 입력과 캐시 읽기·쓰기를 합친 수로 구간 판정.
 Codex 로그는 한 번의 집계 안에서 같은 가격 산정용 모델 이름·Ultrafast 구분의 요율 해석 결과를 재사용하며, 가격 미확정 결과도 포함.
 토큰 수·Fast 요청 여부·장문 요금 구간은 이벤트마다 계산.
