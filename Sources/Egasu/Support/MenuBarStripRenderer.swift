@@ -189,7 +189,7 @@ private struct MenuBarTextStrip: View {
     }
 }
 
-/// compact 정사각형에 최대 4개의 가로 usage bar 렌더 — 원본 egasu tray bar의 1:1 port.
+/// compact 정사각형에 최대 4개의 가로 usage bar 렌더 — 원본 OpenUsage tray bar의 1:1 port.
 /// track 0.16 / fill 1.0 / remainder 0.24 opacity, near-full 양자화로 97% bar도 보이는 꼬리 유지.
 private struct MenuBarBars: View {
     let fractions: [Double]

@@ -31,7 +31,7 @@ Console 사용 기록은 지출 타일에 계속 반영.
 평소처럼 OpenCode 사용.
 로컬 데이터 디렉터리의 `auth.json`에서 Go 키 확인.
 사용액과 토큰 수는 SQLite 로그에서 계산.
-egasu의 데이터 디렉터리는 다음 순서로 결정:
+egasu가 OpenCode 데이터 디렉터리를 다음 순서로 결정:
 
 1. egasu 전용 override인 `OPENCODE_DATA_DIR`이 설정돼 있으면 해당 경로 사용.
 2. 그 외에 `XDG_DATA_HOME`이 설정돼 있으면 `$XDG_DATA_HOME/opencode` 사용.

@@ -47,6 +47,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         let renameRelaunchFailure = L10n.errors("egasu was renamed but could not reopen. Open egasu.app to finish the update.")
         let renameFailureTitle = L10n.errors("Couldn't Rename the App")
         let renameFailureMessage = L10n.errors("The update was installed, but OpenUsage.app could not be renamed to egasu.app. Check the folder permissions and any existing egasu.app. Your accounts and settings are unchanged.")
+        let recoveryFailureTitle = L10n.errors("Couldn't Finish the App Update")
+        let recoveryFailureMessage = L10n.errors("Open egasu.app again to finish the update and repair the terminal commands. Your accounts and settings are unchanged.")
         let confirmationTitle = L10n.dashboard("OK")
         do {
             if try AppBundleMigration.migrateIfNeeded(scheduleRelaunch: { destination in
@@ -63,8 +65,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         } catch {
             AppDiagnostics.failure(.appRestart, error: error, localContext: "Legacy app bundle rename failed")
             let alert = NSAlert()
-            alert.messageText = renameFailureTitle
-            alert.informativeText = renameFailureMessage
+            let recoveryRequired = error is AppBundleMigration.RecoveryError
+            alert.messageText = recoveryRequired ? recoveryFailureTitle : renameFailureTitle
+            alert.informativeText = recoveryRequired ? recoveryFailureMessage : renameFailureMessage
             alert.addButton(withTitle: confirmationTitle)
             NSApp.activate(ignoringOtherApps: true)
             alert.runModal()

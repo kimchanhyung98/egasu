@@ -56,7 +56,7 @@ macOS의 화면 캡처 상태와 변경 알림으로 감지.
 
 화면 공유·녹화를 감지한 상태:
 
-![egasu 워드마크 뒤에 가려진 메뉴 막대 스트립](/docs/assets/menu-bar-privacy-sharing.png)
+![앱 이름 뒤에 가려진 메뉴 막대 스트립](/docs/assets/menu-bar-privacy-sharing.png)
 
 ## 스트립에 표시되는 내용
 

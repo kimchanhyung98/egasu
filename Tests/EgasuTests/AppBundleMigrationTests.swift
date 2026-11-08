@@ -201,7 +201,122 @@ final class AppBundleMigrationTests: XCTestCase {
             throw CocoaError(.executableNotLoadable)
         })
         XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: command.path), "/unrelated/helper")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.source.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.destination.path))
+    }
+
+    func testInterruptedMigrationRepairsLegacyCommandsWithoutRelaunch() throws {
+        let fixture = try makeFixture()
+        let command = fixture.commands.appendingPathComponent("openusage")
+        let current = fixture.commands.appendingPathComponent("egasu")
+        let expected = fixture.destination.appendingPathComponent("Contents/Helpers/egasu").path
+        try FileManager.default.createSymbolicLink(
+            atPath: command.path, withDestinationPath: fixture.source.appendingPathComponent("Contents/Helpers/openusage").path
+        )
+        try FileManager.default.createSymbolicLink(atPath: current.path, withDestinationPath: expected)
+        try FileManager.default.moveItem(at: fixture.source, to: fixture.destination)
+        let installed = try XCTUnwrap(Bundle(url: fixture.destination))
+
+        XCTAssertFalse(try AppBundleMigration.migrateIfNeeded(bundle: installed, commandDirectory: fixture.commands) { _ in
+            XCTFail("Repairing commands must not restart the already renamed app")
+        })
+        for link in [command, current] {
+            XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: link.path), expected)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: link.path))
+        }
+    }
+
+    func testRenamedAppDoesNotTakeCommandsFromAnExistingLegacyPath() throws {
+        for legacyIsSymlink in [false, true] {
+            let fixture = try makeFixture()
+            let command = fixture.commands.appendingPathComponent("openusage")
+            let originalTarget = fixture.source.appendingPathComponent("Contents/Helpers/openusage").path
+            try FileManager.default.createSymbolicLink(atPath: command.path, withDestinationPath: originalTarget)
+            try FileManager.default.copyItem(at: fixture.source, to: fixture.destination)
+            if legacyIsSymlink {
+                try FileManager.default.removeItem(at: fixture.source)
+                try FileManager.default.createSymbolicLink(atPath: fixture.source.path, withDestinationPath: "/missing/other.app")
+            }
+            let installed = try XCTUnwrap(Bundle(url: fixture.destination))
+
+            XCTAssertFalse(try AppBundleMigration.migrateIfNeeded(bundle: installed, commandDirectory: fixture.commands) { _ in
+                XCTFail("A separate legacy path must be preserved")
+            })
+            XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: command.path), originalTarget)
+        }
+    }
+
+    func testFailedLinkRollbackKeepsRenamedAppAndRepairsRestoredCommands() throws {
+        let fixture = try makeReadOnlyCommands()
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fixture.commands.path)
+        try FileManager.default.createSymbolicLink(
+            atPath: fixture.commands.appendingPathComponent("egasu").path,
+            withDestinationPath: fixture.source.appendingPathComponent("Contents/Helpers/egasu").path
+        )
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: fixture.commands.path)
+        var replacements = 0
+
+        XCTAssertThrowsError(try AppBundleMigration.migrateIfNeeded(
+            bundle: fixture.bundle, commandDirectory: fixture.commands,
+            replacePrivilegedLink: { url, expected, target in
+                replacements += 1
+                if replacements == 3 { throw CocoaError(.fileWriteNoPermission) }
+                try self.replaceAsAuthorized(url, expected: expected, target: target)
+            }
+        ) { _ in throw CocoaError(.executableNotLoadable) }) { error in
+            let failure = error as? AppBundleMigration.RecoveryError
+            XCTAssertEqual((failure?.underlyingError as? CocoaError)?.code, .executableNotLoadable)
+            XCTAssertEqual(failure?.recoveryErrors.count, 1)
+        }
+        XCTAssertEqual(replacements, 5)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.source.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.destination.path))
+        for name in ["openusage", "egasu"] {
+            let command = fixture.commands.appendingPathComponent(name)
+            XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: command.path),
+                           fixture.destination.appendingPathComponent("Contents/Helpers/egasu").path)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: command.path))
+        }
+    }
+
+    func testFailedBundleRollbackRepairsCommandsAtTheRenamedApp() throws {
+        let fixture = try makeFixture()
+        let command = fixture.commands.appendingPathComponent("openusage")
+        try FileManager.default.createSymbolicLink(
+            atPath: command.path, withDestinationPath: fixture.source.appendingPathComponent("Contents/Helpers/openusage").path
+        )
+
+        XCTAssertThrowsError(try AppBundleMigration.migrateIfNeeded(
+            bundle: fixture.bundle, commandDirectory: fixture.commands, fileManager: DeniedRollbackFileManager()
+        ) { _ in throw CocoaError(.executableNotLoadable) }) { error in
+            XCTAssertTrue(error is AppBundleMigration.RecoveryError)
+            XCTAssertEqual(((error as NSError).userInfo[NSMultipleUnderlyingErrorsKey] as? [Error])?.count, 1)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.source.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.destination.path))
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: command.path),
+                       fixture.destination.appendingPathComponent("Contents/Helpers/egasu").path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: command.path))
+    }
+
+    func testInterruptedRepairCanRetryAfterAuthorizationIsCancelled() throws {
+        let fixture = try makeReadOnlyCommands()
+        try FileManager.default.moveItem(at: fixture.source, to: fixture.destination)
+        let installed = try XCTUnwrap(Bundle(url: fixture.destination))
+
+        XCTAssertThrowsError(try AppBundleMigration.migrateIfNeeded(
+            bundle: installed, commandDirectory: fixture.commands,
+            replacePrivilegedLink: { _, _, _ in throw CocoaError(.userCancelled) }
+        ) { _ in XCTFail("Repair must not schedule a restart") }) { error in
+            XCTAssertTrue(error is AppBundleMigration.RecoveryError)
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.destination.path))
+        XCTAssertFalse(try AppBundleMigration.migrateIfNeeded(
+            bundle: installed, commandDirectory: fixture.commands,
+            replacePrivilegedLink: { url, expected, target in
+                try self.replaceAsAuthorized(url, expected: expected, target: target)
+            }
+        ) { _ in XCTFail("Successful repair must not schedule a restart") })
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.commands.appendingPathComponent("openusage").path))
     }
 
     func testDevelopmentUpstreamAndUnchangedOldBuildsAreNotMigrated() throws {
@@ -237,6 +352,13 @@ final class AppBundleMigrationTests: XCTestCase {
     private final class DeniedMoveFileManager: FileManager, @unchecked Sendable {
         override func moveItem(at srcURL: URL, to dstURL: URL) throws {
             throw CocoaError(.fileWriteNoPermission)
+        }
+    }
+
+    private final class DeniedRollbackFileManager: FileManager, @unchecked Sendable {
+        override func moveItem(at srcURL: URL, to dstURL: URL) throws {
+            if srcURL.lastPathComponent == "egasu.app" { throw CocoaError(.fileWriteNoPermission) }
+            try super.moveItem(at: srcURL, to: dstURL)
         }
     }
 

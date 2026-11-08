@@ -273,6 +273,8 @@
 
 "egasu was renamed but could not reopen. Open egasu.app to finish the update." = "egasu was renamed but could not reopen. Open egasu.app to finish the update.";
 "Couldn't Rename the App" = "Couldn't Rename the App";
+"Couldn't Finish the App Update" = "Couldn't Finish the App Update";
+"Open egasu.app again to finish the update and repair the terminal commands. Your accounts and settings are unchanged." = "Open egasu.app again to finish the update and repair the terminal commands. Your accounts and settings are unchanged.";
 "The update was installed, but OpenUsage.app could not be renamed to egasu.app. Check the folder permissions and any existing egasu.app. Your accounts and settings are unchanged." = "The update was installed, but OpenUsage.app could not be renamed to egasu.app. Check the folder permissions and any existing egasu.app. Your accounts and settings are unchanged.";
 "Kimi Code usage history could not be read. Check the local session files and try again." = "Kimi Code usage history could not be read. Check the local session files and try again.";
 "Kimi Code usage history uses an unsupported format. Check for an egasu update." = "Kimi Code usage history uses an unsupported format. Check for an egasu update.";
