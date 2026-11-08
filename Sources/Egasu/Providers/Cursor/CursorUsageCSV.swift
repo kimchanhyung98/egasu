@@ -82,7 +82,7 @@ enum CursorUsageCSV {
             }
             acceptedTokenCount = aggregate.partialValue
 
-            // CSV의 "Input (w/ Cache Write)" tokens는 prompt cache에 기록된 것 — Anthropic은 5분 cache-write rate, 다른 provider는 input rate로 과금(그들의 pricing entry는 cacheWrite == input).
+            // CSV 캐시 쓰기 토큰에 모델별 캐시 쓰기 요율 적용. 별도 요율이 없으면 입력 요율 사용.
             let tokens = TokenBreakdown(
                 input: input,
                 cacheWrite5m: cacheWrite,

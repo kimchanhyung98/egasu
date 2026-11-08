@@ -133,7 +133,7 @@ final class OpenCodeProvider: ProviderRuntime {
         guard let logScan = DailyUsageAccumulator.merged([scan?.logScan, sharedScan]) else {
             // 디스크에 OpenCode database가 전혀 없는 경우
             if hasGoKey {
-                // 첫 로컬 메시지 이전의 Go 신규 로그인 — key만으로 plan 확정, "No usage data" 대신 공표 cap을 $0으로 표시
+                // Go 키만 있을 때 로컬 추정 한도의 사용량을 0으로 표시. 활성 구독·세부 등급은 미확인.
                 let windows = OpenCodeGoWindowMath.compute(costs: [], anchorMs: nil, now: refreshedAt)
                 return ProviderSnapshot.make(
                     provider: provider, plan: "Go",

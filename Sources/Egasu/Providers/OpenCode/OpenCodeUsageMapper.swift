@@ -1,7 +1,7 @@
 import Foundation
 
-/// Go plan window를 세 개의 cap meter로 변환 — 공표 cap이 달러 기반이라 `.dollars` progress meter 사용.
-/// 로컬 spend는 이 머신만 집계해 실제 계정 사용량보다 적게만 나옴 — 카드가 cap과 함께 spend tile도 보여주는 이유.
+/// 로컬 추정용 달러 분모로 Go 사용량 미터 구성.
+/// 현행 모델별 allowance·계정 사용량과 단위·집계 범위가 달라 크기 관계를 보장하지 않음.
 enum OpenCodeUsageMapper {
     static let sessionCap: Double = 12   // rolling 5시간당
     static let weeklyCap: Double = 30    // UTC week당

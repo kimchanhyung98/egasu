@@ -23,7 +23,9 @@ enum CopilotUsageMapper {
     }
 
     static func map(body: [String: Any]) throws -> CopilotMappedUsage {
-        let plan = planLabel(body["copilot_plan"])
+        let plan = body["access_type_sku"] as? String == "free_limited_copilot"
+            ? "Free"
+            : planLabel(body["copilot_plan"])
         let resetsAt = parseResetDate(body["quota_reset_date"])
             ?? parseResetDate(body["limited_user_reset_date"])
 
