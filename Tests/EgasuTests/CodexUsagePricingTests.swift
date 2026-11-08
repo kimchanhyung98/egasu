@@ -17,7 +17,7 @@ final class CodexUsagePricingTests: XCTestCase {
         let cases: [(String, Double)] = [
             ("gpt-5.6-sol", 1.98), ("gpt-6-astra", 4.95),
             ("gpt-5.6-terra", 1.02), ("gpt-5.6-luna", 0.102),
-            ("gpt-daybreak-blue-latest", 1.98)
+            ("gpt-daybreak-blue-latest", 1.98), ("gpt-6-rosalind", 7.425)
         ]
         for (model, expected) in cases {
             let native = CodexLogUsageScanner.aggregate(events: [
@@ -55,6 +55,30 @@ final class CodexUsagePricingTests: XCTestCase {
         XCTAssertEqual(adjusted.costDollars(for: .init(input: 272_000)), 2.72, accuracy: 1e-9)
         XCTAssertEqual(adjusted.costDollars(for: .init(input: 272_001)), 5.44002, accuracy: 1e-9)
         XCTAssertEqual(adjusted.costDollars(for: .init(input: 200_000, cacheWrite5m: 100_000)), 6.5, accuracy: 1e-9)
+    }
+
+    func testRosalindLongContextBoundaryIncludesCachedInputForQualifiedNames() throws {
+        let cases: [(TokenBreakdown, Double)] = [
+            (.init(input: 272_000, output: 1_000), 4.155),
+            (.init(input: 272_001, output: 1_000), 8.27253),
+            (.init(input: 300_000, output: 1_000), 9.1125),
+            (.init(input: 200_000, cacheRead: 72_000, output: 1_000), 3.183),
+            (.init(input: 200_001, cacheRead: 72_000, output: 1_000), 6.32853),
+            (.init(input: 200_000, cacheWrite5m: 72_000, output: 1_000), 4.425),
+            (.init(input: 200_001, cacheWrite5m: 72_000, output: 1_000), 8.81253),
+            (.init(input: 200_000, cacheRead: 100_000, output: 1_000), 6.4125),
+            (.init(input: 1, output: 300_000), 22.500015),
+        ]
+        for prefix in ["", "openai/"] {
+            for suffix in ["", "-20261108", "-2026-11-08"] {
+                let model = prefix + "gpt-6-rosalind" + suffix
+                for (tokens, expected) in cases {
+                    XCTAssertEqual(try XCTUnwrap(CodexUsagePricing.estimate(
+                        model: model, tokens: tokens, pricing: pricing
+                    )), expected, accuracy: 1e-9, model)
+                }
+            }
+        }
     }
 
     func testAstraPriorityAndFastAliasApplyOneCodexMultiplier() throws {
