@@ -21,6 +21,7 @@ Credits와 Extra Usage는 기본적으로 Always Visible이며, Org Credits, Org
 요금제 이름(Pro, Business, Free, …)은 프로바이더 옆에 표시.
 응답의 `access_type_sku=free_limited_copilot`은 `Free`로 표시.
 이 값이 없거나 다른 값이면 기존 `copilot_plan` 이름을 사용하며 `individual`만으로 무료 여부를 추정하지 않음.
+확인된 Free 응답에 표시할 할당량이 없으면 사용량 확인 불가로 처리하며, 조직 청구 정보는 조회하지 않음.
 현행 Free·Student·Pro·Pro+·Max·Business·Enterprise·Copilot access의 가격과 크레딧은 [구독 요금제](/docs/pricing.md#구독-요금제) 참조.
 
 할당량 API의 응답에 따라 계정별 표시 내용이 달라짐.
@@ -151,7 +152,7 @@ Copilot이 활성화돼 있으면 실행 시, 활성화 시, 5분마다, 대시�
 개인 수치를 달러로 환산하거나 조직 전체 값과 합산하지 않음.
 상단 통계의 달러 환산은 날짜가 있는 CLI 요청 기록에만 적용.
 
-조직 관리 좌석(응답의 토큰 기반 청구 자리표시자로 식별)은 공개 REST 청구 API도 호출: `GET /user/orgs`로 조직 목록을 가져온 뒤 Copilot AI 크레딧 사용량이 나올 때까지 조직별 `GET /orgs/{org}/settings/billing/usage/summary` 호출.
+조직 관리 좌석(Free SKU를 제외한 토큰 기반 청구 자리표시자 응답)은 공개 REST 청구 API도 호출: `GET /user/orgs`로 조직 목록을 가져온 뒤 Copilot AI 크레딧 사용량이 나올 때까지 조직별 `GET /orgs/{org}/settings/billing/usage/summary` 호출.
 일치하는 조직을 기억해 이후 새로 고침에서는 추가 호출 한 번만 수행.
 조직 접근이 불가하거나 사용량이 더 이상 없으면 다시 탐색하며, 일시적 실패에는 기억한 조직을 유지하고 다음 새로 고침에 재시도.
 
