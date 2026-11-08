@@ -75,6 +75,19 @@ final class PricingSupplementVersionTests: XCTestCase {
         XCTAssertEqual(modern.pricing["claude-haiku-5-5"]?.longContextThresholdTokens, 100_000)
     }
 
+    func testBundledGrokCodeAliasRemainsReadableByLegacyDecoder() throws {
+        let url = try XCTUnwrap(Bundle.egasuResources.url(forResource: "pricing_supplement", withExtension: "json"))
+        let data = try Data(contentsOf: url)
+        let legacy = try JSONDecoder().decode(LegacySupplement.self, from: data)
+        let rule = try XCTUnwrap(legacy.aliasRules.first {
+            "grok-code-fast".range(of: $0.pattern, options: .regularExpression) != nil
+        })
+
+        XCTAssertEqual(rule.canonical, "grok-build-0.1")
+        let modern = try PricingSupplement.decode(from: data)
+        XCTAssertEqual(modern.canonicalName(for: "grok-code-fast"), rule.canonical)
+    }
+
     private var fixture: Data {
         Data(
             #"""

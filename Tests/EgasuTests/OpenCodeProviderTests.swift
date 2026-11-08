@@ -155,7 +155,7 @@ final class OpenCodeProviderTests: XCTestCase {
     }
 
     func testRefreshShowsZeroCapMetersWithGoKeyButNoDatabase() async {
-        // Go 로그인 직후 첫 local message 이전 — key만으로 plan 확정, cap을 $0으로 표시
+        // 로컬 Go 키만 있을 때 Go 표시와 사용량 0 유지. 활성 구독 여부는 확인하지 않음.
         let now = d("2026-07-12T12:00:00.000Z")
         let provider = OpenCodeProvider(
             authStore: authStore(files: FakeFiles(["/oc/auth.json": authJSON])),

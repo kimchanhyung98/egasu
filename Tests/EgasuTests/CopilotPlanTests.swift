@@ -2,6 +2,37 @@ import XCTest
 @testable import Egasu
 
 final class CopilotPlanTests: XCTestCase {
+    @MainActor
+    func testFreeRefreshPreservesQuotaLinesWithoutOrganizationBilling() async throws {
+        var body = freeQuotaBody()
+        body["access_type_sku"] = "free_limited_copilot"
+        body["token_based_billing"] = true
+        let http = FakeHTTPClient(response: HTTPResponse(
+            statusCode: 200, headers: [:], body: try JSONSerialization.data(withJSONObject: body)
+        ))
+        let suiteName = "CopilotPlanTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let provider = CopilotProvider(
+            authStore: CopilotAuthStore(
+                files: FakeFiles([CopilotAuthStore.editorAppsPath: #"{"github.com":{"oauth_token":"gho_test"}}"#]),
+                keychain: FakeKeychain()
+            ),
+            usageClient: CopilotUsageClient(http: http),
+            orgBillingClient: CopilotOrgBillingClient(http: http),
+            usageScanner: .init(databasePath: { nil }),
+            sharedUsage: .init(collectors: []),
+            defaults: defaults
+        )
+
+        let snapshot = await provider.refresh()
+
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertEqual(snapshot.plan, "Free")
+        XCTAssertEqual(snapshot.lines.map(\.label), ["Chat", "Completions"])
+        XCTAssertEqual(http.requests.map(\.url.path), ["/copilot_internal/user"])
+    }
+
     func testKnownFreeSKUChangesOnlyPlanLabel() throws {
         var body = freeQuotaBody()
         let baseline = try CopilotUsageMapper.map(body: body)
