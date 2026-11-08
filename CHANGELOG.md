@@ -2,6 +2,58 @@
 
 This changelog starts with v0.8.0, the first release of this fork.
 
+## v1.0.0
+
+### 새 기능
+
+- Z.ai 기간별 토큰·추정 비용 통계 추가 ([#140](https://github.com/kimchanhyung98/egasu/pull/140)) by @kimchanhyung98.
+- Kimi CLI 토큰·추정 비용 통계 추가 ([#141](https://github.com/kimchanhyung98/egasu/pull/141)) by @kimchanhyung98.
+- Devin CLI 사용량 기반 기간별 통계 추가 ([#142](https://github.com/kimchanhyung98/egasu/pull/142)) by @kimchanhyung98.
+- Kiro 로컬 크레딧·토큰 추정 통계 추가 ([#143](https://github.com/kimchanhyung98/egasu/pull/143)) by @kimchanhyung98.
+- 여러 도구의 사용 기록을 함께 처리하는 공통 수집 모듈 추가 ([#155](https://github.com/kimchanhyung98/egasu/pull/155)) by @kimchanhyung98.
+- Gemini CLI·Qwen CLI 세션 사용량 수집 추가 ([#158](https://github.com/kimchanhyung98/egasu/pull/158)) by @kimchanhyung98.
+- OpenClaw·Hermes Agent·DeepSeek Harness 사용 기록 수집 추가 ([#159](https://github.com/kimchanhyung98/egasu/pull/159)) by @kimchanhyung98.
+- Kilo Code·Kilo CLI·Junie 및 Kimi·Kiro 보충 기록 수집 추가 ([#160](https://github.com/kimchanhyung98/egasu/pull/160)) by @kimchanhyung98.
+
+### 오류 수정
+
+- 스냅샷 갱신 시 공개 피드에서 삭제된 과거 모델의 단가 보존 ([#162](https://github.com/kimchanhyung98/egasu/pull/162)) by @kimchanhyung98.
+- Claude·Codex 사용량 알림에 계정명 표시 ([#133](https://github.com/kimchanhyung98/egasu/pull/133)) by @kimchanhyung98.
+- 상단 통계 안내문의 프로바이더 이름 중복 제거 ([#134](https://github.com/kimchanhyung98/egasu/pull/134)) by @kimchanhyung98.
+- Codex 재로그인·계정 전환 시 인증 충돌 방지 ([#139](https://github.com/kimchanhyung98/egasu/pull/139)) by @kimchanhyung98.
+- Codex 압축·중단 응답 사용량의 누락과 중복 수정 ([#144](https://github.com/kimchanhyung98/egasu/pull/144)) by @kimchanhyung98.
+- OpenCode fork 사용량 중복 집계 수정 ([#145](https://github.com/kimchanhyung98/egasu/pull/145)) by @kimchanhyung98.
+- Grok 세션 간 모델 혼동에 따른 비용 집계 오류 수정 ([#146](https://github.com/kimchanhyung98/egasu/pull/146)) by @kimchanhyung98.
+- Pi 사용량의 독립 집계 및 압축 호출 모델 오귀속 수정 ([#147](https://github.com/kimchanhyung98/egasu/pull/147)) by @kimchanhyung98.
+- 배포 앱에 필요한 리소스 번들만 포함 ([#149](https://github.com/kimchanhyung98/egasu/pull/149)) by @kimchanhyung98.
+- 현재 요금제 정보와 모델 가격 매칭 갱신 ([#150](https://github.com/kimchanhyung98/egasu/pull/150)) by @kimchanhyung98.
+- 프로바이더별 인증·할당량·잔액 처리 수정 ([#151](https://github.com/kimchanhyung98/egasu/pull/151)) by @kimchanhyung98.
+- 백그라운드 작업 순차 실행 및 갱신 대기 상태 표시 ([#152](https://github.com/kimchanhyung98/egasu/pull/152)) by @kimchanhyung98.
+- 가격이 없는 모델의 토큰 보존 및 불완전한 총비용 표시 방지 ([#153](https://github.com/kimchanhyung98/egasu/pull/153)) by @kimchanhyung98.
+- 프로바이더 내부 분석 요청을 순차 실행하도록 수정 ([#154](https://github.com/kimchanhyung98/egasu/pull/154)) by @kimchanhyung98.
+- 기존 CLI 원장과 특수 사용량 기록 보존 ([#157](https://github.com/kimchanhyung98/egasu/pull/157)) by @kimchanhyung98.
+- 수집 실패 시 정상 사용 이력 보존 및 조치가 필요 없는 경고 축소 ([#161](https://github.com/kimchanhyung98/egasu/pull/161)) by @kimchanhyung98.
+
+### 구조 개선
+
+- 앱·CLI·사이트 이름을 egasu로 변경. 기존 계정·설정·iCloud 이력과 이전 CLI 명령 유지, 업데이트 시 앱 이름 이전 및 중단 후 복구 지원 ([#148](https://github.com/kimchanhyung98/egasu/pull/148)) by @kimchanhyung98.
+
+### 유지보수
+
+- Node.js 타입 정의 26.6.6으로 갱신 ([#135](https://github.com/kimchanhyung98/egasu/pull/135)) by @dependabot[bot].
+- Astro 7.4.4로 갱신 ([#136](https://github.com/kimchanhyung98/egasu/pull/136)) by @dependabot[bot].
+- PostHog 3.92.7로 갱신 ([#137](https://github.com/kimchanhyung98/egasu/pull/137)) by @dependabot[bot].
+- Sparkle 2.10.1로 갱신 ([#138](https://github.com/kimchanhyung98/egasu/pull/138)) by @dependabot[bot].
+- 오래된 조사 문서 정리 ([#156](https://github.com/kimchanhyung98/egasu/pull/156)) by @kimchanhyung98.
+- 동작 설명과 공식 근거 링크 정리 ([e25e935](https://github.com/kimchanhyung98/egasu/commit/e25e935b3c6431208a778a91018e34e081c168c7)) by @kimchanhyung98.
+- 오프라인 가격 조회용 LiteLLM·models.dev 스냅샷 갱신 by @kimchanhyung98.
+
+---
+
+### 변경 이력
+
+**전체 변경 이력**: [v0.14.3...v1.0.0](https://github.com/kimchanhyung98/egasu/compare/aad6ff61e2a07ed58499c9843059aff7d1ccf103...0158a488cc2c68e5a006fb3f7f9430ae0d7e0979)
+
 ## v0.11.3
 
 ### New Features
