@@ -6,7 +6,12 @@ import { copy } from '../data/copy';
 <div data-nav-sentinel aria-hidden="true"></div>
 <header class="nav" data-nav>
   <div class="container inner">
-    <a class="brand" href="/"><span class="wordmark">{site.brand}</span></a>
+    <a class="brand" href="/" aria-label={site.brand}>
+      <span class="wordmark" aria-hidden="true">
+        <span class="wordmark-face">{site.brand}</span>
+        <span class="wordmark-face wordmark-back">{[...site.brand].reverse().join('')}</span>
+      </span>
+    </a>
     <nav class="actions" aria-label="사이트">
       <a class="btn btn-outline" href={site.repo}>{copy['nav-github']}</a>
       <a class="btn btn-outline" href={site.releasesLatest} data-download data-preview-label>{copy['nav-cta']}</a>
@@ -43,11 +48,48 @@ import { copy } from '../data/copy';
     align-items: center;
     gap: 24px;
   }
+  .brand {
+    display: inline-flex;
+  }
   .wordmark {
+    display: grid;
+    perspective: 360px;
     font-size: 20px;
     font-weight: 700;
     letter-spacing: -0.02em;
     white-space: nowrap;
+    text-align: center;
+    pointer-events: none;
+  }
+  /* 두 면을 90도씩 나눠 회전해 WebKit의 뒷면 글자 겹침 방지. */
+  .wordmark-face {
+    grid-area: 1 / 1;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    transform: rotateY(0deg);
+    transition: transform 0.3s ease-in-out 0.3s;
+  }
+  .wordmark-back {
+    transform: rotateY(-90deg);
+    transition-delay: 0s;
+  }
+  .brand:focus-visible .wordmark-face {
+    transform: rotateY(90deg);
+    transition-delay: 0s;
+  }
+  .brand:focus-visible .wordmark-back {
+    transform: rotateY(0deg);
+    transition-delay: 0.3s;
+  }
+  @media (hover: hover) {
+    .brand:hover .wordmark-face {
+      transform: rotateY(90deg);
+      transition-delay: 0s;
+    }
+    .brand:hover .wordmark-back {
+      transform: rotateY(0deg);
+      transition-delay: 0.3s;
+    }
   }
   /* GitHub·다운로드를 오른쪽에 한 쌍으로. 테두리 유무로만 위계를 둠. */
   .actions {
@@ -61,7 +103,8 @@ import { copy } from '../data/copy';
     justify-content: center;
   }
   @media (prefers-reduced-motion: reduce) {
-    .nav {
+    .nav,
+    .wordmark-face {
       transition: none;
     }
   }
