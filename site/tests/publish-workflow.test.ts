@@ -58,6 +58,17 @@ function publicationFixture() {
 const snapshot = '게시된 피드 기준값 기록';
 const verify = '게시 전후 피드 불변 확인';
 
+test('Site CI 컨테이너와 테스트 패키지의 Playwright 버전 일치', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/site.yml', import.meta.url), 'utf8');
+  const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const lock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
+  const imageVersion = workflow.match(/^\s*image: mcr\.microsoft\.com\/playwright:v([^\s]+)-noble\s*$/m)?.[1];
+
+  assert.equal(imageVersion, manifest.devDependencies['@playwright/test']);
+  assert.equal(imageVersion, lock.packages['node_modules/@playwright/test'].version);
+  assert.equal(imageVersion, lock.packages['node_modules/playwright-core'].version);
+});
+
 test('피드 두 개와 도메인을 보존하는 사이트 갱신 허용', () => {
   const fixture = publicationFixture();
   try {
