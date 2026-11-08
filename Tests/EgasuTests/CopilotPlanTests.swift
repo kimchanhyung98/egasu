@@ -30,7 +30,63 @@ final class CopilotPlanTests: XCTestCase {
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertEqual(snapshot.plan, "Free")
         XCTAssertEqual(snapshot.lines.map(\.label), ["Chat", "Completions"])
+        for (label, expected) in [("Chat", 10.0), ("Completions", 5.0)] {
+            guard case let .progress(_, used, limit, format, _, _, _) = try XCTUnwrap(snapshot.line(label: label)) else {
+                return XCTFail("Expected a progress line for \(label)")
+            }
+            XCTAssertEqual(used, expected, accuracy: 1e-9, label)
+            XCTAssertEqual(limit, 100, label)
+            XCTAssertEqual(format, .percent, label)
+        }
         XCTAssertEqual(http.requests.map(\.url.path), ["/copilot_internal/user"])
+    }
+
+    @MainActor
+    func testFreeRefreshWithoutUsableQuotasDoesNotRequestOrganizationBilling() async throws {
+        let unusableQuotas: [[String: Any]?] = [
+            nil, [:],
+            [
+                "premium_interactions": ["entitlement": 0, "remaining": 0, "credits_used": 12],
+                "chat": ["entitlement": -1, "remaining": -1],
+                "completions": ["entitlement": 0, "remaining": 0]
+            ]
+        ]
+        for quotas in unusableQuotas {
+            for cachedOrg in [nil, "previous-org"] as [String?] {
+                var body: [String: Any] = [
+                    "copilot_plan": "individual",
+                    "access_type_sku": "free_limited_copilot",
+                    "token_based_billing": true
+                ]
+                if let quotas { body["quota_snapshots"] = quotas }
+                let http = FakeHTTPClient(response: HTTPResponse(
+                    statusCode: 200, headers: [:], body: try JSONSerialization.data(withJSONObject: body)
+                ))
+                let suiteName = "CopilotPlanTests-\(UUID().uuidString)"
+                let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+                defer { defaults.removePersistentDomain(forName: suiteName) }
+                if let cachedOrg { defaults.set(cachedOrg, forKey: CopilotProvider.billingOrgDefaultsKey) }
+                let provider = CopilotProvider(
+                    authStore: CopilotAuthStore(
+                        files: FakeFiles([CopilotAuthStore.editorAppsPath: #"{"github.com":{"oauth_token":"gho_test"}}"#]),
+                        keychain: FakeKeychain()
+                    ),
+                    usageClient: CopilotUsageClient(http: http),
+                    orgBillingClient: CopilotOrgBillingClient(http: http),
+                    usageScanner: .init(databasePath: { nil }),
+                    sharedUsage: .init(collectors: []),
+                    defaults: defaults
+                )
+
+                let snapshot = await provider.refresh()
+
+                XCTAssertEqual(snapshot.errorCategory, .notAvailable)
+                XCTAssertEqual(snapshot.lines.count, 1)
+                XCTAssertTrue(snapshot.lines.allSatisfy(\.isError))
+                XCTAssertEqual(http.requests.map(\.url.path), ["/copilot_internal/user"])
+                XCTAssertEqual(defaults.string(forKey: CopilotProvider.billingOrgDefaultsKey), cachedOrg)
+            }
+        }
     }
 
     func testKnownFreeSKUChangesOnlyPlanLabel() throws {
