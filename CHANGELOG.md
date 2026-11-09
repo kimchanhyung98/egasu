@@ -2,7 +2,7 @@
 
 This changelog starts with v0.8.0, the first release of this fork.
 
-## v1.0.0
+## v1.0.0-beta.1
 
 ### 새 기능
 
@@ -52,7 +52,7 @@ This changelog starts with v0.8.0, the first release of this fork.
 
 ### 변경 이력
 
-**전체 변경 이력**: [v0.14.3...v1.0.0](https://github.com/kimchanhyung98/egasu/compare/aad6ff61e2a07ed58499c9843059aff7d1ccf103...0158a488cc2c68e5a006fb3f7f9430ae0d7e0979)
+**전체 변경 이력**: [v0.14.3...v1.0.0-beta.1](https://github.com/kimchanhyung98/egasu/compare/aad6ff61e2a07ed58499c9843059aff7d1ccf103...0158a488cc2c68e5a006fb3f7f9430ae0d7e0979)
 
 ## v0.11.3
 
