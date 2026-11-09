@@ -3,14 +3,6 @@
     <channel>
         <title>OpenUsage</title>
         <item>
-            <title>1.0.0</title>
-            <pubDate>Sun, 08 Nov 2026 08:59:50 +0000</pubDate>
-            <sparkle:version>1690</sparkle:version>
-            <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/kimchanhyung98/egasu/releases/download/v1.0.0/egasu-1.0.0.dmg" length="33189512" type="application/octet-stream" sparkle:edSignature="hmlzRdMuUFGxRa9oHMJBMwBe/Qw1C+RiuJq8oLYcOiv1pFFmBPuiHfDHzKTvMgJd7VJ7EIAgDqQ/bkP1u5pyDw=="/>
-        </item>
-        <item>
             <title>0.14.3</title>
             <pubDate>Sat, 31 Oct 2026 13:03:39 +0000</pubDate>
             <sparkle:version>1422</sparkle:version>
