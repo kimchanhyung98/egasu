@@ -31,10 +31,12 @@ for (const file of ['release.yml', 'publish-site.yml', 'pricing-supplement.yml']
   });
 }
 
-test('수동 사이트 게시의 검증·체크아웃·조립 모두 지정한 태그 기준', () => {
+test('사이트·가격표 검증과 체크아웃은 수동 태그 또는 push 이벤트 SHA로 고정', () => {
   const publish = workflow('publish-site.yml');
-  assert.match(publish, /uses: \.\/\.github\/workflows\/site\.yml\n    with:\n      ref: \$\{\{ inputs.tag \|\| github.ref \}\}/);
-  assert.match(publish, /ref: \$\{\{ inputs.tag \|\| github.ref \}\}\n          fetch-depth: 0/);
+  assert.match(publish, /uses: \.\/\.github\/workflows\/site\.yml\n    with:\n      ref: \$\{\{ inputs.tag \|\| github.sha \}\}/);
+  for (const file of ['publish-site.yml', 'pricing-supplement.yml']) {
+    assert.match(workflow(file), /ref: \$\{\{ inputs.tag \|\| github.sha \}\}\n          fetch-depth: 0/);
+  }
   assert.match(workflow('site.yml'), /ref: \$\{\{ inputs.ref \|\| github.ref \}\}/);
   assert.match(step('publish-site.yml', '랜딩 페이지 조립'), /"\$\(git rev-parse HEAD\)"/);
   assert.doesNotMatch(step('publish-site.yml', '랜딩 페이지 조립'), /GITHUB_SHA/);
@@ -105,6 +107,25 @@ for (const file of ['publish-site.yml', 'pricing-supplement.yml']) {
       f.git(f.checkout, 'checkout', '--quiet', '--detach', 'v1.2.5');
       assert.notEqual(f.run(file, '게시 태그 확인', { PUBLICATION_TAG: 'v1.2.3' }).status, 0);
       assert.notEqual(f.run(file, '게시 태그 확인', { PUBLICATION_TAG: 'v1.2.5' }).status, 0);
+    } finally { f.cleanup(); }
+  });
+
+  test(`${file}: main의 다른 커밋으로 이동한 태그와 push 이벤트 SHA가 다르면 거부`, () => {
+    const f = fixture();
+    try {
+      const eventSHA = f.git(f.checkout, 'rev-parse', 'HEAD');
+      writeFileSync(join(f.remote, 'changed.txt'), 'new publication source');
+      f.commit();
+      const movedSHA = f.git(f.remote, 'rev-parse', 'HEAD');
+      f.git(f.remote, 'tag', '--force', 'v1.2.3');
+      f.git(f.checkout, 'fetch', '--quiet', 'origin', '+refs/tags/v1.2.3:refs/tags/v1.2.3');
+      f.git(f.checkout, 'checkout', '--quiet', '--detach', eventSHA);
+
+      const result = f.run(file, '게시 태그 확인', { PUBLICATION_TAG: 'v1.2.3', GITHUB_SHA: eventSHA });
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /Release tag does not point to HEAD/);
+      assert.equal(f.git(f.checkout, 'rev-parse', 'HEAD'), eventSHA);
+      assert.equal(f.git(f.checkout, 'rev-parse', 'origin/main'), movedSHA);
     } finally { f.cleanup(); }
   });
 }

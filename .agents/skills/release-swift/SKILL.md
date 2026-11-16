@@ -5,7 +5,9 @@ description: "Cut a release of egasu (Swift menu-bar app): pick a version, gener
 
 # Release Swift
 
-`main` 이력에 포함된 `v*` 태그를 푸시하면 `.github/workflows/release.yml`이 빌드·서명·공증 후 `egasu-<version>.dmg`과 GitHub 자동 생성 릴리스 노트 게시.
+`main` 이력에 포함된 `v*` 태그를 푸시하면 `.github/workflows/release.yml`이 빌드·서명·공증.
+태그의 소스에 `Sources/Egasu`가 있으면 `egasu-<version>.dmg`, 이름 변경 전 태그는 `OpenUsage-<version>.dmg` 게시.
+GitHub 자동 생성 릴리스 노트도 게시.
 Sparkle `appcast.xml`은 `gh-pages`에 기록한 뒤 Pages로 배포.
 이 스킬은 승인된 변경 내역을 `CHANGELOG.md`에 기록하고, CI 완료 후 자동 생성 릴리스 노트를 승인된 노트로 교체.
 
@@ -100,7 +102,8 @@ curl -fsSL "$feed_url" | grep -F "$asset_name"
 
 앱·사이트·가격표의 자동 게시 기준은 버전 태그 푸시.
 수동 게시도 대상 태그 필수.
-게시 workflow가 `gh-pages`에 기록한 커밋·태그·소스 커밋을 전달하면, `main`의 `deploy-pages.yml`이 `workflow_run`으로 검증 후 배포.
+게시 workflow가 게시 커밋·태그·소스 커밋을 `pages-publication-<실행 시도 번호>` 산출물로 전달.
+`main`의 `deploy-pages.yml`이 `workflow_run`으로 이 산출물을 받아 검증 후 배포.
 브랜치에 버전이 있어도 실제 URL이 갱신되지 않으면 `gh run list --repo kimchanhyung98/egasu --workflow=deploy-pages.yml`로 실패 확인.
 실패한 배포 실행 재시도는 같은 게시 커밋 사용.
 별도 수동 재배포는 `gh workflow run deploy-pages.yml --repo kimchanhyung98/egasu --ref main -f tag=<버전 태그> -f publication_run_id=<성공한 게시 실행 ID>` 사용.

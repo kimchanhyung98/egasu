@@ -335,7 +335,7 @@ printf '%s\\n' "$@" > "$GH_ARGS"
 if [ "$GH_DOWNLOAD_FAIL" = 1 ]; then exit 1; fi
 mkdir -p "$RUNNER_TEMP/pages-publication"
 cp "$GH_ARTIFACT" "$RUNNER_TEMP/pages-publication/revision.txt"
-cp "$GH_TAG_ARTIFACT" "$RUNNER_TEMP/pages-publication/tag.txt"
+if [ -n "$GH_TAG_ARTIFACT" ]; then cp "$GH_TAG_ARTIFACT" "$RUNNER_TEMP/pages-publication/tag.txt"; fi
 cp "$GH_SOURCE_ARTIFACT" "$RUNNER_TEMP/pages-publication/source.txt"
 `, { mode: 0o755 });
   return {
@@ -408,6 +408,19 @@ for (const ref of ['', 'gh-pages', 'a'.repeat(39), 'a'.repeat(40) + '\nPAGES_REF
   });
 }
 
+for (const tag of ['main', 'v0.6.28']) {
+  test(`잘못된 게시 산출물 태그 ${JSON.stringify(tag)} 거부`, () => {
+    const fixture = deploymentFixture();
+    try {
+      writeFileSync(fixture.tagArtifact, tag);
+      const result = fixture.select();
+      assert.notEqual(result.status, 0);
+      assert.match(result.stdout, /Invalid publication tag/);
+      assert.equal(readFileSync(fixture.githubEnv, 'utf8'), '');
+    } finally { fixture.cleanup(); }
+  });
+}
+
 test('수동 재배포도 지정한 태그의 성공한 게시 커밋 사용', () => {
   const fixture = deploymentFixture();
   try {
@@ -447,8 +460,12 @@ for (const patch of [{ conclusion: 'failure' }, { name: 'CI' }, { event: 'pull_r
 test('태그 기록이 없는 옛 게시 산출물은 배포 거부', () => {
   const fixture = deploymentFixture();
   try {
-    rmSync(fixture.tagArtifact);
-    assert.notEqual(fixture.select().status, 0);
+    const result = fixture.select({ GH_TAG_ARTIFACT: '' });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /cat: .*\/pages-publication\/tag\.txt:/);
+    assert.doesNotMatch(result.stderr, /cp:/);
+    assert.equal(existsSync(join(fixture.temp, 'pages-publication/revision.txt')), true);
+    assert.equal(existsSync(join(fixture.temp, 'pages-publication/source.txt')), true);
     assert.equal(readFileSync(fixture.githubEnv, 'utf8'), '');
   } finally { fixture.cleanup(); }
 });

@@ -7,6 +7,7 @@ description: Sync egasu's pricing supplement with Cursor's published model prici
 
 `Sources/Egasu/Resources/pricing_supplement.json`은 공개 카탈로그에 없는 Cursor 전용 모델(`auto`, `composer-*`, `github_bugbot`) 단가·fast 배수·프로바이더 로그와 CSV slug의 가격 키 매핑 제공.
 버전 태그 푸시 또는 대상 태그의 수동 실행 시 `.github/workflows/pricing-supplement.yml`이 검증 후 GitHub Pages에 게시.
+게시 전 태그의 버전 형식과 `main` 이력 포함 여부 확인.
 설치된 앱은 앱 업데이트 없이 다음 가격표 갱신에서 반영.
 상세 설명은 [모델 가격](/docs/pricing.md) 참조.
 
