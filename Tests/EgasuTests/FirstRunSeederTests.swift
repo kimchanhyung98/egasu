@@ -29,6 +29,90 @@ final class FirstRunSeederTests: XCTestCase {
         XCTAssertEqual(enablement.enabledIDs, ["claude", "grok"])
     }
 
+    func testFailedStorageMigrationRetriesBeforeFreshInstallDetection() async throws {
+        let domain = "EgasuTests.FirstRunStorage.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(domain)
+        defer {
+            defaults.removePersistentDomain(forName: domain)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let legacy = root.appendingPathComponent("support/OpenUsage")
+        try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
+        try Data("state".utf8).write(to: legacy.appendingPathComponent("codex-weekly-timer-attempts.json"))
+        let target = root.appendingPathComponent("support/egasu")
+        try Data("blocked".utf8).write(to: target)
+        let environment = StorageMigration.Environment(
+            namespace: StorageNamespace(bundleIdentifier: "com.kimchanhyung98.openusage"),
+            applicationSupportRoot: root.appendingPathComponent("support"),
+            configRoot: root.appendingPathComponent("config"), defaults: defaults,
+            pending: PendingKeychainMigration(defaults: defaults))
+        XCTAssertTrue(SettingsMigrator.isFreshInstall(defaults: defaults, domainName: domain))
+        XCTAssertThrowsError(try StorageMigration.runIfNeeded(environment))
+        XCTAssertTrue(SettingsMigrator.isFreshInstall(defaults: defaults, domainName: domain))
+        XCTAssertNil(defaults.object(forKey: StorageMigration.configCompletedKey))
+        XCTAssertNil(defaults.object(forKey: SettingsMigrator.schemaVersionKey))
+
+        try FileManager.default.removeItem(at: target)
+        let captured = SettingsMigrator.isFreshInstall(defaults: defaults, domainName: domain)
+        XCTAssertTrue(try StorageMigration.runIfNeeded(environment))
+        XCTAssertFalse(SettingsMigrator.isFreshInstall(defaults: defaults, domainName: domain))
+        SettingsMigrator.migrate(defaults: defaults, domainName: domain, capturedFreshInstall: captured)
+        let enablement = ProviderEnablementStore(defaults: defaults)
+        XCTAssertNil(enablement.enabledIDs)
+        let task = FirstRunSeeder.seedIfNeeded(
+            isFreshInstall: captured,
+            providers: [stub("claude", hasCredentials: false), stub("grok", hasCredentials: true)],
+            enablement: enablement, onboarding: OnboardingStore(defaults: defaults))
+        XCTAssertNotNil(task)
+        await task?.value
+        XCTAssertEqual(enablement.enabledIDs, ["grok"])
+    }
+
+    func testCLIFirstMigrationStillDetectsFreshInstallWithoutRestoringDeletedKey() async throws {
+        let domain = "EgasuTests.FirstRunCLI.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(domain)
+        defer {
+            defaults.removePersistentDomain(forName: domain)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let config = root.appendingPathComponent("config")
+        let legacy = config.appendingPathComponent("openusage/openrouter.json")
+        try FileManager.default.createDirectory(
+            at: legacy.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("key".utf8).write(to: legacy)
+        let environment = StorageMigration.Environment(
+            namespace: StorageNamespace(bundleIdentifier: "com.kimchanhyung98.openusage"),
+            applicationSupportRoot: root.appendingPathComponent("support"),
+            configRoot: config, defaults: defaults, pending: PendingKeychainMigration(defaults: defaults))
+        try StorageMigration.runForCLI(environment)
+        let target = config.appendingPathComponent("egasu/openrouter.json")
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "key")
+        XCTAssertTrue(defaults.bool(forKey: StorageMigration.configCompletedKey))
+        XCTAssertTrue(SettingsMigrator.isFreshInstall(defaults: defaults, domainName: domain))
+        defaults.set("existing", forKey: "openusage.layout.v1")
+        XCTAssertFalse(SettingsMigrator.isFreshInstall(defaults: defaults, domainName: domain))
+        defaults.removeObject(forKey: "openusage.layout.v1")
+        try FileManager.default.removeItem(at: target)
+        try StorageMigration.runForCLI(environment)
+        let captured = SettingsMigrator.isFreshInstall(defaults: defaults, domainName: domain)
+        XCTAssertTrue(try StorageMigration.runIfNeeded(environment))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target.path))
+        SettingsMigrator.migrate(defaults: defaults, domainName: domain, capturedFreshInstall: captured)
+        let enablement = ProviderEnablementStore(defaults: defaults)
+        let onboarding = OnboardingStore(defaults: defaults)
+        let task = FirstRunSeeder.seedIfNeeded(
+            isFreshInstall: captured,
+            providers: [stub("claude", hasCredentials: false), stub("grok", hasCredentials: true)],
+            enablement: enablement, onboarding: onboarding)
+        XCTAssertNotNil(task)
+        await task?.value
+        XCTAssertEqual(enablement.enabledIDs, ["grok"])
+        XCTAssertTrue(onboarding.isCustomizeHintPending)
+        XCTAssertFalse(SettingsMigrator.isFreshInstall(defaults: defaults, domainName: domain))
+    }
+
     func testNothingDetectedKeepsClaudeAndCodexFallback() async {
         let enablement = ProviderEnablementStore(defaults: makeDefaults("none"))
         let onboarding = OnboardingStore(defaults: makeDefaults("none-onboarding"))

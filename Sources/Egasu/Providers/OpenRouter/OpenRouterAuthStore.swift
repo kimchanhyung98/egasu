@@ -21,7 +21,7 @@ enum OpenRouterAuthError: Error, LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .missingKey:
-            return "No OpenRouter API key. Set OPENROUTER_API_KEY or add it to ~/.config/openusage/openrouter.json."
+            return "No OpenRouter API key. Set OPENROUTER_API_KEY or add it to \(OpenRouterAuthStore.configPaths[0])."
         case .invalidKey:
             return "OpenRouter API key invalid. Check your key at openrouter.ai/keys."
         case .saveFailed:
@@ -38,7 +38,7 @@ enum OpenRouterAuthError: Error, LocalizedError, Equatable {
 struct OpenRouterAuthStore: Sendable {
     /// 순서대로 확인하는 config 파일 — 처음 읽히는 key 사용. JSON(`apiKey`/`api_key`/`key`) 또는 key만 담긴 plain text.
     static let configPaths = [
-        "~/.config/openusage/openrouter.json",
+        StorageNamespace.current.configPath("openrouter.json"),
         "~/.config/openrouter/key.json"
     ]
     /// 순서대로 확인하는 환경 변수 — `OPENROUTER_API_KEY`가 사실상 표준.

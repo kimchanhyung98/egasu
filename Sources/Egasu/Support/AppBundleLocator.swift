@@ -1,11 +1,21 @@
 import Foundation
-import Egasu
 
-struct AppBundleLocator: Sendable {
-    let bundleIdentifier: String
-    let version: String?
+public struct AppBundleLocator: Sendable {
+    public let bundleIdentifier: String
+    public let version: String?
 
-    static func locate(
+    /// 앱은 자체 식별자, 번들 식별자가 없는 CLI는 포함 앱과 설정 도메인 재정의를 사용.
+    public static let current: AppBundleLocator = {
+        if let identifier = Bundle.main.bundleIdentifier {
+            return AppBundleLocator(
+                bundleIdentifier: identifier,
+                version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+            )
+        }
+        return locate()
+    }()
+
+    public static func locate(
         executableURL: URL = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0]),
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> AppBundleLocator {

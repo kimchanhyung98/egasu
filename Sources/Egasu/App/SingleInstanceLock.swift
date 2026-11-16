@@ -24,7 +24,7 @@ enum SingleInstanceLock {
         }
     }
 
-    /// `Application Support/OpenUsage/<bundle id>.lock` 잠금 — 앱 bundle 위치와 무관하게 안정적인 경로.
+    /// 구버전과 같은 `Application Support/OpenUsage/<bundle id>.lock` 잠금 — 저장 폴더 이전 대상에서 제외.
     static func acquire(bundleIdentifier: String) -> Acquisition {
         guard let appSupport = FileManager.default.urls(
             for: .applicationSupportDirectory,
@@ -33,7 +33,7 @@ enum SingleInstanceLock {
             return .failed("Application Support directory unavailable")
         }
         let lockURL = appSupport
-            .appendingPathComponent("OpenUsage", isDirectory: true)
+            .appendingPathComponent(StorageNamespace.legacyName, isDirectory: true)
             .appendingPathComponent("\(bundleIdentifier).lock")
         return acquire(at: lockURL)
     }

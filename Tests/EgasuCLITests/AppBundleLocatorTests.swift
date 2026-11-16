@@ -1,5 +1,5 @@
 import XCTest
-@testable import EgasuCLI
+@testable import Egasu
 
 final class AppBundleLocatorTests: XCTestCase {
     func testFindsContainingAppThroughHelperSymlink() throws {
@@ -11,7 +11,7 @@ final class AppBundleLocatorTests: XCTestCase {
         try FileManager.default.createDirectory(at: helpers, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
         let plist: [String: Any] = [
-            "CFBundleIdentifier": "com.kimchanhyung98.openusage",
+            "CFBundleIdentifier": "com.kimchanhyung98.openusage.dev",
             "CFBundleShortVersionString": "1.2.3"
         ]
         let plistData = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
@@ -27,8 +27,12 @@ final class AppBundleLocatorTests: XCTestCase {
             environment: [:]
         )
 
-        XCTAssertEqual(located.bundleIdentifier, "com.kimchanhyung98.openusage")
+        XCTAssertEqual(located.bundleIdentifier, "com.kimchanhyung98.openusage.dev")
         XCTAssertEqual(located.version, "1.2.3")
+        let namespace = StorageNamespace(bundleIdentifier: located.bundleIdentifier)
+        XCTAssertEqual(namespace.name, "egasu.dev")
+        XCTAssertEqual(namespace.configPath("openrouter.json"), "~/.config/egasu.dev/openrouter.json")
+        XCTAssertEqual(namespace.applicationSupportDirectory().lastPathComponent, "egasu.dev")
 
         let legacyHelper = helpers.appendingPathComponent("openusage")
         try FileManager.default.createSymbolicLink(atPath: legacyHelper.path, withDestinationPath: "egasu")
@@ -47,6 +51,7 @@ final class AppBundleLocatorTests: XCTestCase {
         )
 
         XCTAssertEqual(located.bundleIdentifier, "com.example.dev")
+        XCTAssertEqual(StorageNamespace(bundleIdentifier: located.bundleIdentifier).name, "egasu.com.example.dev")
     }
 
     func testLegacyEnvironmentStillSelectsDefaultsSuite() {

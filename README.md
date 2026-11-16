@@ -39,6 +39,9 @@ Most providers read the credentials already on your machine (keychain, auth file
 - **Customize.** Turn providers and metrics on or off, choose which rows stay Always Visible or On Demand, and drag-reorder both.
 - **Stale-while-revalidate.** Cached values display instantly at launch; refresh runs every 5 minutes (15 minutes for Claude).
 - **[One-shot CLI](docs/cli.md).** Agents can read stable limit JSON through the same five-minute cache (15 minutes for Claude) with `egasu`, or bypass freshness with `egasu --force`; the menu-bar app does not need to be running.
+  CLI가 포함된 앱의 설정·저장 경로 사용.
+  첫 조회 전에 기존 API 키와 Claude의 조회 대기·마지막 정상 사용량 이전.
+  기존 Claude 조회가 진행 중이면 완료 후 재시도.
 - **[Local HTTP API](docs/local-http-api.md).** Other local apps can read machine-friendly limits from `127.0.0.1:6736/v1/limits`; the legacy `/v1/usage` UI contract remains supported. It is loopback-only, rejects browser-origin requests, and never serves credentials.
 - **[Proxy support](docs/proxy.md).** Route provider requests through SOCKS5 or HTTP(S) via `~/.openusage/config.json`.
 - **Native settings.** Launch at login, global shortcut, icon style, theme, density, 12/24-hour time — see [Settings](docs/settings.md).

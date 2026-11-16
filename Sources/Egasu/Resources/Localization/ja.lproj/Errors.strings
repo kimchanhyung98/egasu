@@ -120,8 +120,8 @@
 "Local usage history is unavailable. Showing the last successful totals." = "ローカルの使用履歴を読み込めません。最後に正常取得した合計を表示しています。";
 "Multiple Keychain items matched the service; no credential was changed." = "サービスに一致するキーチェーン項目が複数あったため、認証情報は変更されませんでした。";
 "No %@ sign-in was found to import." = "インポートできる%@のログイン情報が見つかりませんでした。";
-"No OpenRouter API key. Set OPENROUTER_API_KEY or add it to ~/.config/openusage/openrouter.json." = "OpenRouter API キーがありません。OPENROUTER_API_KEY を設定するか、~/.config/openusage/openrouter.json にキーを追加してください。";
-"No Z.ai API key. Set ZAI_API_KEY or add it to ~/.config/openusage/zai.json." = "Z.ai API キーがありません。ZAI_API_KEY を設定するか、~/.config/openusage/zai.json にキーを追加してください。";
+"No OpenRouter API key. Set OPENROUTER_API_KEY or add it to %@." = "OpenRouter API キーがありません。OPENROUTER_API_KEY を設定するか、%@ にキーを追加してください。";
+"No Z.ai API key. Set ZAI_API_KEY or add it to %@." = "Z.ai API キーがありません。ZAI_API_KEY を設定するか、%@ にキーを追加してください。";
 "No account matches '%@'." = "'%@' に一致するアカウントがありません。";
 "No active Cursor subscription." = "有効な Cursor サブスクリプションがありません。";
 "No active GLM Coding Plan. Subscribe at z.ai/subscribe to see usage." = "有効な GLM Coding Plan がありません。使用量を表示するには、z.ai/subscribe で登録してください。";
@@ -284,3 +284,5 @@
 "Some local usage has unsupported pricing details. Cost totals may be unavailable." = "一部のローカル使用記録の価格情報に対応していません。費用の合計を表示できない場合があります。";
 "Some Antigravity models have no price. Cost totals may be unavailable." = "一部の Antigravity モデルの価格を確認できません。費用の合計を表示できない場合があります。";
 "Some Kiro usage has no recorded credit cost. Affected periods show tokens only." = "一部の Kiro 使用記録にクレジット費用がありません。該当する期間はトークンのみ表示します。";
+
+"Saved app data could not be moved. Check the app log and try again." = "保存されたアプリデータを移動できませんでした。アプリのログを確認して再試行してください。";

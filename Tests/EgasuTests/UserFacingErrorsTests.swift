@@ -42,6 +42,52 @@ final class UserFacingErrorsTests: XCTestCase {
         }
     }
 
+    func testOpenRouterMissingKeyGuidanceUsesTheActualConfigPathInEveryLanguage() throws {
+        let files = FakeFiles()
+        let store = OpenRouterAuthStore(files: files, environment: FakeEnvironment())
+        let path = StorageNamespace.current.configPath("openrouter.json")
+        let error = OpenRouterAuthError.missingKey
+        let diagnostic = "No OpenRouter API key. Set OPENROUTER_API_KEY or add it to \(path)."
+
+        try store.saveAPIKey("openrouter-guidance-test")
+
+        XCTAssertEqual(files.files[path], #"{"apiKey":"openrouter-guidance-test"}"#)
+        XCTAssertEqual(store.loadAPIKey()?.apiKey, "openrouter-guidance-test")
+        for (language, expected) in [
+            (LanguageSetting.english, diagnostic),
+            (.korean, "OpenRouter API 키가 없습니다. OPENROUTER_API_KEY를 설정하거나 \(path)에 키를 추가하세요."),
+            (.japanese, "OpenRouter API キーがありません。OPENROUTER_API_KEY を設定するか、\(path) にキーを追加してください。")
+        ] {
+            L10n.withLanguage(language) {
+                XCTAssertEqual(UserFacingErrors.message(error), expected)
+                XCTAssertEqual(error.localizedDescription, diagnostic)
+            }
+        }
+    }
+
+    func testZAIMissingKeyGuidanceUsesTheActualConfigPathInEveryLanguage() throws {
+        let files = FakeFiles()
+        let store = ZAIAuthStore(files: files, environment: FakeEnvironment())
+        let path = StorageNamespace.current.configPath("zai.json")
+        let error = ZAIAuthError.missingKey
+        let diagnostic = "No Z.ai API key. Set ZAI_API_KEY or add it to \(path)."
+
+        try store.saveAPIKey("zai-guidance-test")
+
+        XCTAssertEqual(files.files[path], #"{"apiKey":"zai-guidance-test"}"#)
+        XCTAssertEqual(store.loadAPIKey()?.apiKey, "zai-guidance-test")
+        for (language, expected) in [
+            (LanguageSetting.english, diagnostic),
+            (.korean, "Z.ai API 키가 없습니다. ZAI_API_KEY를 설정하거나 \(path)에 키를 추가하세요."),
+            (.japanese, "Z.ai API キーがありません。ZAI_API_KEY を設定するか、\(path) にキーを追加してください。")
+        ] {
+            L10n.withLanguage(language) {
+                XCTAssertEqual(UserFacingErrors.message(error), expected)
+                XCTAssertEqual(error.localizedDescription, diagnostic)
+            }
+        }
+    }
+
     func testProcessOutputReadErrorTranslatesWithoutChangingDiagnostics() {
         let error = ProcessRunnerError.outputReadFailed
         let diagnostic = "Could not read output from the process."

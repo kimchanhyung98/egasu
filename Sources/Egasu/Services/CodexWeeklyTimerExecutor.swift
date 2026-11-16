@@ -67,7 +67,7 @@ final class CodexWeeklyTimerExecutor: CodexWeeklyTimerExecuting {
         processRunner: any StreamingProcessRunning = StreamingProcessRunner(),
         executableResolver: @escaping @MainActor () -> URL? = CodexWeeklyTimerExecutor.resolveExecutable,
         baseDirectory: URL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsage.CodexWeeklyTimer", isDirectory: true),
+            .appendingPathComponent("\(StorageNamespace.current.name).CodexWeeklyTimer", isDirectory: true),
         timeout: TimeInterval = 60
     ) {
         self.processRunner = processRunner

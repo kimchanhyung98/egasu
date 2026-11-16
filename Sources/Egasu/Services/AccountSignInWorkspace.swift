@@ -1,6 +1,6 @@
 import Foundation
 
-/// Shared Runtime Home을 건드리지 않고 공식 provider sign-in을 완료하는 앱 소유 home — `~/Library/Application Support/OpenUsage/AccountSignIn/<family>/<profile-id>/`.
+/// Shared Runtime Home을 건드리지 않고 공식 provider sign-in을 완료하는 앱 소유 home — `~/Library/Application Support/<저장 이름>/AccountSignIn/<family>/<profile-id>/`.
 /// 계정 경로 아래 로그인 시도별 작업 공간 배치, 편집 가능 필드로 노출 금지. 공식 로그인·re-login·identity 검증 전용 — 일반 CLI 세션 금지.
 /// 내부 `FileManager` delegate 미사용 — credential read task로 안전하게 전달 가능.
 struct AccountSignInWorkspace: @unchecked Sendable {
@@ -39,7 +39,7 @@ struct AccountSignInWorkspace: @unchecked Sendable {
             ).first ?? fileManager.homeDirectoryForCurrentUser
                 .appendingPathComponent("Library/Application Support")
             let egasuDirectory = applicationSupport
-                .appendingPathComponent("OpenUsage", isDirectory: true)
+                .appendingPathComponent(StorageNamespace.current.name, isDirectory: true)
                 .standardizedFileURL
             let accountSignInDirectory = egasuDirectory
                 .appendingPathComponent("AccountSignIn", isDirectory: true)

@@ -3,6 +3,24 @@ import XCTest
 
 @MainActor
 final class SingleInstanceLockTests: XCTestCase {
+    func testNewVersionHonorsTheLegacyBundleLock() throws {
+        let bundleID = "EgasuTests.SingleInstance.\(UUID().uuidString)"
+        let appSupport = try XCTUnwrap(
+            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first)
+        let legacyURL = appSupport.appendingPathComponent("OpenUsage/\(bundleID).lock")
+        let renamedURL = appSupport.appendingPathComponent("\(StorageNamespace.current.name)/\(bundleID).lock")
+        defer {
+            try? FileManager.default.removeItem(at: legacyURL)
+            try? FileManager.default.removeItem(at: renamedURL)
+        }
+        guard case .acquired(let legacyToken) = SingleInstanceLock.acquire(at: legacyURL) else {
+            return XCTFail("legacy version should acquire its bundle lock")
+        }
+        withExtendedLifetime(legacyToken) {
+            assertAlreadyRunning(SingleInstanceLock.acquire(bundleIdentifier: bundleID))
+        }
+    }
+
     func testSecondAcquisitionIsRejectedUntilTheFirstTokenIsReleased() throws {
         let lockURL = makeLockURL()
         var token: SingleInstanceLock.Token?

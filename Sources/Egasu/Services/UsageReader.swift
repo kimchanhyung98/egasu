@@ -40,6 +40,7 @@ public struct UsageReader {
         // snapshot 카드는 앱 전용 — one-shot CLI는 앱 생성 Keychain item 접근 금지. 테스트 provider 주입 시 skip.
         // login-shell 캡처를 먼저 warm — MainActor read는 캡처를 트리거하지 않으므로, snapshot 없는 CLI에서 identity와 usage가 다른 home을 읽는 분열 방지.
         if providersOverride == nil {
+            try StorageMigration.runForCLI(.init(defaults: defaults))
             await Task.detached(priority: .userInitiated) {
                 _ = LoginShellEnvironment.shared.ensureCaptured()
             }.value
