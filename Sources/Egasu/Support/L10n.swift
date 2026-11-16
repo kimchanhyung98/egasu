@@ -59,7 +59,9 @@ enum L10n {
         try $languageOverride.withValue(language, operation: operation)
     }
 
-    static func withLanguage<Result>(_ language: LanguageSetting, operation: () async throws -> Result) async rethrows -> Result {
+    nonisolated(nonsending) static func withLanguage<Result>(
+        _ language: LanguageSetting, operation: nonisolated(nonsending) () async throws -> Result
+    ) async rethrows -> Result {
         try await $languageOverride.withValue(language, operation: operation)
     }
 }

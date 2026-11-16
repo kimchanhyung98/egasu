@@ -104,7 +104,7 @@ final class ProviderAccountAssemblyTests: XCTestCase {
         )
         let discovery = makeDiscovery(
             files: [
-                "/Users/dev/.claude-work/.claude.json": #"{"oauthAccount": {"accountUuid": "ACCT-2", "emailAddress": "work@example.com", "organizationName": "Sunstory"}}"#,
+                "/Users/dev/.claude-work/.claude.json": #"{"oauthAccount": {"accountUuid": "ACCT-2", "emailAddress": "work@example.com", "organizationName": "Company"}}"#,
                 "/Users/dev/.claude-work/.credentials.json": #"{"claudeAiOauth": {"accessToken": "at-2"}}"#,
             ],
             subdirectories: ["/Users/dev/.claude-work"]

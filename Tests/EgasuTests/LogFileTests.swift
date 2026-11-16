@@ -1,7 +1,8 @@
 import XCTest
+import Testing
 @testable import Egasu
 
-/// log 경로 suffix와 single-archive rotation·launch trim 검증 — 모든 file I/O는 test별 temp dir 한정
+/// 테스트 로그 격리와 single-archive rotation·launch trim 검증 — 파일 쓰기는 임시 폴더 한정.
 final class LogFileTests: XCTestCase {
     private var tempDir: URL!
 
@@ -18,14 +19,29 @@ final class LogFileTests: XCTestCase {
 
     func testResolvedPathEndsWithExpectedSuffix() {
         XCTAssertTrue(
-            LogFile.url.path.hasSuffix("Logs/egasu/egasu.log"),
-            "unexpected log path: \(LogFile.url.path)"
+            LogFile.defaultDirectory().path.hasSuffix("Logs/egasu"),
+            "unexpected app log directory: \(LogFile.defaultDirectory().path)"
         )
+    }
+
+    func testDefaultTestSinkKeepsDiagnosticsOutsideTheAppLog() throws {
+        let directory = LogFile.url.deletingLastPathComponent().standardizedFileURL
+        let temporary = FileManager.default.temporaryDirectory.standardizedFileURL
+        let isolated =
+            directory.path.hasPrefix(temporary.path + "/")
+            && directory != LogFile.defaultDirectory().standardizedFileURL
+        let sink = try XCTUnwrap(isolated ? LogFile.shared : nil, "Test logging must not write to the app log")
+        XCTAssertTrue(AppLog.sink === sink)
+
+        let marker = "TEST_LOG_ISOLATION_\(UUID().uuidString)"
+        AppLog.error(.config, marker)
+        XCTAssertTrue(try String(contentsOf: sink.fileURL, encoding: .utf8).contains(marker))
     }
 
     func testAdvertisedURLMatchesSharedSinkPath() {
         // 앱이 노출하는 `LogFile.url`과 shared sink의 실제 쓰기 경로 일치 — 두 경로 divergence 방지
         XCTAssertEqual(LogFile.url, LogFile.shared.fileURL)
+        XCTAssertEqual(LogFile.url.lastPathComponent, "egasu.log")
     }
 
     func testAppendCreatesFileAndWritesLine() throws {
@@ -124,5 +140,15 @@ final class LogFileTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: archiveURL.path), "oversize file should be rotated on open")
         let mainSize = (try FileManager.default.attributesOfItem(atPath: mainURL.path)[.size] as? Int) ?? -1
         XCTAssertEqual(mainSize, 0, "fresh main file starts empty after launch trim")
+    }
+}
+
+struct LogFileSwiftTestingTests {
+    @Test func defaultSinkIsIsolatedFromTheAppLog() throws {
+        let directory = LogFile.url.deletingLastPathComponent().standardizedFileURL
+        let temporary = FileManager.default.temporaryDirectory.standardizedFileURL
+        try #require(directory.path.hasPrefix(temporary.path + "/"))
+        #expect(directory != LogFile.defaultDirectory().standardizedFileURL)
+        #expect(LogFile.url == LogFile.shared.fileURL)
     }
 }

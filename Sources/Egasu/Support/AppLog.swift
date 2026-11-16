@@ -24,7 +24,7 @@ enum LogTag: String, Sendable {
 
 /// 통합 로깅 파사드 — `LogLevelSetting` 하나가 `os.Logger`와 `LogFile` 두 sink의 공통 level floor.
 /// floor 미달 라인은 메시지 생성·redaction 전에 드롭되고, error(severity 0)는 floor와 무관하게 항상 기록.
-/// `redactLogMessage`는 URL/body를 모름 — URL이나 응답 body를 로그하는 호출부는 `LogRedaction.redactURL`/`bodyPreview`로 선-redaction 필수.
+/// URL은 호출부에서 `LogRedaction.redactURL`로 먼저 마스킹. HTTP 헤더·본문은 기록 금지.
 enum AppLog {
     private enum Level: Int {
         case error = 0
@@ -59,7 +59,7 @@ enum AppLog {
     private static let loggerLock = NSLock()
     private nonisolated(unsafe) static var loggers: [String: Logger] = [:]
 
-    /// file sink. 테스트에서 임시 디렉터리로 주입 가능; production은 공유 `~/Library/Logs/egasu/egasu.log` appender.
+    /// 기본 기록기는 앱 로그와 테스트 로그를 분리하며, 개별 테스트에서 임시 기록기 주입 가능.
     nonisolated(unsafe) static var sink: LogFile = .shared
 
     // MARK: - Lifecycle

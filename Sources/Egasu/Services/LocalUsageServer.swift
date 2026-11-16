@@ -42,9 +42,13 @@ final class LocalUsageServer {
                                        localContext: "Local API listener failed; disabled for this session")
             }
         }
-        listener.newConnectionHandler = { connection in
+        listener.newConnectionHandler = { [weak self] connection in
             Task { @MainActor [weak self] in
-                self?.accept(connection)
+                guard let self else {
+                    connection.cancel()
+                    return
+                }
+                self.accept(connection)
             }
         }
         listener.start(queue: queue)
@@ -64,7 +68,8 @@ final class LocalUsageServer {
 
     /// 요청 head 끝(`\r\n\r\n`)까지 read — GET/OPTIONS body는 무관, router는 head만 필요.
     private func receiveHead(_ connection: NWConnection, buffered: Data) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: Self.headLimit) { data, _, isComplete, error in
+        connection.receive(minimumIncompleteLength: 1, maximumLength: Self.headLimit) {
+            [weak self] data, _, isComplete, error in
             Task { @MainActor [weak self] in
                 guard let self else {
                     connection.cancel()

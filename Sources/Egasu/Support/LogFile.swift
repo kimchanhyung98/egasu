@@ -5,7 +5,14 @@ import os
 /// 독립 기록기·프로세스의 append와 rotation을 동일 lock 파일로 직렬화.
 /// `@unchecked Sendable`: 인스턴스 상태는 `NSLock`, 공유 파일은 `flock`으로 보호.
 final class LogFile: @unchecked Sendable {
-    static let shared = LogFile(directory: defaultDirectory(), fileName: "egasu.log")
+    /// 테스트 프로세스의 로그는 임시 폴더에 보존해 실제 앱 로그와 분리.
+    static let shared = LogFile(
+        directory: NSClassFromString("XCTestCase") == nil
+            ? defaultDirectory()
+            : FileManager.default.temporaryDirectory
+                .appendingPathComponent("EgasuTests.Logs.\(UUID().uuidString)", isDirectory: true),
+        fileName: "egasu.log"
+    )
     static let url: URL = shared.fileURL
     static let defaultMaxBytes = 10_000_000
 
