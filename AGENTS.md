@@ -87,6 +87,9 @@ Every PR description must follow this structure so reviewers can skim it quickly
 - Add a regression test when fixing a bug, where it fits.
 - Keep files under ~500 LOC; split or refactor as needed.
 - No new dependencies without justification.
+- Swift 포매터는 `.swift-format` 규칙 사용.
+  베타 작업 중 전체 포매팅과 자동 트리거는 보류.
+  베타 종료 후 `Format Swift` 워크플로를 `main`에서 수동 실행.
 - When adding a provider, follow the conventions in "## Providers".
 
 ### Comments

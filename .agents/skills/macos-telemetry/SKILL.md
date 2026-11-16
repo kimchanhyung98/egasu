@@ -57,7 +57,9 @@ Use feature-specific categories like `Windowing`, `Commands`, `MenuBar`, `Sideba
 
 3. Build and run the app.
    - Use `macos-build-run-debug` for the build/run loop.
-   - If `script/build_and_run.sh` exists, prefer `./script/build_and_run.sh --telemetry` for live telemetry checks or `./script/build_and_run.sh --logs` for broader process logs.
+   - egasu의 프로세스 로그 확인은 `./script/build_and_run.sh logs` 사용.
+   - `--logs`·`--telemetry` 인자는 미지원.
+   - subsystem/category 필터가 필요하면 `./script/build_and_run.sh run`으로 실행 후 아래 `log stream` 명령 사용.
    - Exercise the UI or command path that should emit telemetry.
 
 4. Read runtime logs and verify the event fired.

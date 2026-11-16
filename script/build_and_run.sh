@@ -3,7 +3,7 @@ set -euo pipefail
 
 # egasu 빌드 후 dist/에 서명된 .app 번들 준비 및 해당 위치에서 실행 — /Applications 설치 없음.
 # 개발 빌드 특성:
-#   - 안정적인 Apple Development ID로 서명해 재빌드 후에도 키체인·권한 허용 유지
+#   - 고정한 서명 ID 또는 Apple Development ID로 서명해 재빌드 후에도 키체인·권한 허용 유지
 #     (macOS는 설치 위치가 아닌 서명 ID와 bundle ID를 기준으로 권한 관리)
 #   - 전용 bundle ID(com.kimchanhyung98.openusage.dev) 사용으로 운영 앱의 설정·키체인과 격리.
 #     운영 앱 데이터로 실행하려면 아래 BUNDLE_ID를 com.kimchanhyung98.openusage로 지정
@@ -14,7 +14,8 @@ set -euo pipefail
 # 환경 변수:
 #   CODESIGN_IDENTITY            서명 ID 재정의(정확한 이름 또는 hash)
 #   CONFIG                       "release"(기본값) 또는 "debug"
-#   EGASU_DEV_VERSION            로컬 개발 번들 버전 재정의. 릴리스 버전과 구분하도록 `-dev` 접미사 유지
+#   EGASU_DEV_VERSION            로컬 개발 번들 버전 재정의. 릴리스 버전과 구분하도록 `-dev` 접미사 유지.
+#                                미지정 시 `.env.local.dev-version`에 고정한 값, 없으면 가장 가까운 릴리스 태그
 #   ICLOUD_PROVISIONING_PROFILE  개발용 provisioning profile 재정의.
 #                                미지정 시 일치하는 최신 설치 profile 자동 선택
 
@@ -29,20 +30,34 @@ if ! git -C "$ROOT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
   exit 1
 fi
 
+# 이 Mac에서 고른 서명 신원은 재빌드 사이에 유지. 환경 변수로 명시한 값이 우선.
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-}"
+if [ -z "$CODESIGN_IDENTITY" ] && [ -f "$ROOT_DIR/.env.local.codesign-identity" ]; then
+  CODESIGN_IDENTITY=$(cat "$ROOT_DIR/.env.local.codesign-identity")
+  if [ -z "$CODESIGN_IDENTITY" ]; then
+    echo ".env.local.codesign-identity is empty; set a signing identity or remove the file" >&2
+    exit 1
+  fi
+fi
+if [ -n "$CODESIGN_IDENTITY" ] && [ "$CODESIGN_IDENTITY" != "-" ]; then
+  if ! /usr/bin/security find-identity -p codesigning -v \
+    | /usr/bin/awk -v identity="$CODESIGN_IDENTITY" '
+        $2 == identity || index($0, "\"" identity "\"") { found = 1 }
+        END { exit !found }
+      '; then
+    echo "Configured signing identity is unavailable: $CODESIGN_IDENTITY" >&2
+    exit 1
+  fi
+fi
+
 TARGET_NAME="egasu"                     # SwiftPM target 및 binary 이름
 APP_DISPLAY="egasu"                     # 사용자 노출 앱 이름
 BUNDLE_ID="${BUNDLE_ID:-com.kimchanhyung98.openusage.dev}"
 ICLOUD_CONTAINER_ID="${ICLOUD_CONTAINER_ID:-iCloud.${BUNDLE_ID}}"
 MIN_SYSTEM_VERSION="15.0"
-# 로컬 번들은 가장 가까운 릴리스 태그 사용. 테스트용 재정의 값도 동일한 태그 검증 적용.
-# 로컬 번들이 릴리스 버전을 나타내지 않도록 -dev 접미사 항상 유지.
-EGASU_DEV_VERSION="${EGASU_DEV_VERSION:-${OPENUSAGE_DEV_VERSION:-}}"
-if [ -n "$EGASU_DEV_VERSION" ]; then
-  DEV_VERSION_OVERRIDE="${EGASU_DEV_VERSION#v}"
-  APP_VERSION="$(egasu_version_from_tag "v${DEV_VERSION_OVERRIDE%-dev}")-dev"
-else
-  APP_VERSION="$(egasu_development_version "$ROOT_DIR")"
-fi
+# 로컬 번들 버전은 환경 변수로 명시한 값, 이 checkout에 고정한 `.env.local.dev-version`, 가장 가까운 릴리스 태그 순서.
+# 명시·고정한 값도 동일한 태그 검증 적용. 로컬 번들이 릴리스 버전을 나타내지 않도록 -dev 접미사 항상 유지.
+APP_VERSION="$(egasu_local_development_version "$ROOT_DIR" "${EGASU_DEV_VERSION:-${OPENUSAGE_DEV_VERSION:-}}")"
 APP_BUILD="$(git -C "$ROOT_DIR" rev-list --count HEAD)"
 DIST_DIR="$ROOT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/$APP_DISPLAY.app"
@@ -207,9 +222,7 @@ else
   echo "WARNING: no matching installed iCloud provisioning profile was found; iCloud Sync will be unavailable in this build." >&2
 fi
 
-# ad-hoc cdhash 변경으로 재빌드마다 권한 요청이 다시 나타나지 않도록 안정적인 Apple Development ID 선택.
-# 일치하는 ID가 없을 때만 ad-hoc으로 fallback.
-CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-}"
+# 고정 설정이 없을 때만 Apple Development ID 자동 선택, 없으면 ad-hoc.
 if [ -z "$CODESIGN_IDENTITY" ]; then
   CODESIGN_IDENTITY=$(/usr/bin/security find-identity -p codesigning -v 2>/dev/null \
     | /usr/bin/awk -F\" '/Apple Development:/ { print $2; exit }')

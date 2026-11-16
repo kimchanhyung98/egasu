@@ -1,5 +1,13 @@
 # Build Script
 
+egasu의 실행 계약은 기존 `script/build_and_run.sh` 기준.
+지원 모드는 `run|build|logs|verify`이며 기본값은 `run`.
+`build`는 개발 앱 종료 후 빌드·배치·서명만 수행하고, 나머지 모드는 실행까지 수행.
+로그는 `logs`, 실행 확인은 `verify` 사용.
+세부 텔레메트리는 실행 후 `log stream`으로 확인하고, 디버거는 개발 앱 PID를 확인한 뒤 `lldb -p <개발 앱 PID>`로 연결.
+아래 예시는 실행 스크립트가 없는 새 프로젝트에만 적용.
+egasu의 기존 스크립트에는 서명·iCloud·CLI 배치가 있으므로 이 예시로 교체하지 않음.
+
 Canonical shape for the macOS build plugin's local `script/build_and_run.sh`.
 
 When a project does not already have an established macOS run entrypoint:
@@ -7,7 +15,7 @@ When a project does not already have an established macOS run entrypoint:
 1. Create one project-local `script/build_and_run.sh`.
 2. Make it executable.
 3. Use it as the single kill + build + run entrypoint.
-4. Support optional `--debug`, `--logs`, `--telemetry`, and `--verify` flags.
+4. `run|build|logs|verify` 모드 지원.
 
 ## `script/build_and_run.sh`
 
@@ -36,24 +44,20 @@ case "$MODE" in
   run)
     "$APP_BINARY"
     ;;
-  --debug|debug)
-    lldb -- "$APP_BINARY"
+  build)
+    :
     ;;
-  --logs|logs)
+  logs)
     "$APP_BINARY" &
     /usr/bin/log stream --info --style compact --predicate "process == \"$APP_NAME\""
     ;;
-  --telemetry|telemetry)
-    "$APP_BINARY" &
-    /usr/bin/log stream --info --style compact --predicate "subsystem == \"com.example.MyTool\""
-    ;;
-  --verify|verify)
+  verify)
     "$APP_BINARY" &
     sleep 1
     pgrep -x "$APP_NAME" >/dev/null
     ;;
   *)
-    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify]" >&2
+    echo "usage: $0 [run|build|logs|verify]" >&2
     exit 2
     ;;
 esac
@@ -120,24 +124,20 @@ case "$MODE" in
   run)
     open_app
     ;;
-  --debug|debug)
-    lldb -- "$APP_BINARY"
+  build)
+    :
     ;;
-  --logs|logs)
+  logs)
     open_app
     /usr/bin/log stream --info --style compact --predicate "process == \"$APP_NAME\""
     ;;
-  --telemetry|telemetry)
-    open_app
-    /usr/bin/log stream --info --style compact --predicate "subsystem == \"$BUNDLE_ID\""
-    ;;
-  --verify|verify)
+  verify)
     open_app
     sleep 1
     pgrep -x "$APP_NAME" >/dev/null
     ;;
   *)
-    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify]" >&2
+    echo "usage: $0 [run|build|logs|verify]" >&2
     exit 2
     ;;
 esac

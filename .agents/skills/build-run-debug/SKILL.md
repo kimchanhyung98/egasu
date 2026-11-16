@@ -7,8 +7,10 @@ description: Build, run, and debug local macOS apps and desktop executables usin
 
 ## Quick Start
 
-Use this skill to set up one project-local `script/build_and_run.sh` entrypoint,
-then use that script as the default build/run path.
+egasu에서는 기존 `script/build_and_run.sh`를 기본 빌드·실행 경로로 사용.
+지원 모드는 `run|build|logs|verify`이며 인자 생략 시 `run`.
+`--` 접두사와 `debug`·`telemetry` 모드는 미지원.
+새 프로젝트에 스크립트가 없을 때만 참조 문서의 생성 예시 적용.
 
 Prefer shell-first workflows:
 
@@ -16,7 +18,7 @@ Prefer shell-first workflows:
 - `xcodebuild` for Xcode workspaces or projects
 - `swift build` plus raw executable launch inside that script for true SwiftPM command-line tools
 - `swift build` plus project-local `.app` bundle staging and `/usr/bin/open -n` launch for SwiftPM AppKit/SwiftUI GUI apps
-- optional script flags for `lldb`, `log stream`, telemetry verification, or post-launch process checks
+- `logs`·`verify` 모드로 로그·프로세스 확인, 디버거와 세부 로그 필터는 별도 명령 사용
 
 Do not assume simulators, touch interaction, or mobile-specific tooling.
 
@@ -41,37 +43,42 @@ simulator-specific workflows onto pure macOS tasks.
      - use a generated project-local `.app` bundle for AppKit/SwiftUI GUI apps.
    - Determine the app/process name to kill before relaunching.
 
-3. Create or update `script/build_and_run.sh`.
+3. 기존 `script/build_and_run.sh`의 계약 확인.
+   - egasu에서는 기존 개발 번들·서명·iCloud·CLI 배치 흐름 유지.
+   - 아래 생성 지침은 실행 스크립트가 없는 새 프로젝트에만 적용.
    - Make the script project-specific and executable.
    - It should always:
      1. stop the existing running app/process if present,
      2. build the macOS target,
-     3. launch the freshly built app or executable.
-   - Add optional flags for debugging/log inspection:
-     - `--debug` to launch under `lldb` or attach the debugger
-     - `--logs` to stream process logs after launch
-     - `--telemetry` to stream unified logs filtered to the app subsystem/category
-     - `--verify` to launch the app and confirm the process exists with `pgrep -x <AppName>`
+     3. `build`를 제외한 모드에서 새 앱 또는 실행 파일 시작.
+   - 모드별 계약:
+     - `run`: 기존 개발 앱 종료 후 빌드·서명·실행.
+     - `build`: 기존 개발 앱 종료 후 빌드·배치·서명만 수행.
+     - `logs`: 빌드·실행 후 프로세스 로그 스트리밍.
+     - `verify`: 빌드·실행 후 `pgrep -x <AppName>`로 프로세스 존재 확인.
    - Keep the default no-flag path simple: kill, build, run.
    - Prefer writing one script that owns this workflow instead of repeatedly asking the agent to manually run `swift build`, locate the artifact, then invoke an ad hoc run command.
    - For SwiftPM GUI apps, make the script build the product, create `dist/<AppName>.app`, copy the binary to `Contents/MacOS/<AppName>`, generate a minimal `Contents/Info.plist` with `CFBundlePackageType=APPL`, `CFBundleExecutable`, `CFBundleIdentifier`, `CFBundleName`, `LSMinimumSystemVersion`, and `NSPrincipalClass=NSApplication`, then launch with `/usr/bin/open -n <bundle>`.
-   - For SwiftPM GUI `--logs` and `--telemetry`, launch the bundle with `/usr/bin/open -n` first, then stream unified logs with `/usr/bin/log stream --info ...`.
+   - SwiftPM GUI의 `logs` 모드는 `/usr/bin/open -n`으로 번들을 시작한 뒤 `/usr/bin/log stream --info ...` 실행.
    - Do not recommend direct SwiftPM executable launch for AppKit/SwiftUI GUI apps.
    - Use `references/build-script.md` as the canonical source for the script shape. Do not fork a second authoritative snippet in another skill or command.
    - Keep the run script outside app source. It belongs in `script/build_and_run.sh`, not in `App/`, `Views/`, `Models/`, `Stores/`, `Services/`, or `Support/`.
 
 4. Build and run through the script.
    - Default to `./script/build_and_run.sh`.
-   - Use `./script/build_and_run.sh --debug`, `--logs`, `--telemetry`, or `--verify` when the user asks for debugger/log/telemetry/process verification support.
+   - 로그 확인은 `./script/build_and_run.sh logs`, 실행 확인은 `./script/build_and_run.sh verify` 사용.
+   - 실행 없이 빌드·서명만 필요하면 `./script/build_and_run.sh build` 사용.
+   - 잘못된 모드는 개발 앱 종료·빌드·서명 뒤 거부되므로 지원 인자를 먼저 확인.
 
 5. Summarize failures correctly.
    - Classify the blocker as compiler, linker, signing, build settings, missing SDK/toolchain, script bug, or runtime launch.
    - Quote the smallest useful error snippet and explain what it means.
 
 6. Debug the right way.
-   - Use the script's `--logs` or `--telemetry` mode for config, entitlement, sandbox, and action-event verification.
+   - 설정·권한·동작 확인에는 `logs` 모드 사용.
+   - 더 좁은 텔레메트리 필터가 필요하면 앱 실행 후 `log stream`의 subsystem/category 조건 사용.
    - For SwiftPM GUI apps, if the app bundle launches but its window still does not come forward, check whether the entrypoint needs `NSApp.setActivationPolicy(.regular)` and `NSApp.activate(ignoringOtherApps: true)`.
-   - Use the script's `--debug` mode or direct `lldb` if symbolized crash debugging is needed.
+   - 디버거가 필요하면 개발 앱의 PID를 확인한 뒤 `lldb -p <개발 앱 PID>`로 연결.
    - If the user needs to instrument and verify specific window, sidebar, menu, or menu bar actions, switch to `telemetry`.
    - Keep evidence tight and user-facing.
 
@@ -89,10 +96,9 @@ simulator-specific workflows onto pure macOS tasks.
   - `xcodebuild -list -project <project>`
 - Build/run:
   - `./script/build_and_run.sh`
-  - `./script/build_and_run.sh --debug`
-  - `./script/build_and_run.sh --logs`
-  - `./script/build_and_run.sh --telemetry`
-  - `./script/build_and_run.sh --verify`
+  - `./script/build_and_run.sh build`
+  - `./script/build_and_run.sh logs`
+  - `./script/build_and_run.sh verify`
 
 ## References
 

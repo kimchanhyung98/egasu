@@ -71,6 +71,9 @@ swift test             # run the test suite
 ./script/build_and_run.sh   # build and launch the dev app from dist/ (no install)
 ```
 
+개발 서명과 버전은 저장소별 로컬 설정으로 고정 가능.
+설정 방법과 베타 종료 후 수동 포매팅 절차는 [디버깅 문서](/docs/debugging.md) 참조.
+
 
 
 ## Architecture
