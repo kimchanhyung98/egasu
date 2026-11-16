@@ -86,6 +86,10 @@ swift test             # run the test suite
 
 SwiftPM package, SwiftUI content hosted in an AppKit-owned `NSStatusItem` + custom key-capable `NSPanel`, Swift 6 strict concurrency. The app and CLI share one module: providers implement a small `ProviderRuntime` protocol (auth store → usage client → mapper → `ProviderSnapshot`), and both surfaces read the same normalized data — see the [architecture overview](docs/architecture.md) for how the pieces fit together and [AGENTS.md](AGENTS.md) for engineering conventions.
 
+사용량 갱신은 큐·실제 작업 수명·예약·계정별 캐시·표시 데이터 변환 모듈로 분리.
+화면과 로컬 API는 `WidgetDataStore`를 통해 같은 결과 사용.
+자세한 연결은 [사용량 처리 모듈](/docs/architecture.md#사용량-처리-모듈) 참조.
+
 ## Releasing
 
 Releases are automated: pushing a `v*` tag on `main` builds, signs, notarizes, and publishes a new version. A plain tag (`v0.10.0`) ships to everyone; a pre-release suffix (`v0.10.0-beta.1`) ships to the beta channel. The pipeline lives in [.github/workflows/release.yml](.github/workflows/release.yml), and the step-by-step is in the `release-swift` skill.

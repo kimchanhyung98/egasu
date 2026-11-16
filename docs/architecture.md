@@ -128,9 +128,8 @@ egasu에 등록한 관리형 Claude 계정은 공유 홈의 로그인과 양방�
 
 UI는 관찰 가능한 몇 개의 스토어에서 읽음:
 
-- `WidgetDataStore` — 프로바이더별 최신 스냅샷, 새로 고침, 캐시 관리.
-  이 Mac의 원본 스냅샷과 다른 Mac의 기록을 합친 표시용 스냅샷을 분리.
-  합산 결과를 이 Mac의 새 원본으로 저장하지 않아 중복 집계 방지.
+- `WidgetDataStore` — 화면·로컬 API의 표시 스냅샷, 표시 설정, 알림 입력.
+  조회·캐시·동기화 처리는 아래 사용량 처리 모듈에 위임.
 - `LayoutStore` — 어떤 지표를 표시할지, 프로바이더/지표 순서, 메뉴 막대에 별표한 지표.
   이 전부를 프로바이더당 한 벌만 저장하므로, 한 프로바이더의 모든 계정 카드가 같은 레이아웃 설정 공유.
 - 계정 표시 설정 — 공통 표시 모드 하나와 프로바이더 계열별 관리형 계정 순서를 인증·레이아웃과 분리해 로컬 저장.
@@ -160,6 +159,42 @@ UI는 관찰 가능한 몇 개의 스토어에서 읽음:
   Mac별 기록 파일 하나를 원자적으로 교체하고 동시 접근 조정.
   화면에 기기·오류 상태 제공.
   수명 주기와 실패 테스트를 위해 파일 접근 의존성 주입.
+
+## 사용량 처리 모듈
+
+외부 호출은 `WidgetDataStore`로 유지하고 내부 상태를 역할별 모듈에서 소유.
+각 모듈의 가변 상태는 MainActor에서 처리.
+
+| 모듈 | 소유한 책임 |
+|---|---|
+| `ProviderRefreshCoordinator` | 조회 묶음, 카탈로그·인증 세대, 결과 반영, 자동 제어·텔레메트리 전달 |
+| `ProviderRefreshWork` | 큐 대기, 실제 조회 작업, 시간 초과, 계정 전환 대기 |
+| `ProviderRefreshSchedule` | 다음 조회 시각, 실패 대기, 시계 변경, 타이머 후 정기 조회 |
+| `ProviderSnapshotStore` | 계정별 캐시, 마지막 정상 값, 부분 실패의 로컬 이력, iCloud 합산·내보내기 |
+| `WidgetDataResolver` | 정규화 지표·Reset Watch를 화면 표시 데이터로 변환 |
+
+```mermaid
+flowchart LR
+    UI[WidgetDataStore] --> Refresh[ProviderRefreshCoordinator]
+    Refresh --> Work[ProviderRefreshWork]
+    Refresh --> Schedule[ProviderRefreshSchedule]
+    Work --> Runtime[ProviderRuntime]
+    Refresh --> Snapshots[ProviderSnapshotStore]
+    Snapshots --> Cache[계정별 원본 캐시]
+    Snapshots --> Export[이 Mac의 이력 내보내기]
+    Peer[다른 Mac의 이력] --> Snapshots
+    Snapshots --> Render[표시용 합산]
+    Render --> UI
+    UI --> Resolver[WidgetDataResolver]
+```
+
+큐 대기 후 조회 시작 시점의 카탈로그·인증·API 키 세대 기록.
+결과 반영 전에 같은 연결인지 재확인.
+시간 초과로 호출이 먼저 끝나도 실제 작업이 끝날 때까지 큐 점유 유지.
+계정 전환 대기는 실제 작업과 결과 반영이 모두 끝난 뒤 해제.
+실패 응답에 독립된 로컬 이력이 있으면 이력만 갱신하고 기존 한도·요금제·성공 시각 유지.
+이력만 갱신한 캐시는 정상 한도 조회로 새로 인정하지 않음.
+피어 합산 결과는 표시용으로만 반환하며 캐시·내보내기·새 한도 관측 입력에 사용하지 않음.
 
 ## 새로 고침과 상태 조회
 

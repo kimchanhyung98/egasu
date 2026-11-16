@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// Provider snapshot의 staleness 힌트 — `label`은 고정 단어("Outdated"), 정확한 age는 hover tooltip.
+/// 오래된 조회 결과 안내 — 짧은 Outdated 라벨과 경과 시간을 담은 툴팁.
 struct StalenessHint: Equatable {
     let label: String
     let tooltip: String
@@ -11,106 +11,86 @@ struct StalenessHint: Equatable {
 @Observable
 final class WidgetDataStore {
     private var registry: WidgetRegistry
-    private var providersByID: [String: ProviderRuntime]
-    private let cache: ProviderSnapshotCache
+    private let refreshCoordinator: ProviderRefreshCoordinator
     private let defaults: UserDefaults
-    private let workQueue: BackgroundWorkQueue
-    /// Provider enablement 조회 — 주입식, 기본은 전부 enabled(테스트·프리뷰용).
+    /// 프로바이더 활성화 여부 조회 — 테스트·미리보기의 기본값은 모두 활성.
     private let isProviderEnabled: @MainActor (String) -> Bool
-    /// dashboard에 배치된 사용자 widget 순서 — quota 알림 입력, 기본은 registry 순서.
+    /// 대시보드의 사용자 지표 순서 — 할당량 알림 입력이며 기본값은 등록 순서.
     private let orderedDescriptors: @MainActor () -> [WidgetDescriptor]
-    /// failure-backoff 윈도우용 clock — 테스트에서 주입.
+    /// 표시 시각 판정에 쓰는 주입식 시계.
     private let now: () -> Date
-    /// refresh 시간 측정용 monotonic clock — wall clock 조정이 timing을 왜곡하지 않도록 분리.
-    private let monotonicNow: () -> TimeInterval
-    private let slowProviderRefreshThreshold: TimeInterval
-    private let providerRefreshTimeout: TimeInterval
-    /// Quota-notification 설정 — nil이면 notification 전체 비활성(테스트·프리뷰).
+    /// 할당량 알림 설정 — nil이면 알림 비활성.
     private let notificationSettings: (@MainActor () -> NotificationSettingsStore)?
-    /// Soft-limit 표시 설정 — nil이면 기존 렌더와 동일하게 안내선 없음.
+    /// Soft Limit 표시 설정 — nil이면 안내선 없음.
     private let softLimitSettings: (@MainActor () -> SoftLimitSettingsStore)?
-    /// Card id → 현재 로그인된 account identity(launch 시 `ProviderAccountAssembly`가 해석).
-    /// snapshot cache의 account stamp 근거 — 쓰기는 producer를 기록, launch 로드는 stamp 일치 entry만 paint.
-    private var providerIdentityKeys: [String: String]
-    private var familyTotalHistoryCardIDs: Set<String>
-    /// 할당량 알림 표시명 — 발송 시 현재 카드의 계정명 조회, nil이면 provider 이름 사용.
+    /// 할당량 알림의 계정명 조회 — 결과가 nil이면 프로바이더 이름 사용.
     @ObservationIgnored var resolveDisplayName: (@MainActor (String) -> String?)?
-    /// Milestone notification 전달 지점 — 반환 Bool은 실제 전달 여부, false면 un-marked로 남겨 다음 pass 재시도.
+    /// 조건별 알림 전달 — false이면 전송 완료로 기록하지 않고 다음 평가에서 재시도.
     private let postNotification: QuotaNotificationEvaluator.Post
 
     private static let meterStyleKey = "meterStyle"
     private static let resetDisplayModeKey = "resetDisplayMode"
     private static let alwaysShowPacingKey = "alwaysShowPacing"
-    /// 실패한 provider의 재probe 억제 윈도우 — 로컬 이력 캐시와 별개로 wake 연발의 재probe 차단.
-    /// refresh interval보다 짧아 5분 heartbeat 재시도는 유지; 수동 force refresh(⌘R)는 항상 우회.
-    private static let failureRetryBackoff: TimeInterval = 60
     static let defaultSlowProviderRefreshThreshold: TimeInterval = 10
     static let defaultProviderRefreshTimeout: TimeInterval = 120
 
-    /// 모든 UI/API 표면이 소비하는 렌더링된 snapshot — iCloud sync off면 `localSnapshots`와 동일, on이면 peer union으로 재구성.
+    /// 화면·API용 조회 결과 — iCloud 동기화가 꺼져 있으면 로컬 원본, 켜져 있으면 다른 Mac의 이력 합산.
     var snapshots: [String: ProviderSnapshot] = [:]
-    /// 이 Mac이 생산한 last-good snapshot — 이것만 캐시·iCloud export되어 peer 기여의 echo 증식을 차단.
-    private(set) var localSnapshots: [String: ProviderSnapshot] = [:]
-    /// Codex 인증·usage snapshot과 분리된 전역 공개 Reset Watch 값 — 모든 Codex 카드가 공유.
+    /// 현재 Mac의 마지막 정상 결과 — 캐시·iCloud에는 원본만 저장하여 다른 Mac의 이력 중복 전파 방지.
+    var localSnapshots: [String: ProviderSnapshot] { refreshCoordinator.localSnapshots }
+    /// 인증·사용량 조회와 독립된 공개 Reset Watch 값 — 모든 Codex 카드가 공유.
     private var codexResetWatch = CodexResetWatchResult()
-    var refreshingProviderIDs: Set<String> = []
-    private var queueWaitingProviderIDs: Set<String> = []
-    /// 배치별 대기 표시 보존 — 한 배치의 취소가 다른 배치의 표시를 지우지 않도록 분리.
-    private var queuedRefreshBatches: [UUID: (providerIDs: Set<String>, force: Bool, trigger: RefreshTrigger)] = [:]
+    var refreshingProviderIDs: Set<String> { refreshCoordinator.refreshingProviderIDs }
     /// 마지막 사용량 배치 종료 시각. 첫 배치 전에는 nil.
-    var lastRefreshAt: Date?
-    private(set) var scheduledRefreshDates: [String: Date] = [:]
-    @ObservationIgnored private var scheduledRefreshUpdatedAt: [String: TimeInterval] = [:]
+    var lastRefreshAt: Date? {
+        get { refreshCoordinator.lastRefreshAt }
+        set { refreshCoordinator.lastRefreshAt = newValue }
+    }
+    var scheduledRefreshDates: [String: Date] { refreshCoordinator.scheduledRefreshDates }
     var nextGeneralRefreshAt: Date?
-    nonisolated static let refreshScheduleDidChange = Notification.Name("UsageRefreshScheduleDidChange")
-    private(set) var refreshResults: [String: ProviderRefreshResult] = [:]
+    nonisolated static let refreshScheduleDidChange = ProviderRefreshSchedule.didChange
+    var refreshResults: [String: ProviderRefreshResult] { refreshCoordinator.refreshResults }
     var providerErrors: [String: String] {
         refreshResults.compactMapValues { $0.failure?.message }
     }
-    private var authenticationGenerations: [String: Int] = [:]
-    private var invalidatedAuthentication: Set<String> = []
-
-    /// Provider별 실패 후 다음 probe 허용 시각(`failureRetryBackoff` 참고) — UI 상태가 아니라 observation 제외.
-    @ObservationIgnored private var failureRetryAfter: [String: Date] = [:]
-
-    /// known→nil 이후 재확인 전까지 배제한 캐시의 재유입 차단 — 영구 캐시·최초 미해석 launch 정책은 유지.
-    @ObservationIgnored private var unresolvedIdentityCacheRejections: Set<String> = []
-    /// API 키 변경 전 시작한 결과의 게시·캐시 쓰기를 provider 단위로 무효화.
-    @ObservationIgnored private var credentialGenerations: [String: Int] = [:]
-    @ObservationIgnored private var providersNeedingCredentialRefresh: Set<String> = []
-    /// 타이머 조회로 갱신한 캐시가 다음 5분 사용량 조회를 생략하지 않도록 처리.
-    @ObservationIgnored private var providersNeedingScheduledRefresh: Set<String> = []
-    /// 시간 초과·취소 뒤 남은 작업과 같은 runtime의 재실행 차단 — 실제 종료 때만 해제.
-    @ObservationIgnored private var pendingProviderRefreshes: [ObjectIdentifier: String] = [:]
-    @ObservationIgnored private var accountRefreshWaiters: [
-        (providerIDs: Set<String>, continuation: CheckedContinuation<Void, Never>)
-    ] = []
-
-    /// Quota pace-notification 서브시스템의 소유자 — store는 매 pass의 enabled bounded metric 수집·위임만 담당.
+    /// 할당량 알림 평가기 — 저장소는 순회마다 활성 한도 지표를 수집하여 전달.
     @ObservationIgnored private let notificationEvaluator = QuotaNotificationEvaluator()
     @ObservationIgnored private var isEvaluatingNotifications = false
     @ObservationIgnored private var pendingNotificationEvaluationAt: Date?
 
-    /// Telemetry hook(`AppContainer`가 연결) — 실제 fetch(.refreshed/.failed)당 1회 호출, cache-hit·skip·backoff 제외.
-    /// 테스트·프리뷰에서는 nil(no-op).
-    @ObservationIgnored var onRefreshOutcome: (@MainActor (String, RefreshOutcome, ErrorCategory?, RefreshTrigger, Bool) -> Void)?
-    /// GUI 전용 quota 제어 입력 — cache·실패·취소·폐기된 catalog 결과는 전달 금지.
-    @ObservationIgnored var onFreshSnapshot: (@MainActor (ProviderSnapshot, [WidgetDescriptor], RefreshTrigger) -> Void)?
-    @ObservationIgnored var isRefreshSuspended: (@MainActor (String) -> Bool)?
-    @ObservationIgnored var onQuotaInvalidated: (@MainActor (Set<String>?) -> Void)?
-    private var automationWarnings: [String: String] = [:]
-    /// `ICloudUsageSyncStore`가 연결 — debounce는 그쪽 담당(동시 provider batch가 파일 하나로 수렴).
-    @ObservationIgnored var onLocalHistoryChanged: (@MainActor () -> Void)?
-    @ObservationIgnored private var peerHistoryDocuments: [UsageHistoryDocument] = []
-    /// 다른 Mac에서 sync됐지만 이곳에 카드가 없는 account — Total Spend에만 노출, 카드로는 미표시.
+    /// 실제 조회의 성공·실패마다 한 번 호출하는 통계 콜백 — 캐시 사용·생략·실패 대기는 제외.
+    /// 테스트·미리보기에서는 nil로 전달 생략.
+    var onRefreshOutcome: (@MainActor (String, RefreshOutcome, ErrorCategory?, RefreshTrigger, Bool) -> Void)? {
+        get { refreshCoordinator.onRefreshOutcome }
+        set { refreshCoordinator.onRefreshOutcome = newValue }
+    }
+    /// GUI의 한도 자동 제어 입력 — 캐시·실패·취소·카탈로그 변경으로 폐기된 결과 제외.
+    var onFreshSnapshot: (@MainActor (ProviderSnapshot, [WidgetDescriptor], RefreshTrigger) -> Void)? {
+        get { refreshCoordinator.onFreshSnapshot }
+        set { refreshCoordinator.onFreshSnapshot = newValue }
+    }
+    var isRefreshSuspended: (@MainActor (String) -> Bool)? {
+        get { refreshCoordinator.isRefreshSuspended }
+        set { refreshCoordinator.isRefreshSuspended = newValue }
+    }
+    var onQuotaInvalidated: (@MainActor (Set<String>?) -> Void)? {
+        get { refreshCoordinator.onQuotaInvalidated }
+        set { refreshCoordinator.onQuotaInvalidated = newValue }
+    }
+    /// 로컬 이력 변경 콜백 — ICloudUsageSyncStore에서 연속 변경을 병합하여 파일 한 번 작성.
+    var onLocalHistoryChanged: (@MainActor () -> Void)? {
+        get { refreshCoordinator.onLocalHistoryChanged }
+        set { refreshCoordinator.onLocalHistoryChanged = newValue }
+    }
+    /// 다른 Mac에서 동기화한 원격 전용 계정 — 현재 Mac에 카드가 없으면 Total Spend에만 표시.
     private(set) var remoteOnlySpend: [(provider: Provider, snapshot: ProviderSnapshot)] = []
 
-    /// 전역 meter 스타일("used"/"left") — persist, 기본 .used.
+    /// 전역 사용량·잔여량 표시 설정 — 저장하며 기본값은 used.
     var meterStyle: WidgetDisplayMode {
         didSet { defaults.set(meterStyle.rawValue, forKey: Self.meterStyleKey) }
     }
 
-    /// 전역 reset 카운트다운 형식(relative/absolute) — persist, 기본 .absolute. reset label 클릭으로 toggle.
+    /// 전역 초기화 시간 표시 설정 — 상대 시간·절대 시각 중 저장하며 기본값은 absolute.
     var resetDisplayMode: ResetDisplayMode {
         didSet { defaults.set(resetDisplayMode.rawValue, forKey: Self.resetDisplayModeKey) }
     }
@@ -142,16 +122,10 @@ final class WidgetDataStore {
         precondition(slowProviderRefreshThreshold >= 0)
         precondition(providerRefreshTimeout.isFinite && providerRefreshTimeout > 0)
         self.registry = registry
-        self.providersByID = Dictionary(uniqueKeysWithValues: providers.map { ($0.provider.id, $0) })
-        self.cache = cache
         self.defaults = defaults
-        self.workQueue = workQueue
         self.isProviderEnabled = isProviderEnabled
         self.orderedDescriptors = orderedDescriptors ?? { registry.descriptors }
         self.now = now
-        self.monotonicNow = monotonicNow
-        self.slowProviderRefreshThreshold = slowProviderRefreshThreshold
-        self.providerRefreshTimeout = providerRefreshTimeout
         self.notificationSettings = notificationSettings
         self.softLimitSettings = softLimitSettings
         self.postNotification = postNotification
@@ -160,147 +134,99 @@ final class WidgetDataStore {
                     idPrefix: idPrefix, title: title, subtitle: subtitle, body: body, isCurrent: isCurrent
                 )
             }
-        self.providerIdentityKeys = providerIdentityKeys
-        unresolvedIdentityCacheRejections = Set(registry.providers.map(\.id).filter {
-            ProviderAccountID.family(of: $0) == "claude" && providerIdentityKeys[$0] == nil
-        })
-        self.familyTotalHistoryCardIDs = familyTotalHistoryCardIDs
+        self.refreshCoordinator = ProviderRefreshCoordinator(
+            registry: registry, providers: providers, cache: cache, isProviderEnabled: isProviderEnabled,
+            now: now, monotonicNow: monotonicNow, slowProviderRefreshThreshold: slowProviderRefreshThreshold,
+            providerRefreshTimeout: providerRefreshTimeout, providerIdentityKeys: providerIdentityKeys,
+            familyTotalHistoryCardIDs: familyTotalHistoryCardIDs, workQueue: workQueue
+        )
         self.resolveDisplayName = resolveDisplayName
         self.meterStyle = defaults.enumValue(forKey: Self.meterStyleKey, default: .used)
         self.resetDisplayMode = defaults.enumValue(forKey: Self.resetDisplayModeKey, default: .absolute)
         self.alwaysShowPacing = defaults.bool(forKey: Self.alwaysShowPacingKey, default: true)
-        // Stale-while-revalidate: 만료 포함 캐시를 즉시 로드 — launch 직후 "—" 대신 last-known 값 표시.
-        // Account swap guard: 현재 identity가 known인 카드는 생산 account가 일치하는 entry만 paint — 같은 home에서
-        // swap 후 이전 account의 limit·plan 노출 차단. Claude는 신원 미확인 캐시도 제외.
-        let loaded = cache.loadSnapshots(providerIDs: registry.providers.map(\.id))
-            .filter { cardID, _ in
-                guard !unresolvedIdentityCacheRejections.contains(cardID) else { return false }
-                guard cache.hasStaleAccountStamp(providerID: cardID, currentIdentityKey: providerIdentityKeys[cardID]) else {
-                    return true
-                }
-                AppLog.info(.cache, "stale account cache discarded for \(cardID)")
-                return false
-            }
-        self.localSnapshots = loaded
-        self.snapshots = loaded
-    }
-
-    /// 활성 provider를 순차 갱신. 다른 갱신 경로와도 공통 큐 공유.
-    /// `force`는 snapshot cache 우회(수동 refresh 경로); 주기 loop는 cache를 존중.
-    func refreshAll(
-        force: Bool = false, trigger: RefreshTrigger = .scheduled,
-        cadence: RefreshSetting.Cadence? = nil
-    ) async {
-        guard !Task.isCancelled else { return }
-        let providerIDs = registry.providers.map(\.id).filter { id in
-            guard isProviderEnabled(id) else { return false }
-            guard let cadence else { return true }
-            return RefreshSetting.cadence(for: id) == cadence && (scheduledRefreshDate(for: id) ?? now()) <= now()
+        self.snapshots = refreshCoordinator.localSnapshots
+        refreshCoordinator.onSnapshotsChanged = { [weak self] rendered in
+            self?.remoteOnlySpend = rendered.remoteOnlySpend
+            self?.snapshots = rendered.snapshots
         }
-        guard !providerIDs.isEmpty else { return }
-        let batchID = UUID()
-        queuedRefreshBatches[batchID] = (Set(providerIDs), force, trigger)
-        defer { queuedRefreshBatches.removeValue(forKey: batchID) }
-        let previousHistories = providerIDs.map { localSnapshots[$0]?.usageHistory }
-        let start = monotonicNow()
-        AppLog.info(.refresh, "batch start (\(providerIDs.count) providers, force=\(force))")
-        var outcomes: [RefreshOutcome] = []
-        for providerID in providerIDs {
-            guard !Task.isCancelled else { break }
-            outcomes.append(await refresh(providerID: providerID, force: force, trigger: trigger, notifyHistoryChange: false))
-            queuedRefreshBatches[batchID]?.providerIDs.remove(providerID)
-        }
-        guard !Task.isCancelled else {
-            let historyRemoved = zip(providerIDs, previousHistories).contains { providerID, history in
-                history != nil && localSnapshots[providerID]?.usageHistory == nil
-            }
-            if historyRemoved { onLocalHistoryChanged?() }
-            return
-        }
-        let historyChanged = zip(providerIDs, previousHistories).contains { providerID, history in
-            localSnapshots[providerID]?.usageHistory != history
-        }
-        // 각 갱신 그룹의 완료 기록 — 대상별 다음 일정은 별도 보존.
-        lastRefreshAt = now()
-        let durationMs = durationMilliseconds(since: start)
-        // 이번 batch의 실제 outcome만 집계 — 누적 providerErrors로 세면 cache hit·과거 실패가 오염.
-        let refreshed = outcomes.count { $0 == .refreshed }
-        let failed = outcomes.count { $0 == .failed }
-        let cached = outcomes.count { $0 == .cacheHit }
-        let backedOff = outcomes.count { $0 == .backedOff }
-        if refreshed > 0 || historyChanged {
-            onLocalHistoryChanged?()
-        }
-        AppLog.info(.refresh, "batch end (\(durationMs)ms, \(refreshed) ok / \(failed) failed / \(cached) cached / \(backedOff) backed off)")
-    }
-
-    func isRefreshQueued(for providerID: String) -> Bool {
-        guard isProviderEnabled(providerID), isRefreshSuspended?(providerID) != true,
-              let provider = providersByID[providerID] else { return false }
-        if refreshingProviderIDs.contains(providerID) {
-            return queueWaitingProviderIDs.contains(providerID)
-        }
-        guard pendingProviderRefreshes[ObjectIdentifier(provider)] == nil else { return false }
-        return queuedRefreshBatches.values.contains { batch in
-            batch.providerIDs.contains(providerID)
-                && refreshCacheHit(providerID: providerID, force: batch.force, trigger: batch.trigger) == nil
-                && !isRefreshBackedOff(providerID: providerID, force: batch.force)
+        refreshCoordinator.onCatalogInvalidated = { [weak self] ids in
+            self?.notificationEvaluator.reset(providerIDs: ids)
         }
     }
 
+    /// 활성 프로바이더 순차 갱신 — force는 정상 캐시와 실패 대기 우회.
+    func refreshAll(force: Bool = false, trigger: RefreshTrigger = .scheduled, cadence: RefreshSetting.Cadence? = nil) async {
+        await refreshCoordinator.refreshAll(force: force, trigger: trigger, cadence: cadence)
+    }
+
+    @discardableResult
+    func refresh(
+        providerID: String, force: Bool = false, trigger: RefreshTrigger = .scheduled,
+        notifyHistoryChange: Bool = true, codexBinding: CodexResetClaimBinding? = nil
+    ) async -> RefreshOutcome {
+        await refreshCoordinator.refresh(
+            providerID: providerID, force: force, trigger: trigger,
+            notifyHistoryChange: notifyHistoryChange, codexBinding: codexBinding)
+    }
+
+    func isRefreshQueued(for providerID: String) -> Bool { refreshCoordinator.isRefreshQueued(for: providerID) }
     func scheduledRefreshDate(for providerID: String) -> Date? {
-        let scheduled = scheduledRefreshDates[providerID]
-        return [scheduled, failureRetryAfter[providerID], localSnapshots[providerID]?.usageRetryAfter]
-            .compactMap { $0 }.max()
+        refreshCoordinator.scheduledRefreshDate(for: providerID)
     }
-
     func nextScheduledRefresh(for cadence: RefreshSetting.Cadence, at date: Date) -> Date? {
-        registry.providers.map(\.id).filter {
-            isProviderEnabled($0) && RefreshSetting.cadence(for: $0) == cadence
-                && isRefreshSuspended?($0) != true && !refreshingProviderIDs.contains($0)
-                && providersByID[$0].map { pendingProviderRefreshes[ObjectIdentifier($0)] == nil } == true
-        }.map { scheduledRefreshDate(for: $0) ?? date }.min()
+        refreshCoordinator.nextScheduledRefresh(for: cadence, at: date)
     }
 
-    /// 시계 변경 전 일정만 재평가 — 변경 후 완료한 조회의 다음 일정과 계정별 429 대기는 유지.
     func rebaseRefreshSchedule(for cadence: RefreshSetting.Cadence, at date: Date, clockChangedAt: TimeInterval) {
-        for id in registry.providers.map(\.id) where RefreshSetting.cadence(for: id) == cadence {
-            if let updatedAt = scheduledRefreshUpdatedAt[id], updatedAt >= clockChangedAt { continue }
-            scheduledRefreshDates[id] = date
-            providersNeedingScheduledRefresh.insert(id)
-            if let retryAfter = failureRetryAfter[id] {
-                failureRetryAfter[id] = min(retryAfter, date.addingTimeInterval(Self.failureRetryBackoff))
-            }
-        }
+        refreshCoordinator.rebaseRefreshSchedule(for: cadence, at: date, clockChangedAt: clockChangedAt)
     }
 
-    /// 계정 전환 대상 카드의 조회 완료 대기 — 호출자 취소 후에도 실제 provider 작업 종료까지 유지.
+    /// 호출자 취소 후에도 해당 계정의 실제 작업·결과 반영 종료까지 대기.
     func waitForAccountRefreshes(providerIDs: Set<String>) async {
-        while hasAccountRefreshes(providerIDs: providerIDs) {
-            await withCheckedContinuation { accountRefreshWaiters.append((providerIDs, $0)) }
-        }
+        await refreshCoordinator.waitForAccountRefreshes(providerIDs: providerIDs)
     }
 
-    private func hasAccountRefreshes(providerIDs: Set<String>) -> Bool {
-        !refreshingProviderIDs.isDisjoint(with: providerIDs)
-            || pendingProviderRefreshes.values.contains { providerIDs.contains($0) }
+    /// 새 Task를 만들기 전에 이전 키로 시작한 조회를 무효화.
+    @discardableResult
+    func credentialsDidChange(for providerID: String) -> Int {
+        refreshCoordinator.credentialsDidChange(for: providerID)
+    }
+    func claimRefreshBinding(providerID: String) -> ClaimRefreshBinding? {
+        refreshCoordinator.claimRefreshBinding(providerID: providerID)
     }
 
-    private func resumeAccountRefreshWaitersIfIdle() {
-        guard !accountRefreshWaiters.isEmpty else { return }
-        let waiters = accountRefreshWaiters
-        accountRefreshWaiters.removeAll()
-        for waiter in waiters {
-            if hasAccountRefreshes(providerIDs: waiter.providerIDs) {
-                accountRefreshWaiters.append(waiter)
-            } else {
-                waiter.continuation.resume()
-            }
-        }
+    func replaceProviderCatalog(
+        registry: WidgetRegistry, providers: [ProviderRuntime], identityKeys: [String: String],
+        familyTotalHistoryCardIDs: Set<String> = []
+    ) {
+        self.registry = registry
+        refreshCoordinator.replaceProviderCatalog(
+            registry: registry, providers: providers,
+            identityKeys: identityKeys, familyTotalHistoryCardIDs: familyTotalHistoryCardIDs)
     }
 
-    /// Account switch 직후의 선택 카드 fetch — 주기 refresh가 카드를 점유 중이면 끝나기를 기다렸다가
-    /// 사용자 요청 fetch를 실행, 다음 cadence까지 strip이 stale하게 남는 것을 방지.
+    func setExternalProviderError(_ message: String, for providerID: String, presentation: LocalizedMessage? = nil) {
+        refreshCoordinator.setExternalProviderError(message, for: providerID, presentation: presentation)
+    }
+
+    func clearFailureBackoff(for providerID: String) { refreshCoordinator.clearFailureBackoff(for: providerID) }
+    func providerEnablementDidChange() { refreshCoordinator.providerEnablementDidChange() }
+    func invalidateAuthentication(for providerID: String) {
+        refreshCoordinator.invalidateAuthentication(for: providerID)
+    }
+    func setAutomationWarning(_ message: String?, for providerID: String) {
+        refreshCoordinator.setAutomationWarning(message, for: providerID)
+    }
+
+    func setPeerHistoryDocuments(_ documents: [UsageHistoryDocument], ownDeviceID: String) {
+        refreshCoordinator.setPeerHistoryDocuments(documents, ownDeviceID: ownDeviceID)
+    }
+
+    func clearPeerHistoryDocuments() { refreshCoordinator.clearPeerHistoryDocuments() }
+    func localHistoryDocument(deviceID: String, deviceName: String, updatedAt: Date = Date()) -> UsageHistoryDocument {
+        refreshCoordinator.localHistoryDocument(deviceID: deviceID, deviceName: deviceName, updatedAt: updatedAt)
+    }
+
     func refreshAfterAccountSelection(
         providerID: String,
         maxAttempts: Int = 45,
@@ -321,18 +247,7 @@ final class WidgetDataStore {
                               localContext: "Post-timer refresh kept being skipped")
     }
 
-    /// 키 저장·삭제 성공 직후 동기 호출 — Task 시작 전 이전 조회를 무효화하고 다음 실제 조회 보장.
-    @discardableResult
-    func credentialsDidChange(for providerID: String) -> Int {
-        let generation = credentialGenerations[providerID, default: 0] + 1
-        credentialGenerations[providerID] = generation
-        onQuotaInvalidated?([providerID])
-        providersNeedingCredentialRefresh.insert(providerID)
-        refreshResults[providerID] = nil
-        clearFailureBackoff(for: providerID)
-        return generation
-    }
-
+    /// 키 변경 직후의 조회 — 더 새 키 변경이 발생하면 이전 재시도 종료.
     func refreshAfterCredentialChange(
         providerID: String,
         credentialGeneration: Int,
@@ -353,8 +268,9 @@ final class WidgetDataStore {
     ) async {
         precondition(maxAttempts > 0)
         for attempt in 0..<maxAttempts {
-            guard !Task.isCancelled, isProviderEnabled(providerID), providersByID[providerID] != nil else { return }
-            guard credentialGeneration == nil || credentialGenerations[providerID] == credentialGeneration else { return }
+            guard !Task.isCancelled,
+                refreshCoordinator.canRetry(providerID, credentialGeneration: credentialGeneration)
+            else { return }
             switch await refresh(providerID: providerID, force: true, trigger: trigger) {
             case .refreshed, .cacheHit, .backedOff, .failed:
                 return
@@ -368,95 +284,12 @@ final class WidgetDataStore {
         AppLog.error(.refresh, "\(trigger.rawValue) refresh kept being skipped for \(providerID); waiting for the next cycle")
     }
 
-    /// 카탈로그 교체마다 증가 — `refresh`가 fetch 시작 시 캡처해 교체를 가로지른 결과를 폐기,
-    /// 한 account에서 시작한 fetch가 이후 설치된 identity로 publish·stamp되는 일 차단.
-    private var catalogGeneration = 0
-
-    /// 알려진 계정은 카드·identity로 비교, 미해석 계정은 catalog 교체 시 무효화.
-    func claimRefreshBinding(providerID: String) -> ClaimRefreshBinding? {
-        guard providersByID[providerID] != nil else { return nil }
-        if let identityKey = providerIdentityKeys[providerID] { return .account(identityKey) }
-        return .unresolvedCatalog(catalogGeneration)
-    }
-
-    /// Settings의 account 발견 이후 catalog 교체 — store 객체는 유지되어 view·status item이
-    /// 메뉴바 process 재시작 없이 새 registry를 즉시 관찰.
-    func replaceProviderCatalog(
-        registry: WidgetRegistry,
-        providers: [ProviderRuntime],
-        identityKeys: [String: String],
-        familyTotalHistoryCardIDs: Set<String> = []
-    ) {
-        let liveIDs = Set(registry.providers.map(\.id))
-        // Managed switch는 bare claude/codex 카드 id를 유지한 채 account만 교체 — 이전 identity가 생산한
-        // snapshot·error·failure backoff는 이월 금지. `hasStaleAccountStamp`와 동일 규칙: 새 identity가
-        // known이고 이전과 다르면 빈 상태로 시작.
-        let previousIdentityKeys = providerIdentityKeys
-        unresolvedIdentityCacheRejections.formUnion(previousIdentityKeys.keys.filter { identityKeys[$0] == nil })
-        unresolvedIdentityCacheRejections.subtract(identityKeys.keys)
-        unresolvedIdentityCacheRejections.formUnion(liveIDs.filter {
-            ProviderAccountID.family(of: $0) == "claude" && identityKeys[$0] == nil
-        })
-        func keepsState(_ cardID: String) -> Bool {
-            guard liveIDs.contains(cardID) else { return false }
-            return previousIdentityKeys[cardID] == identityKeys[cardID]
-        }
-        // 계정 family의 미해석 identity는 같은 계정을 증명 못 하므로 카탈로그 교체 시 알림도 무효화.
-        notificationEvaluator.reset(providerIDs: Set(providersByID.keys.filter { cardID in
-            !keepsState(cardID)
-                || (identityKeys[cardID] == nil
-                    && ProviderAccountID.families.contains(ProviderAccountID.family(of: cardID)))
-        }))
-        catalogGeneration += 1
-        onQuotaInvalidated?(nil)
-        self.registry = registry
-        self.providersByID = Dictionary(uniqueKeysWithValues: providers.map { ($0.provider.id, $0) })
-        self.providerIdentityKeys = identityKeys
-        self.familyTotalHistoryCardIDs = familyTotalHistoryCardIDs
-        let previousSnapshotIDs = Set(localSnapshots.keys)
-        localSnapshots = localSnapshots.filter { cardID, _ in
-            keepsState(cardID)
-                && !(ProviderAccountID.family(of: cardID) == "claude" && identityKeys[cardID] == nil)
-        }
-        let discardedSnapshotIDs = previousSnapshotIDs.subtracting(localSnapshots.keys)
-        refreshResults = refreshResults.filter { keepsState($0.key) }
-        automationWarnings = automationWarnings.filter { keepsState($0.key) }
-        authenticationGenerations = authenticationGenerations.filter { liveIDs.contains($0.key) }
-        invalidatedAuthentication.formIntersection(liveIDs)
-        providersNeedingScheduledRefresh.formIntersection(liveIDs)
-        failureRetryAfter = failureRetryAfter.filter { keepsState($0.key) }
-        scheduledRefreshDates = scheduledRefreshDates.filter { keepsState($0.key) && !discardedSnapshotIDs.contains($0.key) }
-        scheduledRefreshUpdatedAt = scheduledRefreshUpdatedAt.filter { keepsState($0.key) && !discardedSnapshotIDs.contains($0.key) }
-
-        let cached = cache.loadSnapshots(providerIDs: Array(liveIDs)).filter { cardID, _ in
-            !unresolvedIdentityCacheRejections.contains(cardID)
-                && !cache.hasStaleAccountStamp(providerID: cardID, currentIdentityKey: identityKeys[cardID])
-        }
-        for (cardID, snapshot) in cached where localSnapshots[cardID] == nil {
-            localSnapshots[cardID] = snapshot
-        }
-        rebuildRenderedSnapshots()
-        NotificationCenter.default.post(name: Self.refreshScheduleDidChange, object: nil)
-    }
-
-    /// provider refresh 밖의 계정 reconciliation 실패를 같은 dashboard 오류 surface에 노출.
-    func setExternalProviderError(
-        _ message: String, for providerID: String, presentation: LocalizedMessage? = nil
-    ) {
-        guard providersByID[providerID] != nil else {
-            AppLog.error(.refresh, "external provider error targeted an unknown provider (\(providerID))")
-            return
-        }
-        onQuotaInvalidated?([providerID])
-        refreshResults[providerID] = .failed(ProviderRefreshFailure(message: message, presentation: presentation))
-    }
-
     var knownProviderIDs: [String] { registry.providers.map(\.id) }
     var limitDescriptorsByProvider: [String: [WidgetDescriptor]] { registry.limitDescriptorsByProvider }
 
-    /// 표시 중인 enabled bounded metric의 quota pace milestone 평가·notification 발송 — `refreshAll` 이후
-    /// 주기 loop에서 구동해 시간 경과만으로 악화된 pace도 포착. 이번 pass에 방문하지 않은 metric의
-    /// 상태는 prune — 재활성화·재추가 시 stale "already fired" flag 없이 fresh 시작.
+    /// 표시 중인 활성 한도 지표의 알림 조건 평가와 전달.
+    /// 주기 작업에서 조회 후 호출하여 시간 경과만으로 달라진 소진 속도도 평가.
+    /// 평가 대상에서 빠진 지표는 기록 제거 — 다시 활성화·추가하면 새 기준으로 시작.
     func evaluateNotifications(now: Date = Date()) async {
         pendingNotificationEvaluationAt = now
         guard !isEvaluatingNotifications else { return }
@@ -471,8 +304,8 @@ final class WidgetDataStore {
     private func evaluateNotificationPass(now: Date) async {
         guard let settingsProvider = notificationSettings else { return }
         let toggles = settingsProvider().toggles
-        // unbounded 행·chart는 pace 대상이 아니라 제외; 순서는 layout 순서, evaluator가 미방문 상태를 prune.
-        // pass 입력은 첫 delivery await 이전에 고정 — mid-pass refresh가 이후 metric의 입력을 바꾸지 않음.
+        // 한도 없는 행·차트는 제외하고 레이아웃 순서대로 평가 — 대상에서 빠진 지표의 기록 제거.
+        // 첫 비동기 전달 전에 입력 확정 — 평가 도중 조회가 끝나도 나머지 지표의 입력 유지.
         let metrics = orderedDescriptors()
             .filter { isProviderEnabled($0.providerID) }
             .compactMap { descriptor -> QuotaNotificationEvaluator.Metric? in
@@ -488,508 +321,32 @@ final class WidgetDataStore {
             metrics: metrics,
             toggles: toggles,
             now: now,
-            providerName: { [providersByID, resolveDisplayName] id in
-                resolveDisplayName?(id) ?? providersByID[id]?.provider.displayName ?? id
+            providerName: { [providerNames = refreshCoordinator.providerNames, resolveDisplayName] id in
+                resolveDisplayName?(id) ?? providerNames[id] ?? id
             },
             post: postNotification
         )
     }
 
-    /// 한 provider의 refresh가 이번 pass에서 실제 수행한 일 — batch 요약의 근거. `.backedOff`는
-    /// backoff로 의도적으로 건너뛴 probe(disabled/unknown/in-flight의 `.skipped`와 구분).
-    enum RefreshOutcome: Sendable { case refreshed, failed, cacheHit, skipped, backedOff }
-
-    private func refreshCacheHit(providerID: String, force: Bool, trigger: RefreshTrigger) -> ProviderSnapshot? {
-        let scheduledRefreshDue = trigger == .scheduled && providersNeedingScheduledRefresh.contains(providerID)
-        guard !force, !scheduledRefreshDue,
-              !invalidatedAuthentication.contains(providerID),
-              !unresolvedIdentityCacheRejections.contains(providerID),
-              !providersNeedingCredentialRefresh.contains(providerID),
-              !cache.hasStaleAccountStamp(
-                providerID: providerID, currentIdentityKey: providerIdentityKeys[providerID]
-              ) else { return nil }
-        return cache.snapshot(providerID: providerID)
-    }
-
-    private func isRefreshBackedOff(providerID: String, force: Bool) -> Bool {
-        !force && failureRetryAfter[providerID].map { now() < $0 } == true
-    }
-
-    @discardableResult
-    func refresh(
-        providerID: String,
-        force: Bool = false,
-        trigger: RefreshTrigger = .scheduled,
-        notifyHistoryChange: Bool = true,
-        codexBinding: CodexResetClaimBinding? = nil
-    ) async -> RefreshOutcome {
-        guard !Task.isCancelled, isProviderEnabled(providerID) else { return .skipped }
-        guard isRefreshSuspended?(providerID) != true else { return .skipped }
-        let staleAccountStamp = cache.hasStaleAccountStamp(
-            providerID: providerID, currentIdentityKey: providerIdentityKeys[providerID]
-        )
-        if let cached = refreshCacheHit(providerID: providerID, force: force, trigger: trigger) {
-            // no-op write 회피 — @Observable은 값 비교를 하지 않아 재할당만으로 메뉴바 label 재렌더 발생.
-            AppLog.debug(.refresh, "cache hit \(providerID)")
-            if localSnapshots[providerID] != cached {
-                localSnapshots[providerID] = cached
-                rebuildRenderedSnapshots()
-            }
-            if trigger == .scheduled {
-                scheduledRefreshDates[providerID] = cached.freshnessDate
-                    .addingTimeInterval(RefreshSetting.interval(for: providerID))
-            }
-            return .cacheHit
-        }
-        if !force { AppLog.debug(.refresh, "cache miss \(providerID)") }
-
-        // 현재 실패는 이력 캐시와 무관하게 backoff 만료까지 재probe 보류; 수동 force refresh는 backoff 무시.
-        if isRefreshBackedOff(providerID: providerID, force: force) {
-            AppLog.debug(.refresh, "backoff skip \(providerID) (failed <\(Int(Self.failureRetryBackoff))s ago)")
-            return .backedOff
-        }
-
-        guard let provider = providersByID[providerID] else { return .skipped }
-        let runtimeID = ObjectIdentifier(provider)
-        guard pendingProviderRefreshes[runtimeID] == nil else {
-            AppLog.debug(.refresh, "skipped \(providerID) (previous provider work has not finished)")
-            return .skipped
-        }
-        // in-flight refresh가 이미 소유 중이면 skip — 동일 provider 중복 network call 방지.
-        guard !refreshingProviderIDs.contains(providerID) else {
-            AppLog.debug(.refresh, "cache skip \(providerID) (already in flight)")
-            return .skipped
-        }
-        refreshingProviderIDs.insert(providerID)
-        queueWaitingProviderIDs.insert(providerID)
-        var needsScheduleWake = trigger != .scheduled && RefreshSetting.cadence(for: providerID) == .claude
-        defer {
-            refreshingProviderIDs.remove(providerID)
-            queueWaitingProviderIDs.remove(providerID)
-            if needsScheduleWake, pendingProviderRefreshes[runtimeID] == nil {
-                NotificationCenter.default.post(name: Self.refreshScheduleDidChange, object: nil)
-            }
-            resumeAccountRefreshWaitersIfIdle()
-        }
-        guard let ticket = await workQueue.acquire("usage:\(ProviderAccountID.family(of: providerID))") else { return .skipped }
-        queueWaitingProviderIDs.remove(providerID)
-        var workOwnsTicket = false
-        defer { if !workOwnsTicket { workQueue.finish(ticket) } }
-        guard !Task.isCancelled, isProviderEnabled(providerID), isRefreshSuspended?(providerID) != true,
-              providersByID[providerID] === provider else { return .skipped }
-        let boundGeneration = catalogGeneration
-        let authenticationGeneration = authenticationGenerations[providerID, default: 0]
-        let boundCredentialGeneration = credentialGenerations[providerID, default: 0]
-        let start = monotonicNow()
-        let result = await ProviderRefreshDeadline.run(timeout: .seconds(providerRefreshTimeout)) { [weak self, workQueue] in
-            workOwnsTicket = true
-            defer { workQueue.finish(ticket) }
-            self?.pendingProviderRefreshes[runtimeID] = providerID
-            defer {
-                self?.pendingProviderRefreshes.removeValue(forKey: runtimeID)
-                if self?.refreshingProviderIDs.contains(providerID) == false {
-                    NotificationCenter.default.post(name: Self.refreshScheduleDidChange, object: nil)
-                }
-                self?.resumeAccountRefreshWaitersIfIdle()
-            }
-            return await ProviderRefreshContext.$isManual.withValue(trigger == .manual) {
-                await ProviderRefreshContext.$isResetClaim.withValue(trigger == .resetClaim) {
-                    await provider.refresh()
-                }
-            }
-        }
-        // 취소된 refresh도 non-throwing 작업이면 결과 반환 가능 — partial snapshot publish 금지, last-good 유지.
-        guard !Task.isCancelled else {
-            needsScheduleWake = true
-            AppLog.debug(.refresh, "cancelled \(providerID) refresh; keeping last-good snapshot")
-            return .skipped
-        }
-        // fetch 중 catalog 교체: 카드 id가 다른 account를 가리킬 수 있어 결과 폐기 — publish하면 이전
-        // account 데이터가 새 identity stamp로 정당화됨. switch 경로가 선택 카드를 직접 force-refresh.
-        guard isProviderEnabled(providerID), catalogGeneration == boundGeneration,
-              authenticationGenerations[providerID, default: 0] == authenticationGeneration else {
-            needsScheduleWake = true
-            AppLog.info(.refresh, "\(providerID) discarding result: the provider catalog or authentication changed mid-fetch")
-            AppDiagnostics.record(.accountBinding, result: .bindingChanged, providerID: providerID)
-            return .skipped
-        }
-        guard credentialGenerations[providerID, default: 0] == boundCredentialGeneration else {
-            needsScheduleWake = true
-            AppLog.info(.refresh, "\(providerID) discarding result: credentials changed mid-fetch")
-            return .skipped
-        }
-        var snapshot: ProviderSnapshot
-        switch result {
-        case .snapshot(let value):
-            snapshot = value
-        case .timedOut:
-            snapshot = .error(
-                provider: provider.provider,
-                message: "Refresh timed out. Retrying is available after the previous request finishes.",
-                category: .network,
-                presentation: .init("Refresh timed out. Retrying is available after the previous request finishes.")
-            )
-        case .cancelled:
-            needsScheduleWake = true
-            return .skipped
-        }
-        if let codexBinding, Self.errorMessage(in: snapshot) == nil,
-           snapshot.codexResetClaimBinding != codexBinding {
-            snapshot = .error(
-                provider: provider.provider,
-                message: "The refreshed account no longer matches the reset confirmation. Refresh usage before trying again.",
-                category: .authInvalid,
-                presentation: .init("The refreshed account no longer matches the reset confirmation. Refresh usage before trying again.")
-            )
-        }
-        if trigger == .scheduled || scheduledRefreshDates[providerID] == nil {
-            scheduledRefreshUpdatedAt[providerID] = monotonicNow()
-            scheduledRefreshDates[providerID] = now().addingTimeInterval(RefreshSetting.interval(for: providerID))
-        }
-        let durationMs = durationMilliseconds(since: start)
-        if TimeInterval(durationMs) >= slowProviderRefreshThreshold * 1000 {
-            AppLog.warn(
-                .refresh,
-                "\(providerID) slow refresh (\(durationMs)ms, threshold=\(Int(slowProviderRefreshThreshold * 1000))ms)"
-            )
-        }
-        let unresolvedClaudeIdentity = ProviderAccountID.family(of: providerID) == "claude"
-            && providerIdentityKeys[providerID] == nil
-        if provider.retainsDedicatedSpendOnScanFailure, snapshot.totalSpendLines != nil {
-            snapshot.totalSpendRefreshedAt = snapshot.refreshedAt
-        }
-        if provider.retainsDedicatedSpendOnScanFailure, snapshot.totalSpendLines == nil, snapshot.warning == nil,
-           Self.errorMessage(in: snapshot) == nil,
-           snapshot.isDegraded != true,
-           let previous = localSnapshots[providerID],
-           Calendar.current.isDate(previous.totalSpendRefreshedAt ?? previous.refreshedAt, inSameDayAs: snapshot.refreshedAt),
-           previous.totalSpendLines != nil {
-            let warning = "Local usage history is unavailable. Showing the last successful totals."
-            snapshot.warning = warning
-            snapshot.warningPresentation = [.init(warning)]
-            snapshot.isDegraded = true
-            AppLog.warn(.refresh, "\(providerID) local history unavailable; retained same-day totals")
-        }
-        if let message = Self.errorMessage(in: snapshot) {
-            refreshResults[providerID] = .failed(ProviderRefreshFailure(
-                message: [message, snapshot.warning].compactMap { $0 }.joined(separator: " "),
-                category: snapshot.errorCategory ?? .other,
-                authenticationIssue: snapshot.authenticationIssue,
-                presentation: snapshot.errorPresentation ?? snapshot.warning.map { _ in .verbatim(message) },
-                warningPresentations: snapshot.warningPresentation ?? snapshot.warning.map { [.verbatim($0)] } ?? []
-            ))
-            // 신원 미확인 Claude는 같은 계정임을 보장할 수 없어 이전 값을 숨기고, 나머지는 last-good 유지.
-            if unresolvedClaudeIdentity {
-                let removedHistory = localSnapshots.removeValue(forKey: providerID)?.usageHistory != nil
-                rebuildRenderedSnapshots()
-                if removedHistory, notifyHistoryChange { onLocalHistoryChanged?() }
-            } else if (snapshot.usageHistory != nil && registry.historyDescriptorsByProvider[providerID] != nil)
-                      || (provider.provider.usesDedicatedSpendLines && snapshot.totalSpendLines != nil)
-                      || (provider.retainsDedicatedSpendOnScanFailure && localSnapshots[providerID]?.totalSpendLines != nil) {
-                // 한도 실패와 독립된 로컬 이력만 갱신. 기존 한도·플랜·조회 시각은 그대로 보존.
-                var retained = localSnapshots[providerID] ?? ProviderSnapshot.make(
-                    provider: provider.provider, plan: nil, lines: [], refreshedAt: snapshot.refreshedAt
-                )
-                if provider.provider.usesDedicatedSpendLines, let lines = snapshot.totalSpendLines {
-                    retained.totalSpendLines = lines
-                    retained.totalSpendRefreshedAt = snapshot.totalSpendRefreshedAt
-                } else if provider.retainsDedicatedSpendOnScanFailure,
-                          !Calendar.current.isDate(retained.totalSpendRefreshedAt ?? retained.refreshedAt,
-                                                   inSameDayAs: snapshot.refreshedAt) {
-                    retained.totalSpendLines = nil
-                    retained.totalSpendRefreshedAt = nil
-                }
-                retained.warning = snapshot.warning
-                retained.warningPresentation = snapshot.warningPresentation
-                retained.authenticationIssue = snapshot.authenticationIssue
-                retained.isDegraded = true
-                retained.liveQuotaObservedAt = nil
-                retained.codexResetClaimBinding = nil
-                if let history = snapshot.usageHistory,
-                   let descriptor = registry.historyDescriptorsByProvider[providerID] {
-                    retained.usageHistory = history
-                    retained = UsageHistorySnapshotRenderer.render(
-                        local: retained, history: history, descriptor: descriptor, now: now(), combined: false
-                    )
-                }
-                localSnapshots[providerID] = retained
-                // 정상 캐시 없는 이력 전용 값은 CLI의 persisted freshness에서 한도 성공으로 오인하지 않도록 미저장.
-                if !staleAccountStamp, cache.loadSnapshots(providerIDs: [providerID])[providerID] != nil {
-                    cache.store(
-                        retained, producedByIdentityKey: providerIdentityKeys[providerID], markSessionFresh: false
-                    )
-                }
-                rebuildRenderedSnapshots()
-                if snapshot.usageHistory != nil, notifyHistoryChange { onLocalHistoryChanged?() }
-            }
-            // 실패 negative-cache — wake 연발의 tight-loop 재probe 차단.
-            failureRetryAfter[providerID] = now().addingTimeInterval(Self.failureRetryBackoff)
-            if snapshot.errorCategory == .notLoggedIn || snapshot.errorCategory == .notAvailable {
-                AppLog.info(.refresh, "\(providerID) unavailable: \(message)")
-            } else {
-                AppLog.error(.refresh, "\(providerID) failed: \(message)")
-            }
-            onRefreshOutcome?(providerID, .failed, snapshot.errorCategory, trigger, false)
-            return .failed
-        }
-        refreshResults[providerID] = .succeeded
-        invalidatedAuthentication.remove(providerID)
-        // 회복 시 backoff 해제 — 즉시 정상 cadence 복귀.
-        failureRetryAfter[providerID] = nil
-        // live limit refresh 성공 + local log/CSV scan 무결과이면 last-good normalized history만 보존(새 plan·
-        // limit·warning·timestamp는 반영). non-nil 빈 history는 scan 완료의 증거라 authoritative — 기존 행 삭제.
-        var degraded = snapshot.warning != nil || snapshot.isDegraded == true
-        if snapshot.usageHistory == nil,
-           let history = localSnapshots[providerID]?.usageHistory,
-           let descriptor = registry.historyDescriptorsByProvider[providerID]
-        {
-            degraded = true
-            snapshot.usageHistory = history
-            snapshot = UsageHistorySnapshotRenderer.render(
-                local: snapshot,
-                history: history,
-                descriptor: descriptor,
-                now: now(),
-                combined: false
-            )
-            AppLog.debug(.refresh, "preserved last-good history for \(providerID) after scan miss")
-        }
-        if provider.retainsDedicatedSpendOnScanFailure, snapshot.totalSpendLines == nil,
-           let previous = localSnapshots[providerID],
-           Calendar.current.isDate(previous.totalSpendRefreshedAt ?? previous.refreshedAt, inSameDayAs: snapshot.refreshedAt),
-           let lines = previous.totalSpendLines {
-            degraded = true
-            snapshot.totalSpendLines = lines
-            snapshot.totalSpendRefreshedAt = previous.totalSpendRefreshedAt ?? previous.refreshedAt
-            snapshot.isDegraded = true
-        }
-        localSnapshots[providerID] = snapshot
-        // launch에 해석된 account identity로 write를 stamp — 비계정 provider·identity 미해석 카드는 nil(no stamp).
-        cache.store(snapshot, producedByIdentityKey: providerIdentityKeys[providerID])
-        if trigger == .weeklyTimerCheck || trigger == .weeklyTimer {
-            providersNeedingScheduledRefresh.insert(providerID)
-        } else {
-            providersNeedingScheduledRefresh.remove(providerID)
-        }
-        if unresolvedClaudeIdentity {
-            // 캐시 재사용 없이도 마지막 성공 값의 유효 기간만큼 자동 재조회 대기.
-            let freshnessDeadline = snapshot.freshnessDate.addingTimeInterval(RefreshSetting.interval(for: providerID))
-            if (scheduledRefreshDates[providerID] ?? .distantPast) < freshnessDeadline {
-                scheduledRefreshDates[providerID] = freshnessDeadline
-                scheduledRefreshUpdatedAt[providerID] = monotonicNow()
-            }
-        } else {
-            unresolvedIdentityCacheRejections.remove(providerID)
-        }
-        providersNeedingCredentialRefresh.remove(providerID)
-        rebuildRenderedSnapshots()
-        if notifyHistoryChange { onLocalHistoryChanged?() }
-        AppLog.info(.refresh, "\(providerID) ok (\(durationMs)ms)")
-        onRefreshOutcome?(providerID, .refreshed, nil, trigger, degraded)
-        onFreshSnapshot?(snapshot, provider.widgetDescriptors, trigger)
-        return .refreshed
-    }
-
-    private func durationMilliseconds(since start: TimeInterval) -> Int {
-        max(0, Int((monotonicNow() - start) * 1000))
-    }
-
-    /// 실패 backoff 해제 — provider 재활성화라는 사용자 action만 호출(주기 loop는 호출 금지),
-    /// enablement wake의 즉시 fetch가 꺼지기 직전 실패의 stale backoff에 막히지 않도록 보장.
-    func clearFailureBackoff(for providerID: String) {
-        failureRetryAfter[providerID] = nil
-        scheduledRefreshDates[providerID] = nil
-        scheduledRefreshUpdatedAt[providerID] = nil
-    }
-
-    /// Provider toggle 직후 in-memory union 재구성 — disabled provider는 peer 기여 수신 중단, local 캐시는 직접 API 읽기에 유지.
-    func providerEnablementDidChange() {
-        for id in registry.providers.map(\.id) where !isProviderEnabled(id) {
-            authenticationGenerations[id, default: 0] += 1
-        }
-        onQuotaInvalidated?(nil)
-        rebuildRenderedSnapshots()
-    }
-
-    /// 다운로드한 peer set 교체 — device별 최신 유효 문서만 남기고 이 Mac의 자체 사본은 현재 메모리 우선으로 제외.
-    func setPeerHistoryDocuments(_ documents: [UsageHistoryDocument], ownDeviceID: String) {
-        peerHistoryDocuments = UsageHistoryDocument.newestByDevice(documents)
-            .filter { $0.deviceID != ownDeviceID }
-        rebuildRenderedSnapshots()
-    }
-
-    func clearPeerHistoryDocuments() {
-        guard !peerHistoryDocuments.isEmpty else { return }
-        peerHistoryDocuments = []
-        rebuildRenderedSnapshots()
-    }
-
-    func localHistoryDocument(deviceID: String, deviceName: String, updatedAt: Date = Date()) -> UsageHistoryDocument {
-        var providers: [String: ProviderUsageHistory] = [:]
-        var identities: [String: String] = [:]
-        // machine-local 카드는 account 카드 포함 전부 sync — id가 identity 파생이라 모든 Mac에서 같은 account를
-        // 의미. identities map은 peer가 default 카드의 history를 그쪽 카드에 매칭하는 근거(`PeerHistoryRemapper`).
-        for (providerID, descriptor) in registry.historyDescriptorsByProvider
-        where descriptor.scope == .machineLocal && isProviderEnabled(providerID) {
-            if let history = localSnapshots[providerID]?.usageHistory {
-                providers[providerID] = history
-                // managed shared-home history는 switch된 모든 account의 session이 섞인 family 합계 — 선택 profile의
-                // identity 없이 sync. stamp를 찍으면 peer가 합계 전체를 현재 선택 account로 재귀속.
-                if let identity = providerIdentityKeys[providerID],
-                   !familyTotalHistoryCardIDs.contains(providerID) {
-                    identities[providerID] = identity
-                }
-            }
-        }
-        return UsageHistoryDocument(
-            deviceID: deviceID,
-            deviceName: deviceName,
-            updatedAt: updatedAt,
-            providers: providers,
-            identities: identities.isEmpty ? nil : identities
-        )
-    }
-
-    private func rebuildRenderedSnapshots() {
-        guard !peerHistoryDocuments.isEmpty else {
-            snapshots = localSnapshots
-            remoteOnlySpend = []
-            return
-        }
-        let renderDate = now()
-        let enabledDescriptors = registry.historyDescriptorsByProvider.reduce(
-            into: [String: UsageHistoryDescriptor]()
-        ) { result, entry in
-            guard isProviderEnabled(entry.key) else { return }
-            if ProviderAccountID.family(of: entry.key) == "claude",
-               providerIdentityKeys[entry.key] == nil,
-               localSnapshots[entry.key] == nil,
-               refreshResults[entry.key]?.failure != nil { return }
-            result[entry.key] = entry.value
-        }
-        // peer 매칭은 card id가 아닌 account identity 기준 — 같은 account가 Mac마다 다른 카드일 수 있음.
-        // local 카드와 무매칭이면 아래에서 Total Spend 전용 remote entry로 처리.
-        let remapped = PeerHistoryRemapper.remap(
-            documents: peerHistoryDocuments,
-            localIdentityByCardID: providerIdentityKeys
-        )
-        let merged = UsageHistoryAggregator.merged(
-            localSnapshots: localSnapshots,
-            peerHistories: remapped.histories,
-            descriptors: enabledDescriptors,
-            now: renderDate
-        )
-        let enabledFamilies = Set(registry.historyDescriptorsByProvider.keys
-            .filter { isProviderEnabled($0) }
-            .map { ProviderAccountID.family(of: $0) })
-        remoteOnlySpend = Self.renderRemoteOnlySpend(
-            remapped.remoteOnly.filter { enabledFamilies.contains($0.family) },
-            registry: registry,
-            now: renderDate
-        )
-        var rendered = localSnapshots
-        for (providerID, history) in merged {
-            guard let descriptor = registry.historyDescriptorsByProvider[providerID],
-                  let provider = registry.provider(id: providerID)
-            else { continue }
-            let local = localSnapshots[providerID] ?? ProviderSnapshot(
-                providerID: providerID,
-                displayName: provider.displayName,
-                lines: [],
-                refreshedAt: peerHistoryDocuments.map(\.updatedAt).max() ?? renderDate
-            )
-            rendered[providerID] = UsageHistorySnapshotRenderer.render(
-                local: local,
-                history: history,
-                descriptor: descriptor,
-                now: renderDate
-            )
-        }
-        snapshots = rendered
-    }
-
-    /// 다른 Mac에만 있는 account의 Total Spend entry 합성 — pseudo provider(family icon, "Claude · Mac mini")
-    /// + 실제 카드와 같은 renderer로 그린 표준 spend-tile line snapshot.
-    private static func renderRemoteOnlySpend(
-        _ remoteOnly: [PeerHistoryRemapper.RemoteOnlyHistory],
-        registry: WidgetRegistry,
-        now: Date
-    ) -> [(provider: Provider, snapshot: ProviderSnapshot)] {
-        remoteOnly.compactMap { entry in
-            guard let familyProvider = registry.provider(id: entry.family),
-                  let descriptor = registry.historyDescriptorsByProvider[entry.family]
-            else { return nil }
-            let history = UsageHistoryAggregator.mergeHistories(entry.histories, now: now)
-            guard !history.series.daily.isEmpty else { return nil }
-
-            // slice 이름은 identity 파생 card id("claude@ab12cd34") — account별 유일, 그 account가 여기 로그인하면
-            // 받을 id와 동일. pseudo provider id는 실제 card id와 충돌하지 않도록 별도 형식 유지.
-            let provider = Provider(
-                id: "\(entry.family)@peer-\(ProviderAccountID.hash8(entry.identityKey))",
-                displayName: entry.cardID,
-                icon: familyProvider.icon
-            )
-            let empty = ProviderSnapshot(
-                providerID: provider.id,
-                displayName: provider.displayName,
-                lines: [],
-                refreshedAt: now
-            )
-            let snapshot = UsageHistorySnapshotRenderer.render(
-                local: empty,
-                history: history,
-                descriptor: descriptor,
-                now: now
-            )
-            return (provider, snapshot)
-        }
-    }
+    /// 프로바이더별 현재 조회 결과 — 일괄 조회 요약에 사용.
+    /// backedOff는 실패 대기, skipped는 비활성·미등록·진행 중 등의 사유로 조회 생략.
+    typealias RefreshOutcome = ProviderRefreshCoordinator.RefreshOutcome
 
     func errorMessage(for providerID: String) -> String? {
         refreshResults[providerID]?.failure?.localizedMessage
     }
 
-    /// 동일 계정 재로그인도 이전 인증의 성공·실패·진행 중 결과를 무효화하고 새 조회 요구.
-    func invalidateAuthentication(for providerID: String) {
-        scheduledRefreshDates[providerID] = nil
-        scheduledRefreshUpdatedAt[providerID] = nil
-        guard providersByID[providerID] != nil else { return }
-        authenticationGenerations[providerID, default: 0] &+= 1
-        onQuotaInvalidated?([providerID])
-        invalidatedAuthentication.insert(providerID)
-        refreshResults[providerID] = nil
-        if var snapshot = localSnapshots[providerID], snapshot.authenticationIssue != nil {
-            snapshot.authenticationIssue = nil
-            snapshot.warning = nil
-            snapshot.warningPresentation = nil
-            localSnapshots[providerID] = snapshot
-            rebuildRenderedSnapshots()
-        }
-        failureRetryAfter[providerID] = nil
-    }
-
-    /// 최신 *성공* snapshot의 soft warning(예: Claude "Re-login for live usage") — 실패 후에도 last-good이
-    /// 유지돼 남을 수 있음; 렌더링되는 triangle은 hard error가 우선하는 `headerNotice(for:)` 사용.
+    /// 마지막 정상 결과의 경고 — 이후 조회가 실패해도 유지될 수 있음.
+    /// 화면 표시는 현재 오류를 우선하는 headerNotice(for:) 사용.
     func warningMessage(for providerID: String) -> String? {
         snapshots[providerID]?.localizedWarning
     }
 
-    /// Provider header의 amber-triangle notice — 현재 hard refresh error가 stale soft warning에 우선
-    /// (에러가 밀리면 stale warning이 실제 실패를 가림). 에러 없으면 soft warning 표시.
+    /// 프로바이더 제목 옆 경고 — 현재 조회 오류, 자동 제어 경고, 마지막 정상 결과의 경고 순서.
+    /// 이전 경고가 현재 실패를 가리지 않도록 우선순위 적용.
     func headerNotice(for providerID: String) -> String? {
-        errorMessage(for: providerID) ?? automationWarnings[providerID].map { L10n.errors($0) } ?? warningMessage(for: providerID)
-    }
-
-    func setAutomationWarning(_ message: String?, for providerID: String) {
-        guard providersByID[providerID] != nil else { return }
-        automationWarnings[providerID] = message
-    }
-
-    /// 에러 line만 있는 snapshot은 실패한 refresh — 메시지는 badge에서 추출.
-    private static func errorMessage(in snapshot: ProviderSnapshot) -> String? {
-        guard !snapshot.lines.isEmpty, snapshot.lines.allSatisfy(\.isError) else { return nil }
-        if case .badge(_, let text, _, _) = snapshot.lines[0] { return text }
-        return "Refresh failed"
+        errorMessage(for: providerID) ?? refreshCoordinator.automationWarnings[providerID].map { L10n.errors($0) }
+            ?? warningMessage(for: providerID)
     }
 
     func setCodexResetWatch(_ watch: CodexResetWatch?, refreshFailed: Bool = false, isAbsent: Bool = false) {
@@ -999,41 +356,11 @@ final class WidgetDataStore {
     }
 
     func data(for descriptor: WidgetDescriptor) -> WidgetData {
-        var result: WidgetData
-        if ProviderAccountID.canonicalMetricID(descriptor.id) == "codex.resetWatch" {
-            if let watch = codexResetWatch.watch {
-                result = WidgetData(
-                    title: descriptor.sample.title,
-                    icon: descriptor.sample.icon,
-                    kind: .percent,
-                    used: ProviderParse.clampPercent(watch.chancePercent),
-                    limit: 100
-                )
-            } else {
-                result = descriptor.sample
-                result.hasData = codexResetWatch.isAbsent
-            }
-            result.forecast = .init(
-                deadline: codexResetWatch.watch?.deadline,
-                refreshFailed: codexResetWatch.refreshFailed,
-                communityYesPercent: codexResetWatch.watch?.communityYesPercent,
-                isScheduled: codexResetWatch.watch?.isScheduled ?? false
-            )
-        } else if let snapshot = snapshots[descriptor.providerID],
-           let line = snapshot.line(label: descriptor.metricLabel),
-           let data = resolve(line, descriptor: descriptor) {
-            result = data
-            if let message = snapshot.metricPresentations?[descriptor.metricLabel] {
-                result.valueTextOverride = message.localized
-            }
-            result.codexResetClaimBinding = snapshot.codexResetClaimBinding
-        } else {
-            // 배치된 tile을 뒷받침하는 실제 metric line 부재 — sample 숫자는 placeholder이므로 no-data 처리.
-            result = descriptor.sample
-            result.hasData = false
-        }
+        var result = WidgetDataResolver.resolve(
+            descriptor, snapshot: snapshots[descriptor.providerID], codexResetWatch: codexResetWatch
+        )
 
-        // 전역 단일 choke point — dashboard/share 행과 메뉴바 값이 모두 여기를 거치므로 mode를 한 번만 stamp.
+        // 대시보드·공유 이미지·메뉴 막대의 공통 표시 설정 적용 지점.
         result.displayMode = meterStyle
         result.resetDisplayMode = resetDisplayMode
         result.alwaysShowPacing = alwaysShowPacing
@@ -1041,23 +368,23 @@ final class WidgetDataStore {
             for: descriptor.softLimitWindow,
             periodDurationMs: result.periodDurationMs
         )
-        // 행 자신의 카드 identity — per-card action(Codex reset-claim router)의 키.
+        // 행이 속한 카드 ID — 카드별 크레딧 사용 요청의 대상 키.
         result.providerID = descriptor.providerID
         return result.presented(at: now())
     }
 
-    /// 최신 snapshot의 plan label — snapshot 없음·plan 미노출이면 nil. provider section header가 표시.
+    /// 현재 조회 결과의 플랜 이름 — 결과가 없거나 플랜을 제공하지 않으면 nil.
     func plan(for providerID: String) -> String? {
         snapshots[providerID]?.plan
     }
 
-    /// 표시 중 snapshot의 staleness 판정 경계 — 2 interval. 정상 per-cycle aging에는 미발화(flicker 방지),
-    /// refresh가 실제로 누락됐을 때(계속 실패하는 loop, 장기 suspend된 timer)만 발화.
+    /// 일반 프로바이더 조회 주기의 두 배에 해당하는 경과 기준.
+    /// 화면의 실제 오래됨 판정은 프로바이더별 조회 주기 적용.
     static let stalenessThreshold = RefreshSetting.interval * 2
 
-    /// snapshot이 `stalenessThreshold`를 넘겼을 때의 "Outdated" 힌트 — 데이터가 현재이면 nil.
-    /// 실패 loop가 last-good plan/limit을 계속 표시하는 fossilized-cache(#582)의 가시화 장치;
-    /// label은 header overflow 방지를 위해 짧게, 정확한 age는 tooltip에. 주입된 clock 사용(테스트 고정).
+    /// 프로바이더별 조회 주기의 두 배가 지나면 Outdated 안내 반환 — 그 전에는 nil.
+    /// 반복 실패로 마지막 정상 한도·플랜이 계속 표시되는 상태를 드러내는 안내.
+    /// 라벨은 짧게 유지하고 정확한 경과 시간은 툴팁에 표시 — 주입된 시계 사용.
     func stalenessHint(for providerID: String) -> StalenessHint? {
         guard let refreshedAt = snapshots[providerID]?.freshnessDate else { return nil }
         let age = now().timeIntervalSince(refreshedAt)
@@ -1065,65 +392,6 @@ final class WidgetDataStore {
             return nil
         }
         return StalenessHint(label: L10n.metrics("Outdated"), tooltip: L10n.metrics("Last updated %@ ago", duration))
-    }
-
-    private func resolve(_ line: MetricLine, descriptor: WidgetDescriptor) -> WidgetData? {
-        switch line {
-        case .progress(_, let used, let limit, let format, let resetsAt, let periodDurationMs, _):
-            // percent meter는 0...100 bounded — 모든 provider가 거치는 단일 구성 choke point에서 clamp,
-            // 어떤 표면도 "-5%"/"105%"를 렌더하지 않음. 비percent는 raw 유지 — 실제 overage는 spent state로 전달.
-            let normalizedUsed = format == .percent ? ProviderParse.clampPercent(used) : used
-            var result = WidgetData(
-                title: descriptor.sample.title,
-                icon: descriptor.sample.icon,
-                kind: format.metricKind,
-                used: normalizedUsed,
-                limit: limit,
-                countSuffix: format.countSuffix,
-                valuePrefix: descriptor.sample.valuePrefix,
-                resetsAt: resetsAt,
-                periodDurationMs: periodDurationMs,
-                limitNoun: descriptor.sample.limitNoun,
-                infoNote: descriptor.sample.infoNote
-            )
-            // `.progress` 결과는 sample에서 시작하지 않으므로 provider별 미시작 신호 전달.
-            result.sessionStartSignal = descriptor.sample.sessionStartSignal
-            return result
-        case .text:
-            // text line은 local API용 provider notice — 숫자 widget은 typed line만 소비, display text parse 금지.
-            return nil
-        case .values(_, let values, _, let expiriesAt, let unknownModels, let modelBreakdown):
-            // 숫자는 raw로 carry(regex re-parse 없음) — presentation은 sample, live 값은 line.
-            var data = descriptor.sample
-            data.values = values
-            // `.values` line은 정의상 unbounded — descriptor template의 placeholder limit이 있어도 meter로 렌더하지 않음.
-            data.limit = nil
-            // 만료 시각(Codex reset-credit) — row hover tooltip에 노출, clock tick마다 재렌더로 live 유지.
-            data.expiriesAt = expiriesAt
-            // 가격 미확정 모델 메타데이터 보존 — 집계 제약은 카드 경고와 분리.
-            data.unknownModels = unknownModels
-            data.modelBreakdown = modelBreakdown
-            // selection에 값이 없는 tile은 "No data" 렌더 — 오해 소지의 $0.00 / 0 방지.
-            data.hasData = !data.selectedValues.isEmpty
-            // ⓘ는 data-driven — 표시 값이 로컬 추정(estimated)일 때만 estimate note, 실측 값은 clean.
-            data.infoNote = data.selectedValues.contains(where: \.estimated)
-                ? WidgetData.localEstimateNote
-                : descriptor.sample.infoNote
-            return data
-        case .badge(_, let text, _, let subtitle):
-            var data = descriptor.sample
-            data.valueTextOverride = text
-            data.subtitleOverride = subtitle
-            return data
-        case .chart(_, let points, let note):
-            // point 없음은 "source를 읽었지만 사용 가능한 day 없음" — 빈 축 대신 "No data" 렌더.
-            var data = descriptor.sample
-            data.isChart = true
-            data.chartPoints = points
-            data.chartNote = note
-            data.hasData = !points.isEmpty
-            return data
-        }
     }
 
 }

@@ -89,6 +89,24 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         return warningPresentation?.map(\.localized).joined(separator: " ") ?? warning
     }
 
+    /// 오류 행만 있는 응답의 실패 정보 — 부분 성공과 구분.
+    var refreshFailure: ProviderRefreshFailure? {
+        guard !lines.isEmpty, lines.allSatisfy(\.isError) else { return nil }
+        let message: String
+        if case .badge(_, let text, _, _) = lines[0] {
+            message = text
+        } else {
+            message = "Refresh failed"
+        }
+        return ProviderRefreshFailure(
+            message: [message, warning].compactMap { $0 }.joined(separator: " "),
+            category: errorCategory ?? .other,
+            authenticationIssue: authenticationIssue,
+            presentation: errorPresentation ?? warning.map { _ in .verbatim(message) },
+            warningPresentations: warningPresentation ?? warning.map { [.verbatim($0)] } ?? []
+        )
+    }
+
     func line(label: String) -> MetricLine? {
         lines.first { $0.label == label }
     }
