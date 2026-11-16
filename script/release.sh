@@ -104,10 +104,14 @@ chmod +x "$CLI_BINARY"
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$CLI_BINARY"
 # --arch 누락 등으로 단일 architecture 빌드가 되면 명확히 실패.
 # fat binary 보장이 필요하며 generate_appcast도 여기서 Sparkle hardwareRequirements를 유도.
-lipo -archs "$APP_BINARY" | grep -q "x86_64" && lipo -archs "$APP_BINARY" | grep -q "arm64" \
-  || { echo "Expected a universal (arm64 + x86_64) binary, got: $(lipo -archs "$APP_BINARY")" >&2; exit 1; }
-lipo -archs "$CLI_BINARY" | grep -q "x86_64" && lipo -archs "$CLI_BINARY" | grep -q "arm64" \
-  || { echo "Expected a universal CLI, got: $(lipo -archs "$CLI_BINARY")" >&2; exit 1; }
+if ! lipo -archs "$APP_BINARY" | grep -q "x86_64" || ! lipo -archs "$APP_BINARY" | grep -q "arm64"; then
+  echo "Expected a universal (arm64 + x86_64) binary, got: $(lipo -archs "$APP_BINARY")" >&2
+  exit 1
+fi
+if ! lipo -archs "$CLI_BINARY" | grep -q "x86_64" || ! lipo -archs "$CLI_BINARY" | grep -q "arm64"; then
+  echo "Expected a universal CLI, got: $(lipo -archs "$CLI_BINARY")" >&2
+  exit 1
+fi
 
 # SwiftPM은 실제 컴파일 SDK가 아닌 deployment target(macOS 15)을 LC_BUILD_VERSION의 `sdk`로 기록.
 # macOS는 link된 SDK로 최신 Liquid Glass control 외형 적용 여부를 판단하므로 "15.0"이면 AppKit이

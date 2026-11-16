@@ -113,35 +113,37 @@ Astro CLI가 에이전트 환경에서 백그라운드 서버를 시작하면 `n
 `npm run build`는 페이지만 만듦.
 조립 전 `site/`에서 `npm ci` 실행 필요.
 배포물은 `gh-pages`의 feed 파일을 보존해야 하므로 조립 스크립트로 출력 검증.
-`main`에 사이트·조립 스크립트·provider 아이콘·앱의 한국어·일본어 번역 리소스·게시 workflow 변경을 푸시하면 `Publish landing page`가 `gh-pages`에 반영.
-번역 리소스 범위는 `Sources/Egasu/Resources/Localization/{ko,ja}.lproj/*.strings`.
-자동·수동 게시 모두 재사용하는 `Site CI`의 정적 검사·단위 테스트·E2E·조립 검증을 통과해야 게시 시작.
-사이트 게시 대상만 바뀐 `main` push는 게시 내부 검증 한 번으로 처리.
-그 밖의 앱 소스·배포 workflow 변경과 PR은 독립 `Site CI`에서 검증하며, 두 변경 범위가 섞인 push는 양쪽에서 검증 가능.
-가격표 자동·수동 게시 작업은 `main`에서만 실행하며 다른 브랜치·태그의 수동 게시 작업은 건너뜀.
+버전 태그를 푸시하면 `Publish landing page`가 그 태그의 사이트를 `gh-pages`에 게시.
+앱 릴리스·가격표 게시도 같은 태그 푸시로 시작.
+정식·베타 태그 모두 기존 버전 형식과 `main` 이력 포함 여부 확인.
+수동 게시도 `tag` 입력 필수이며 검증·빌드·게시 모두 지정한 태그의 소스 사용.
+자동·수동 사이트 게시 모두 재사용하는 `Site CI`의 정적 검사·단위 테스트·E2E·조립 검증을 통과해야 게시 시작.
+사이트·조립 스크립트·앱 소스·배포 workflow 변경의 `main` push와 PR은 독립 `Site CI`에서 검증만 수행.
 게시 전후 `appcast.xml`·`pricing_supplement.json`의 Git blob을 비교하고, 모두 같을 때 게시 커밋 기록.
 게시 전에는 기존 `openusage.chanhyung.kim` 또는 새 `egasu.chanhyung.kim` 도메인 허용.
 게시 후에는 새 도메인만 허용.
 필수 파일 누락·심볼릭 링크 등 일반 파일이 아닌 항목·허용하지 않은 도메인·`gh-pages/.github` 존재 시 게시 전 실패.
-Release·가격표·사이트 게시가 각각 기록한 커밋을 `pages-publication-<실행 시도 번호>` 산출물로 전달.
+Release·가격표·사이트 게시가 각각 기록한 게시 커밋·태그·소스 커밋을 `pages-publication-<실행 시도 번호>` 산출물로 전달.
 `Deploy Pages`는 성공한 실행의 해당 산출물을 받아 그 커밋만 배포하므로, 대기 중 다른 게시가 시작돼도 배포 내용 고정.
-자동 배포에서 산출물 누락·만료·잘못된 커밋 값은 실패 처리하며 최신 `gh-pages`로 대체하지 않음.
+자동·수동 배포 모두 원격 태그와 게시 소스 커밋이 같은지 확인.
+산출물 누락·만료·잘못된 커밋 값은 실패 처리하며 최신 `gh-pages`로 대체하지 않음.
 
 Release·가격표 게시와 `release-appcast` 실행 그룹 공유.
 사이트는 검증을 마친 게시 작업만 이 그룹에 진입하며, 검증 작업은 호출 workflow별 별도 실행 그룹 사용.
 게시 작업은 `queue: max`로 대기 작업을 보존하고 `cancel-in-progress: false`로 진행 중 작업 유지.
 게시 실패 시 원인을 확인한 뒤 해당 workflow를 다시 실행하고, 후속 `Deploy Pages` 성공까지 확인.
-사이트 재게시 명령은 `gh workflow run publish-site.yml --repo kimchanhyung98/egasu --ref main`.
+사이트 수동 재게시 명령은 `gh workflow run publish-site.yml --repo kimchanhyung98/egasu --ref main -f tag=<버전 태그>`.
+`--ref main`은 실행할 workflow를 선택하며, 게시 소스는 `tag` 입력으로 고정.
 Pages 배포만 실패하면 해당 배포 실행을 재실행하여 같은 게시 커밋으로 재시도.
-산출물 도입 전 게시 실행이나 산출물이 만료된 실행은 새 게시 실행 필요.
-직접 복구할 때는 현재 `gh-pages`의 피드·도메인·사이트 내용을 확인한 뒤 `gh workflow run deploy-pages.yml --repo kimchanhyung98/egasu --ref main`으로 수동 배포.
-이 수동 경로는 현재 `gh-pages`를 배포하며 이전 게시 실행의 커밋에 고정되지 않음.
+태그 기록이 없는 옛 산출물이나 만료된 산출물은 같은 태그로 새 게시 실행 필요.
+Pages 수동 재배포 명령은 `gh workflow run deploy-pages.yml --repo kimchanhyung98/egasu --ref main -f tag=<버전 태그> -f publication_run_id=<성공한 게시 실행 ID>`.
+지정한 실행이 성공한 게시 workflow인지 확인하고, 산출물의 태그가 입력 태그와 같을 때만 배포.
 두 명령 모두 운영 배포를 실행하므로 로컬 검증용으로 사용하지 않음.
 대기열 동작은 [GitHub concurrency 안내](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency) 기준.
 
 `keep_files: true`로 이전 해시 자산과 삭제된 사이트 경로도 `gh-pages`에 보존.
 현재 게시 과정에는 정리 단계가 없으므로 소스에서 파일을 삭제해도 공개 경로는 제거되지 않음.
-페이지 내용 롤백은 해당 소스 변경을 revert한 뒤 `main`에 푸시하고 게시·배포 결과 확인.
+페이지 내용 롤백은 해당 소스 변경을 revert한 뒤 새 버전 태그로 게시·배포 결과 확인.
 사이트 완전 제거는 feed를 보존한 별도 정리 작업 필요.
 
 ```sh

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, matchesGlob } from 'node:path';
+import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 function workflowStep(name: string, file = 'publish-site.yml') {
@@ -26,7 +26,7 @@ function publicationFixture() {
   mkdirSync(published);
   mkdirSync(join(checkout, 'script'), { recursive: true });
   copyFileSync(new URL('../../script/site_feed_snapshot.sh', import.meta.url), join(checkout, 'script/site_feed_snapshot.sh'));
-  const env = { ...process.env, RUNNER_TEMP: temp, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+  const env = { ...process.env, RUNNER_TEMP: temp, PUBLICATION_TAG: 'v1.2.3', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
   function git(cwd: string, ...args: string[]) {
     const result = spawnSync('git', args, { cwd, env, encoding: 'utf8', timeout: 5000 });
     assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -44,6 +44,10 @@ function publicationFixture() {
   writeFileSync(join(published, 'pricing_supplement.json'), '{"pricing":{}}\n');
   writeFileSync(join(published, 'CNAME'), 'egasu.chanhyung.kim\n');
   commit();
+  git(published, 'branch', 'main');
+  git(published, 'tag', 'v1.2.3');
+  git(checkout, 'fetch', '--quiet', 'origin', 'main');
+  git(checkout, 'checkout', '--quiet', '-B', 'main', 'FETCH_HEAD');
   return {
     temp, published, checkout, commit, git,
     run(name: string, file = 'publish-site.yml', extraEnv: NodeJS.ProcessEnv = {}) {
@@ -78,7 +82,7 @@ test('피드 두 개와 도메인을 보존하는 사이트 갱신 허용', () =
     fixture.commit();
     const after = fixture.run(verify);
     assert.equal(after.status, 0, after.stderr);
-    assert.equal(readFileSync(join(fixture.temp, 'revision.txt'), 'utf8').trim(),
+    assert.equal(readFileSync(join(fixture.temp, 'pages-publication/revision.txt'), 'utf8').trim(),
       fixture.git(fixture.published, 'rev-parse', 'HEAD'));
   } finally { fixture.cleanup(); }
 });
@@ -94,7 +98,7 @@ test('기존 도메인에서 egasu 도메인으로 첫 사이트 게시 허용',
     fixture.commit();
     const after = fixture.run(verify);
     assert.equal(after.status, 0, after.stderr);
-    assert.equal(readFileSync(join(fixture.temp, 'revision.txt'), 'utf8').trim(),
+    assert.equal(readFileSync(join(fixture.temp, 'pages-publication/revision.txt'), 'utf8').trim(),
       fixture.git(fixture.published, 'rev-parse', 'HEAD'));
   } finally { fixture.cleanup(); }
 });
@@ -110,7 +114,7 @@ test('첫 사이트 게시 후 기존 도메인이 남으면 거부', () => {
     const after = fixture.run(verify);
     assert.notEqual(after.status, 0);
     assert.match(after.stderr, /CNAME does not match/);
-    assert.equal(existsSync(join(fixture.temp, 'revision.txt')), false);
+    assert.equal(existsSync(join(fixture.temp, 'pages-publication/revision.txt')), false);
   } finally { fixture.cleanup(); }
 });
 
@@ -135,7 +139,7 @@ for (const file of ['appcast.xml', 'pricing_supplement.json', 'CNAME']) {
       const result = fixture.run(verify);
       assert.notEqual(result.status, 0);
       assert.match(result.stderr + result.stdout, /Published feeds changed|CNAME does not match/);
-      assert.equal(existsSync(join(fixture.temp, 'revision.txt')), false);
+      assert.equal(existsSync(join(fixture.temp, 'pages-publication/revision.txt')), false);
     } finally { fixture.cleanup(); }
   });
 }
@@ -184,8 +188,11 @@ for (const file of ['release.yml', 'pricing-supplement.yml']) {
     try {
       const result = fixture.run('게시된 Pages 커밋 기록', file);
       assert.equal(result.status, 0, result.stderr);
-      assert.equal(readFileSync(join(fixture.temp, 'revision.txt'), 'utf8').trim(),
+      assert.equal(readFileSync(join(fixture.temp, 'pages-publication/revision.txt'), 'utf8').trim(),
         fixture.git(fixture.published, 'rev-parse', 'HEAD'));
+      assert.equal(readFileSync(join(fixture.temp, 'pages-publication/tag.txt'), 'utf8').trim(), 'v1.2.3');
+      assert.equal(readFileSync(join(fixture.temp, 'pages-publication/source.txt'), 'utf8').trim(),
+        fixture.git(fixture.checkout, 'rev-parse', 'HEAD'));
     } finally { fixture.cleanup(); }
   });
 }
@@ -309,30 +316,44 @@ function deploymentFixture() {
   const fixture = publicationFixture();
   const bin = join(fixture.temp, 'bin');
   const artifact = join(fixture.temp, 'downloaded-revision.txt');
+  const tagArtifact = join(fixture.temp, 'downloaded-tag.txt');
+  const sourceArtifact = join(fixture.temp, 'downloaded-source.txt');
+  const runMetadata = join(fixture.temp, 'publication-run-fixture.json');
   const githubEnv = join(fixture.temp, 'github-env');
   const ghArgs = join(fixture.temp, 'gh-args');
   mkdirSync(bin);
   writeFileSync(artifact, fixture.git(fixture.published, 'rev-parse', 'HEAD') + '\n');
+  writeFileSync(tagArtifact, 'v1.2.3\n');
+  writeFileSync(sourceArtifact, fixture.git(fixture.checkout, 'rev-parse', 'HEAD') + '\n');
+  writeFileSync(runMetadata, JSON.stringify({ name: 'Publish landing page', event: 'workflow_dispatch', conclusion: 'success', run_attempt: 2 }));
   writeFileSync(githubEnv, '');
   // 원격 다운로드만 대체. 커밋 선택·체크아웃은 실제 워크플로우와 Git으로 검증.
   writeFileSync(join(bin, 'gh'), `#!/usr/bin/env bash
 set -euo pipefail
+if [ "$1" = api ]; then cat "$GH_RUN_METADATA"; exit 0; fi
 printf '%s\\n' "$@" > "$GH_ARGS"
 if [ "$GH_DOWNLOAD_FAIL" = 1 ]; then exit 1; fi
 mkdir -p "$RUNNER_TEMP/pages-publication"
 cp "$GH_ARTIFACT" "$RUNNER_TEMP/pages-publication/revision.txt"
+if [ -n "$GH_TAG_ARTIFACT" ]; then cp "$GH_TAG_ARTIFACT" "$RUNNER_TEMP/pages-publication/tag.txt"; fi
+cp "$GH_SOURCE_ARTIFACT" "$RUNNER_TEMP/pages-publication/source.txt"
 `, { mode: 0o755 });
   return {
-    ...fixture, artifact, githubEnv, ghArgs,
+    ...fixture, artifact, tagArtifact, sourceArtifact, runMetadata, githubEnv, ghArgs,
     select(extraEnv: NodeJS.ProcessEnv = {}) {
       return fixture.run('배포할 게시 커밋 선택', 'deploy-pages.yml', {
         PATH: `${bin}:${process.env.PATH}`,
         EVENT_NAME: 'workflow_run',
+        REQUESTED_TAG: '',
+        MANUAL_RUN_ID: '',
         PUBLISH_RUN_ID: '12345',
         PUBLISH_RUN_ATTEMPT: '2',
         GITHUB_REPOSITORY: 'fixture/egasu',
         GITHUB_ENV: githubEnv,
         GH_ARTIFACT: artifact,
+        GH_TAG_ARTIFACT: tagArtifact,
+        GH_SOURCE_ARTIFACT: sourceArtifact,
+        GH_RUN_METADATA: runMetadata,
         GH_ARGS: ghArgs,
         GH_DOWNLOAD_FAIL: '0',
         ...extraEnv,
@@ -353,7 +374,7 @@ test('후속 게시가 피드를 변경해도 성공한 실행의 커밋으로 �
 
     const result = fixture.select();
     assert.equal(result.status, 0, result.stderr);
-    const selected = readFileSync(fixture.githubEnv, 'utf8').trim().replace(/^PAGES_REF=/, '');
+    const selected = readFileSync(fixture.githubEnv, 'utf8').split('\n').find((line) => line.startsWith('PAGES_REF='))!.slice(10);
     assert.equal(selected, verifiedRef);
     fixture.git(fixture.checkout, 'fetch', '--quiet', 'origin', selected);
     fixture.git(fixture.checkout, 'checkout', '--quiet', '--detach', 'FETCH_HEAD');
@@ -387,20 +408,66 @@ for (const ref of ['', 'gh-pages', 'a'.repeat(39), 'a'.repeat(40) + '\nPAGES_REF
   });
 }
 
-test('명시적인 수동 복구 배포는 현재 gh-pages 사용', () => {
+for (const tag of ['main', 'v0.6.28']) {
+  test(`잘못된 게시 산출물 태그 ${JSON.stringify(tag)} 거부`, () => {
+    const fixture = deploymentFixture();
+    try {
+      writeFileSync(fixture.tagArtifact, tag);
+      const result = fixture.select();
+      assert.notEqual(result.status, 0);
+      assert.match(result.stdout, /Invalid publication tag/);
+      assert.equal(readFileSync(fixture.githubEnv, 'utf8'), '');
+    } finally { fixture.cleanup(); }
+  });
+}
+
+test('수동 재배포도 지정한 태그의 성공한 게시 커밋 사용', () => {
   const fixture = deploymentFixture();
   try {
-    const result = fixture.select({ EVENT_NAME: 'workflow_dispatch', GH_DOWNLOAD_FAIL: '1' });
+    const result = fixture.select({ EVENT_NAME: 'workflow_dispatch', REQUESTED_TAG: 'v1.2.3', MANUAL_RUN_ID: '12345' });
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(readFileSync(fixture.githubEnv, 'utf8'), 'PAGES_REF=gh-pages\n');
-    assert.equal(existsSync(fixture.ghArgs), false);
+    const ref = readFileSync(fixture.artifact, 'utf8').trim();
+    assert.match(readFileSync(fixture.githubEnv, 'utf8'), new RegExp(`^PAGES_REF=${ref}\\nPUBLISH_TAG=v1\\.2\\.3\\n`));
+    assert.equal(existsSync(fixture.ghArgs), true);
   } finally { fixture.cleanup(); }
 });
 
-test('가격표 게시 작업은 main ref에서만 실행', () => {
-  const workflow = readFileSync(new URL('../../.github/workflows/pricing-supplement.yml', import.meta.url), 'utf8');
-  assert.match(workflow, /jobs:\n  publish:\n    if: github\.ref == 'refs\/heads\/main'\n/);
-  assert.match(workflow, /\n  workflow_dispatch:/);
+for (const tag of ['', 'v1.2.4', 'main']) {
+  test(`수동 Pages 배포 태그 ${JSON.stringify(tag)} 불일치 거부`, () => {
+    const fixture = deploymentFixture();
+    try {
+      const result = fixture.select({ EVENT_NAME: 'workflow_dispatch', REQUESTED_TAG: tag, MANUAL_RUN_ID: '12345' });
+      assert.notEqual(result.status, 0);
+      assert.equal(readFileSync(fixture.githubEnv, 'utf8'), '');
+    } finally { fixture.cleanup(); }
+  });
+}
+
+for (const patch of [{ conclusion: 'failure' }, { name: 'CI' }, { event: 'pull_request' }]) {
+  test(`수동 Pages 배포의 미검증 실행 ${JSON.stringify(patch)} 거부`, () => {
+    const fixture = deploymentFixture();
+    try {
+      const metadata = JSON.parse(readFileSync(fixture.runMetadata, 'utf8'));
+      writeFileSync(fixture.runMetadata, JSON.stringify({ ...metadata, ...patch }));
+      const result = fixture.select({ EVENT_NAME: 'workflow_dispatch', REQUESTED_TAG: 'v1.2.3', MANUAL_RUN_ID: '12345' });
+      assert.notEqual(result.status, 0);
+      assert.equal(existsSync(fixture.ghArgs), false);
+      assert.equal(readFileSync(fixture.githubEnv, 'utf8'), '');
+    } finally { fixture.cleanup(); }
+  });
+}
+
+test('태그 기록이 없는 옛 게시 산출물은 배포 거부', () => {
+  const fixture = deploymentFixture();
+  try {
+    const result = fixture.select({ GH_TAG_ARTIFACT: '' });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /cat: .*\/pages-publication\/tag\.txt:/);
+    assert.doesNotMatch(result.stderr, /cp:/);
+    assert.equal(existsSync(join(fixture.temp, 'pages-publication/revision.txt')), true);
+    assert.equal(existsSync(join(fixture.temp, 'pages-publication/source.txt')), true);
+    assert.equal(readFileSync(fixture.githubEnv, 'utf8'), '');
+  } finally { fixture.cleanup(); }
 });
 
 const supplement = JSON.parse(readFileSync(new URL('../../Sources/Egasu/Resources/pricing_supplement.json', import.meta.url), 'utf8'));
@@ -427,47 +494,6 @@ for (const [updatedAt, valid] of [
     } finally { rmSync(temp, { recursive: true, force: true }); }
   });
 }
-
-test('사이트 게시 대상만 변경된 push는 게시 내부 검증으로 처리', () => {
-  function paths(file: string, event: 'push' | 'pull_request'): string[] {
-    const workflow = readFileSync(new URL(`../../.github/workflows/${file}`, import.meta.url), 'utf8');
-    const lines = workflow.split('\n');
-    const start = lines.indexOf(`  ${event}:`);
-    assert.notEqual(start, -1, `${file}: ${event}`);
-    const patterns: string[] = [];
-    for (const line of lines.slice(start + 1)) {
-      if (line && !line.startsWith('    ')) break;
-      const match = line.match(/^      - '([^']+)'$/);
-      if (match) patterns.push(match[1]);
-    }
-    assert.ok(patterns.length > 0, `${file}: ${event} paths`);
-    return patterns;
-  }
-  const filters = [paths('publish-site.yml', 'push'), paths('site.yml', 'push'), paths('site.yml', 'pull_request')];
-  const ko = 'Sources/Egasu/Resources/Localization/ko.lproj/Settings.strings';
-  const cases: Array<[string[], boolean[]]> = [
-    [['site/src/scripts/localization.ts'], [true, false, true]],
-    [['script/site_assemble.sh'], [true, false, true]],
-    [['Sources/Egasu/Resources/ProviderIcons/codex.svg'], [true, false, true]],
-    [[ko], [true, false, true]],
-    [['Sources/Egasu/Resources/Localization/ja.lproj/Metrics.strings'], [true, false, true]],
-    [[ko, 'Sources/Egasu/Stores/WidgetDataStore.swift'], [true, true, true]],
-    [['Sources/Egasu/Resources/Localization/en.lproj/Settings.strings'], [false, true, true]],
-    [['Sources/Egasu/Resources/Localization/ko.lproj/README.md'], [false, true, true]],
-    [['.github/workflows/publish-site.yml'], [true, false, true]],
-    [['.github/workflows/site.yml'], [false, true, true]],
-    [['docs/settings.md'], [false, false, false]],
-  ];
-  for (const [changed, expected] of cases) {
-    const selected = filters.map((patterns) => changed.some((path) => patterns.reduce((included, pattern) => {
-      const excluded = pattern.startsWith('!');
-      return matchesGlob(path, excluded ? pattern.slice(1) : pattern) ? !excluded : included;
-    }, false)));
-    assert.deepEqual(selected, expected, changed.join(', '));
-  }
-  assert.match(readFileSync(new URL('../../.github/workflows/site.yml', import.meta.url), 'utf8'), /\n  workflow_call:/);
-});
-
 
 test('서로 다른 세 publisher의 대기 작업을 같은 직렬화 그룹에서 보존', () => {
   const publishers = ['release.yml', 'pricing-supplement.yml', 'publish-site.yml'];

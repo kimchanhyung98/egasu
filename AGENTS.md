@@ -16,7 +16,11 @@ Inspect the available Jev MCP tools and their descriptions, then choose and use 
 
 ## Releases
 
-`main` is the active development line; it ships via `.github/workflows/release.yml` (Sparkle appcast on `gh-pages`). Cut releases with the release-swift skill.
+`main`이 활성 개발 라인이며 `.github/workflows/release.yml`(Sparkle appcast, `gh-pages`)로 배포.
+앱 릴리스·사이트·가격표 게시의 기준은 `main` 이력에 포함된 버전 태그.
+`main` 푸시는 검증만 수행하며 자동 게시하지 않음.
+수동 게시도 대상 태그 필수이며, Pages 재배포는 해당 태그의 성공한 게시 실행 결과 사용.
+릴리스는 release-swift 스킬로 진행.
 
 ### Guardrails (do not break)
 - Versions are `0.7.x` and up. Never reuse a `0.6.x` number — those are the original edition's released tags, now frozen on the `tauri-legacy` branch (final release `v0.6.28`).
@@ -36,7 +40,12 @@ Inspect the available Jev MCP tools and their descriptions, then choose and use 
 Conventions for the per-provider modules under `Sources/Egasu/Providers/<Name>/`.
 
 - **Structure:** one folder per provider with an auth store (reads credentials already on the user's machine), a usage client (calls the provider API), and a mapper (normalizes to `MetricLine`), conforming to `ProviderRuntime` — `refresh()` plus `hasLocalCredentials()`, the local-only credential probe used by first-run detection (`FirstRunSeeder`) and by new-provider detection on the first launch after the provider ships (`NewProviderSeeder`); mirror the same local credential sources and usability filters that `refresh()` starts with, reusing the auth-store loaders instead of adding a second credential-reading path. See `docs/adding-a-provider.md` and `docs/provider-enablement.md`.
-- **Model pricing:** all spend imputation (Claude, Codex, Cursor, Grok) prices through the shared engine in `Sources/Egasu/Pricing/` (see `docs/pricing.md`). Cursor-native model rates and alias rules live in `Sources/Egasu/Resources/pricing_supplement.json` — sync new or changed models from [Cursor models & pricing](https://cursor.com/docs/models-and-pricing.md) (update `updated_at`, pricing entries, and `alias_rules` for CSV model slugs); merging to `main` publishes it to gh-pages, so installed apps pick it up without a release. The bundled LiteLLM/models.dev snapshots regenerate with `script/update_pricing_snapshots.sh` (a release-time chore).
+- **모델 가격:** 지출 추정(Claude, Codex, Cursor, Grok)은 `Sources/Egasu/Pricing/`의 공용 엔진으로 가격 계산([모델 가격](/docs/pricing.md) 참조).
+  Cursor 전용 단가와 별칭 규칙은 `Sources/Egasu/Resources/pricing_supplement.json`에 저장.
+  신규·변경 모델은 [Cursor models & pricing](https://cursor.com/docs/models-and-pricing.md)에서 동기화하고, `updated_at`·단가·CSV 모델 slug의 `alias_rules` 갱신.
+  버전 태그 푸시 또는 해당 태그의 수동 게시 후 gh-pages와 Pages에 반영.
+  설치된 앱은 앱 업데이트 없이 다음 가격표 갱신에서 반영.
+  번들 LiteLLM/models.dev 스냅샷은 릴리스 시점에 `script/update_pricing_snapshots.sh`로 재생성.
 - **Default order:** Claude, Codex, Cursor first (the established providers, in that order), then every other provider alphabetically by display name (Antigravity, Devin, Grok, …). The order is the array order in `AppContainer`, which seeds `LayoutStore`'s default provider order (and `resetToDefault`). A new provider slots into the alphabetical tail.
 - **Metric placement defaults:** when adding or changing a metric, confirm its four defaults with the owner before choosing — never pick silently:
   1. enabled on/off (`DefaultLayout.metricIDs`),
