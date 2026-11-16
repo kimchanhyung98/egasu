@@ -237,5 +237,4 @@ struct ClaudeUsageStateStore: Sendable {
         }
         return false
     }
-
 }
