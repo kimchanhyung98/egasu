@@ -32,7 +32,7 @@ enum StorageMigration {
     static func runIfNeeded(_ environment: Environment = Environment()) throws -> Bool {
         guard !environment.defaults.bool(forKey: completedKey) else { return false }
         let filesCarried = try carryFiles(environment)
-        let waiting = carryKeychain(environment)
+        let waiting = try carryKeychain(environment)
         if filesCarried { environment.defaults.set(true, forKey: completedKey) }
         AppLog.info(
             .config,
@@ -46,10 +46,10 @@ enum StorageMigration {
         let moves = environment.namespace.isProduction
         var succeeded = true
         func carry(_ source: URL, to destination: URL, move: Bool) {
-            guard fileManager.fileExists(atPath: source.path), !fileManager.fileExists(atPath: destination.path) else {
-                return
-            }
             do {
+                guard !fileManager.fileExists(atPath: destination.path),
+                    try sourceExists(source, fileManager: fileManager)
+                else { return }
                 try fileManager.createDirectory(
                     at: destination.deletingLastPathComponent(), withIntermediateDirectories: true,
                     attributes: [.posixPermissions: 0o700]
@@ -57,7 +57,7 @@ enum StorageMigration {
                 if move {
                     try fileManager.moveItem(at: source, to: destination)
                 } else {
-                    try fileManager.copyItem(at: source, to: destination)
+                    try copyComplete(source, to: destination, fileManager: fileManager)
                 }
             } catch {
                 succeeded = false
@@ -106,10 +106,10 @@ enum StorageMigration {
         let fileManager = environment.fileManager
         let legacy = environment.applicationSupportRoot
             .appendingPathComponent("\(StorageNamespace.legacyName)/claude-usage-state", isDirectory: true)
-        guard fileManager.fileExists(atPath: legacy.path) else { return true }
         let target = environment.applicationSupportRoot
             .appendingPathComponent("\(environment.namespace.name)/claude-usage-state", isDirectory: true)
         do {
+            guard try sourceExists(legacy, fileManager: fileManager) else { return true }
             let files = try fileManager.contentsOfDirectory(at: legacy, includingPropertiesForKeys: nil)
             try fileManager.createDirectory(
                 at: target, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -128,12 +128,12 @@ enum StorageMigration {
                     let lease = try ClaudeUsageStateStore.tryAcquireForMigration(fileURL: source)
                     defer { withExtendedLifetime(lease) {} }
                     guard !fileManager.fileExists(atPath: destination.path),
-                        fileManager.fileExists(atPath: source.path)
+                        try sourceExists(source, fileManager: fileManager)
                     else { continue }
                     if environment.namespace.isProduction {
                         try fileManager.moveItem(at: source, to: destination)
                     } else {
-                        try fileManager.copyItem(at: source, to: destination)
+                        try copyComplete(source, to: destination, fileManager: fileManager)
                     }
                 } catch let error as CocoaError
                     where
@@ -166,13 +166,13 @@ enum StorageMigration {
         for file in configFiles {
             let source = legacy.appendingPathComponent(file)
             let destination = target.appendingPathComponent(file)
-            guard fileManager.fileExists(atPath: source.path), !fileManager.fileExists(atPath: destination.path) else {
-                continue
-            }
             do {
+                guard !fileManager.fileExists(atPath: destination.path),
+                    try sourceExists(source, fileManager: fileManager)
+                else { continue }
                 try fileManager.createDirectory(
                     at: target, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-                try fileManager.copyItem(at: source.resolvingSymlinksInPath(), to: destination)
+                try copyComplete(source.resolvingSymlinksInPath(), to: destination, fileManager: fileManager)
             } catch CocoaError.fileWriteFileExists where fileManager.fileExists(atPath: destination.path) {
                 // 앱과 CLI가 함께 시작해 먼저 복사한 파일은 보존.
                 continue
@@ -185,12 +185,59 @@ enum StorageMigration {
         return succeeded
     }
 
+    private static func sourceExists(_ source: URL, fileManager: FileManager) throws -> Bool {
+        do {
+            _ = try fileManager.attributesOfItem(atPath: source.path)
+            return true
+        } catch {
+            let nsError = error as NSError
+            if (nsError.domain == NSCocoaErrorDomain
+                && (nsError.code == CocoaError.fileNoSuchFile.rawValue
+                    || nsError.code == CocoaError.fileReadNoSuchFile.rawValue))
+                || (nsError.domain == NSPOSIXErrorDomain && nsError.code == Int(ENOENT))
+            {
+                return false
+            }
+            throw error
+        }
+    }
+
+    private static func copyComplete(_ source: URL, to destination: URL, fileManager: FileManager) throws {
+        let staging = destination.deletingLastPathComponent()
+            .appendingPathComponent(".\(destination.lastPathComponent).\(UUID().uuidString).tmp")
+        do {
+            try fileManager.copyItem(at: source, to: staging)
+            try fileManager.moveItem(at: staging, to: destination)
+        } catch {
+            if fileManager.fileExists(atPath: staging.path) {
+                do {
+                    try fileManager.removeItem(at: staging)
+                } catch {
+                    AppLog.error(
+                        .config, "storage migration couldn't remove temporary copy: \(error.localizedDescription)")
+                    throw error
+                }
+            }
+            if let cocoaError = error as? CocoaError, cocoaError.code == .fileWriteFileExists,
+                fileManager.fileExists(atPath: destination.path)
+            {
+                return
+            }
+            throw error
+        }
+    }
+
     /// 등록 계정마다 승인 없이 한 번 읽어 새 이름으로 저장 — 승인이 필요한 계정 수 반환.
     @MainActor
-    private static func carryKeychain(_ environment: Environment) -> Int {
-        guard let data = environment.defaults.data(forKey: AccountProfilesStore.storageKey),
-            let registry = try? JSONDecoder().decode(AccountProfilesStore.Blob.self, from: data)
-        else { return 0 }
+    private static func carryKeychain(_ environment: Environment) throws -> Int {
+        guard let data = environment.defaults.data(forKey: AccountProfilesStore.storageKey) else { return 0 }
+        let registry: AccountProfilesStore.Blob
+        do {
+            registry = try JSONDecoder().decode(AccountProfilesStore.Blob.self, from: data)
+        } catch {
+            AppLog.error(.config, "storage migration couldn't read account registry: \(error.localizedDescription)")
+            throw error
+        }
         let vault = AccountCredentialVault(
             keychain: environment.keychain, pendingMigration: environment.pending, namespace: environment.namespace
         )
