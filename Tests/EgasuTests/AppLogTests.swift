@@ -47,6 +47,41 @@ final class AppLogTests: XCTestCase {
     }
 
     @MainActor
+    func testHTTPLogsExcludeRequestAndResponsePayloadsAtEveryStatus() async throws {
+        AppLog.reloadLevel(.debug)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [HTTPLogURLProtocol.self]
+        let session = URLSessionHTTPClient.makeCookieFreeSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let client = URLSessionHTTPClient()
+
+        for status in [200, 400, 401, 500] {
+            let url = try XCTUnwrap(URL(string: "https://egasu-log-test.invalid/\(status)?token=PRIVATE_QUERY_VALUE"))
+            let response = try await client.send(
+                HTTPRequest(
+                    method: "POST", url: url,
+                    headers: ["Authorization": "Bearer PRIVATE_AUTH_VALUE", "Cookie": "session=PRIVATE_COOKIE_VALUE"],
+                    body: Data("PRIVATE_REQUEST_BODY".utf8)
+                ), using: session)
+            XCTAssertEqual(response.statusCode, status)
+            XCTAssertEqual(String(decoding: response.body, as: UTF8.self), HTTPLogURLProtocol.body)
+            XCTAssertEqual(response.header("x-private-header"), "PRIVATE_RESPONSE_HEADER")
+        }
+
+        let contents = try fileContents()
+        for status in [200, 400, 401, 500] {
+            XCTAssertTrue(contents.contains("POST https://egasu-log-test.invalid/\(status)?token="), contents)
+            XCTAssertTrue(contents.contains("-> \(status)"), contents)
+        }
+        for value in [
+            "PRIVATE_QUERY_VALUE", "PRIVATE_AUTH_VALUE", "PRIVATE_COOKIE_VALUE",
+            "PRIVATE_REQUEST_BODY", "PRIVATE_RESPONSE_HEADER", HTTPLogURLProtocol.body
+        ] {
+            XCTAssertFalse(contents.contains(value), contents)
+        }
+    }
+
+    @MainActor
     func testLocalAPIDoesNotLogUntrustedRequestText() throws {
         AppLog.reloadLevel(.debug)
         let server = LocalUsageServer(state: {
@@ -153,4 +188,33 @@ final class AppLogTests: XCTestCase {
             contents
         )
     }
+}
+
+private final class HTTPLogURLProtocol: URLProtocol, @unchecked Sendable {
+    static let body = "PRIVATE_RESPONSE_BODY_WITH_UNSTRUCTURED_ACCOUNT_DETAILS"
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url?.host == "egasu-log-test.invalid"
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        guard let url = request.url, let status = Int(url.lastPathComponent),
+            let response = HTTPURLResponse(
+                url: url, statusCode: status, httpVersion: nil,
+                headerFields: ["X-Private-Header": "PRIVATE_RESPONSE_HEADER"]
+            )
+        else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+            return
+        }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(Self.body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }

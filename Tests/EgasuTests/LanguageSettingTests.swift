@@ -91,6 +91,48 @@ final class LanguageSettingTests: XCTestCase {
         XCTAssertEqual(UserDefaults.standard.string(forKey: LanguageSetting.key), saved)
     }
 
+    @MainActor
+    func testAsyncLanguageScopeKeepsCallerActorAndNonSendableResult() async {
+        let active = L10n.language
+        let text = NSMutableString(string: "")
+        let result = await L10n.withLanguage(.korean) {
+            MainActor.assertIsolated()
+            await Task.yield()
+            MainActor.assertIsolated()
+            text.append(L10n.common("Settings"))
+            return text
+        }
+
+        XCTAssertTrue(result === text)
+        XCTAssertEqual(result as String, "설정")
+        XCTAssertEqual(L10n.language, active)
+    }
+
+    @MainActor
+    func testAsyncLanguageScopeRestoresAfterNestedFailure() async {
+        enum Failure: Error { case expected }
+        let active = L10n.language
+        let saved = UserDefaults.standard.string(forKey: LanguageSetting.key)
+
+        await L10n.withLanguage(.korean) {
+            do {
+                try await L10n.withLanguage(.japanese) {
+                    await Task.yield()
+                    XCTAssertEqual(L10n.common("Settings"), "設定")
+                    throw Failure.expected
+                }
+                XCTFail("Expected the scoped operation to throw")
+            } catch Failure.expected {
+                XCTAssertEqual(L10n.common("Settings"), "설정")
+            } catch {
+                XCTFail("Unexpected error: \(error)")
+            }
+        }
+
+        XCTAssertEqual(L10n.language, active)
+        XCTAssertEqual(UserDefaults.standard.string(forKey: LanguageSetting.key), saved)
+    }
+
     func testUnknownDynamicNamesRemainLiteral() {
         for language in LanguageSetting.allCases {
             L10n.withLanguage(language) {

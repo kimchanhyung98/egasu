@@ -27,7 +27,7 @@ final class ClaudeConfigDirDiscoveryTests: XCTestCase {
     func testAcceptsADirWithIdentityAndFileCredential() throws {
         let discovery = makeDiscovery(
             files: [
-                "/Users/dev/.claude-work/.claude.json": #"{"oauthAccount": {"accountUuid": "ACCT-2", "emailAddress": "work@example.com", "organizationName": "Sunstory"}}"#,
+                "/Users/dev/.claude-work/.claude.json": #"{"oauthAccount": {"accountUuid": "ACCT-2", "emailAddress": "work@example.com", "organizationName": "Company"}}"#,
                 "/Users/dev/.claude-work/.credentials.json": #"{"claudeAiOauth": {"accessToken": "at-2"}}"#,
             ],
             subdirectories: ["/Users/dev/.claude-work"]
@@ -38,7 +38,7 @@ final class ClaudeConfigDirDiscoveryTests: XCTestCase {
         let finding = try XCTUnwrap(result.findings.first)
         XCTAssertEqual(result.findings.count, 1)
         XCTAssertEqual(finding.identityKey, "acct-2")
-        XCTAssertEqual(finding.label, "work@example.com (Sunstory)")
+        XCTAssertEqual(finding.label, "work@example.com (Company)")
         XCTAssertEqual(finding.anchorPath, "/Users/dev/.claude-work")
     }
 

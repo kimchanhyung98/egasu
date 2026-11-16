@@ -304,9 +304,9 @@ struct StreamingProcessRunner: StreamingProcessRunning {
             .map { "\($0.key)=\($0.value)" }
             .sorted()
         var pid = pid_t(0)
-        let spawnStatus = try path.withCString { executable in
-            try withCStringArray(argv) { argvPointer in
-                try withCStringArray(environment) { environmentPointer in
+        let spawnStatus = path.withCString { executable in
+            withCStringArray(argv) { argvPointer in
+                withCStringArray(environment) { environmentPointer in
                     posix_spawn(
                         &pid,
                         executable,

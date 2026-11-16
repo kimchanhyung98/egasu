@@ -1,3 +1,4 @@
+import Synchronization
 import XCTest
 @testable import Egasu
 
@@ -229,12 +230,13 @@ private extension LoginShellEnvironment {
     /// `ensureCaptured`가 main thread에서 spawn을 거부하므로 off-main으로 우회해 강제 capture
     func ensureCapturedForTesting() -> Bool {
         let done = DispatchSemaphore(value: 0)
-        var result = false
+        let result = Mutex(false)
         DispatchQueue.global().async {
-            result = self.ensureCaptured()
+            let captured = self.ensureCaptured()
+            result.withLock { $0 = captured }
             done.signal()
         }
         done.wait()
-        return result
+        return result.withLock { $0 }
     }
 }

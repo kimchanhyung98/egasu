@@ -33,12 +33,12 @@ final class CodexReSignInIsolationTests: XCTestCase {
     }
 
     func testSwitchingAwayCannotReplaceACompletedLoginWithThePreviousAccount() async throws {
-        let previous = entry(token: "previous-wv", account: "wv-account")
-        let ad = try addProfile(label: "ad", entry: previous)
-        let wv = try addProfile(label: "wv", entry: entry(token: "other-wv", account: "wv-account"))
+        let previous = entry(token: "previous-company", account: "company-account")
+        let personal = try addProfile(label: "personal", entry: previous)
+        let company = try addProfile(label: "company", entry: entry(token: "other-company", account: "company-account"))
         try switcher.applySharedAuthentication(previous, family: "codex")
-        let signIn = try workspace.prepareReauthentication(family: "codex", profileID: ad.id)
-        let fresh = entry(token: "fresh-admin", account: "admin-account")
+        let signIn = try workspace.prepareReauthentication(family: "codex", profileID: personal.id)
+        let fresh = entry(token: "fresh-personal", account: "personal-account")
 
         let code = try await runLogin(home: signIn.directory, script: """
         printf '%s' '\(fresh.credential)' > "$CODEX_HOME/auth.json"
@@ -46,26 +46,26 @@ final class CodexReSignInIsolationTests: XCTestCase {
         XCTAssertEqual(code, 0)
 
         // 로그인 프로세스 종료와 UI의 결과 저장 사이에 다른 화면의 전환 완료.
-        try switcher.switchAuthentication(to: wv, from: ad)
-        store.setPreferred(family: "codex", profileID: wv.id)
+        try switcher.switchAuthentication(to: company, from: personal)
+        store.setPreferred(family: "codex", profileID: company.id)
         let restored = try importer.completeReSignIn(
-            profileID: ad.id, in: store, isActive: false, signInAttemptID: signIn.attemptID
+            profileID: personal.id, in: store, isActive: false, signInAttemptID: signIn.attemptID
         )
 
-        XCTAssertEqual(restored.identityKey, "admin-account")
+        XCTAssertEqual(restored.identityKey, "personal-account")
         XCTAssertEqual(try switcher.loadSnapshot(for: restored), fresh)
-        XCTAssertEqual(store.preferredProfileID(family: "codex"), wv.id)
-        XCTAssertEqual(try switcher.readSharedAuthentication(family: "codex"), try switcher.loadSnapshot(for: wv))
-        try workspace.remove(family: "codex", profileID: ad.id, attemptID: signIn.attemptID)
+        XCTAssertEqual(store.preferredProfileID(family: "codex"), company.id)
+        XCTAssertEqual(try switcher.readSharedAuthentication(family: "codex"), try switcher.loadSnapshot(for: company))
+        try workspace.remove(family: "codex", profileID: personal.id, attemptID: signIn.attemptID)
         XCTAssertEqual(try switcher.loadSnapshot(for: restored), fresh)
         XCTAssertEqual(try importer.readWorkspaceCredential(family: "codex", profileID: restored.id)?.entry, fresh)
     }
 
     func testFailedLoginCannotRevokeAnExistingSnapshotThroughItsWorkspaceCopy() async throws {
-        let original = entry(token: "saved-admin", account: "admin-account")
-        let ad = try addProfile(label: "ad", entry: original)
+        let original = entry(token: "saved-personal", account: "personal-account")
+        let personal = try addProfile(label: "personal", entry: original)
         try switcher.applySharedAuthentication(original, family: "codex")
-        let signIn = try workspace.prepareReauthentication(family: "codex", profileID: ad.id)
+        let signIn = try workspace.prepareReauthentication(family: "codex", profileID: personal.id)
 
         // Codex 0.166의 로그인 시작 시 기존 인증 폐기를 재현하는 로컬 CLI.
         let code = try await runLogin(home: signIn.directory, script: """
@@ -78,52 +78,54 @@ final class CodexReSignInIsolationTests: XCTestCase {
 
         XCTAssertEqual(code, 1)
         XCTAssertFalse(FileManager.default.fileExists(atPath: signIn.directory.appendingPathComponent("revoked").path))
-        XCTAssertEqual(try switcher.loadSnapshot(for: ad), original)
+        XCTAssertEqual(try switcher.loadSnapshot(for: personal), original)
         XCTAssertEqual(try switcher.readSharedAuthentication(family: "codex"), original)
-        XCTAssertEqual(try importer.readWorkspaceCredential(family: "codex", profileID: ad.id)?.entry, original)
-        try workspace.remove(family: "codex", profileID: ad.id, attemptID: signIn.attemptID)
-        XCTAssertEqual(try importer.readWorkspaceCredential(family: "codex", profileID: ad.id)?.entry, original)
+        XCTAssertEqual(try importer.readWorkspaceCredential(family: "codex", profileID: personal.id)?.entry, original)
+        try workspace.remove(family: "codex", profileID: personal.id, attemptID: signIn.attemptID)
+        XCTAssertEqual(try importer.readWorkspaceCredential(family: "codex", profileID: personal.id)?.entry, original)
     }
 
     func testASecondLoginCannotReadThePreviousAttemptsCredential() async throws {
-        let original = entry(token: "saved-admin", account: "admin-account")
-        let ad = try addProfile(label: "ad", entry: original)
-        let first = try workspace.prepareReauthentication(family: "codex", profileID: ad.id)
-        let second = try workspace.prepareReauthentication(family: "codex", profileID: ad.id)
-        let stale = entry(token: "late-wv", account: "wv-account")
+        let original = entry(token: "saved-personal", account: "personal-account")
+        let personal = try addProfile(label: "personal", entry: original)
+        let first = try workspace.prepareReauthentication(family: "codex", profileID: personal.id)
+        let second = try workspace.prepareReauthentication(family: "codex", profileID: personal.id)
+        let stale = entry(token: "late-company", account: "company-account")
         try workspace.writePrivateFile(stale.credential, to: first.directory.appendingPathComponent("auth.json"))
 
-        XCTAssertNil(try importer.readWorkspaceCredential(family: "codex", profileID: ad.id, attemptID: second.attemptID))
-        XCTAssertEqual(try switcher.loadSnapshot(for: ad), original)
+        XCTAssertNil(try importer.readWorkspaceCredential(family: "codex", profileID: personal.id, attemptID: second.attemptID))
+        XCTAssertEqual(try switcher.loadSnapshot(for: personal), original)
     }
 
     func testRemovingAnAccountAlsoRemovesItsAbandonedLoginAttempt() throws {
-        let ad = try addProfile(label: "ad", entry: entry(token: "saved-admin", account: "admin-account"))
-        let otherCredential = entry(token: "saved-wv", account: "wv-account")
-        let wv = try addProfile(label: "wv", entry: otherCredential)
-        store.setPreferred(family: "codex", profileID: wv.id)
+        let personal = try addProfile(
+            label: "personal", entry: entry(token: "saved-personal", account: "personal-account")
+        )
+        let otherCredential = entry(token: "saved-company", account: "company-account")
+        let company = try addProfile(label: "company", entry: otherCredential)
+        store.setPreferred(family: "codex", profileID: company.id)
         try switcher.applySharedAuthentication(otherCredential, family: "codex")
-        let abandoned = try workspace.prepareReauthentication(family: "codex", profileID: ad.id)
-        let otherAttempt = try workspace.prepareReauthentication(family: "codex", profileID: wv.id)
+        let abandoned = try workspace.prepareReauthentication(family: "codex", profileID: personal.id)
+        let otherAttempt = try workspace.prepareReauthentication(family: "codex", profileID: company.id)
         try workspace.writePrivateFile(
-            entry(token: "abandoned-admin", account: "admin-account").credential,
+            entry(token: "abandoned-personal", account: "personal-account").credential,
             to: abandoned.directory.appendingPathComponent("auth.json")
         )
 
-        try importer.removeAccount(ad, from: store)
+        try importer.removeAccount(personal, from: store)
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: abandoned.directory.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: otherAttempt.directory.path))
-        XCTAssertEqual(try switcher.loadSnapshot(for: wv), otherCredential)
+        XCTAssertEqual(try switcher.loadSnapshot(for: company), otherCredential)
         XCTAssertEqual(try switcher.readSharedAuthentication(family: "codex"), otherCredential)
     }
 
     func testAttemptPathsRejectTraversalAndSymlinks() throws {
-        let original = entry(token: "saved-admin", account: "admin-account")
-        let ad = try addProfile(label: "ad", entry: original)
+        let original = entry(token: "saved-personal", account: "personal-account")
+        let personal = try addProfile(label: "personal", entry: original)
         try switcher.applySharedAuthentication(original, family: "codex")
-        XCTAssertThrowsError(try workspace.prepare(family: "codex", profileID: ad.id, attemptID: "../outside"))
-        let signIn = try workspace.prepareReauthentication(family: "codex", profileID: ad.id)
+        XCTAssertThrowsError(try workspace.prepare(family: "codex", profileID: personal.id, attemptID: "../outside"))
+        let signIn = try workspace.prepareReauthentication(family: "codex", profileID: personal.id)
         let attemptID = try XCTUnwrap(signIn.attemptID)
         let outside = root.appendingPathComponent("outside")
         try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
@@ -133,34 +135,34 @@ final class CodexReSignInIsolationTests: XCTestCase {
         try FileManager.default.removeItem(at: signIn.directory)
         try FileManager.default.createSymbolicLink(at: signIn.directory, withDestinationURL: outside)
 
-        XCTAssertThrowsError(try workspace.prepare(family: "codex", profileID: ad.id, attemptID: attemptID))
-        XCTAssertThrowsError(try workspace.remove(family: "codex", profileID: ad.id, attemptID: attemptID))
+        XCTAssertThrowsError(try workspace.prepare(family: "codex", profileID: personal.id, attemptID: attemptID))
+        XCTAssertThrowsError(try workspace.remove(family: "codex", profileID: personal.id, attemptID: attemptID))
         XCTAssertThrowsError(try importer.readWorkspaceCredential(
-            family: "codex", profileID: ad.id, attemptID: attemptID
+            family: "codex", profileID: personal.id, attemptID: attemptID
         )) { error in
             guard case AccountSignInWorkspace.WorkspaceError.symlinkedComponent = error else {
                 return XCTFail("expected symlinkedComponent, got \(error)")
             }
         }
         XCTAssertThrowsError(try importer.completeReSignIn(
-            profileID: ad.id, in: store, isActive: true, signInAttemptID: attemptID
+            profileID: personal.id, in: store, isActive: true, signInAttemptID: attemptID
         )) { error in
             guard case AccountSignInWorkspace.WorkspaceError.symlinkedComponent = error else {
                 return XCTFail("expected symlinkedComponent, got \(error)")
             }
         }
         XCTAssertEqual(try String(contentsOf: protectedFile, encoding: .utf8), outsideCredential.credential)
-        XCTAssertEqual(store.profile(id: ad.id)?.identityKey, ad.identityKey)
-        XCTAssertEqual(try switcher.loadSnapshot(for: ad), original)
+        XCTAssertEqual(store.profile(id: personal.id)?.identityKey, personal.identityKey)
+        XCTAssertEqual(try switcher.loadSnapshot(for: personal), original)
         XCTAssertEqual(try switcher.readSharedAuthentication(family: "codex"), original)
-        XCTAssertEqual(try importer.readWorkspaceCredential(family: "codex", profileID: ad.id)?.entry, original)
+        XCTAssertEqual(try importer.readWorkspaceCredential(family: "codex", profileID: personal.id)?.entry, original)
     }
 
     func testAttemptCredentialFileCannotLinkToAnotherAccountsAuthentication() throws {
-        let original = entry(token: "saved-admin", account: "admin-account")
-        let ad = try addProfile(label: "ad", entry: original)
+        let original = entry(token: "saved-personal", account: "personal-account")
+        let personal = try addProfile(label: "personal", entry: original)
         try switcher.applySharedAuthentication(original, family: "codex")
-        let signIn = try workspace.prepareReauthentication(family: "codex", profileID: ad.id)
+        let signIn = try workspace.prepareReauthentication(family: "codex", profileID: personal.id)
         let outside = root.appendingPathComponent("outside-auth.json")
         let outsideCredential = entry(token: "outside-token", account: "outside-account")
         try Data(outsideCredential.credential.utf8).write(to: outside)
@@ -169,7 +171,7 @@ final class CodexReSignInIsolationTests: XCTestCase {
         )
 
         XCTAssertThrowsError(try importer.completeReSignIn(
-            profileID: ad.id, in: store, isActive: true, signInAttemptID: signIn.attemptID
+            profileID: personal.id, in: store, isActive: true, signInAttemptID: signIn.attemptID
         )) { error in
             XCTAssertEqual(
                 error as? AccountCredentialImporter.ImportError,
@@ -177,8 +179,8 @@ final class CodexReSignInIsolationTests: XCTestCase {
             )
         }
 
-        XCTAssertEqual(store.profile(id: ad.id)?.identityKey, ad.identityKey)
-        XCTAssertEqual(try switcher.loadSnapshot(for: ad), original)
+        XCTAssertEqual(store.profile(id: personal.id)?.identityKey, personal.identityKey)
+        XCTAssertEqual(try switcher.loadSnapshot(for: personal), original)
         XCTAssertEqual(try switcher.readSharedAuthentication(family: "codex"), original)
         XCTAssertEqual(try String(contentsOf: outside, encoding: .utf8), outsideCredential.credential)
     }

@@ -22,9 +22,7 @@ protocol HTTPClient: Sendable {
     func send(_ request: HTTPRequest) async throws -> HTTPResponse
 }
 
-// header·성공 응답 body 로깅 금지 — `Authorization`/`Cookie`/`Bearer` header와 token 포함 body 유출 방지.
-// Debug 라인은 method + redacted URL + status code만; HTTP 에러(>= 400)는 `LogRedaction.bodyPreview`를 통과한 500 byte 이하 preview만 추가 — 전체 body 금지.
-
+/// HTTP 헤더·본문은 기록에서 제외 — 메서드·마스킹한 URL·상태 코드만 기록.
 struct URLSessionHTTPClient: HTTPClient {
     /// true면 `127.0.0.1` 한정 self-signed TLS cert를 수용하는 loopback 세션 사용 (`LoopbackTLSDelegate`).
     /// 로컬 language server의 self-signed HTTPS 전용 — 기본 off, 원격 호출은 전체 certificate 검증 유지.
@@ -71,6 +69,13 @@ struct URLSessionHTTPClient: HTTPClient {
     }
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        let session = allowsInsecureLoopback
+            ? Self.loopbackSession
+            : (sendsCookies ? Self.session : Self.cookieFreeSession)
+        return try await send(request, using: session)
+    }
+
+    func send(_ request: HTTPRequest, using session: URLSession) async throws -> HTTPResponse {
         var urlRequest = URLRequest(url: request.url, timeoutInterval: request.timeout)
         urlRequest.httpMethod = request.method
         urlRequest.httpBody = request.body
@@ -78,9 +83,6 @@ struct URLSessionHTTPClient: HTTPClient {
             urlRequest.setValue(value, forHTTPHeaderField: key)
         }
 
-        let session = allowsInsecureLoopback
-            ? Self.loopbackSession
-            : (sendsCookies ? Self.session : Self.cookieFreeSession)
         let data: Data
         let response: URLResponse
         do { (data, response) = try await session.data(for: urlRequest) }
@@ -99,12 +101,8 @@ struct URLSessionHTTPClient: HTTPClient {
             headers[String(describing: key).lowercased()] = String(describing: value)
         }
 
-        let line = "\(request.method) \(LogRedaction.redactURL(request.url.absoluteString)) -> \(http.statusCode)"
-        if http.statusCode >= 400 {
-            AppLog.debug(.http, "\(line) body: \(LogRedaction.bodyPreview(String(decoding: data, as: UTF8.self)))")
-        } else {
-            AppLog.debug(.http, line)
-        }
+        AppLog.debug(
+            .http, "\(request.method) \(LogRedaction.redactURL(request.url.absoluteString)) -> \(http.statusCode)")
         return HTTPResponse(statusCode: http.statusCode, headers: headers, body: data)
     }
 }

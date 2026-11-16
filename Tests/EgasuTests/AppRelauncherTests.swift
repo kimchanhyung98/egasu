@@ -20,10 +20,13 @@ final class AppRelauncherTests: XCTestCase {
 
     func testSchedulingFailureKeepsAppOpenAndAllowsRetry() {
         let diagnostics = DiagnosticEventRecorder()
-        var shouldFail = true
+        var attempts = 0
         var terminated = false
         let relauncher = AppRelauncher(
-            scheduleRelaunch: { if shouldFail { throw CocoaError(.fileNoSuchFile) } },
+            scheduleRelaunch: {
+                attempts += 1
+                if attempts == 1 { throw CocoaError(.fileNoSuchFile) }
+            },
             terminate: { terminated = true }
         )
 
@@ -34,8 +37,8 @@ final class AppRelauncherTests: XCTestCase {
         XCTAssertEqual(diagnostics.events.map(\.operation), [.appRestart])
         XCTAssertEqual(diagnostics.events.map(\.result), [.failure])
 
-        shouldFail = false
         relauncher.restart()
+        XCTAssertEqual(attempts, 2)
         XCTAssertTrue(terminated)
         XCTAssertTrue(relauncher.isRestarting)
         XCTAssertNil(relauncher.errorMessage)
