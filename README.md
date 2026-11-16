@@ -41,6 +41,8 @@ Most providers read the credentials already on your machine (keychain, auth file
 - **Global shortcut.** Toggle the popover from anywhere — record any combo in Settings.
 - **Customize.** Turn providers and metrics on or off, choose which rows stay Always Visible or On Demand, and drag-reorder both.
 - **Stale-while-revalidate.** Cached values display instantly at launch; refresh runs every 5 minutes (15 minutes for Claude).
+- **[iCloud 동기화](/docs/icloud-sync.md).** 여러 Mac의 사용 내역을 선택적으로 합산.
+  현재·기존 저장 위치를 함께 읽고 기기별 최신 기록 사용.
 - **[One-shot CLI](docs/cli.md).** Agents can read stable limit JSON through the same five-minute cache (15 minutes for Claude) with `egasu`, or bypass freshness with `egasu --force`; the menu-bar app does not need to be running.
   CLI가 포함된 앱의 설정·저장 경로 사용.
   첫 조회 전에 기존 API 키와 Claude의 조회 대기·마지막 정상 사용량 이전.
