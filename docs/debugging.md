@@ -148,7 +148,7 @@ log show --last 10m --info --debug --predicate 'process == "egasu"'
 회귀 테스트는 가짜 인증 정보·격리된 SDK 요청·임시 파일 사용:
 
 ```sh
-CFFIXED_USER_HOME=/tmp/egasu-telemetry-tests EGASU_POSTHOG_TOKEN=phc_REPLACE_ME swift test --filter 'Telemetry|LogFile|WidgetDataStoreNotification|CodexResetClaimRouter'
+CFFIXED_USER_HOME=/tmp/egasu-telemetry-tests EGASU_POSTHOG_TOKEN=phc_REPLACE_ME swift test --filter 'Telemetry|AppDiagnostics|LogFile|WidgetDataStoreNotification|CodexResetClaimRouter'
 ```
 
 검증 범위는 SDK에 전달할 데이터의 마스킹, 공유 중지 이후 대기 이벤트, 재시작, 집계 날짜·버전, 로그 동시 기록, 계정 전환.
