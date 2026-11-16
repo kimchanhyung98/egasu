@@ -17,7 +17,7 @@ struct AccountAddSheet: View {
     private enum Phase: Equatable {
         case idle
         case signingIn
-        case failed(String)
+        case failed(String, allowsSignInAgain: Bool = false)
     }
 
     init(initialFamily: String, onCompleted: @escaping () -> Void) {
@@ -76,7 +76,7 @@ struct AccountAddSheet: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-            case .failed(let message):
+            case .failed(let message, _):
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(Theme.notice)
@@ -85,6 +85,14 @@ struct AccountAddSheet: View {
 
             HStack {
                 Spacer(minLength: 0)
+                if case .failed(_, true) = phase, family == "claude", isFirstAccount {
+                    Button(L10n.accounts("Sign In Again")) {
+                        addAccount(signInAgain: true)
+                    }
+                    .glassButtonStyle()
+                    .controlSize(.small)
+                    .disabled(container.accountSwitch.isSwitching)
+                }
                 Button(L10n.accounts(phase == .signingIn ? "Signing In…" : "Add Account")) {
                     addAccount()
                 }
@@ -103,39 +111,46 @@ struct AccountAddSheet: View {
         }
     }
 
-    private func addAccount() {
+    private func addAccount(signInAgain: Bool = false) {
         guard !container.accountSwitch.isSwitching else { return }
         phase = .signingIn
         let family = family
         let importer = AccountCredentialImporter()
 
-        // 등록 profile 없는 signed-in 기본 계정은 re-login 없이 직접 import.
-        if isFirstAccount {
+        // 첫 계정 → Shared Runtime Home으로 공식 로그인; 추가 계정 → 새 Sign-In Workspace 범위의 공식 로그인.
+        let profileID = isFirstAccount ? nil : UUID().uuidString
+        signInTask = Task {
+            var importingDefault = false
             do {
-                if let profile = try importer.importDefaultAccount(family: family, into: store) {
+                try Task.checkCancellation()
+                if signInAgain {
+                    guard !store.hasUnreadableRegistry else { throw AccountProfileError.registryUnreadable }
+                    guard try store.pendingIdentityReplacement() == nil else {
+                        throw AccountIdentityReplacementError.pendingTransaction
+                    }
+                    guard try !AccountSelectionSwitcher().hasPendingSwitch() else {
+                        throw AccountCredentialSwitcher.Error.switchRecoveryRequired
+                    }
+                    guard family == "claude", profileID == nil, store.profiles(family: family).isEmpty else {
+                        throw AccountCredentialImporter.ImportError.verificationFailed(family: family)
+                    }
+                }
+                // 명시적 재로그인 외에는 현재 기본 로그인부터 검증해 가져오기.
+                importingDefault = profileID == nil && !signInAgain
+                if importingDefault,
+                    let profile = try await importer.importDefaultAccount(family: family, into: store)
+                {
                     AppLog.info(.config, "accounts: imported the signed-in default \(family) account (\(profile.id.prefix(8))…)")
                     finish()
                     return
                 }
-            } catch {
-                fail(error)
-                return
-            }
-        }
-
-        // 첫 계정 → Shared Runtime Home으로 공식 로그인; 추가 계정 → 새 Sign-In Workspace 범위의 공식 로그인.
-        let profileID = isFirstAccount ? nil : UUID().uuidString
-        signInTask = Task {
-            do {
+                importingDefault = false
                 let workspace = AccountSignInWorkspace()
-                let home: String
+                let home: String?
                 if let profileID {
                     home = try workspace.prepare(family: family, profileID: profileID).path
                 } else {
-                    home = AccountShellInstaller.sharedConfigurationHome(
-                        family: family,
-                        homeDirectory: FileManager.default.homeDirectoryForCurrentUser
-                    )
+                    home = nil
                 }
                 let code = try await AccountSignInLauncher().runLogin(family: family, home: home)
                 try Task.checkCancellation()
@@ -162,7 +177,7 @@ struct AccountAddSheet: View {
                         into: store
                     )
                 } else {
-                    guard try importer.importDefaultAccount(family: family, into: store) != nil else {
+                    guard try await importer.importDefaultAccount(family: family, into: store) != nil else {
                         AppDiagnostics.record(.accountAdd, result: .failure, category: .authInvalid, providerID: family)
                         phase = .failed(L10n.accounts("The %@ sign-in finished without a usable credential. Nothing was added.", familyTitle))
                         return
@@ -178,7 +193,12 @@ struct AccountAddSheet: View {
                 if let profileID {
                     try? importer.removeSignInWorkspace(family: family, profileID: profileID)
                 }
-                fail(error)
+                let allowsSignInAgain =
+                    importingDefault && family == "claude"
+                    && !store.hasUnreadableRegistry && store.profiles(family: family).isEmpty
+                    && (error is ClaudeAuthError || error is ClaudeUsageError || error is URLError
+                        || error is DecodingError || error is AccountCredentialImporter.ImportError)
+                fail(error, allowsSignInAgain: allowsSignInAgain)
             }
         }
     }
@@ -189,9 +209,9 @@ struct AccountAddSheet: View {
         dismiss()
     }
 
-    private func fail(_ error: any Error) {
+    private func fail(_ error: any Error, allowsSignInAgain: Bool = false) {
         AppDiagnostics.failure(.accountAdd, error: error, providerID: family)
-        phase = .failed(UserFacingErrors.message(error))
+        phase = .failed(UserFacingErrors.message(error), allowsSignInAgain: allowsSignInAgain)
     }
 }
 

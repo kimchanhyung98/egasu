@@ -63,13 +63,13 @@ final class DefaultAccountObserverTests: XCTestCase {
 
     func testClaudeIdentityIsOrgScoped() {
         let observer = makeObserver(files: [
-            "/Users/dev/.claude.json": claudeStateJSON(orgUuid: "ORG-9", orgName: "Sunstory"),
+            "/Users/dev/.claude.json": claudeStateJSON(orgUuid: "ORG-9", orgName: "Company"),
         ])
 
         // 같은 계정 아래 personal Max org와 company Team org 공존 가능 — usage pool이 달라 org id도 identity key에 포함
         XCTAssertEqual(
             observer.observeClaude(),
-            .resolved(identityKey: "acct-uuid-1|org-9", label: "dev@example.com (Sunstory)", anchor: "/Users/dev/.claude")
+            .resolved(identityKey: "acct-uuid-1|org-9", label: "dev@example.com (Company)", anchor: "/Users/dev/.claude")
         )
     }
 
@@ -104,30 +104,17 @@ final class DefaultAccountObserverTests: XCTestCase {
         )
     }
 
-    func testManagedClaudePinRequiresBothStateFilesToAgree() {
-        // switcher 규칙과 동일 — 두 state file 불일치 시 identity ambiguous, 추측 금지
+    func testManagedClaudePinUsesTheBaseStateWhenScopedAuthenticationNamesAnotherAccount() {
+        let service = ClaudeAuthStore.scopedKeychainServiceName(
+            forConfigDirLiteral: "/Users/dev/.claude", environment: FakeEnvironment()
+        )
         let observer = DefaultAccountObserver(
             environment: FakeEnvironment([:]),
             files: FakeFiles([
                 "/Users/dev/.claude.json": claudeStateJSON(),
                 "/Users/dev/.claude/.claude.json": claudeStateJSON(uuid: "OTHER", email: "other@example.com"),
             ]),
-            keychain: FakeKeychain(nil),
-            homeDirectory: { [home] in home },
-            pinsClaudeSharedHome: true
-        )
-
-        XCTAssertEqual(
-            observer.observeClaude(),
-            .unresolved(reason: "shared home state files name different accounts")
-        )
-    }
-
-    func testManagedClaudePinResolvesFromTheInnerStateFileAlone() {
-        let observer = DefaultAccountObserver(
-            environment: FakeEnvironment([:]),
-            files: FakeFiles(["/Users/dev/.claude/.claude.json": claudeStateJSON()]),
-            keychain: FakeKeychain(nil),
+            keychain: ServiceKeychain(values: [service: "present"]),
             homeDirectory: { [home] in home },
             pinsClaudeSharedHome: true
         )
@@ -136,6 +123,18 @@ final class DefaultAccountObserverTests: XCTestCase {
             observer.observeClaude(),
             .resolved(identityKey: "acct-uuid-1", label: "dev@example.com", anchor: "/Users/dev/.claude")
         )
+    }
+
+    func testManagedClaudePinDoesNotUseTheInnerStateWhenTheBaseStateIsMissing() {
+        let observer = DefaultAccountObserver(
+            environment: FakeEnvironment([:]),
+            files: FakeFiles(["/Users/dev/.claude/.claude.json": claudeStateJSON()]),
+            keychain: FakeKeychain(nil),
+            homeDirectory: { [home] in home },
+            pinsClaudeSharedHome: true
+        )
+
+        XCTAssertEqual(observer.observeClaude(), .absent)
     }
 
     func testClaudeCommaConfigDirIsOneLiteralPath() {

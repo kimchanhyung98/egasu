@@ -69,4 +69,25 @@ final class AccountSignInLauncherTests: XCTestCase {
         }
         XCTAssertEqual(environment["PATH"], "/usr/bin")
     }
+
+    func testFirstLoginUsesDefaultAuthenticationWithoutChangingTheParentEnvironment() {
+        for (family, homeKey, authKeys) in [
+            ("claude", "CLAUDE_CONFIG_DIR", AccountSignInLauncher.claudeAuthEnvironmentRemovals),
+            ("codex", "CODEX_HOME", AccountSignInLauncher.codexAuthEnvironmentRemovals)
+        ] {
+            var base = ["PATH": "/usr/bin", "HOME": "/tmp/test-home", homeKey: "/tmp/custom-home"]
+            for key in authKeys { base[key] = "custom-auth" }
+
+            let environment = AccountSignInLauncher.loginEnvironment(family: family, home: nil, base: base)
+
+            XCTAssertNil(environment[homeKey])
+            for key in authKeys {
+                XCTAssertNil(environment[key])
+                XCTAssertEqual(base[key], "custom-auth")
+            }
+            XCTAssertEqual(base[homeKey], "/tmp/custom-home")
+            XCTAssertEqual(environment["PATH"], "/usr/bin")
+            XCTAssertEqual(environment["HOME"], "/tmp/test-home")
+        }
+    }
 }

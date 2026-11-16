@@ -38,7 +38,8 @@ struct AccountCredentialImporter {
         fileManager: FileManager = .default,
         environment: EnvironmentReading = ProcessEnvironmentReader(),
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
-        workspace: AccountSignInWorkspace = AccountSignInWorkspace()
+        workspace: AccountSignInWorkspace = AccountSignInWorkspace(),
+        httpClient: HTTPClient = URLSessionHTTPClient()
     ) {
         self.keychain = keychain
         self.fileManager = fileManager
@@ -49,7 +50,8 @@ struct AccountCredentialImporter {
             fileManager: fileManager,
             environment: environment,
             homeDirectory: homeDirectory,
-            workspace: workspace
+            workspace: workspace,
+            httpClient: httpClient
         )
     }
 
@@ -202,29 +204,13 @@ struct AccountCredentialImporter {
     private struct ExternalClaudeObservation: Sendable {
         var previousSnapshot: AccountCredentialVault.Entry?
         var shared: AccountCredentialVault.Entry
+        var snapshot: AccountCredentialVault.Entry
         var identityKey: String
-        var currentShared: AccountCredentialVault.Entry?
-        var sharedNeedsNormalization: Bool
+        var profile: AccountProfile
     }
 
-    /// 선택된 Claude profile에 Shared Runtime Home의 검증된 공식 CLI 로그인을 귀속.
-    /// 계정명·stable id·선택 불변, 같은 identity를 가진 다른 profile도 병합하지 않음.
-    func reconcileSelectedClaudeSharedAuthentication(
-        in store: AccountProfilesStore
-    ) throws -> ExternalReauthenticationResult {
-        if try AccountSelectionSwitcher(switcher: switcher).recoverInterruptedSwitch(in: store),
-           let profileID = store.preferredProfileID(family: "claude") {
-            return .updated(profileID: profileID)
-        }
-        _ = try recoverInterruptedIdentityReplacement(in: store)
-        guard let profile = store.preferredProfile(family: "claude") else { return .unchanged }
-        guard let observation = try observeExternalClaudeAuthentication(for: profile) else {
-            return .noUsableAuthentication
-        }
-        return try applyExternalClaudeAuthentication(observation, to: profile, in: store)
-    }
-
-    /// 런치 후 reconciliation — Keychain 관찰은 main actor 밖에서 실행, 수동 갱신에서만 snapshot 승인 허용.
+    /// 외부 로그인 관찰은 메인 액터 밖에서 수행. 저장 스냅샷의 Keychain 승인 요청은 수동 갱신에서만 허용.
+    /// 적용 직전 공유 인증은 메인 액터에서 동기 재확인 — 검사와 저장 사이 비동기 대기 없음.
     func reconcileSelectedClaudeSharedAuthenticationAfterStartup(
         in store: AccountProfilesStore
     ) async throws -> ExternalReauthenticationResult {
@@ -261,86 +247,77 @@ struct AccountCredentialImporter {
         }
         guard let profile = store.preferredProfile(family: "claude") else { return .unchanged }
         let authenticationRevision = store.authenticationRevision
+        let profiles = store.profiles(family: "claude")
         let observation = try await Task.detached(priority: .utility) {
-            try observeExternalClaudeAuthentication(for: profile, allowInteraction: allowInteraction)
+            try await observeExternalClaudeAuthentication(
+                for: profile, profiles: profiles, allowInteraction: allowInteraction)
         }.value
         guard let observation else { return .noUsableAuthentication }
-        guard store.preferredProfileID(family: "claude") == profile.id,
+        guard !Task.isCancelled, store.preferredProfileID(family: "claude") == profile.id,
               store.profile(id: profile.id)?.identityKey == profile.identityKey,
-              store.authenticationRevision == authenticationRevision
+              store.authenticationRevision == authenticationRevision,
+              store.profiles(family: "claude") == profiles
         else {
             return .unchanged
         }
-        return try applyExternalClaudeAuthentication(observation, to: profile, in: store)
+        guard try switcher.readSharedClaudeAuthenticationForReadiness() == observation.shared else {
+            AppLog.warn(.auth, "Claude sign-in changed before applying observation; preserving all authentication")
+            throw ClaudeAuthError.credentialsChanged
+        }
+        return try applyExternalClaudeAuthentication(observation, in: store)
     }
 
     nonisolated private func observeExternalClaudeAuthentication(
-        for profile: AccountProfile, allowInteraction: Bool = false
-    ) throws -> ExternalClaudeObservation? {
-        let previousSnapshot = try switcher.loadSnapshot(for: profile, allowInteraction: allowInteraction)
-        guard let authentication = try switcher.readSharedClaudeExternalAuthentication(
-            comparedTo: previousSnapshot
-        ),
-              let identityKey = switcher.identity(of: authentication.entry, family: "claude")?.identityKey
-        else {
-            return nil
-        }
-        let currentShared = try switcher.readSharedAuthentication(family: "claude")
-        guard let latest = try switcher.readSharedClaudeExternalAuthentication(comparedTo: previousSnapshot),
-              latest.entry == authentication.entry,
-              latest.requiresNormalization == authentication.requiresNormalization else {
-            AppLog.error(.auth, "Claude sign-in changed during observation; preserving all authentication")
-            throw AccountCredentialSwitcher.Error.conflictingClaudeAuthentication
+        for selected: AccountProfile, profiles: [AccountProfile], allowInteraction: Bool = false
+    ) async throws -> ExternalClaudeObservation? {
+        let selectedSnapshot = try switcher.loadSnapshot(for: selected, allowInteraction: allowInteraction)
+        guard let verified = try await switcher.readSharedClaudeExternalAuthentication(comparedTo: selectedSnapshot)
+        else { return nil }
+        let shared = verified.observed
+        let identityKey = verified.identityKey
+        let profile =
+            selected.identityKey == identityKey
+            ? selected
+            : profiles.first(where: { $0.identityKey == identityKey }) ?? selected
+        let previousSnapshot =
+            profile.id == selected.id
+            ? selectedSnapshot
+            : try switcher.loadSnapshot(for: profile, allowInteraction: allowInteraction)
+        guard try switcher.readSharedClaudeAuthenticationForReadiness() == shared else {
+            AppLog.warn(.auth, "Claude sign-in changed during observation; preserving all authentication")
+            throw ClaudeAuthError.credentialsChanged
         }
         return ExternalClaudeObservation(
-            previousSnapshot: previousSnapshot,
-            shared: authentication.entry,
-            identityKey: identityKey,
-            currentShared: currentShared,
-            sharedNeedsNormalization: authentication.requiresNormalization
+            previousSnapshot: previousSnapshot, shared: shared, snapshot: verified.snapshot,
+            identityKey: identityKey, profile: profile
         )
     }
 
     private func applyExternalClaudeAuthentication(
         _ observation: ExternalClaudeObservation,
-        to profile: AccountProfile,
         in store: AccountProfilesStore
     ) throws -> ExternalReauthenticationResult {
-        if observation.previousSnapshot == observation.shared,
-           profile.identityKey == observation.identityKey,
-           !observation.sharedNeedsNormalization {
-            return .unchanged
+        let profile = observation.profile
+        if observation.previousSnapshot == observation.snapshot, profile.identityKey == observation.identityKey {
+            guard store.preferredProfileID(family: "claude") != profile.id else { return .unchanged }
+            try store.commitPreferredSelection(family: "claude", profileID: profile.id)
+            return .updated(profileID: profile.id)
         }
-
         let transaction = try store.beginIdentityReplacement(
-            profileID: profile.id,
-            with: observation.identityKey,
-            replacesSharedAuthentication: observation.sharedNeedsNormalization
+            profileID: profile.id, with: observation.identityKey, replacesSharedAuthentication: false
         )
         do {
-            try switcher.saveSnapshot(observation.shared, for: profile)
-            try switcher.writeWorkspaceAuthentication(observation.shared, for: profile)
-            if observation.sharedNeedsNormalization {
-                try switcher.applySharedAuthentication(observation.shared, family: "claude")
-                guard let normalized = try switcher.readSharedAuthentication(family: "claude"),
-                      switcher.identity(of: normalized, family: "claude")?.identityKey == observation.identityKey
-                else {
-                    throw ImportError.verificationFailed(family: "claude")
-                }
-            }
+            try switcher.saveSnapshot(observation.snapshot, for: profile)
+            try switcher.writeWorkspaceAuthentication(observation.snapshot, for: profile)
+            try store.commitPreferredSelection(family: "claude", profileID: profile.id)
             _ = try store.commitIdentityReplacement(transaction)
             return .updated(profileID: profile.id)
         } catch {
             let restored = rollbackCredentialTransaction(
-                profile: profile,
-                previousSnapshot: observation.previousSnapshot,
-                previousShared: observation.sharedNeedsNormalization ? observation.currentShared : nil,
-                restoresSharedAuthentication: observation.sharedNeedsNormalization,
-                context: "external reauthentication"
+                profile: profile, previousSnapshot: observation.previousSnapshot,
+                previousShared: nil, restoresSharedAuthentication: false, context: "external reauthentication"
             )
-            if restored {
-                try? store.cancelIdentityReplacement(transaction)
-            }
+            if restored { try? store.cancelIdentityReplacement(transaction) }
             throw error
         }
     }
@@ -505,17 +482,48 @@ struct AccountCredentialImporter {
     }
 
     /// 첫 계정 import — 이미 로그인된 기본 계정을 provider re-login 없이 registry에 등록.
-    /// family에 기본 sign-in 없으면 `nil`(caller가 공식 로그인 제안) — Shared Runtime Home은 read 전용.
+    /// Claude 기본 인증은 프로필 API로 검증한 동일 값만 등록. 기본 로그인 부재 시 `nil`, 공유 인증은 읽기 전용.
     @discardableResult
     func importDefaultAccount(
         family: String,
         label: String = "default",
         into store: AccountProfilesStore
-    ) throws -> AccountProfile? {
+    ) async throws -> AccountProfile? {
         guard store.profiles(family: family).isEmpty else { return nil }
+        let verified: ImportedCredential?
+        if family == "claude" {
+            guard !store.hasUnreadableRegistry else { throw AccountProfileError.registryUnreadable }
+            let profiles = store.profiles
+            let preferred = store.preferredProfileID(family: family)
+            let revision = store.authenticationRevision
+            let replacement = try store.pendingIdentityReplacement()
+            guard let observed = try readDefaultCredential(family: family) else { return nil }
+            let observer = switcher
+            let entry = try await Task.detached(priority: .utility) {
+                try await observer.readSharedClaudeExternalAuthentication(comparedTo: nil)
+            }.value
+            try Task.checkCancellation()
+            guard try store.pendingIdentityReplacement() == replacement else {
+                throw AccountIdentityReplacementError.pendingTransaction
+            }
+            guard !store.hasUnreadableRegistry, store.profiles == profiles,
+                store.preferredProfileID(family: family) == preferred,
+                store.authenticationRevision == revision
+            else {
+                throw ImportError.verificationFailed(family: family)
+            }
+            guard let entry, entry.observed == observed.entry,
+                try switcher.readSharedAuthentication(family: family) == entry.observed
+            else {
+                throw ClaudeAuthError.credentialsChanged
+            }
+            verified = ImportedCredential(entry: entry.snapshot, identityKey: entry.identityKey, label: observed.label)
+        } else {
+            verified = nil
+        }
         AccountCredentialMutationLock.acquire(family: family)
         defer { AccountCredentialMutationLock.release(family: family) }
-        guard let credential = try readDefaultCredential(family: family) else { return nil }
+        guard let credential = try verified ?? readDefaultCredential(family: family) else { return nil }
         let profile = try register(credential, family: family, label: label, into: store)
         store.setPreferred(family: family, profileID: profile.id)
         return profile

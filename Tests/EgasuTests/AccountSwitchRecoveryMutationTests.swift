@@ -95,7 +95,7 @@ final class AccountSwitchRecoveryMutationTests: XCTestCase {
         try fixture.assertSavedAccountsUnchanged()
     }
 
-    func testRemovingDepartedAccountFinishesRecoveryBeforeDeletingItsSavedAuthentication() throws {
+    func testRemovingDepartedAccountFinishesRecoveryBeforeDeletingItsSavedAuthentication() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         _ = try fixture.stageIntent()
         try fixture.switcher.applySharedAuthentication(fixture.entryB, family: "claude")
@@ -109,8 +109,9 @@ final class AccountSwitchRecoveryMutationTests: XCTestCase {
         XCTAssertEqual(try fixture.freshStore().profile(id: fixture.b.id), fixture.b)
         XCTAssertEqual(try fixture.switcher.loadSnapshot(for: fixture.b), fixture.entryB)
         XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), fixture.entryB)
+        let reconciliation1 = await claudeReconciliationResult(fixture.importer, in: fixture.store)
         XCTAssertEqual(
-            try fixture.importer.reconcileSelectedClaudeSharedAuthentication(in: fixture.store),
+            try reconciliation1.get(),
             .unchanged
         )
     }
@@ -189,7 +190,9 @@ final class AccountSwitchRecoveryMutationTests: XCTestCase {
             let base = fixture.baseService
             let target = fixture.entryB.credential
             keychain.beforeRead = { service in
-                if service == base, phase != "applied" || keychain.currentUserValues[base] == target {
+                if !Thread.isMainThread, service == base,
+                    phase != "applied" || keychain.currentUserValues[base] == target
+                {
                     try gate.pauseOnce()
                 }
             }
@@ -351,7 +354,9 @@ final class AccountSwitchRecoveryMutationTests: XCTestCase {
         let base = fixture.baseService
         let target = fixture.entryB.credential
         keychain.beforeRead = { service in
-            if service == base, keychain.currentUserValues[base] == target { try gate.pauseOnce() }
+            if !Thread.isMainThread, service == base, keychain.currentUserValues[base] == target {
+                try gate.pauseOnce()
+            }
         }
         return gate
     }

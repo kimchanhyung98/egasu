@@ -189,7 +189,7 @@ struct ClaudeAuthStore: Sendable {
     /// catalog가 OFF — Desktop 로그인의 소속 카드를 몰라 다른 계정 카드에 usage가 섞일 수 있음.
     let allowsDesktopFallback: Bool
     /// 관리 전환이 `~/.claude`를 Shared Runtime Home으로 소유할 때 true — ambient
-    /// `CLAUDE_CONFIG_DIR`를 무시하고 정확히 그 home(기본 keychain service + credential 파일)만 조회.
+    /// `CLAUDE_CONFIG_DIR`를 무시하고 기본 Keychain·파일 순서로 조회 — 홈별 Keychain은 제외.
     let pinsSharedHome: Bool
 
     init(
@@ -473,6 +473,7 @@ struct ClaudeAuthStore: Sendable {
             // 이 카드의 항목만 — 기본 service는 다른 계정의 로그인.
             return ["\(base)-\(hashSuffix(keychainLiteral))"]
         case .standard:
+            if pinsSharedHome { return [base] }
             if let configDir = claudeHomeOverride() {
                 return ["\(base)-\(hashSuffix(configDir))", base]
             }

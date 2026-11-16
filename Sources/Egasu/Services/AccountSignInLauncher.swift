@@ -35,10 +35,10 @@ struct AccountSignInLauncher: Sendable {
         }
     }
 
-    /// 로그인 child의 환경 — auth override 제거, family home 변수 고정.
+    /// 로그인 자식 프로세스 환경 — 인증 덮어쓰기 변수 제거, home이 nil이면 기본 홈 사용.
     static func loginEnvironment(
         family: String,
-        home: String,
+        home: String?,
         base: [String: String] = ProcessInfo.processInfo.environment
     ) -> [String: String] {
         var environment = base
@@ -60,7 +60,7 @@ struct AccountSignInLauncher: Sendable {
     /// `usesLoginShellPATH`: Finder/Dock launch는 launchd PATH만 상속(`~/.local/bin`·Homebrew·npm prefix 부재) — 실행 파일 해석 전 login-shell PATH 적용.
     func runLogin(
         family: String,
-        home: String,
+        home: String?,
         baseEnvironment: [String: String] = ProcessInfo.processInfo.environment,
         usesLoginShellPATH: Bool = true
     ) async throws -> Int32 {

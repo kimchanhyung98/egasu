@@ -16,11 +16,17 @@ final class AccountReSignInTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         keychain = ServiceKeychain()
         workspace = AccountSignInWorkspace(baseDirectory: root.appendingPathComponent("AccountSignIn"))
+        let http = ClaudeReconciliationHTTPClient()
+        http.identities = [
+            "token-a-new": "acct-a|org-a", "token-b": "acct-b|org-b",
+            "token-b-new": "acct-b|org-b"
+        ]
         importer = AccountCredentialImporter(
             keychain: keychain,
             environment: FakeEnvironment([:]),
             homeDirectory: root,
-            workspace: workspace
+            workspace: workspace,
+            httpClient: http
         )
         switcher = AccountCredentialSwitcher(
             keychain: keychain,
@@ -172,7 +178,7 @@ final class AccountReSignInTests: XCTestCase {
 
     // MARK: - External reauthentication
 
-    func testSharedClaudeReauthenticationRebindsOnlyTheSelectedNamedProfile() async throws {
+    func testSharedClaudeReauthenticationSelectsTheRegisteredAccountAndPreservesThePreviousAccount() async throws {
         let (store, cleanup) = makeStore()
         defer { cleanup() }
         let alpha = try store.add(
@@ -197,15 +203,15 @@ final class AccountReSignInTests: XCTestCase {
 
         let result = try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: store)
 
-        let rebound = try XCTUnwrap(store.profile(id: alpha.id))
-        XCTAssertEqual(result, .updated(profileID: alpha.id))
-        XCTAssertEqual(rebound.label, "alpha")
+        let rebound = try XCTUnwrap(store.profile(id: beta.id))
+        XCTAssertEqual(result, .updated(profileID: beta.id))
+        XCTAssertEqual(rebound.label, "beta")
         XCTAssertEqual(rebound.identityKey, "acct-b|org-b")
-        XCTAssertEqual(store.preferredProfileID(family: "claude"), alpha.id)
+        XCTAssertEqual(store.preferredProfileID(family: "claude"), beta.id)
         XCTAssertEqual(store.profile(id: beta.id)?.identityKey, "acct-b|org-b")
         XCTAssertEqual(
-            try switcher.loadSnapshot(for: beta),
-            claudeEntry(token: "token-b-old", account: "b")
+            try switcher.loadSnapshot(for: alpha),
+            claudeEntry(token: "token-a", account: "a")
         )
         let reboundSnapshot = try XCTUnwrap(switcher.loadSnapshot(for: rebound))
         XCTAssertEqual(
@@ -213,7 +219,7 @@ final class AccountReSignInTests: XCTestCase {
             "token-b-new"
         )
         let workspaceCredential = try String(
-            contentsOf: (try workspace.directory(family: "claude", profileID: alpha.id))
+            contentsOf: (try workspace.directory(family: "claude", profileID: beta.id))
                 .appendingPathComponent(".credentials.json"),
             encoding: .utf8
         )
@@ -221,7 +227,7 @@ final class AccountReSignInTests: XCTestCase {
             ClaudeAuthStore.parseCredentials(workspaceCredential)?.claudeAiOauth?.accessToken,
             "token-b-new"
         )
-        let normalizedShared = try XCTUnwrap(switcher.readSharedAuthentication(family: "claude"))
+        let normalizedShared = try XCTUnwrap(switcher.readSharedClaudeAuthenticationForReadiness())
         XCTAssertEqual(
             switcher.identity(of: normalizedShared, family: "claude")?.identityKey,
             "acct-b|org-b"
@@ -235,12 +241,12 @@ final class AccountReSignInTests: XCTestCase {
             .ready(identityKey: "acct-b|org-b", label: nil)
         )
 
-        try importer.removeAccount(beta, from: store)
-        XCTAssertNil(store.profile(id: beta.id))
-        XCTAssertEqual(store.preferredProfileID(family: "claude"), alpha.id)
+        try importer.removeAccount(alpha, from: store)
+        XCTAssertNil(store.profile(id: alpha.id))
+        XCTAssertEqual(store.preferredProfileID(family: "claude"), beta.id)
     }
 
-    func testSharedClaudeReauthenticationRejectsDifferentCredentialAndStateWriteGenerations() throws {
+    func testSharedClaudeReauthenticationRejectsTokenForDifferentAccount() async throws {
         let (store, cleanup) = makeStore()
         defer { cleanup() }
         let profile = try store.add(
@@ -250,31 +256,22 @@ final class AccountReSignInTests: XCTestCase {
             id: "profile-alpha"
         )
         let previous = claudeEntry(token: "token-a", account: "a")
-        let replacement = claudeEntry(token: "token-b", account: "b")
         try switcher.saveSnapshot(previous, for: profile)
-        let sharedHome = root.appendingPathComponent(".claude")
-        try FileManager.default.createDirectory(at: sharedHome, withIntermediateDirectories: true)
-        let scopedService = ClaudeAuthStore.scopedKeychainServiceName(
-            forConfigDirLiteral: sharedHome.path,
-            environment: FakeEnvironment([:])
-        )
-        keychain.currentUserValues[scopedService] = replacement.credential
-        keychain.currentUserModificationDates[scopedService] = Date()
-        let localState = sharedHome.appendingPathComponent(".claude.json")
-        try Data(#"{"oauthAccount":\#(previous.claudeOAuthAccount!)}"#.utf8).write(to: localState)
+        try seedSharedClaudeLogin(token: "token-b", previousAccount: "a", account: "a")
         try FileManager.default.setAttributes(
             [.modificationDate: Date(timeIntervalSinceNow: -60)],
-            ofItemAtPath: localState.path
+            ofItemAtPath: root.appendingPathComponent(".claude.json").path
         )
 
-        XCTAssertThrowsError(try importer.reconcileSelectedClaudeSharedAuthentication(in: store)) { error in
-            XCTAssertEqual(error as? AccountCredentialSwitcher.Error, .incompleteClaudeAuthentication)
+        let reconciliation1 = await claudeReconciliationResult(importer, in: store)
+        XCTAssertThrowsError(try reconciliation1.get()) { error in
+            XCTAssertEqual(error as? AccountCredentialImporter.ImportError, .verificationFailed(family: "claude"))
         }
         XCTAssertEqual(store.profile(id: profile.id)?.identityKey, "acct-a|org-a")
         XCTAssertEqual(try switcher.loadSnapshot(for: profile), previous)
     }
 
-    func testSharedClaudeReauthenticationAcceptsStateWrittenLongAfterCredential() throws {
+    func testSharedClaudeReauthenticationAcceptsStateWrittenLongAfterCredential() async throws {
         let (store, cleanup) = makeStore()
         defer { cleanup() }
         let profile = try store.add(
@@ -286,25 +283,19 @@ final class AccountReSignInTests: XCTestCase {
         let previous = claudeEntry(token: "token-a", account: "a")
         let replacement = claudeEntry(token: "token-b", account: "b")
         try switcher.saveSnapshot(previous, for: profile)
-        let sharedHome = root.appendingPathComponent(".claude")
-        try FileManager.default.createDirectory(at: sharedHome, withIntermediateDirectories: true)
-        let scopedService = ClaudeAuthStore.scopedKeychainServiceName(
-            forConfigDirLiteral: sharedHome.path,
-            environment: FakeEnvironment([:])
-        )
-        keychain.currentUserValues[scopedService] = replacement.credential
-        keychain.currentUserModificationDates[scopedService] = Date(timeIntervalSinceNow: -6 * 60)
-        let localState = sharedHome.appendingPathComponent(".claude.json")
-        try Data(#"{"oauthAccount":\#(replacement.claudeOAuthAccount!)}"#.utf8).write(to: localState)
+        try seedSharedClaudeLogin(token: "token-b", previousAccount: "a", account: "b")
+        let baseService = ClaudeAuthStore.baseKeychainServiceName(environment: FakeEnvironment([:]))
+        keychain.currentUserModificationDates[baseService] = Date(timeIntervalSinceNow: -6 * 60)
 
-        let result = try importer.reconcileSelectedClaudeSharedAuthentication(in: store)
+        let reconciliation2 = await claudeReconciliationResult(importer, in: store)
+        let result = try reconciliation2.get()
 
         XCTAssertEqual(result, .updated(profileID: profile.id))
         XCTAssertEqual(store.profile(id: profile.id)?.identityKey, "acct-b|org-b")
         XCTAssertEqual(try switcher.loadSnapshot(for: profile), replacement)
     }
 
-    func testSameIdentitySharedClaudeReauthenticationSignalsReadinessChange() throws {
+    func testSameIdentitySharedClaudeReauthenticationSignalsReadinessChange() async throws {
         let (store, cleanup) = makeStore()
         defer { cleanup() }
         let profile = try store.add(
@@ -316,14 +307,15 @@ final class AccountReSignInTests: XCTestCase {
         try switcher.saveSnapshot(claudeEntry(token: "token-a-old", account: "a"), for: profile)
         try seedSharedClaudeLogin(token: "token-a-new", previousAccount: "a", account: "a")
 
-        let result = try importer.reconcileSelectedClaudeSharedAuthentication(in: store)
+        let reconciliation3 = await claudeReconciliationResult(importer, in: store)
+        let result = try reconciliation3.get()
 
         XCTAssertEqual(result, .updated(profileID: profile.id))
         XCTAssertEqual(store.authenticationRevision, 1)
         XCTAssertEqual(store.profile(id: profile.id)?.identityKey, "acct-a|org-a")
     }
 
-    func testSharedClaudeTokenRotationInTheSameCredentialChainDoesNotRequireAStateRewrite() throws {
+    func testSharedClaudeTokenRotationInTheSameCredentialChainDoesNotRequireAStateRewrite() async throws {
         let (store, cleanup) = makeStore()
         defer { cleanup() }
         let profile = try store.add(
@@ -335,22 +327,14 @@ final class AccountReSignInTests: XCTestCase {
         let previous = claudeEntry(token: "token-a-old", account: "a")
         let rotated = claudeEntry(token: "token-a-new", account: "a")
         try switcher.saveSnapshot(previous, for: profile)
-        let sharedHome = root.appendingPathComponent(".claude")
-        try FileManager.default.createDirectory(at: sharedHome, withIntermediateDirectories: true)
-        let scopedService = ClaudeAuthStore.scopedKeychainServiceName(
-            forConfigDirLiteral: sharedHome.path,
-            environment: FakeEnvironment([:])
-        )
-        keychain.currentUserValues[scopedService] = rotated.credential
-        keychain.currentUserModificationDates[scopedService] = Date()
-        let localState = sharedHome.appendingPathComponent(".claude.json")
-        try Data(#"{"oauthAccount":\#(rotated.claudeOAuthAccount!)}"#.utf8).write(to: localState)
+        try seedSharedClaudeLogin(token: "token-a-new", previousAccount: "a", account: "a")
         try FileManager.default.setAttributes(
             [.modificationDate: Date(timeIntervalSinceNow: -60)],
-            ofItemAtPath: localState.path
+            ofItemAtPath: root.appendingPathComponent(".claude.json").path
         )
 
-        let result = try importer.reconcileSelectedClaudeSharedAuthentication(in: store)
+        let reconciliation4 = await claudeReconciliationResult(importer, in: store)
+        let result = try reconciliation4.get()
 
         XCTAssertEqual(result, .updated(profileID: profile.id))
         XCTAssertEqual(try switcher.loadSnapshot(for: profile), rotated)
@@ -447,7 +431,7 @@ final class AccountReSignInTests: XCTestCase {
         XCTAssertEqual(try switcher.readSharedAuthentication(family: "codex"), previous)
     }
 
-    func testIncompleteSharedClaudeLoginDoesNotCombineANewTokenWithThePreviousIdentity() throws {
+    func testIncompleteDefaultClaudeLoginDoesNotUsePreviousScopedIdentity() async throws {
         let (store, cleanup) = makeStore()
         defer { cleanup() }
         let profile = try store.add(
@@ -457,20 +441,12 @@ final class AccountReSignInTests: XCTestCase {
             id: "profile-alpha"
         )
         let previous = claudeEntry(token: "token-a", account: "a")
-        let incomplete = claudeEntry(token: "token-b", account: "b")
         try switcher.saveSnapshot(previous, for: profile)
-        let sharedHome = root.appendingPathComponent(".claude")
-        try FileManager.default.createDirectory(at: sharedHome, withIntermediateDirectories: true)
-        keychain.currentUserValues[
-            ClaudeAuthStore.scopedKeychainServiceName(
-                forConfigDirLiteral: sharedHome.path,
-                environment: FakeEnvironment([:])
-            )
-        ] = incomplete.credential
-        try Data(#"{"oauthAccount":\#(previous.claudeOAuthAccount!)}"#.utf8)
-            .write(to: root.appendingPathComponent(".claude.json"))
+        try seedSharedClaudeLogin(token: "token-b", previousAccount: "a", account: "b")
+        try FileManager.default.removeItem(at: root.appendingPathComponent(".claude.json"))
 
-        let result = try importer.reconcileSelectedClaudeSharedAuthentication(in: store)
+        let reconciliation5 = await claudeReconciliationResult(importer, in: store)
+        let result = try reconciliation5.get()
 
         XCTAssertEqual(result, .noUsableAuthentication)
         XCTAssertEqual(store.profile(id: profile.id)?.identityKey, "acct-a|org-a")
@@ -509,7 +485,8 @@ final class AccountReSignInTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = AccountProfilesStore(defaults: defaults)
-        let profile = try XCTUnwrap(importer.importDefaultAccount(family: "codex", into: store))
+        let imported = try await importer.importDefaultAccount(family: "codex", into: store)
+        let profile = try XCTUnwrap(imported)
 
         XCTAssertEqual(profile.label, "default")
         XCTAssertEqual(profile.identityKey, "acct-new")
@@ -599,21 +576,23 @@ final class AccountReSignInTests: XCTestCase {
         let sharedHome = root.appendingPathComponent(".claude")
         try FileManager.default.createDirectory(at: sharedHome, withIntermediateDirectories: true)
         let entry = claudeEntry(token: token, account: account)
+        let baseService = ClaudeAuthStore.baseKeychainServiceName(environment: FakeEnvironment([:]))
+        keychain.currentUserValues[baseService] = entry.credential
+        let previous = claudeEntry(token: "previous", account: previousAccount)
         let scopedService = ClaudeAuthStore.scopedKeychainServiceName(
             forConfigDirLiteral: sharedHome.path,
             environment: FakeEnvironment([:])
         )
-        keychain.currentUserValues[scopedService] = entry.credential
-        let previous = claudeEntry(token: "previous", account: previousAccount)
-        try Data(#"{"oauthAccount":\#(previous.claudeOAuthAccount!)}"#.utf8)
-            .write(to: root.appendingPathComponent(".claude.json"))
+        keychain.currentUserValues[scopedService] = previous.credential
         let localState = sharedHome.appendingPathComponent(".claude.json")
-        try Data(#"{"oauthAccount":\#(entry.claudeOAuthAccount!)}"#.utf8).write(to: localState)
+        try Data(#"{"oauthAccount":\#(previous.claudeOAuthAccount!)}"#.utf8).write(to: localState)
+        let rootState = root.appendingPathComponent(".claude.json")
+        try Data(#"{"oauthAccount":\#(entry.claudeOAuthAccount!)}"#.utf8).write(to: rootState)
         let generationDate = Date()
-        keychain.currentUserModificationDates[scopedService] = generationDate
+        keychain.currentUserModificationDates[baseService] = generationDate
         try FileManager.default.setAttributes(
             [.modificationDate: generationDate],
-            ofItemAtPath: localState.path
+            ofItemAtPath: rootState.path
         )
     }
 }
