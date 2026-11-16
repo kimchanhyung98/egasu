@@ -326,6 +326,7 @@ public final class AccountProfilesStore {
     }
 
     func cancelIdentityReplacement(_ transaction: AccountIdentityReplacement) throws {
+        try ensureRegistryWritable()
         guard try pendingIdentityReplacement() == transaction else {
             throw AccountIdentityReplacementError.invalidTransaction
         }

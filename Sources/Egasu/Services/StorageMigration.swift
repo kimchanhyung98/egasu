@@ -32,7 +32,7 @@ enum StorageMigration {
     static func runIfNeeded(_ environment: Environment = Environment()) throws -> Bool {
         guard !environment.defaults.bool(forKey: completedKey) else { return false }
         let filesCarried = try carryFiles(environment)
-        let waiting = try carryKeychain(environment)
+        guard let waiting = carryKeychain(environment) else { return true }
         if filesCarried { environment.defaults.set(true, forKey: completedKey) }
         AppLog.info(
             .config,
@@ -227,16 +227,16 @@ enum StorageMigration {
         }
     }
 
-    /// 등록 계정마다 승인 없이 한 번 읽어 새 이름으로 저장 — 승인이 필요한 계정 수 반환.
+    /// 등록 계정 이전의 승인 대기 수 반환 — 등록 데이터를 읽지 못하면 nil.
     @MainActor
-    private static func carryKeychain(_ environment: Environment) throws -> Int {
+    private static func carryKeychain(_ environment: Environment) -> Int? {
         guard let data = environment.defaults.data(forKey: AccountProfilesStore.storageKey) else { return 0 }
         let registry: AccountProfilesStore.Blob
         do {
             registry = try JSONDecoder().decode(AccountProfilesStore.Blob.self, from: data)
         } catch {
-            AppLog.error(.config, "storage migration couldn't read account registry: \(error.localizedDescription)")
-            throw error
+            AppDiagnostics.failure(.storageMigration, error: error, localContext: "Account registry migration failed")
+            return nil
         }
         let vault = AccountCredentialVault(
             keychain: environment.keychain, pendingMigration: environment.pending, namespace: environment.namespace

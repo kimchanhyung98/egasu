@@ -110,7 +110,7 @@ final class StorageMigrationProbeTests: XCTestCase {
         XCTAssertTrue(defaults.bool(forKey: StorageMigration.completedKey))
     }
 
-    func testCorruptRegistryDoesNotCompleteAndValidRegistryRetries() throws {
+    func testCorruptRegistryStartsWithoutCompletingAndRetriesRestoredProfiles() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("StorageRegistry-\(UUID().uuidString)")
         let domain = "StorageMigrationProbeTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
@@ -118,18 +118,40 @@ final class StorageMigrationProbeTests: XCTestCase {
             defaults.removePersistentDomain(forName: domain)
             try? FileManager.default.removeItem(at: root)
         }
+        let namespace = StorageNamespace(bundleIdentifier: "com.kimchanhyung98.openusage.dev")
+        let oldService = AccountCredentialVault.legacyService(family: "codex", profileID: "p1")
+        let newService = AccountCredentialVault.service(family: "codex", profileID: "p1", namespace: namespace)
+        let entry = AccountCredentialVault.Entry(credential: "fixture", claudeOAuthAccount: nil)
+        let encoded = String(decoding: try JSONEncoder().encode(entry), as: UTF8.self)
+        let keychain = ServiceKeychain(values: [oldService: encoded])
+        let pending = PendingKeychainMigration(defaults: defaults)
         let environment = StorageMigration.Environment(
-            namespace: StorageNamespace(bundleIdentifier: "com.kimchanhyung98.openusage.dev"),
-            applicationSupportRoot: root.appendingPathComponent("support"),
+            namespace: namespace, applicationSupportRoot: root.appendingPathComponent("support"),
             configRoot: root.appendingPathComponent("config"), defaults: defaults,
-            pending: PendingKeychainMigration(defaults: defaults))
-        defaults.set(Data("invalid".utf8), forKey: AccountProfilesStore.storageKey)
-        XCTAssertThrowsError(try StorageMigration.runIfNeeded(environment))
-        XCTAssertFalse(defaults.bool(forKey: StorageMigration.completedKey))
-        let blob = AccountProfilesStore.Blob(profiles: [], preferredByFamily: [:])
-        defaults.set(try JSONEncoder().encode(blob), forKey: AccountProfilesStore.storageKey)
+            keychain: keychain, pending: pending)
+        let corrupted = Data("invalid".utf8)
+        let diagnostics = DiagnosticEventRecorder()
+        defaults.set(corrupted, forKey: AccountProfilesStore.storageKey)
+        for _ in 0..<2 {
+            XCTAssertTrue(try StorageMigration.runIfNeeded(environment))
+            XCTAssertFalse(defaults.bool(forKey: StorageMigration.completedKey))
+            XCTAssertEqual(defaults.data(forKey: AccountProfilesStore.storageKey), corrupted)
+            XCTAssertEqual(keychain.values[oldService], encoded)
+            XCTAssertNil(keychain.currentUserValues[newService])
+            XCTAssertFalse(pending.contains(family: "codex", profileID: "p1"))
+        }
+        XCTAssertEqual(diagnostics.events.map(\.operation), [.storageMigration, .storageMigration])
+        let store = AccountProfilesStore(defaults: defaults)
+        XCTAssertTrue(store.hasUnreadableRegistry)
+        XCTAssertThrowsError(try store.add(family: "codex", label: "Profile", identityKey: "id"))
+        let profile = AccountProfile(id: "p1", family: "codex", label: "Profile", identityKey: "id", createdAt: Date())
+        defaults.set(
+            try JSONEncoder().encode(AccountProfilesStore.Blob(profiles: [profile], preferredByFamily: [:])),
+            forKey: AccountProfilesStore.storageKey)
         XCTAssertTrue(try StorageMigration.runIfNeeded(environment))
         XCTAssertTrue(defaults.bool(forKey: StorageMigration.completedKey))
+        XCTAssertEqual(keychain.values[oldService], encoded)
+        XCTAssertEqual(keychain.currentUserValues[newService], encoded)
     }
 }
 

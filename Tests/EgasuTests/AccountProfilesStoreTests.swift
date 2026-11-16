@@ -237,6 +237,25 @@ final class AccountProfilesStoreTests: XCTestCase {
         XCTAssertEqual(defaults.data(forKey: AccountProfilesStore.storageKey), original)
     }
 
+    func testIdentityReplacementCancellationPreservesJournalWhenRegistryUnreadable() throws {
+        let store = AccountProfilesStore(defaults: defaults)
+        let profile = try store.add(family: "claude", label: "Profile", identityKey: "old")
+        let transaction = try store.beginIdentityReplacement(
+            profileID: profile.id, with: "new", replacesSharedAuthentication: true)
+        let validRegistry = try XCTUnwrap(defaults.data(forKey: AccountProfilesStore.storageKey))
+        let journal = try XCTUnwrap(defaults.data(forKey: AccountProfilesStore.identityReplacementKey))
+        defaults.set(Data("invalid".utf8), forKey: AccountProfilesStore.storageKey)
+        let broken = AccountProfilesStore(defaults: defaults)
+        XCTAssertThrowsError(try broken.cancelIdentityReplacement(transaction)) { error in
+            XCTAssertEqual(error as? AccountProfileError, .registryUnreadable)
+        }
+        XCTAssertEqual(defaults.data(forKey: AccountProfilesStore.identityReplacementKey), journal)
+        defaults.set(validRegistry, forKey: AccountProfilesStore.storageKey)
+        let restored = AccountProfilesStore(defaults: defaults)
+        try restored.cancelIdentityReplacement(transaction)
+        XCTAssertNil(try restored.pendingIdentityReplacement())
+    }
+
     func testUnreadableIdentityReplacementJournalIsClearedAfterReportingFailure() throws {
         defaults.set(Data("not json".utf8), forKey: AccountProfilesStore.identityReplacementKey)
         let store = AccountProfilesStore(defaults: defaults)
