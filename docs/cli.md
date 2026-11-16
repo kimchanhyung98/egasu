@@ -128,5 +128,5 @@ egasu는 일반 Claude CLI의 기본 Keychain 인증을 우선하고, 해당 항
 완료되지 않았거나 신원을 검증할 수 없는 로그인은 기존 스냅샷을 변경하지 않음.
 이 확인에서 만료된 토큰을 자동 갱신하지 않으며, CLI에서 로그인을 갱신하거나 **Sign In Again**으로 재로그인한 뒤 재시도.
 외부 로그인 반영은 기본·공유 CLI 인증 저장소의 Keychain·인증 파일·계정 상태 파일을 다시 쓰거나 다른 위치의 로그인을 정리하지 않음.
-egasu의 계정별 Keychain 스냅샷과 앱 소유 로그인 작업 공간만 갱신.
+egasu의 계정별 Keychain 스냅샷, 앱 소유 로그인 작업 공간, 계정 등록·선택 상태 갱신.
 현재 로그인을 확인할 수 없거나 충돌 안내가 표시되면 **Settings → Accounts → Manage Claude Account → Sign In Again** 사용.

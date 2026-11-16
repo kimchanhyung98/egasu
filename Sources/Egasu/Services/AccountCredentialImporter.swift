@@ -209,7 +209,8 @@ struct AccountCredentialImporter {
         var profile: AccountProfile
     }
 
-    /// 실행 후 외부 로그인 반영 — Keychain 조회는 메인 액터 밖에서 수행하고 수동 갱신에서만 승인 창 허용.
+    /// 외부 로그인 관찰은 메인 액터 밖에서 수행. 저장 스냅샷의 Keychain 승인 요청은 수동 갱신에서만 허용.
+    /// 적용 직전 공유 인증은 메인 액터에서 동기 재확인 — 검사와 저장 사이 비동기 대기 없음.
     func reconcileSelectedClaudeSharedAuthenticationAfterStartup(
         in store: AccountProfilesStore
     ) async throws -> ExternalReauthenticationResult {

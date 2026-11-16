@@ -228,7 +228,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         )
     }
 
-    func testKeychainWriteFailureRollsBackTheSharedCredentialFile() async throws {
+    func testKeychainWriteFailureRestoresScopedKeychainAndPreservesSharedCredentialFile() async throws {
         let fixture = try makeFixture()
         let personal = profile(id: "profile-a", family: "claude", label: "Personal", identityKey: "acct-a|org-a")
         let work = profile(id: "profile-b", family: "claude", label: "Work", identityKey: "acct-b|org-b")

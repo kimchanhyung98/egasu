@@ -65,7 +65,7 @@ Claude 계정 전환 중 앱 종료에 대비해 `~/Library/Application Support/
 등록된 다른 계정이면 이전 저장 로그인을 보존하고 해당 계정으로 선택 이동.
 미등록 신원은 현재 선택 계정명에 반영하며, 완료되지 않았거나 검증할 수 없는 인증 정보는 복사하지 않음.
 외부 로그인 반영에서는 기본·공유 CLI 인증 저장소의 인증·계정 상태 파일이나 다른 위치의 Keychain 항목을 변경하지 않음.
-egasu의 계정별 Keychain 스냅샷과 앱 소유 로그인 작업 공간만 갱신.
+egasu의 계정별 Keychain 스냅샷, 앱 소유 로그인 작업 공간, 계정 등록·선택 상태 갱신.
 추가 계정의 공식 로그인은 `~/Library/Application Support/egasu/AccountSignIn/<provider>/<account-id>/` 아래 앱 소유 작업 공간에서 실행.
 작업 공간 디렉터리는 `0700`, 인증 정보 파일은 `0600` 권한 사용.
 계정을 제거하면 작업 공간을 먼저 삭제한 다음 Keychain 스냅샷을 삭제.

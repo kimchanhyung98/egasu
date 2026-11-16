@@ -281,14 +281,18 @@ final class AccountSelectionDepartureTests: XCTestCase {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         _ = try fixture.rotateDefaultCredentials()
         let verified = try await fixture.switcher.readSharedClaudeExternalAuthentication(comparedTo: fixture.entryA)
+        let observed = try XCTUnwrap(verified?.observed)
         fixture.keychain.currentUserValues[fixture.baseService] = AccountSwitchRecoveryFixture.entry("c").credential
         let state = try fixture.switcher.readClaudeSwitchState()
         let writes = fixture.keychain.writeCount
 
         XCTAssertThrowsError(
             try fixture.switcher.switchAuthentication(
-                to: fixture.b, from: fixture.a, verifiedClaudeDeparture: verified?.observed
-            ))
+                to: fixture.b, from: fixture.a, verifiedClaudeDeparture: observed
+            )
+        ) { error in
+            XCTAssertEqual(error as? ClaudeAuthError, .credentialsChanged)
+        }
 
         try fixture.assertSavedAccountsUnchanged()
         XCTAssertEqual(fixture.keychain.writeCount, writes)
