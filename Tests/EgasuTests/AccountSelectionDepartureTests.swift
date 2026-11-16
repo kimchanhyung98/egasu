@@ -270,7 +270,7 @@ final class AccountSelectionDepartureTests: XCTestCase {
         XCTAssertNil(try fixture.journal.load())
     }
 
-    func testDepartureSnapshotReadsLeaveMainActorResponsive() async throws {
+    func testDepartureObservationReadsAreOffMainActorAndFinalCheckIsSynchronous() async throws {
         for blockedRead in [1, 2] {
             let fixture = try AccountSwitchRecoveryFixture(test: self)
             let service = AccountCredentialVault.service(family: "claude", profileID: fixture.a.id)
@@ -299,7 +299,7 @@ final class AccountSelectionDepartureTests: XCTestCase {
             try await operation.value
 
             fixture.keychain.beforeRead = nil
-            XCTAssertEqual(threads.withLock { $0 }, [false, false])
+            XCTAssertEqual(threads.withLock { $0 }, [false, false, true])
             XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.b.id)
             XCTAssertNil(try fixture.journal.load())
         }

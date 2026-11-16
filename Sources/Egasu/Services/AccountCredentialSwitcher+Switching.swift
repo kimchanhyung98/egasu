@@ -8,7 +8,8 @@ extension AccountCredentialSwitcher {
     func switchAuthentication(
         to selected: AccountProfile,
         from current: AccountProfile?,
-        verifiedClaudeDeparture: VerifiedClaudeExternalAuthentication? = nil
+        verifiedClaudeDeparture: VerifiedClaudeExternalAuthentication? = nil,
+        expectedTarget: AccountCredentialVault.Entry? = nil
     ) throws {
         guard AccountProfilesStore.isSupportedFamily(selected.family) else {
             throw Error.unsupportedFamily(selected.family)
@@ -27,10 +28,16 @@ extension AccountCredentialSwitcher {
         } catch AccountCredentialVaultError.missingEntry {
             throw Error.missingSnapshot(selected.label)
         }
+        if let expectedTarget, target != expectedTarget { throw ClaudeAuthError.credentialsChanged }
         guard identity(of: target, family: selected.family)?.identityKey == selected.identityKey else {
             throw Error.snapshotIdentityMismatch(selected.label)
         }
 
+        if let verifiedClaudeDeparture, let current, current.family == "claude" {
+            guard try loadSnapshot(for: current, allowInteraction: true) == verifiedClaudeDeparture.baseline else {
+                throw ClaudeAuthError.credentialsChanged
+            }
+        }
         // 활성 credential은 적용 후 rotate됐을 수 있음 — 현재 profile과 일치할 때만 보존.
         let active = try readSharedAuthentication(family: selected.family)
         if selected.family == "claude", let verifiedClaudeDeparture, active != verifiedClaudeDeparture.observed {

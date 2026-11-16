@@ -110,6 +110,7 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
 
     struct VerifiedClaudeExternalAuthentication: Sendable {
         let observed: AccountCredentialVault.Entry
+        let baseline: AccountCredentialVault.Entry?
         let snapshot: AccountCredentialVault.Entry
         let identityKey: String
     }
@@ -122,7 +123,9 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
             let expectedIdentity = identity(of: observed, family: "claude")?.identityKey
         else { return nil }
         if observed == previousSnapshot, expectedIdentity.contains("|") {
-            return .init(observed: observed, snapshot: observed, identityKey: expectedIdentity)
+            return .init(
+                observed: observed, baseline: previousSnapshot, snapshot: observed, identityKey: expectedIdentity
+            )
         }
         guard let token = ClaudeAuthStore.parseCredentials(observed.credential)?.claudeAiOauth?.accessToken?.nilIfEmpty
         else { return nil }
@@ -150,7 +153,7 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
                 decoding: try JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]), as: UTF8.self
             )
         }
-        return .init(observed: observed, snapshot: snapshot, identityKey: verifiedIdentity)
+        return .init(observed: observed, baseline: previousSnapshot, snapshot: snapshot, identityKey: verifiedIdentity)
     }
 
     private func sharedClaudeAuthentication() throws -> AccountCredentialVault.Entry? {

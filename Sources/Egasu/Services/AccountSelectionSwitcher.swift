@@ -91,7 +91,8 @@ struct AccountSelectionSwitcher {
             // 재시도 중 혼합된 공유 인증은 어느 계정의 저장 인증에도 반영하지 않음.
             try switcher.switchAuthentication(
                 to: selected, from: previousRecord == nil ? previous : nil,
-                verifiedClaudeDeparture: previousRecord == nil ? departure.verified : nil
+                verifiedClaudeDeparture: previousRecord == nil ? departure.verified : nil,
+                expectedTarget: target
             )
             let applied = try await readSwitchState(in: store, expecting: record)
             guard applied.matches(
