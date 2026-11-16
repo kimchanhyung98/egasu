@@ -191,11 +191,69 @@ final class AccountExternalLoginPreservationTests: XCTestCase {
 
         XCTAssertEqual(result, .updated(profileID: other.id))
         XCTAssertEqual(store.preferredProfileID(family: "claude"), other.id)
+        XCTAssertEqual(AccountProfilesStore(defaults: defaults).preferredProfileID(family: "claude"), other.id)
         XCTAssertEqual(try switcher.loadSnapshot(for: profile), previous)
         XCTAssertEqual(try switcher.loadSnapshot(for: other), external)
         XCTAssertEqual(store.profile(id: profile.id), profile)
         XCTAssertEqual(store.profile(id: other.id), other)
         try assertCLIUnchanged(before)
+    }
+
+    func testExistingExternalSnapshotPersistsSelectionWithoutChangingAuthentication() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        try fixture.switcher.applySharedAuthentication(fixture.entryB, family: "claude")
+        let before = try fixture.switcher.readClaudeSwitchState()
+
+        let result = try await fixture.importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(
+            in: fixture.store)
+
+        XCTAssertEqual(result, .updated(profileID: fixture.b.id))
+        XCTAssertEqual(try fixture.freshStore().preferredProfileID(family: "claude"), fixture.b.id)
+        XCTAssertEqual(try fixture.switcher.readClaudeSwitchState(), before)
+        try fixture.assertSavedAccountsUnchanged()
+    }
+
+    func testSelectionPersistenceFailurePreservesAuthenticationAndCanRetry() async throws {
+        for snapshotMatches in [true, false] {
+            let fixture = try AccountSwitchRecoveryFixture(test: self, synchronize: { false })
+            let external = snapshotMatches ? fixture.entryB : AccountSwitchRecoveryFixture.entry("b", token: "new-b")
+            fixture.keychain.currentUserValues[fixture.baseService] = external.credential
+            try Data(#"{"oauthAccount":\#(external.claudeOAuthAccount!)}"#.utf8)
+                .write(to: fixture.root.appendingPathComponent(".claude.json"))
+            let before = try fixture.switcher.readClaudeSwitchState()
+            let registry = fixture.defaults.data(forKey: AccountProfilesStore.storageKey)
+            let http = ClaudeReconciliationHTTPClient()
+            http.identities[external == fixture.entryB ? "token-b" : "new-b"] = "acct-b|org-b"
+            let importer = AccountCredentialImporter(
+                keychain: fixture.keychain, environment: FakeEnvironment(),
+                homeDirectory: fixture.root, workspace: fixture.workspace, httpClient: http
+            )
+
+            let result = await claudeReconciliationResult(importer, in: fixture.store)
+
+            XCTAssertThrowsError(try result.get()) {
+                XCTAssertEqual($0 as? AccountCredentialSwitcher.Error, .selectionSaveFailed)
+            }
+            XCTAssertEqual(try fixture.switcher.readClaudeSwitchState(), before)
+            try fixture.assertSavedAccountsUnchanged()
+            XCTAssertNil(try fixture.store.pendingIdentityReplacement())
+            XCTAssertEqual(fixture.store.authenticationRevision, 0)
+
+            fixture.defaults.set(registry, forKey: AccountProfilesStore.storageKey)
+            let reloaded = try fixture.freshStore()
+            let retried = try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: reloaded)
+
+            XCTAssertEqual(retried, .updated(profileID: fixture.b.id))
+            XCTAssertEqual(try fixture.freshStore().preferredProfileID(family: "claude"), fixture.b.id)
+            XCTAssertEqual(try fixture.switcher.readClaudeSwitchState(), before)
+            XCTAssertEqual(try fixture.switcher.loadSnapshot(for: fixture.a), fixture.entryA)
+            XCTAssertEqual(try fixture.switcher.loadSnapshot(for: fixture.b), external)
+            for (profile, entry) in [(fixture.a, fixture.entryA), (fixture.b, external)] {
+                let home = try fixture.workspace.directory(family: "claude", profileID: profile.id).path
+                XCTAssertEqual(try fixture.switcher.readAuthentication(family: "claude", home: home), entry)
+            }
+            XCTAssertNil(try reloaded.pendingIdentityReplacement())
+        }
     }
 
     func testCurrentAccountWinsWhenMultipleRecordsHaveTheSameIdentity() async throws {
@@ -220,7 +278,68 @@ final class AccountExternalLoginPreservationTests: XCTestCase {
         let result = try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: store)
 
         XCTAssertEqual(result, .updated(profileID: profile.id))
-        XCTAssertEqual(try switcher.loadSnapshot(for: profile), rotated)
+        let saved = try XCTUnwrap(switcher.loadSnapshot(for: profile))
+        XCTAssertEqual(saved.credential, rotated.credential)
+        XCTAssertEqual(switcher.identity(of: saved, family: "claude")?.identityKey, "acct-b|org-b")
+    }
+
+    func testAccountOnlyMetadataShouldSelectVerifiedExistingAccountWithoutRebindingSelectedAccount() async throws {
+        let other = try store.add(family: "claude", label: "Other", identityKey: "acct-a|org-a", id: "profile-a")
+        let savedA = entry(token: "saved-a", account: "a")
+        try switcher.saveSnapshot(savedA, for: other)
+        try switcher.writeWorkspaceAuthentication(savedA, for: other)
+        store.setPreferred(family: "claude", profileID: other.id)
+        let bare = AccountCredentialVault.Entry(
+            credential: entry(token: "rotated-b", account: "b").credential,
+            claudeOAuthAccount: #"{"accountUuid":"acct-b"}"#)
+        try seedShared(base: bare, baseTime: 300, scoped: entry(token: "scoped-b", account: "b"), scopedTime: 100)
+        let rootBefore = try Data(contentsOf: rootState)
+        let credentialBefore = keychain.currentUserValues[baseService]
+
+        let result = try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: store)
+
+        XCTAssertEqual(result, .updated(profileID: profile.id))
+        XCTAssertEqual(store.preferredProfileID(family: "claude"), profile.id)
+        XCTAssertEqual(store.profile(id: other.id)?.identityKey, "acct-a|org-a")
+        XCTAssertEqual(try switcher.loadSnapshot(for: other), savedA)
+        let target = try XCTUnwrap(switcher.loadSnapshot(for: profile))
+        XCTAssertEqual(switcher.identity(of: target, family: "claude")?.identityKey, "acct-b|org-b")
+        XCTAssertEqual(try Data(contentsOf: rootState), rootBefore)
+        XCTAssertEqual(keychain.currentUserValues[baseService], credentialBefore)
+    }
+
+    func testUnchangedAccountOnlySnapshotStillRequiresOrganizationVerification() async throws {
+        let bare = AccountCredentialVault.Entry(
+            credential: entry(token: "rotated-b", account: "b").credential,
+            claudeOAuthAccount: #"{"accountUuid":"acct-b"}"#)
+        try switcher.saveSnapshot(bare, for: profile)
+        try switcher.writeWorkspaceAuthentication(bare, for: profile)
+        try seedShared(base: bare, baseTime: 300, scoped: entry(token: "scoped-b", account: "b"), scopedTime: 100)
+        let before = try captureArtifacts()
+        let result = try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: store)
+        XCTAssertEqual(result, .updated(profileID: profile.id))
+        let snapshot = try XCTUnwrap(switcher.loadSnapshot(for: profile))
+        XCTAssertEqual(switcher.identity(of: snapshot, family: "claude")?.identityKey, "acct-b|org-b")
+        XCTAssertEqual(http.requests.count, 1)
+        try assertCLIUnchanged(before)
+    }
+
+    func testAccountOnlyMetadataChangingDuringVerificationPreservesSnapshots() async throws {
+        let bare = AccountCredentialVault.Entry(
+            credential: entry(token: "rotated-b", account: "b").credential,
+            claudeOAuthAccount: #"{"accountUuid":"acct-b"}"#)
+        try seedShared(base: bare, baseTime: 300, scoped: entry(token: "scoped-b", account: "b"), scopedTime: 100)
+        let previous = try switcher.loadSnapshot(for: profile)
+        let newer = entry(token: "external-c", account: "c")
+        http.beforeResponse = { [keychain = keychain!, baseService, rootState] in
+            keychain.currentUserValues[baseService] = newer.credential
+            try Data(#"{"oauthAccount":\#(newer.claudeOAuthAccount!)}"#.utf8).write(to: rootState)
+        }
+        let result = await claudeReconciliationResult(importer, in: store)
+        XCTAssertThrowsError(try result.get())
+        XCTAssertEqual(try switcher.loadSnapshot(for: profile), previous)
+        XCTAssertEqual(try switcher.readSharedClaudeAuthenticationForReadiness(), newer)
+        XCTAssertEqual(store.profile(id: profile.id), profile)
     }
 
     func testSelectionChangedDuringProfileRequestDiscardsTheObservation() async throws {

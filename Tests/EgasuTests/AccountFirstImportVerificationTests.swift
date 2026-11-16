@@ -41,6 +41,24 @@ final class AccountFirstImportVerificationTests: XCTestCase {
         XCTAssertEqual(fixture.http.requests.count, 1)
     }
 
+    func testFirstImportCompletesAccountOnlyMetadataWithoutChangingSharedLogin() async throws {
+        let fixture = try makeFixture()
+        let rootState = fixture.root.appendingPathComponent(".claude.json")
+        try Data(#"{"oauthAccount":{"accountUuid":"acct-a","unknown":"preserve"}}"#.utf8).write(to: rootState)
+        let original = try fixture.switcher.readClaudeSwitchState()
+        let rootData = try Data(contentsOf: rootState)
+        let imported = try await fixture.importer.importDefaultAccount(family: "claude", into: fixture.store)
+        let profile = try XCTUnwrap(imported)
+        XCTAssertEqual(profile.identityKey, "acct-a|org-a")
+        let snapshot = try XCTUnwrap(fixture.switcher.loadSnapshot(for: profile))
+        XCTAssertEqual(fixture.switcher.identity(of: snapshot, family: "claude")?.identityKey, profile.identityKey)
+        let raw = try XCTUnwrap(snapshot.claudeOAuthAccount)
+        let account = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
+        XCTAssertEqual(account["unknown"] as? String, "preserve")
+        XCTAssertEqual(try Data(contentsOf: rootState), rootData)
+        XCTAssertEqual(try fixture.switcher.readClaudeSwitchState(), original)
+    }
+
     func testProfileAndNetworkFailuresLeaveTheRegistryAndStorageEmpty() async throws {
         for failure in ["401", "429", "500", "malformed", "network"] {
             let fixture = try makeFixture()
@@ -120,7 +138,17 @@ final class AccountFirstImportVerificationTests: XCTestCase {
             let registry = fixture.defaults.data(forKey: AccountProfilesStore.storageKey)
             let preferred = fixture.store.preferredProfileID(family: "claude")
             gate.release()
-            await assertSwitchFails { _ = try await task.value }
+            do {
+                _ = try await task.value
+                XCTFail("Changed or cancelled first imports must fail")
+            } catch {
+                if mutation == "cancellation" {
+                    XCTAssertTrue(error is CancellationError)
+                } else {
+                    XCTAssertEqual(
+                        error as? AccountCredentialImporter.ImportError, .verificationFailed(family: "claude"))
+                }
+            }
 
             XCTAssertEqual(fixture.defaults.data(forKey: AccountProfilesStore.storageKey), registry)
             XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), preferred)

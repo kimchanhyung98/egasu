@@ -204,6 +204,7 @@ struct AccountCredentialImporter {
     private struct ExternalClaudeObservation: Sendable {
         var previousSnapshot: AccountCredentialVault.Entry?
         var shared: AccountCredentialVault.Entry
+        var snapshot: AccountCredentialVault.Entry
         var identityKey: String
         var profile: AccountProfile
     }
@@ -258,6 +259,10 @@ struct AccountCredentialImporter {
         else {
             return .unchanged
         }
+        guard try switcher.readSharedClaudeAuthenticationForReadiness() == observation.shared else {
+            AppLog.warn(.auth, "Claude sign-in changed before applying observation; preserving all authentication")
+            throw ClaudeAuthError.credentialsChanged
+        }
         return try applyExternalClaudeAuthentication(observation, in: store)
     }
 
@@ -265,9 +270,10 @@ struct AccountCredentialImporter {
         for selected: AccountProfile, profiles: [AccountProfile], allowInteraction: Bool = false
     ) async throws -> ExternalClaudeObservation? {
         let selectedSnapshot = try switcher.loadSnapshot(for: selected, allowInteraction: allowInteraction)
-        guard let shared = try await switcher.readSharedClaudeExternalAuthentication(comparedTo: selectedSnapshot),
-              let identityKey = switcher.identity(of: shared, family: "claude")?.identityKey
+        guard let verified = try await switcher.readSharedClaudeExternalAuthentication(comparedTo: selectedSnapshot)
         else { return nil }
+        let shared = verified.observed
+        let identityKey = verified.identityKey
         let profile =
             selected.identityKey == identityKey
             ? selected
@@ -281,7 +287,8 @@ struct AccountCredentialImporter {
             throw ClaudeAuthError.credentialsChanged
         }
         return ExternalClaudeObservation(
-            previousSnapshot: previousSnapshot, shared: shared, identityKey: identityKey, profile: profile
+            previousSnapshot: previousSnapshot, shared: shared, snapshot: verified.snapshot,
+            identityKey: identityKey, profile: profile
         )
     }
 
@@ -290,19 +297,19 @@ struct AccountCredentialImporter {
         in store: AccountProfilesStore
     ) throws -> ExternalReauthenticationResult {
         let profile = observation.profile
-        if observation.previousSnapshot == observation.shared, profile.identityKey == observation.identityKey {
+        if observation.previousSnapshot == observation.snapshot, profile.identityKey == observation.identityKey {
             guard store.preferredProfileID(family: "claude") != profile.id else { return .unchanged }
-            store.setPreferred(family: "claude", profileID: profile.id)
+            try store.commitPreferredSelection(family: "claude", profileID: profile.id)
             return .updated(profileID: profile.id)
         }
         let transaction = try store.beginIdentityReplacement(
             profileID: profile.id, with: observation.identityKey, replacesSharedAuthentication: false
         )
         do {
-            try switcher.saveSnapshot(observation.shared, for: profile)
-            try switcher.writeWorkspaceAuthentication(observation.shared, for: profile)
+            try switcher.saveSnapshot(observation.snapshot, for: profile)
+            try switcher.writeWorkspaceAuthentication(observation.snapshot, for: profile)
+            try store.commitPreferredSelection(family: "claude", profileID: profile.id)
             _ = try store.commitIdentityReplacement(transaction)
-            store.setPreferred(family: "claude", profileID: profile.id)
             return .updated(profileID: profile.id)
         } catch {
             let restored = rollbackCredentialTransaction(
@@ -495,19 +502,21 @@ struct AccountCredentialImporter {
                 try await observer.readSharedClaudeExternalAuthentication(comparedTo: nil)
             }.value
             try Task.checkCancellation()
-            guard !store.hasUnreadableRegistry, store.profiles == profiles,
-                store.preferredProfileID(family: family) == preferred,
-                store.authenticationRevision == revision,
-                try store.pendingIdentityReplacement() == replacement
-            else {
+            guard try store.pendingIdentityReplacement() == replacement else {
                 throw AccountIdentityReplacementError.pendingTransaction
             }
-            guard let entry, entry == observed.entry,
-                try switcher.readSharedAuthentication(family: family) == entry
+            guard !store.hasUnreadableRegistry, store.profiles == profiles,
+                store.preferredProfileID(family: family) == preferred,
+                store.authenticationRevision == revision
+            else {
+                throw ImportError.verificationFailed(family: family)
+            }
+            guard let entry, entry.observed == observed.entry,
+                try switcher.readSharedAuthentication(family: family) == entry.observed
             else {
                 throw ClaudeAuthError.credentialsChanged
             }
-            verified = ImportedCredential(entry: entry, identityKey: observed.identityKey, label: observed.label)
+            verified = ImportedCredential(entry: entry.snapshot, identityKey: entry.identityKey, label: observed.label)
         } else {
             verified = nil
         }

@@ -115,12 +115,18 @@ struct AccountSelectionSwitcher {
         let profiles = store.profiles
         let preferred = store.preferredProfileID(family: "claude")
         let revision = store.authenticationRevision
-        let snapshot = try switcher.loadSnapshot(for: previous, allowInteraction: true)
         let observer = switcher
-        let verified = try await Task.detached(priority: .utility) {
-            try await observer.readSharedClaudeExternalAuthentication(comparedTo: snapshot)
+        let observation = try await Task.detached(priority: .utility) {
+            let snapshot = try observer.loadSnapshot(for: previous, allowInteraction: true)
+            let verified = try await observer.readSharedClaudeExternalAuthentication(comparedTo: snapshot)?.observed
+            let currentSnapshot = try observer.loadSnapshot(for: previous, allowInteraction: true)
+            let currentShared = try observer.readSharedAuthentication(family: "claude")
+            let currentState = try observer.readClaudeSwitchState()
+            return (
+                snapshot: snapshot, verified: verified, currentSnapshot: currentSnapshot,
+                currentShared: currentShared, currentState: currentState
+            )
         }.value
-        let currentState = try await readSwitchState(in: store, expecting: record)
         try Task.checkCancellation()
         guard !store.hasUnreadableRegistry, store.profiles == profiles,
             store.preferredProfileID(family: "claude") == preferred,
@@ -130,14 +136,14 @@ struct AccountSelectionSwitcher {
         else {
             throw AccountIdentityReplacementError.pendingTransaction
         }
-        guard verified == active,
-            try switcher.loadSnapshot(for: previous, allowInteraction: true) == snapshot,
-            try switcher.readSharedAuthentication(family: "claude") == verified,
-            currentState == state
+        guard observation.verified == active,
+            observation.currentSnapshot == observation.snapshot,
+            observation.currentShared == observation.verified,
+            observation.currentState == state
         else {
             throw ClaudeAuthError.credentialsChanged
         }
-        return verified
+        return observation.verified
     }
 
     @discardableResult

@@ -120,6 +120,21 @@ final class ClaudePinnedUsageVerificationTests: XCTestCase {
         XCTAssertEqual(saved.completedAt, original.completedAt)
     }
 
+    func testPinnedUsageGateRemembersOpeningBeforeWait() async {
+        let gate = PinnedUsageGate()
+        await gate.open()
+        let resumed = expectation(description: "Preopened gate resumes its waiter")
+        let waiter = Task {
+            await gate.wait()
+            resumed.fulfill()
+        }
+
+        await fulfillment(of: [resumed], timeout: 1)
+        // timeout 실패 시에도 대기 중인 이전 구현의 continuation 해제.
+        await gate.open()
+        await waiter.value
+    }
+
     func testConcurrentPinnedRequestsVerifySeparatelyAndShareUsage() async throws {
         let auth = try auth()
         let started = expectation(description: "First identity verification started")
@@ -319,11 +334,19 @@ private final class PinnedUsageClock: @unchecked Sendable {
 
 private actor PinnedUsageGate {
     private var first = true
+    private var isOpen = false
     private var continuation: CheckedContinuation<Void, Never>?
     func isFirst() -> Bool {
         defer { first = false }
         return first
     }
-    func wait() async { await withCheckedContinuation { continuation = $0 } }
-    func open() { continuation?.resume(); continuation = nil }
+    func wait() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { continuation = $0 }
+    }
+    func open() {
+        isOpen = true
+        continuation?.resume()
+        continuation = nil
+    }
 }

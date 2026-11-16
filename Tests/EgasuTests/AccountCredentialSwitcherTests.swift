@@ -23,7 +23,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         let verified = try await fixture.switcher.readSharedClaudeExternalAuthentication(
             comparedTo: fixture.switcher.loadSnapshot(for: personal)
         )
-        try fixture.switcher.switchAuthentication(to: work, from: personal, verifiedClaudeDeparture: verified)
+        try fixture.switcher.switchAuthentication(to: work, from: personal, verifiedClaudeDeparture: verified?.observed)
 
         // authentication만 이동: credential 파일, 양쪽 keychain service, 두 state 파일의 `oauthAccount` 키
         XCTAssertEqual(
@@ -70,7 +70,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         let verified = try await fixture.switcher.readSharedClaudeExternalAuthentication(
             comparedTo: fixture.switcher.loadSnapshot(for: personal)
         )
-        try fixture.switcher.switchAuthentication(to: work, from: personal, verifiedClaudeDeparture: verified)
+        try fixture.switcher.switchAuthentication(to: work, from: personal, verifiedClaudeDeparture: verified?.observed)
         try fixture.switcher.switchAuthentication(to: personal, from: work)
 
         let sharedHome = fixture.home.appendingPathComponent(".claude")
@@ -108,7 +108,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         let verified = try await fixture.switcher.readSharedClaudeExternalAuthentication(
             comparedTo: fixture.switcher.loadSnapshot(for: personal)
         )
-        try fixture.switcher.switchAuthentication(to: work, from: personal, verifiedClaudeDeparture: verified)
+        try fixture.switcher.switchAuthentication(to: work, from: personal, verifiedClaudeDeparture: verified?.observed)
 
         XCTAssertEqual(
             try XCTUnwrap(fixture.vault.load(profile: personal)).credential,
@@ -228,20 +228,37 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         )
     }
 
-    func testKeychainWriteFailureRollsBackTheSharedCredentialFile() throws {
+    func testKeychainWriteFailureRollsBackTheSharedCredentialFile() async throws {
         let fixture = try makeFixture()
         let personal = profile(id: "profile-a", family: "claude", label: "Personal", identityKey: "acct-a|org-a")
         let work = profile(id: "profile-b", family: "claude", label: "Work", identityKey: "acct-b|org-b")
         try seedClaudeSharedHome(fixture, token: "token-a", account: claudeAccount("a"))
         try fixture.vault.save(
+            .init(credential: claudeCredential(token: "token-a"), claudeOAuthAccount: claudeAccount("a")),
+            profile: personal
+        )
+        try fixture.vault.save(
             .init(credential: claudeCredential(token: "token-b"), claudeOAuthAccount: claudeAccount("b")),
             profile: work
         )
+        let verified = try await fixture.switcher.readSharedClaudeExternalAuthentication(
+            comparedTo: fixture.switcher.loadSnapshot(for: personal)
+        )
         fixture.keychain.failingCurrentUserServices = [baseClaudeService()]
 
-        XCTAssertThrowsError(try fixture.switcher.switchAuthentication(to: work, from: personal))
+        XCTAssertThrowsError(
+            try fixture.switcher.switchAuthentication(
+                to: work, from: personal, verifiedClaudeDeparture: verified?.observed)
+        ) { error in
+            XCTAssertTrue(error is CountingKeychain.WriteFailure)
+        }
 
-        // apply가 credential 파일에 도달하지 않고 이전 account 유지
+        // 실패 전 바뀐 scoped Keychain 복원, credential 파일·계정 정보 유지.
+        XCTAssertEqual(
+            fixture.keychain.currentUserValues[
+                scopedClaudeService(home: fixture.home.appendingPathComponent(".claude").path)],
+            claudeCredential(token: "token-a")
+        )
         XCTAssertEqual(
             try text(fixture.home.appendingPathComponent(".claude/.credentials.json")),
             claudeCredential(token: "token-a")

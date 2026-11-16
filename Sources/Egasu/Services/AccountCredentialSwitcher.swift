@@ -108,14 +108,23 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
         try sharedClaudeAuthentication()
     }
 
+    struct VerifiedClaudeExternalAuthentication: Sendable {
+        let observed: AccountCredentialVault.Entry
+        let snapshot: AccountCredentialVault.Entry
+        let identityKey: String
+    }
+
     /// CLI 인증은 그대로 두고 변경된 토큰의 계정·조직을 확인한 뒤 egasu 저장본에 반영.
     func readSharedClaudeExternalAuthentication(
         comparedTo previousSnapshot: AccountCredentialVault.Entry?
-    ) async throws -> AccountCredentialVault.Entry? {
-        guard let observed = try sharedClaudeAuthentication() else { return nil }
-        guard observed != previousSnapshot else { return observed }
-        guard let token = ClaudeAuthStore.parseCredentials(observed.credential)?.claudeAiOauth?.accessToken?.nilIfEmpty,
+    ) async throws -> VerifiedClaudeExternalAuthentication? {
+        guard let observed = try sharedClaudeAuthentication(),
             let expectedIdentity = identity(of: observed, family: "claude")?.identityKey
+        else { return nil }
+        if observed == previousSnapshot, expectedIdentity.contains("|") {
+            return .init(observed: observed, snapshot: observed, identityKey: expectedIdentity)
+        }
+        guard let token = ClaudeAuthStore.parseCredentials(observed.credential)?.claudeAiOauth?.accessToken?.nilIfEmpty
         else { return nil }
         let config = try ClaudeAuthStore(environment: environment).oauthConfig()
         let response = try await claudeUsageClient.fetchProfile(accessToken: token, config: config)
@@ -131,7 +140,17 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
             throw AccountCredentialImporter.ImportError.verificationFailed(family: "claude")
         }
         try Task.checkCancellation()
-        return observed
+        var snapshot = observed
+        if !expectedIdentity.contains("|") {
+            guard let account = observed.claudeOAuthAccount,
+                var fields = try JSONSerialization.jsonObject(with: Data(account.utf8)) as? [String: Any]
+            else { throw AccountCredentialImporter.ImportError.verificationFailed(family: "claude") }
+            fields["organizationUuid"] = profile.organization.uuid.trimmingCharacters(in: .whitespacesAndNewlines)
+            snapshot.claudeOAuthAccount = String(
+                decoding: try JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]), as: UTF8.self
+            )
+        }
+        return .init(observed: observed, snapshot: snapshot, identityKey: verifiedIdentity)
     }
 
     private func sharedClaudeAuthentication() throws -> AccountCredentialVault.Entry? {
