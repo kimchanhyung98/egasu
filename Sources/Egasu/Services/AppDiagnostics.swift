@@ -3,6 +3,7 @@ import Foundation
 /// 원격으로 보낼 작업명은 고정 enum만 허용 — 함수명·계정·입력 문자열로 생성 금지.
 enum DiagnosticOperation: String, Codable, CaseIterable, Sendable {
     case appRestart = "app_restart"
+    case storageMigration = "storage_migration"
     case providerRefresh = "provider_refresh"
     case historyScan = "history_scan"
     case credentialRefresh = "credential_refresh"
@@ -54,7 +55,7 @@ enum DiagnosticOperation: String, Codable, CaseIterable, Sendable {
              .accountAdd, .accountSwitch, .accountSignIn, .accountRemove, .accountReconcile, .accountBinding,
              .resetClaim, .postClaimRefresh, .weeklyTimer, .resetCreditFetch,
              .cursorPlan, .cursorCredits, .cursorBalance, .cursorSummary, .cursorFallback,
-             .iCloudIdentity, .localAPIRequest, .appRestart:
+            .iCloudIdentity, .localAPIRequest, .appRestart, .storageMigration:
             false
         case .iCloudRead, .iCloudWrite, .iCloudDelete,
              .tokscaleCheck, .tokscaleInstall, .tokscaleLogin, .tokscaleSubmit,
@@ -68,7 +69,7 @@ enum DiagnosticOperation: String, Codable, CaseIterable, Sendable {
 
     var feature: String {
         switch self {
-        case .appRestart: "lifecycle"
+        case .appRestart, .storageMigration: "lifecycle"
         case .providerRefresh, .historyScan, .resetCreditFetch, .cursorPlan, .cursorCredits, .cursorBalance, .cursorSummary, .cursorFallback: "usage"
         case .credentialRefresh, .credentialSave: "authentication"
         case .accountAdd, .accountSwitch, .accountSignIn, .accountRemove, .accountReconcile, .accountBinding: "accounts"

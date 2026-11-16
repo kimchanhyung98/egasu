@@ -45,6 +45,19 @@ final class AppDiagnosticsTests: XCTestCase {
         }
     }
 
+    func testStorageMigrationFailureUsesLifecycleDiagnostic() throws {
+        let diagnostics = DiagnosticEventRecorder()
+        AppDiagnostics.failure(.storageMigration, error: StorageMigration.MigrationError.requiredFiles)
+
+        XCTAssertEqual(diagnostics.events, [DiagnosticEvent(.storageMigration, result: .failure, category: .other)])
+        XCTAssertEqual(diagnostics.events.first?.operation.rawValue, "storage_migration")
+        XCTAssertEqual(diagnostics.events.first?.operation.feature, "lifecycle")
+        XCTAssertFalse(DiagnosticOperation.storageMigration.tracksRecovery)
+        let line = try XCTUnwrap(lines().first)
+        XCTAssertTrue(line.contains("[ERROR] [lifecycle]"), line)
+        XCTAssertTrue(line.contains("operation=storage_migration"), line)
+    }
+
     func testCorruptLocalFileFailureUsesStorageCategory() throws {
         let diagnostics = DiagnosticEventRecorder()
         AppDiagnostics.failure(.iCloudRead, error: CocoaError(.fileReadCorruptFile))

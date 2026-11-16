@@ -82,7 +82,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             try StorageMigration.runIfNeeded()
         } catch {
-            AppDiagnostics.failure(.appRestart, error: error, localContext: "Saved app data migration failed")
+            AppDiagnostics.failure(.storageMigration, error: error, localContext: "Saved app data migration failed")
             let alert = NSAlert()
             alert.messageText = recoveryFailureTitle
             alert.informativeText = L10n.errors("Saved app data could not be moved. Check the app log and try again.")
