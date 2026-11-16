@@ -93,7 +93,9 @@ Claude와 Codex 계정 카드는 계정마다 확인하지 않고 프로바이�
 각 새로 고침 순회에서 마지막 성공 확인으로부터 15분 이상 지난 결과 제거 — 요청 도중 해당 시간이 지나면 별도 타이머가 아닌 다음 순회에서 처리.
 정상 해석된 유지보수 전용 결과는 즉시 제거.
 
-Claude, Codex, pi의 지출 히스토리에는 `~/Library/Application Support/OpenUsage/log-scan-cache/` 아래 별도의 로컬 로그 파싱 캐시가 존재.
+운영 앱의 Claude, Codex, pi 지출 히스토리에는 `~/Library/Application Support/egasu/log-scan-cache/` 아래 별도의 로컬 로그 파싱 캐시가 존재.
+표준 개발 빌드는 `egasu.dev`, 그 외 설정 도메인은 `egasu.suite.<해시>`를 `egasu` 대신 사용.
+식별자별 저장소 이름·경로는 [CLI 문서](/docs/cli.md) 참조.
 egasu가 모델 요금 추정을 적용하기 전의 파싱된 사용 이벤트를 저장하므로, 가격이 갱신돼도 변경되지 않은 JSONL을 다시 읽지 않고 반영.
 변경된 파일은 전체를 읽고, 모든 행을 배열로 만들지 않고 순서대로 파싱.
 파일 읽기·파싱도 기본적으로 하나씩 실행하여 동시에 발생하는 부하 제한.
