@@ -41,6 +41,7 @@ final class LogFileTests: XCTestCase {
     func testAdvertisedURLMatchesSharedSinkPath() {
         // 앱이 노출하는 `LogFile.url`과 shared sink의 실제 쓰기 경로 일치 — 두 경로 divergence 방지
         XCTAssertEqual(LogFile.url, LogFile.shared.fileURL)
+        XCTAssertEqual(LogFile.url.lastPathComponent, "egasu.log")
     }
 
     func testAppendCreatesFileAndWritesLine() throws {

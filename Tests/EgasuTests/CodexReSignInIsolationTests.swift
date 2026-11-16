@@ -93,7 +93,10 @@ final class CodexReSignInIsolationTests: XCTestCase {
         let stale = entry(token: "late-company", account: "company-account")
         try workspace.writePrivateFile(stale.credential, to: first.directory.appendingPathComponent("auth.json"))
 
-        XCTAssertNil(try importer.readWorkspaceCredential(family: "codex", profileID: personal.id, attemptID: second.attemptID))
+        XCTAssertNil(
+            try importer.readWorkspaceCredential(
+                family: "codex", profileID: personal.id, attemptID: second.attemptID
+            ))
         XCTAssertEqual(try switcher.loadSnapshot(for: personal), original)
     }
 
