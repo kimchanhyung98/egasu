@@ -52,9 +52,14 @@ OpenUsage에서 자동 업데이트한 첫 실행은 이 앱을 가리키는 기
 이름 변경 직후 앱이 중단돼도 같은 방식으로 기존 명령 링크 복구.
 사용자가 앱을 다른 폴더로 옮겼다면 기존 `egasu` 링크를 제거한 뒤 새 앱에서 다시 설치.
 개발용 기본 설정 도메인은 비어 있지 않은 `EGASU_DEFAULTS_SUITE`를 우선 사용하며, 없거나 빈 값이면 이전 `OPENUSAGE_DEFAULTS_SUITE` 사용.
-CLI의 설정 도메인과 파일 저장 경로는 같은 앱 식별자로 결정.
-개발 앱의 헬퍼와 이를 가리키는 심볼릭 링크는 `egasu.dev` 저장 경로 사용.
-운영·표준 개발 식별자를 제외한 설정 도메인은 전체 값에서 만든 `egasu.suite.<해시>` 이름으로 파일·Keychain 저장소 분리.
+CLI의 설정 도메인과 앱 소유 파일 저장 경로는 같은 앱 식별자로 결정.
+운영 식별자 `com.kimchanhyung98.openusage`의 저장소 이름은 `egasu`.
+표준 개발 식별자 `com.kimchanhyung98.openusage.dev`의 저장소 이름은 `egasu.dev`.
+개발 앱의 헬퍼와 이를 가리키는 심볼릭 링크도 같은 저장소 이름 사용.
+나머지 설정 도메인은 전체 식별자의 SHA-256으로 만든 고정 저장소 이름 `egasu.suite.<해시>` 사용.
+앱 소유 파일은 `~/.config/<저장소 이름>/`·`~/Library/Application Support/<저장소 이름>/` 폴더로 분리.
+관리형 계정 인증 스냅샷도 같은 이름을 Keychain 접두어로 사용해 분리.
+공식 Claude·Codex·Antigravity 도구와 공유하는 Keychain 항목은 기존 이름 유지.
 
 업데이트 뒤 앱보다 CLI 조회를 먼저 실행해도 `~/.config/openusage`의 OpenRouter·Z.ai 키 파일을 해당 저장 경로로 복사.
 원본과 이미 존재하는 대상 파일은 유지.
