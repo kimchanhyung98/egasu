@@ -55,7 +55,7 @@ simulator-specific workflows onto pure macOS tasks.
      - `run`: 기존 개발 앱 종료 후 빌드·서명·실행.
      - `build`: 기존 개발 앱 종료 후 빌드·배치·서명만 수행.
      - `logs`: 빌드·실행 후 프로세스 로그 스트리밍.
-     - `verify`: 빌드·실행 후 `pgrep -x <AppName>`로 프로세스 존재 확인.
+     - `verify`: 빌드·실행 후 현재 checkout의 `APP_BINARY`와 실행 파일 경로가 같은 프로세스 확인.
    - Keep the default no-flag path simple: kill, build, run.
    - Prefer writing one script that owns this workflow instead of repeatedly asking the agent to manually run `swift build`, locate the artifact, then invoke an ad hoc run command.
    - For SwiftPM GUI apps, make the script build the product, create `dist/<AppName>.app`, copy the binary to `Contents/MacOS/<AppName>`, generate a minimal `Contents/Info.plist` with `CFBundlePackageType=APPL`, `CFBundleExecutable`, `CFBundleIdentifier`, `CFBundleName`, `LSMinimumSystemVersion`, and `NSPrincipalClass=NSApplication`, then launch with `/usr/bin/open -n <bundle>`.
@@ -68,7 +68,7 @@ simulator-specific workflows onto pure macOS tasks.
    - Default to `./script/build_and_run.sh`.
    - 로그 확인은 `./script/build_and_run.sh logs`, 실행 확인은 `./script/build_and_run.sh verify` 사용.
    - 실행 없이 빌드·서명만 필요하면 `./script/build_and_run.sh build` 사용.
-   - 잘못된 모드는 개발 앱 종료·빌드·서명 뒤 거부되므로 지원 인자를 먼저 확인.
+   - 잘못된 모드는 저장소·서명 확인과 개발 앱 종료·빌드 전에 사용법과 종료 코드 2로 거부.
 
 5. Summarize failures correctly.
    - Classify the blocker as compiler, linker, signing, build settings, missing SDK/toolchain, script bug, or runtime launch.
@@ -76,10 +76,13 @@ simulator-specific workflows onto pure macOS tasks.
 
 6. Debug the right way.
    - 설정·권한·동작 확인에는 `logs` 모드 사용.
-   - 더 좁은 텔레메트리 필터가 필요하면 앱 실행 후 `log stream`의 subsystem/category 조건 사용.
+   - 세부 진단 로그는 `log stream --info`의 subsystem/category 조건 사용.
+     시작 로그 확인은 별도 터미널에서 스트림을 먼저 시작한 뒤 `run` 실행.
+   - egasu의 `TelemetryRecorder` 이벤트는 가짜 sink·진단 observer·stub transport 테스트로 별도 확인.
+     `AppLog`는 통합·파일 진단 로그를 기록하며, `AppDiagnostics`의 로그 기록은 failure·degraded 결과에 한정.
    - For SwiftPM GUI apps, if the app bundle launches but its window still does not come forward, check whether the entrypoint needs `NSApp.setActivationPolicy(.regular)` and `NSApp.activate(ignoringOtherApps: true)`.
    - 디버거가 필요하면 개발 앱의 PID를 확인한 뒤 `lldb -p <개발 앱 PID>`로 연결.
-   - If the user needs to instrument and verify specific window, sidebar, menu, or menu bar actions, switch to `telemetry`.
+   - 특정 창·사이드바·메뉴·메뉴 막대 동작의 계측과 검증에는 `telemetry` 스킬 사용.
    - Keep evidence tight and user-facing.
 
 7. Use Xcode-aware MCP tooling only when it helps.

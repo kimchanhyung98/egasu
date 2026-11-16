@@ -20,6 +20,13 @@ set -euo pipefail
 #                                미지정 시 일치하는 최신 설치 profile 자동 선택
 
 MODE="${1:-run}"
+case "$MODE" in
+  run|build|logs|verify) ;;
+  *)
+    echo "usage: $0 [run|build|logs|verify]" >&2
+    exit 2
+    ;;
+esac
 CONFIG="${CONFIG:-release}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT_DIR/script/version.sh"
@@ -40,11 +47,13 @@ if [ -z "$CODESIGN_IDENTITY" ] && [ -f "$ROOT_DIR/.env.local.codesign-identity" 
   fi
 fi
 if [ -n "$CODESIGN_IDENTITY" ] && [ "$CODESIGN_IDENTITY" != "-" ]; then
-  if ! /usr/bin/security find-identity -p codesigning -v \
-    | /usr/bin/awk -v identity="$CODESIGN_IDENTITY" '
-        $2 == identity || index($0, "\"" identity "\"") { found = 1 }
-        END { exit !found }
-      '; then
+  if ! (
+    probe_dir=$(mktemp -d "${TMPDIR:-/tmp}/egasu-signing.XXXXXX") || exit 1
+    trap 'rm -rf "$probe_dir"' EXIT
+    cp /usr/bin/true "$probe_dir/egasu-signing-check" || exit 1
+    /usr/bin/codesign --dryrun --force --sign "$CODESIGN_IDENTITY" --timestamp=none \
+      "$probe_dir/egasu-signing-check"
+  ); then
     echo "Configured signing identity is unavailable: $CODESIGN_IDENTITY" >&2
     exit 1
   fi
@@ -266,10 +275,16 @@ case "$MODE" in
   verify)
     launch_app
     sleep 1
-    pgrep -x "$TARGET_NAME" >/dev/null && echo "==> running"
-    ;;
-  *)
-    echo "usage: $0 [run|build|logs|verify]" >&2
-    exit 2
+    python3 - "$APP_BINARY" <<'PY'
+import subprocess, sys
+for line in subprocess.check_output(["/bin/ps", "-axo", "pid=,comm="], text=True).splitlines():
+    fields = line.strip().split(None, 1)
+    if len(fields) == 2 and fields[1] == sys.argv[1]:
+        print("==> running")
+        break
+else:
+    print("Expected development app is not running: " + sys.argv[1], file=sys.stderr)
+    sys.exit(1)
+PY
     ;;
 esac

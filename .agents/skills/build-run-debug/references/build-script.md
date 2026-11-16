@@ -4,7 +4,11 @@ egasu의 실행 계약은 기존 `script/build_and_run.sh` 기준.
 지원 모드는 `run|build|logs|verify`이며 기본값은 `run`.
 `build`는 개발 앱 종료 후 빌드·배치·서명만 수행하고, 나머지 모드는 실행까지 수행.
 로그는 `logs`, 실행 확인은 `verify` 사용.
-세부 텔레메트리는 실행 후 `log stream`으로 확인하고, 디버거는 개발 앱 PID를 확인한 뒤 `lldb -p <개발 앱 PID>`로 연결.
+세부 진단 로그는 `log stream --info` 사용.
+시작 로그 확인은 별도 터미널에서 스트림을 먼저 시작한 뒤 `run` 실행.
+`TelemetryRecorder` 이벤트는 가짜 sink·진단 observer·stub transport 테스트로 별도 확인.
+`AppLog`는 통합·파일 진단 로그를 기록하며, `AppDiagnostics`의 로그 기록은 failure·degraded 결과에 한정.
+디버거는 개발 앱 PID를 확인한 뒤 `lldb -p <개발 앱 PID>`로 연결.
 아래 예시는 실행 스크립트가 없는 새 프로젝트에만 적용.
 egasu의 기존 스크립트에는 서명·iCloud·CLI 배치가 있으므로 이 예시로 교체하지 않음.
 
@@ -16,6 +20,7 @@ When a project does not already have an established macOS run entrypoint:
 2. Make it executable.
 3. Use it as the single kill + build + run entrypoint.
 4. `run|build|logs|verify` 모드 지원.
+   잘못된 모드는 저장소·서명 확인과 프로세스 종료·빌드 전에 사용법과 종료 코드 2로 거부.
 
 ## `script/build_and_run.sh`
 
@@ -33,6 +38,13 @@ Use this shape for true command-line tools:
 set -euo pipefail
 
 MODE="${1:-run}"
+case "$MODE" in
+  run|build|logs|verify) ;;
+  *)
+    echo "usage: $0 [run|build|logs|verify]" >&2
+    exit 2
+    ;;
+esac
 APP_NAME="MyTool"
 
 pkill -x "$APP_NAME" >/dev/null 2>&1 || true
@@ -53,12 +65,9 @@ case "$MODE" in
     ;;
   verify)
     "$APP_BINARY" &
+    capturedPID=$!
     sleep 1
-    pgrep -x "$APP_NAME" >/dev/null
-    ;;
-  *)
-    echo "usage: $0 [run|build|logs|verify]" >&2
-    exit 2
+    kill -0 "$capturedPID"
     ;;
 esac
 ```
@@ -73,6 +82,13 @@ bundle with Dock activation and bundle metadata:
 set -euo pipefail
 
 MODE="${1:-run}"
+case "$MODE" in
+  run|build|logs|verify) ;;
+  *)
+    echo "usage: $0 [run|build|logs|verify]" >&2
+    exit 2
+    ;;
+esac
 APP_NAME="MyApp"
 BUNDLE_ID="com.example.MyApp"
 MIN_SYSTEM_VERSION="14.0"
@@ -134,11 +150,14 @@ case "$MODE" in
   verify)
     open_app
     sleep 1
-    pgrep -x "$APP_NAME" >/dev/null
-    ;;
-  *)
-    echo "usage: $0 [run|build|logs|verify]" >&2
-    exit 2
+    python3 - "$APP_BINARY" <<'PY'
+import subprocess, sys
+for line in subprocess.check_output(["/bin/ps", "-axo", "pid=,comm="], text=True).splitlines():
+    _, executable = line.strip().split(None, 1)
+    if executable == sys.argv[1]:
+        sys.exit(0)
+sys.exit(1)
+PY
     ;;
 esac
 ```

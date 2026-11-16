@@ -6,19 +6,26 @@
 
 아래 명령은 빌드 전에 현재 checkout의 `dist/egasu.app`, 이전 `dist/Egasu.app` 또는 `dist/OpenUsage.app` 프로세스만 종료.
 `/Applications` 등 다른 경로에서 실행 중인 앱은 종료하지 않음.
+지원 모드는 `run|build|logs|verify`이며 생략 시 `run`.
+잘못된 모드는 버전 스크립트 로딩·Git·서명 확인과 앱 종료·빌드 전에 사용법과 종료 코드 2로 거부.
 리포지토리 루트에서 필요한 명령 하나 실행:
 
 ```sh
 ./script/build_and_run.sh          # dist/의 개발 앱을 빌드하고 실행
 ./script/build_and_run.sh build    # 빌드·스테이징만, 실행은 하지 않음
-./script/build_and_run.sh verify   # 실행 후 프로세스가 살아 있는지 확인
+./script/build_and_run.sh verify   # 현재 checkout의 앱 실행 파일 경로로 프로세스 확인
 ```
+
+`verify`는 현재 checkout의 `dist/egasu.app/Contents/MacOS/egasu`와 실행 파일 경로가 같은 프로세스만 인정.
+운영 앱이나 다른 checkout의 같은 이름 프로세스는 성공으로 계산하지 않음.
 
 스크립트는 서명된 앱 번들을 `dist/`에 생성.
 서명 신원은 `CODESIGN_IDENTITY` 환경 변수, 저장소 루트의 `.env.local.codesign-identity`, Apple Development 자동 선택 순서로 결정.
 이 Mac의 인증서를 고정하려면 `.env.local.codesign-identity`에 인증서 지문 또는 정확한 이름을 한 줄로 저장.
 이 파일은 Git에서 제외되는 로컬 설정.
-명시한 인증서를 찾을 수 없거나 인증서 설정 파일이 비어 있으면 실행 중인 앱을 종료하기 전에 빌드 중단.
+명시하거나 고정한 서명 신원은 임시 실행 파일 복사본에 `codesign --dryrun`을 실행해 사용 가능 여부 확인.
+신원 선택은 `codesign`의 규칙을 따르며, 설정 파일이 비어 있거나 사전 확인이 실패하면 앱 종료 전에 빌드 중단.
+`--dryrun`은 결과 서명을 저장하지 않지만 실제 서명 연산과 개인 키 접근 검사를 수행하므로 승인 창이 표시될 수 있음.
 개발 번들 버전은 `EGASU_DEV_VERSION` 환경 변수, 저장소 루트의 `.env.local.dev-version`, 가장 가까운 릴리스 태그 순서로 결정.
 `EGASU_DEV_VERSION`이 비어 있으면 호환 변수 `OPENUSAGE_DEV_VERSION`을 먼저 확인.
 다음 릴리스를 준비하는 동안 버전 표기를 고정하려면 `.env.local.dev-version`에 버전을 한 줄로 저장(예: `1.0.0-beta.2`).
@@ -83,7 +90,9 @@ make format         # 베타 종료 후 전체 Swift 파일 정리
 ./script/build_and_run.sh logs
 ```
 
-이미 실행 중인 앱에서 로그만 수집하려면 다음 명령 실행:
+`logs` 모드는 앱 실행 후 스트림을 시작.
+시작 로그가 필요하면 별도 터미널에서 아래 스트림을 먼저 시작한 뒤, 다른 터미널에서 `./script/build_and_run.sh run` 실행.
+이미 실행 중인 앱의 로그만 수집할 때도 같은 스트림 사용:
 
 ```sh
 log stream --info --style compact --predicate 'process == "egasu"'
@@ -130,6 +139,11 @@ log show --last 10m --info --debug --predicate 'process == "egasu"'
   수집에 실패하면 새 스냅샷을 저장하지 않으므로 다음 실행에서도 같은 로그가 나올 수 있음.
 
 ## 로컬 진단 이벤트 검증
+
+`AppLog`는 통합 로그와 파일 로그에 진단 메시지 기록.
+`AppDiagnostics`는 failure·degraded 결과만 로그로 기록하며 다른 결과는 observer 경로로 전달.
+`TelemetryRecorder`는 sink를 통해 PostHog 이벤트를 전달하므로 로그 스트림만으로 모든 이벤트 발생을 확인할 수 없음.
+이벤트 전달은 가짜 sink·진단 observer·stub transport를 사용하는 회귀 테스트로 별도 확인.
 
 회귀 테스트는 가짜 인증 정보·격리된 SDK 요청·임시 파일 사용:
 

@@ -27,6 +27,7 @@ egasu에서는 기존 `script/build_and_run.sh`를 기본 빌드·실행 경로�
 4. For SwiftPM, keep raw executable launch only for true CLI tools; for AppKit/SwiftUI GUI apps, create a project-local `.app` bundle and launch it with `/usr/bin/open -n`.
 5. `./script/build_and_run.sh [run|build|logs|verify]` 사용.
    `--` 접두사와 `debug`·`telemetry` 모드는 미지원.
+   잘못된 모드는 저장소·서명 확인과 앱 종료·빌드 전에 사용법과 종료 코드 2로 거부.
 6. Follow the canonical bootstrap contract in `../build-run-debug/references/build-script.md` for the exact script shape.
 7. Run the script in the requested mode and summarize any build, script, or launch failure.
 
@@ -34,6 +35,9 @@ egasu에서는 기존 `script/build_and_run.sh`를 기본 빌드·실행 경로�
 
 - Do not initialize a nested git repo inside an existing parent checkout.
 - Keep the no-flag script path simple: kill, build, run.
-- 세부 텔레메트리는 실행 후 `log stream` 사용.
+- 세부 진단 로그는 `log stream --info` 사용.
+  시작 로그 확인은 별도 터미널에서 스트림을 먼저 시작한 뒤 `run` 실행.
+- `TelemetryRecorder` 이벤트는 가짜 sink·진단 observer·stub transport 테스트로 별도 확인.
+  `log stream`의 진단 로그를 이벤트 전달 증거로 사용하지 않음.
 - 디버거는 개발 앱 PID를 확인한 뒤 `lldb -p <개발 앱 PID>`로 연결.
 - egasu의 기존 실행 스크립트를 새 프로젝트용 예시로 교체하지 않음.

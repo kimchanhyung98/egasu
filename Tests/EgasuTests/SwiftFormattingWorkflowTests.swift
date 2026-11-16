@@ -94,7 +94,12 @@ final class SwiftFormattingWorkflowTests: XCTestCase {
         let expected = try succeed(["git", "rev-parse", "HEAD"], in: competing)
         try succeed(["make", "format"], in: repository)
 
-        XCTAssertNotEqual(try runCommitStep(in: repository).status, 0)
+        let result = try runCommitStep(in: repository)
+        XCTAssertNotEqual(result.status, 0, result.output)
+        XCTAssertTrue(result.output.contains("[rejected]"), result.output)
+        XCTAssertTrue(
+            result.output.contains("fetch first") || result.output.contains("non-fast-forward"), result.output
+        )
         XCTAssertEqual(try succeed(["git", "--git-dir", remote.path, "rev-parse", "main"], in: repository), expected)
     }
 
@@ -165,6 +170,7 @@ final class SwiftFormattingWorkflowTests: XCTestCase {
         }
         environment["GIT_CONFIG_GLOBAL"] = "/dev/null"
         environment["GIT_CONFIG_NOSYSTEM"] = "1"
+        environment["LC_ALL"] = "C"
         process.environment = environment
         let output = Pipe()
         process.standardOutput = output
