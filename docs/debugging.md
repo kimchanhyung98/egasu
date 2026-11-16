@@ -6,15 +6,32 @@
 
 아래 명령은 빌드 전에 현재 checkout의 `dist/egasu.app`, 이전 `dist/Egasu.app` 또는 `dist/OpenUsage.app` 프로세스만 종료.
 `/Applications` 등 다른 경로에서 실행 중인 앱은 종료하지 않음.
+지원 모드는 `run|build|logs|verify`이며 생략 시 `run`.
+잘못된 모드는 버전 스크립트 로딩·Git·서명 확인과 앱 종료·빌드 전에 사용법과 종료 코드 2로 거부.
 리포지토리 루트에서 필요한 명령 하나 실행:
 
 ```sh
 ./script/build_and_run.sh          # dist/의 개발 앱을 빌드하고 실행
 ./script/build_and_run.sh build    # 빌드·스테이징만, 실행은 하지 않음
-./script/build_and_run.sh verify   # 실행 후 프로세스가 살아 있는지 확인
+./script/build_and_run.sh verify   # 현재 checkout의 앱 실행 파일 경로로 프로세스 확인
 ```
 
+`verify`는 현재 checkout의 `dist/egasu.app/Contents/MacOS/egasu`와 실행 파일 경로가 같은 프로세스만 인정.
+운영 앱이나 다른 checkout의 같은 이름 프로세스는 성공으로 계산하지 않음.
+
 스크립트는 서명된 앱 번들을 `dist/`에 생성.
+서명 신원은 `CODESIGN_IDENTITY` 환경 변수, 저장소 루트의 `.env.local.codesign-identity`, Apple Development 자동 선택 순서로 결정.
+이 Mac의 인증서를 고정하려면 `.env.local.codesign-identity`에 인증서 지문 또는 정확한 이름을 한 줄로 저장.
+이 파일은 Git에서 제외되는 로컬 설정.
+명시하거나 고정한 서명 신원은 임시 실행 파일 복사본에 `codesign --dryrun`을 실행해 사용 가능 여부 확인.
+신원 선택은 `codesign`의 규칙을 따르며, 설정 파일이 비어 있거나 사전 확인이 실패하면 앱 종료 전에 빌드 중단.
+`--dryrun`은 결과 서명을 저장하지 않지만 실제 서명 연산과 개인 키 접근 검사를 수행하므로 승인 창이 표시될 수 있음.
+개발 번들 버전은 `EGASU_DEV_VERSION` 환경 변수, 저장소 루트의 `.env.local.dev-version`, 가장 가까운 릴리스 태그 순서로 결정.
+`EGASU_DEV_VERSION`이 비어 있으면 호환 변수 `OPENUSAGE_DEV_VERSION`을 먼저 확인.
+다음 릴리스를 준비하는 동안 버전 표기를 고정하려면 `.env.local.dev-version`에 버전을 한 줄로 저장(예: `1.0.0-beta.2`).
+이 파일도 Git에서 제외되는 로컬 설정이며 릴리스 태그와 릴리스 버전은 바꾸지 않음.
+번들 버전에는 항상 `-dev` 접미사 추가(예: `1.0.0-beta.2-dev`).
+버전 형식이 릴리스 태그 규칙과 다르거나 파일이 비어 있으면 실행 중인 앱을 종료하기 전에 빌드 중단.
 개발·릴리스 앱에는 현재 앱과 의존성의 리소스만 포함.
 테스트 fixture와 이전 빌드에서 남은 다른 제품의 리소스 번들은 제외.
 실행 모드에서는 해당 번들을 실행하며 `/Applications`의 앱 번들은 교체하지 않음.
@@ -33,6 +50,38 @@ pre-commit 훅은 `make check` 실행 전에 Git의 저장소별 환경 변수 �
 연결된 작업 트리에서 커밋할 때도 SwiftPM이 각 의존성의 저장소를 올바르게 검사하도록 처리.
 검사 실패 시 커밋 차단 유지.
 
+## Swift 포매팅
+
+[swift-format](https://github.com/swiftlang/swift-format)의 `.swift-format` 규칙 사용.
+들여쓰기 4칸, 줄 길이 기준 120자, 기존 줄바꿈 우선 유지.
+별도 구문 변환 규칙은 끄고, 여러 줄 문자열의 내용과 줄바꿈 유지.
+대상은 `Package.swift`와 `Sources/`·`Tests/` 아래 Swift 파일.
+의존성·빌드 산출물·웹 사이트 파일은 대상에서 제외.
+
+베타 작업 중 전체 포매팅은 보류.
+`make check`와 기존 CI는 포맷 검사 없이 빌드·테스트 유지.
+포매터 워크플로의 `main` push 트리거는 주석 상태이며, 베타 종료 후 첫 실행은 수동으로 진행.
+
+1. 베타 작업을 `main`에 병합.
+2. GitHub Actions의 **Format Swift → Run workflow**에서 `main` 선택.
+3. 실행 결과와 `style: format Swift sources` 봇 커밋 확인.
+4. 릴리스할 때는 검증된 최종 커밋에 버전 태그 생성.
+
+워크플로는 Xcode 26.6에 포함된 포매터로 정리 후 포맷 검사·빌드·테스트 실행.
+모두 통과하고 변경이 있을 때만 Swift 파일을 커밋·푸시.
+변경이 없으면 새 커밋 없이 종료.
+`GITHUB_TOKEN`으로 푸시한 커밋은 일반 push CI를 다시 실행하지 않으므로 같은 작업에서 검증.
+브랜치 보호 규칙이 봇의 직접 푸시를 금지하면 푸시 단계 실패.
+실행 중 `main`이 바뀌어도 강제 푸시하지 않으며, 최신 `main`에서 다시 실행.
+
+로컬에서 같은 규칙을 사용할 때는 다음 명령 중 하나 실행.
+워크플로와 결과를 비교할 때는 같은 Xcode 버전 선택.
+
+```sh
+make format-check   # 검사만 실행
+make format         # 베타 종료 후 전체 Swift 파일 정리
+```
+
 ## 로그 스트리밍
 
 개발 앱을 다시 빌드·실행하고 Info 수준까지 로그를 수집하려면 다음 명령 실행:
@@ -41,7 +90,9 @@ pre-commit 훅은 `make check` 실행 전에 Git의 저장소별 환경 변수 �
 ./script/build_and_run.sh logs
 ```
 
-이미 실행 중인 앱에서 로그만 수집하려면 다음 명령 실행:
+`logs` 모드는 앱 실행 후 스트림을 시작.
+시작 로그가 필요하면 별도 터미널에서 아래 스트림을 먼저 시작한 뒤, 다른 터미널에서 `./script/build_and_run.sh run` 실행.
+이미 실행 중인 앱의 로그만 수집할 때도 같은 스트림 사용:
 
 ```sh
 log stream --info --style compact --predicate 'process == "egasu"'
@@ -89,10 +140,15 @@ log show --last 10m --info --debug --predicate 'process == "egasu"'
 
 ## 로컬 진단 이벤트 검증
 
+`AppLog`는 통합 로그와 파일 로그에 진단 메시지 기록.
+`AppDiagnostics`는 failure·degraded 결과만 로그로 기록하며 다른 결과는 observer 경로로 전달.
+`TelemetryRecorder`는 sink를 통해 PostHog 이벤트를 전달하므로 로그 스트림만으로 모든 이벤트 발생을 확인할 수 없음.
+이벤트 전달은 가짜 sink·진단 observer·stub transport를 사용하는 회귀 테스트로 별도 확인.
+
 회귀 테스트는 가짜 인증 정보·격리된 SDK 요청·임시 파일 사용:
 
 ```sh
-CFFIXED_USER_HOME=/tmp/egasu-telemetry-tests EGASU_POSTHOG_TOKEN=phc_REPLACE_ME swift test --filter 'Telemetry|LogFile|WidgetDataStoreNotification|CodexResetClaimRouter'
+CFFIXED_USER_HOME=/tmp/egasu-telemetry-tests EGASU_POSTHOG_TOKEN=phc_REPLACE_ME swift test --filter 'Telemetry|AppDiagnostics|LogFile|WidgetDataStoreNotification|CodexResetClaimRouter'
 ```
 
 검증 범위는 SDK에 전달할 데이터의 마스킹, 공유 중지 이후 대기 이벤트, 재시작, 집계 날짜·버전, 로그 동시 기록, 계정 전환.
@@ -138,9 +194,10 @@ App Server와 터미널에서 시작한 두 사용자 turn의 `thread_id`·`turn
   수동 조회를 요청하려면 행의 컨텍스트 메뉴에서 **Refresh** 사용.
   수동 조회에서도 유지되는 대기 조건은 [새로 고침 및 캐싱](/docs/refreshing.md) 참조.
 - **리빌드마다 권한/키체인 프롬프트가 뜸.**
-  스크립트는 사용 가능한 Apple Development 서명 신원을 우선 사용해 재빌드 사이의 권한 유지 지원.
-  프롬프트가 반복되면 해당 서명 신원이 있는지 확인.
-  사용 가능한 신원이 없으면 애드혹 서명으로 전환하며 스크립트가 경고 출력.
+  같은 인증서와 번들 ID를 유지하도록 로컬 서명 신원 고정.
+  Apple Development 또는 Developer ID Application 인증서 사용 가능.
+  기존 애드혹 빌드에서 전환할 때는 저장 항목마다 한 번 **항상 허용** 승인이 필요할 수 있음.
+  고정 설정과 사용 가능한 Apple Development 인증서가 모두 없으면 애드혹 서명으로 전환하며 경고 출력.
 - **로컬 API 확인.**
   앱이 실행 중일 때 `curl 127.0.0.1:6736/v1/usage`로 사용량 스냅샷 조회.
   UI와 같은 데이터 스토어의 결과이므로 수집·매핑 문제와 화면 표시 문제를 구분하는 데 사용 가능.

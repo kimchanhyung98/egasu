@@ -50,3 +50,27 @@ egasu_development_version() {
   version="$(egasu_version_from_tag "$tag")" || return 1
   printf '%s-dev\n' "$version"
 }
+
+# 로컬 개발 번들 버전 — 명시한 값, 전달받은 worktree의 `.env.local.dev-version`, 가장 가까운 릴리스 태그 순서.
+# 명시·고정한 값도 릴리스 태그와 같은 형식 검증을 거치며, 릴리스 버전과 구분하도록 -dev 접미사 항상 유지.
+egasu_local_development_version() {
+  local repo_dir="${1:?egasu_local_development_version requires a repository directory}"
+  local requested="${2:-}" version
+  local pin="$repo_dir/.env.local.dev-version"
+
+  if [ -z "$requested" ] && [ -f "$pin" ]; then
+    requested="$(cat "$pin")"
+    if [ -z "$requested" ]; then
+      echo ".env.local.dev-version is empty; set a version or remove the file" >&2
+      return 1
+    fi
+  fi
+  if [ -z "$requested" ]; then
+    egasu_development_version "$repo_dir"
+    return
+  fi
+
+  requested="${requested#v}"
+  version="$(egasu_version_from_tag "v${requested%-dev}")" || return 1
+  printf '%s-dev\n' "$version"
+}
