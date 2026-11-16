@@ -60,7 +60,9 @@ struct AccountSelectionSwitcher {
         }
 
         let state = try await readSwitchState(in: store, expecting: previousRecord)
-        let active = try switcher.readSharedAuthentication(family: "claude")
+        let active = try await verifiedDeparture(
+            previousRecord == nil ? previous : nil, state: state, in: store, expecting: previousRecord
+        )
         let activeFingerprint = active.map { AccountSwitchJournal.fingerprint($0.credential) }
         let canPreservePrevious = previousRecord == nil
             && active.flatMap { switcher.identity(of: $0, family: "claude")?.identityKey } == previous.identityKey
@@ -81,7 +83,10 @@ struct AccountSelectionSwitcher {
         do {
             try journal.save(record, replacing: previousRecord)
             // 재시도 중 혼합된 공유 인증은 어느 계정의 저장 인증에도 반영하지 않음.
-            try switcher.switchAuthentication(to: selected, from: previousRecord == nil ? previous : nil)
+            try switcher.switchAuthentication(
+                to: selected, from: previousRecord == nil ? previous : nil,
+                verifiedClaudeDeparture: canPreservePrevious ? active : nil
+            )
             let applied = try await readSwitchState(in: store, expecting: record)
             guard applied.matches(
                 credentialFingerprint: record.selectedCredentialFingerprint,
@@ -95,6 +100,44 @@ struct AccountSelectionSwitcher {
             AppLog.error(.auth, "account selection switch failed; preserving recovery state: \(error.localizedDescription)")
             throw error
         }
+    }
+
+    private func verifiedDeparture(
+        _ previous: AccountProfile?,
+        state: AccountSwitchJournal.SharedState,
+        in store: AccountProfilesStore,
+        expecting record: AccountSwitchJournal.Record?
+    ) async throws -> AccountCredentialVault.Entry? {
+        let active = try switcher.readSharedAuthentication(family: "claude")
+        guard let previous,
+            active.flatMap({ switcher.identity(of: $0, family: "claude")?.identityKey }) == previous.identityKey
+        else { return active }
+        let profiles = store.profiles
+        let preferred = store.preferredProfileID(family: "claude")
+        let revision = store.authenticationRevision
+        let snapshot = try switcher.loadSnapshot(for: previous, allowInteraction: true)
+        let observer = switcher
+        let verified = try await Task.detached(priority: .utility) {
+            try await observer.readSharedClaudeExternalAuthentication(comparedTo: snapshot)
+        }.value
+        let currentState = try await readSwitchState(in: store, expecting: record)
+        try Task.checkCancellation()
+        guard !store.hasUnreadableRegistry, store.profiles == profiles,
+            store.preferredProfileID(family: "claude") == preferred,
+            store.authenticationRevision == revision,
+            try store.pendingIdentityReplacement() == nil,
+            try journal.load() == record
+        else {
+            throw AccountIdentityReplacementError.pendingTransaction
+        }
+        guard verified == active,
+            try switcher.loadSnapshot(for: previous, allowInteraction: true) == snapshot,
+            try switcher.readSharedAuthentication(family: "claude") == verified,
+            currentState == state
+        else {
+            throw ClaudeAuthError.credentialsChanged
+        }
+        return verified
     }
 
     @discardableResult

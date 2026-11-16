@@ -43,25 +43,15 @@ private struct AccountSwitchConfirmation: ViewModifier {
                 .disabled(container.accountSwitch.isSwitching)
                 Button(L10n.accounts("Cancel"), role: .cancel) {}
             } message: { profile in
-                if let shell = AccountShellInstaller.defaultShell() {
-                    Text(L10n.accounts(
-                        "New %@ sessions will use %@. egasu keeps your settings, memory, and sessions in place, replaces only the saved sign-in, and updates the %@ terminal setup. Open a new terminal window to use it.",
-                        profile.family, profile.label, shell.title
-                    ))
-                } else {
-                    Text(L10n.accounts("egasu couldn't detect your login shell, so terminal setup can't be applied automatically."))
-                }
+                Text(L10n.accounts(
+                    "New %@ sessions using the default sign-in will use %@. Your settings, memory, and sessions stay in place. Custom terminal authentication settings still apply.",
+                    profile.family, profile.label
+                ))
             }
     }
 
     private func switchTo(_ profile: AccountProfile) {
         guard !container.accountSwitch.isSwitching else { return }
-        guard let shell = AccountShellInstaller.defaultShell() else {
-            error = L10n.accounts("Couldn't detect your login shell, so egasu couldn't apply the account switch automatically.")
-            AppDiagnostics.record(.accountSwitch, result: .failure, category: .notAvailable, providerID: profile.family,
-                                  localContext: "Login shell could not be detected; account switch not applied")
-            return
-        }
         let providerIDs = AccountSwitchCoordinator.providerIDs(to: profile, from: store.preferredProfile(family: profile.family))
         container.accountSwitch.start(
             profileID: profile.id,
@@ -77,8 +67,6 @@ private struct AccountSwitchConfirmation: ViewModifier {
                                       localContext: "Account switch requires sign-in; account switch not applied")
                 return
             }
-            // wrapper 설치가 실패하면 공유 인증과 전환 기록 모두 변경하지 않음.
-            try AccountShellInstaller.install(family: profile.family, shell: shell)
             try await switcher.switchAuthentication(to: profile, in: store)
             let refreshes = container.refreshAccountCatalog()
             await container.syncDashboardUsageAccount(to: profile)

@@ -37,21 +37,23 @@ final class AccountSwitchRecoveryTests: XCTestCase {
         let reloaded = try fixture.freshStore()
         let writesBefore = fixture.keychain.writeCount
 
-        let result = try fixture.importer.reconcileSelectedClaudeSharedAuthentication(in: reloaded)
+        let reconciliation1 = await claudeReconciliationResult(fixture.importer, in: reloaded)
+        let result = try reconciliation1.get()
 
         XCTAssertEqual(result, .updated(profileID: fixture.b.id))
         XCTAssertEqual(try fixture.freshStore().preferredProfileID(family: "claude"), fixture.b.id)
         XCTAssertEqual(fixture.keychain.writeCount, writesBefore)
         XCTAssertNil(try fixture.journal.load())
         try fixture.assertSavedAccountsUnchanged()
-        XCTAssertEqual(try fixture.importer.reconcileSelectedClaudeSharedAuthentication(in: reloaded), .unchanged)
+        let reconciliation2 = await claudeReconciliationResult(fixture.importer, in: reloaded)
+        XCTAssertEqual(try reconciliation2.get(), .unchanged)
     }
 
-    func testScopedOnlyRotationPreservesDepartureAndRoundTrips() async throws {
+    func testDefaultOnlyRotationPreservesDepartureAndRoundTrips() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
-        let rotated = try fixture.rotateScopedCredentials()
+        let rotated = try fixture.rotateDefaultCredentials()
         XCTAssertNotEqual(rotated.credential, fixture.entryA.credential)
-        XCTAssertEqual(fixture.keychain.currentUserValues[fixture.baseService], fixture.entryA.credential)
+        XCTAssertEqual(fixture.keychain.currentUserValues[fixture.scopedService], fixture.entryA.credential)
 
         try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
 
@@ -62,11 +64,11 @@ final class AccountSwitchRecoveryTests: XCTestCase {
         XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), rotated)
     }
 
-    func testScopedAccessAndRefreshRotationPreservesDepartureWithoutNewAccountState() async throws {
+    func testDefaultAccessAndRefreshRotationPreservesDepartureWithoutNewAccountState() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
-        let rotated = try fixture.rotateScopedCredentials(replacingRefreshToken: true)
+        let rotated = try fixture.rotateDefaultCredentials(replacingRefreshToken: true)
         let credentialDate = Date(timeIntervalSince1970: 2_000_000_000)
-        fixture.keychain.currentUserModificationDates[fixture.scopedService] = credentialDate
+        fixture.keychain.currentUserModificationDates[fixture.baseService] = credentialDate
         for path in [".claude.json", ".claude/.claude.json"] {
             try FileManager.default.setAttributes(
                 [.modificationDate: credentialDate.addingTimeInterval(-1)],
@@ -75,7 +77,7 @@ final class AccountSwitchRecoveryTests: XCTestCase {
         }
 
         XCTAssertNotEqual(rotated.credential, fixture.entryA.credential)
-        XCTAssertEqual(fixture.keychain.currentUserValues[fixture.baseService], fixture.entryA.credential)
+        XCTAssertEqual(fixture.keychain.currentUserValues[fixture.scopedService], fixture.entryA.credential)
         XCTAssertEqual(
             ClaudeAuthStore.parseCredentials(rotated.credential)?.claudeAiOauth?.refreshToken,
             "rotated-refresh-a"
@@ -93,7 +95,7 @@ final class AccountSwitchRecoveryTests: XCTestCase {
     func testPendingRetryDoesNotPreserveDivergentSameChainCredential() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         _ = try fixture.stageIntent()
-        _ = try fixture.rotateScopedCredentials()
+        _ = try fixture.rotateDefaultCredentials()
 
         try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
 
@@ -141,8 +143,9 @@ final class AccountSwitchRecoveryTests: XCTestCase {
         XCTAssertEqual(reloaded.preferredProfileID(family: "claude"), fixture.b.id)
         XCTAssertNotNil(try fixture.journal.load())
 
+        let reconciliation3 = await claudeReconciliationResult(fixture.importer, in: reloaded)
         XCTAssertEqual(
-            try fixture.importer.reconcileSelectedClaudeSharedAuthentication(in: reloaded),
+            try reconciliation3.get(),
             .updated(profileID: fixture.b.id)
         )
         XCTAssertNil(try fixture.journal.load())
@@ -178,8 +181,9 @@ final class AccountSwitchRecoveryTests: XCTestCase {
         XCTAssertNotNil(try fixture.journal.load())
         fixture.keychain.beforeWrite = nil
 
+        let reconciliation4 = try await claudeReconciliationResult(fixture.importer, in: fixture.freshStore())
         XCTAssertEqual(
-            try fixture.importer.reconcileSelectedClaudeSharedAuthentication(in: fixture.freshStore()),
+            try reconciliation4.get(),
             .updated(profileID: fixture.a.id)
         )
         XCTAssertNil(try fixture.journal.load())
@@ -204,7 +208,8 @@ final class AccountSwitchRecoveryTests: XCTestCase {
         XCTAssertNotEqual(before.credentials[0], before.credentials[1])
         let reloaded = try fixture.freshStore()
 
-        XCTAssertThrowsError(try fixture.importer.reconcileSelectedClaudeSharedAuthentication(in: reloaded))
+        let reconciliation5 = await claudeReconciliationResult(fixture.importer, in: reloaded)
+        XCTAssertThrowsError(try reconciliation5.get())
         do {
             _ = try await fixture.importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: reloaded)
             XCTFail("Mixed authentication must keep the pending switch blocked")
@@ -217,7 +222,7 @@ final class AccountSwitchRecoveryTests: XCTestCase {
         try fixture.assertSavedAccountsUnchanged()
     }
 
-    func testNewExternalAndSameIdentityNewGenerationStayUntouched() throws {
+    func testNewExternalAndSameIdentityNewGenerationStayUntouched() async throws {
         for entry in [AccountSwitchRecoveryFixture.entry("c"), AccountSwitchRecoveryFixture.entry("b", token: "new-b")] {
             let fixture = try AccountSwitchRecoveryFixture(test: self)
             let record = try fixture.stageIntent()
@@ -225,7 +230,8 @@ final class AccountSwitchRecoveryTests: XCTestCase {
             let before = try fixture.switcher.readClaudeSwitchState()
             let writesBefore = fixture.keychain.writeCount
 
-            XCTAssertThrowsError(try fixture.importer.reconcileSelectedClaudeSharedAuthentication(in: fixture.freshStore()))
+            let reconciliation6 = try await claudeReconciliationResult(fixture.importer, in: fixture.freshStore())
+            XCTAssertThrowsError(try reconciliation6.get())
 
             XCTAssertEqual(try fixture.journal.load(), record)
             XCTAssertEqual(try fixture.switcher.readClaudeSwitchState(), before)
@@ -255,7 +261,8 @@ final class AccountSwitchRecoveryTests: XCTestCase {
             let writesBefore = fixture.keychain.writeCount
             let reloaded = try fixture.freshStore()
 
-            XCTAssertThrowsError(try fixture.importer.reconcileSelectedClaudeSharedAuthentication(in: reloaded))
+            let reconciliation7 = await claudeReconciliationResult(fixture.importer, in: reloaded)
+            XCTAssertThrowsError(try reconciliation7.get())
             do {
                 _ = try await fixture.importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: reloaded)
                 XCTFail("Credential and account state must name the same completed switch")
@@ -268,7 +275,7 @@ final class AccountSwitchRecoveryTests: XCTestCase {
         }
     }
 
-    func testAnyMissingTargetSourceDoesNotCountAsCompletedSwitch() throws {
+    func testAnyMissingTargetSourceDoesNotCountAsCompletedSwitch() async throws {
         for missingSource in 0..<5 {
             let fixture = try AccountSwitchRecoveryFixture(test: self)
             let record = try fixture.stageIntent()
@@ -283,7 +290,8 @@ final class AccountSwitchRecoveryTests: XCTestCase {
             let before = try fixture.switcher.readClaudeSwitchState()
             let writesBefore = fixture.keychain.writeCount
 
-            XCTAssertThrowsError(try fixture.importer.reconcileSelectedClaudeSharedAuthentication(in: fixture.freshStore()))
+            let reconciliation8 = try await claudeReconciliationResult(fixture.importer, in: fixture.freshStore())
+            XCTAssertThrowsError(try reconciliation8.get())
 
             XCTAssertEqual(try fixture.journal.load(), record)
             XCTAssertEqual(try fixture.switcher.readClaudeSwitchState(), before)
@@ -296,13 +304,15 @@ final class AccountSwitchRecoveryTests: XCTestCase {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         let record = try fixture.stageIntent()
         fixture.keychain.readFailureService = fixture.scopedService
-        XCTAssertThrowsError(try fixture.importer.reconcileSelectedClaudeSharedAuthentication(in: fixture.freshStore()))
+        let reconciliation9 = try await claudeReconciliationResult(fixture.importer, in: fixture.freshStore())
+        XCTAssertThrowsError(try reconciliation9.get())
         XCTAssertEqual(try fixture.journal.load(), record)
         fixture.keychain.readFailureService = nil
         try LocalTextFileAccessor().writeText(fixture.journal.path, "broken-journal")
         let writesBefore = fixture.keychain.writeCount
 
-        XCTAssertThrowsError(try fixture.importer.reconcileSelectedClaudeSharedAuthentication(in: fixture.freshStore()))
+        let reconciliation10 = try await claudeReconciliationResult(fixture.importer, in: fixture.freshStore())
+        XCTAssertThrowsError(try reconciliation10.get())
         await assertSwitchFails { try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store) }
 
         XCTAssertEqual(try String(contentsOfFile: fixture.journal.path, encoding: .utf8), "broken-journal")
@@ -333,8 +343,9 @@ final class AccountSwitchRecoveryTests: XCTestCase {
         XCTAssertEqual(retried.selectedProfileID, c.id)
         let reloaded = try fixture.freshStore()
         reloaded.setPreferred(family: "claude", profileID: fixture.b.id)
+        let reconciliation11 = await claudeReconciliationResult(fixture.importer, in: reloaded)
         XCTAssertEqual(
-            try fixture.importer.reconcileSelectedClaudeSharedAuthentication(in: reloaded),
+            try reconciliation11.get(),
             .updated(profileID: c.id)
         )
         XCTAssertNil(try fixture.journal.load())
@@ -363,8 +374,9 @@ final class AccountSwitchRecoveryTests: XCTestCase {
         let reloaded = try fixture.freshStore()
         reloaded.setPreferred(family: "claude", profileID: fixture.b.id)
 
+        let reconciliation12 = await claudeReconciliationResult(fixture.importer, in: reloaded)
         XCTAssertEqual(
-            try fixture.importer.reconcileSelectedClaudeSharedAuthentication(in: reloaded),
+            try reconciliation12.get(),
             .updated(profileID: selected.id)
         )
 

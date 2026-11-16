@@ -92,23 +92,37 @@ egasu account current [claude|codex]         # 선택된 계정의 이름(스크
 계정 목록은 Settings에 저장한 사용자 지정 표시 순서가 아니라 레지스트리 순서 유지.
 
 계정에는 사용자에게 보이는 폴더도, 실행 명령도 없음.
-전환은 공유 설정 홈의 인증 정보를 교체하므로, `egasu` 명령 설치 여부와 무관하게 새 터미널에서 그냥 `claude`나 `codex`를 실행하면 선택된 계정으로 동작.
+전환은 공유 설정 홈의 인증 정보 교체.
+`egasu` 명령 설치 여부와 무관하게 기본 인증 저장소를 쓰는 새 `claude`·`codex` 세션에 선택한 로그인 적용.
 
-설정에서 계정을 전환하면 먼저 확인을 요청.
-승인하면 egasu가 공유 설정 홈의 인증 정보를 교체하고, 감지된 로그인 셸의 시작 파일에 작은 `claude`/`codex` 함수를 설치하거나 갱신.
-지원하는 시작 파일은 `~/.zshrc`와 `~/.config/fish/config.fish`.
-다른 로그인 셸은 지원하지 않으며, 전환은 오류로 중단.
-이 함수는 공유 설정 홈을 `~/.claude` 또는 `~/.codex`로 고정하고 실제 `claude` 또는 `codex`를 직접 실행.
-Claude에서는 `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_OAUTH_REFRESH_TOKEN`, `CLAUDE_CODE_OAUTH_SCOPES`를 제거.
-Codex에서는 `OPENAI_API_KEY`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN`을 제거하고 파일 인증 정보 저장소를 유지.
-전환 자체가 공유 홈의 인증 정보를 교체하는 방식이므로, 함수는 선택된 계정을 직접 읽지 않음.
-처음 설정한 뒤에는 새 터미널을 열거나, 이미 열린 터미널에서 셸 시작 파일을 다시 읽기.
+Settings → Accounts에서 계정을 전환하면 먼저 확인을 요청.
+승인하면 Claude의 기본·`~/.claude` 범위 Keychain 인증, 인증 파일과 계정 메타데이터를 교체.
+Codex는 `~/.codex/auth.json` 교체.
+MCP 설정·메모리·세션 등 다른 공유 홈 데이터 유지.
+전환은 로그인 셸 종류로 제한하지 않음.
+계정 전환 시 `~/.zshrc`·`~/.config/fish/config.fish` 등 셸 설정 파일은 수정하지 않음.
+기존 `>>> OpenUsage` 함수 블록도 자동 제거하지 않음.
 
-wrapper는 Claude의 공식 인증 명령에도 똑같이 적용.
-egasu의 `claude` 함수를 불러온 새 터미널에서 `claude` 세션의 `/login` 또는 `claude auth login`을 실행하면, 결과가 egasu가 관찰하는 같은 공유 홈에 기록.
-사용 가능한 프로바이더 신원을 검증한 뒤 egasu가 선택 계정의 Keychain 스냅샷과 저장 신원을 자동 교체 — **Sign In Again**과 앱 재실행 불필요.
-새 로그인이 이전과 다른 프로바이더 신원이어도 계정명과 선택 상태는 유지하며, 다른 계정명을 조용히 다시 선택하지 않음.
+터미널의 인증 환경 변수나 사용자 지정 인증 경로는 변경하지 않음.
+`CLAUDE_CONFIG_DIR`·`CODEX_HOME`, 별도 API 키·인증 환경 변수·Codex keyring을 쓰는 실행은 CLI 설정에 따라 다른 인증을 선택할 수 있음.
+해당 실행에 계정 전환이 우선 적용된다고 보장하지 않음.
+
+앱의 첫 계정 공식 로그인은 자식 프로세스에서 `CLAUDE_CONFIG_DIR` 또는 `CODEX_HOME`을 제거해 기본 인증 저장소 사용.
+추가 계정·재로그인은 해당 자식 프로세스에만 같은 변수를 로그인 작업 공간으로 설정.
+해당 자식 프로세스에서 인증을 덮어쓰는 환경 변수를 제거하며, Codex 로그인은 파일 인증 저장소 사용.
+터미널의 환경 변수와 Codex 인증 저장소 설정은 그대로 유지.
+
+### Claude 터미널 로그인 반영
+
+기본 인증 저장소를 사용하는 `claude` 세션의 `/login` 또는 `claude auth login`으로 로그인 가능.
+egasu는 일반 Claude CLI의 기본 Keychain 인증을 우선하고, 해당 항목이 없거나 인증 형식이 잘못됐으면 `~/.claude/.credentials.json` 사용.
+계정 정보는 `~/.claude.json`에서 확인.
+현재 인증과 계정 정보를 확인할 수 있으면 변경된 토큰의 계정·조직을 검증한 뒤 Keychain 스냅샷과 저장 신원에 반영.
+별도 인증 경로나 환경 변수를 쓰는 로그인은 이 반영 경로의 대상이라고 보장하지 않음.
+이미 등록된 신원이면 해당 계정의 저장본을 갱신하고 선택 이동.
+같은 신원의 계정이 여럿이면 현재 선택 계정을 우선하며, 해당하지 않으면 먼저 등록된 계정 선택.
+미등록 신원이면 현재 선택 계정명에 신원과 인증 정보 반영.
+변경을 아직 감지하지 못한 경우 수동 새로 고침으로 현재 인증 재확인.
 완료되지 않았거나 신원을 검증할 수 없는 로그인은 기존 스냅샷을 변경하지 않음.
-함수를 거치지 않은 로그인과 충돌하면 기본 로그인이 더 오래됐음을 확인할 때만 자동 정리하며, 더 새롭거나 최신성을 확인할 수 없으면 인증·저장 계정·선택 보존.
-기존 로그인을 첫 계정으로 가져오기만 하면 함수가 설치되지 않을 수 있음.
-함수가 없거나 지원하지 않는 셸을 사용하는 경우, 또는 충돌 안내가 표시되면 **Settings → Accounts → Manage Claude Account → Sign In Again** 사용.
+외부 로그인 반영은 CLI의 Keychain·인증 파일·계정 상태 파일을 다시 쓰거나 다른 위치의 로그인을 정리하지 않음.
+현재 로그인을 확인할 수 없거나 충돌 안내가 표시되면 **Settings → Accounts → Manage Claude Account → Sign In Again** 사용.

@@ -4,7 +4,7 @@ import XCTest
 final class AccountCredentialSwitcherTests: XCTestCase {
     // MARK: - Claude
 
-    func testClaudeSwitchReplacesAuthenticationAndPreservesSharedState() throws {
+    func testClaudeSwitchReplacesAuthenticationAndPreservesSharedState() async throws {
         let fixture = try makeFixture()
         let personal = profile(id: "profile-a", family: "claude", label: "Personal", identityKey: "acct-a|org-a")
         let work = profile(id: "profile-b", family: "claude", label: "Work", identityKey: "acct-b|org-b")
@@ -20,7 +20,10 @@ final class AccountCredentialSwitcherTests: XCTestCase {
             profile: work
         )
 
-        try fixture.switcher.switchAuthentication(to: work, from: personal)
+        let verified = try await fixture.switcher.readSharedClaudeExternalAuthentication(
+            comparedTo: fixture.switcher.loadSnapshot(for: personal)
+        )
+        try fixture.switcher.switchAuthentication(to: work, from: personal, verifiedClaudeDeparture: verified)
 
         // authentication만 이동: credential 파일, 양쪽 keychain service, 두 state 파일의 `oauthAccount` 키
         XCTAssertEqual(
@@ -54,7 +57,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         )
     }
 
-    func testClaudeRoundTripRestoresTheFirstAccountWithoutRelogin() throws {
+    func testClaudeRoundTripRestoresTheFirstAccountWithoutRelogin() async throws {
         let fixture = try makeFixture()
         let personal = profile(id: "profile-a", family: "claude", label: "Personal", identityKey: "acct-a|org-a")
         let work = profile(id: "profile-b", family: "claude", label: "Work", identityKey: "acct-b|org-b")
@@ -64,7 +67,10 @@ final class AccountCredentialSwitcherTests: XCTestCase {
             profile: work
         )
 
-        try fixture.switcher.switchAuthentication(to: work, from: personal)
+        let verified = try await fixture.switcher.readSharedClaudeExternalAuthentication(
+            comparedTo: fixture.switcher.loadSnapshot(for: personal)
+        )
+        try fixture.switcher.switchAuthentication(to: work, from: personal, verifiedClaudeDeparture: verified)
         try fixture.switcher.switchAuthentication(to: personal, from: work)
 
         let sharedHome = fixture.home.appendingPathComponent(".claude")
@@ -81,7 +87,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         )
     }
 
-    func testClaudeSwitchPreservesRotatedCredentialForTheActiveAccount() throws {
+    func testClaudeSwitchPreservesRotatedCredentialForTheActiveAccount() async throws {
         let fixture = try makeFixture()
         let personal = profile(id: "profile-a", family: "claude", label: "Personal", identityKey: "acct-a|org-a")
         let work = profile(id: "profile-b", family: "claude", label: "Work", identityKey: "acct-b|org-b")
@@ -91,12 +97,18 @@ final class AccountCredentialSwitcherTests: XCTestCase {
             profile: personal
         )
         try seedClaudeSharedHome(fixture, token: "token-a-new", account: claudeAccount("a"))
+        fixture.keychain.currentUserValues[
+            scopedClaudeService(home: fixture.home.appendingPathComponent(".claude").path)] =
+            claudeCredential(token: "token-a-old")
         try fixture.vault.save(
             .init(credential: claudeCredential(token: "token-b"), claudeOAuthAccount: claudeAccount("b")),
             profile: work
         )
 
-        try fixture.switcher.switchAuthentication(to: work, from: personal)
+        let verified = try await fixture.switcher.readSharedClaudeExternalAuthentication(
+            comparedTo: fixture.switcher.loadSnapshot(for: personal)
+        )
+        try fixture.switcher.switchAuthentication(to: work, from: personal, verifiedClaudeDeparture: verified)
 
         XCTAssertEqual(
             try XCTUnwrap(fixture.vault.load(profile: personal)).credential,
@@ -124,6 +136,11 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         )
         // egasu 외부에서 shared home이 제3의 account로 로그인된 상태
         try seedClaudeSharedHome(fixture, token: "token-c", account: claudeAccount("c"))
+        fixture.keychain.currentUserValues[
+            scopedClaudeService(home: fixture.home.appendingPathComponent(".claude").path)] =
+            claudeCredential(token: "token-a-old")
+        try Data("{\"oauthAccount\":\(claudeAccount("a"))}".utf8)
+            .write(to: fixture.home.appendingPathComponent(".claude/.claude.json"))
         try fixture.vault.save(
             .init(credential: claudeCredential(token: "token-b"), claudeOAuthAccount: claudeAccount("b")),
             profile: work
@@ -295,6 +312,72 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testAccountSelectionSwitchPreservesShellFilesAndDanglingLinksWithoutCreatingMissingFiles() async throws {
+        for family in ["claude", "codex"] {
+            for shellState in ["existing", "missing", "dangling"] {
+                let fixture = try makeFixture()
+                let suite = "EgasuTests.ShellFilePreservation.\(UUID().uuidString)"
+                let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+                addTeardownBlock { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+                let store = AccountProfilesStore(defaults: defaults)
+                let previousIdentity = family == "claude" ? "acct-a|org-a" : "acct-a"
+                let selectedIdentity = family == "claude" ? "acct-b|org-b" : "acct-b"
+                _ = try store.add(family: family, label: "Personal", identityKey: previousIdentity, id: "profile-a")
+                let selected = try store.add(
+                    family: family, label: "Work", identityKey: selectedIdentity, id: "profile-b")
+                let credential: String
+                if family == "claude" {
+                    try seedClaudeSharedHome(fixture, token: "token-a", account: claudeAccount("a"))
+                    credential = claudeCredential(token: "token-b")
+                } else {
+                    try seedCodexSharedHome(fixture, accountID: "acct-a", token: "token-a")
+                    credential = codexAuth(accountID: "acct-b", token: "token-b")
+                }
+                try fixture.vault.save(
+                    .init(
+                        credential: credential,
+                        claudeOAuthAccount: family == "claude" ? claudeAccount("b") : nil), profile: selected)
+                let shellFiles = [".zshrc", ".config/fish/config.fish"].map { fixture.home.appendingPathComponent($0) }
+                let contents = Data("# Existing shell settings\r\nalias ll='ls -l'\n".utf8)
+                for (index, file) in shellFiles.enumerated() where shellState != "missing" {
+                    try FileManager.default.createDirectory(
+                        at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    if shellState == "existing" {
+                        try contents.write(to: file)
+                    } else {
+                        try FileManager.default.createSymbolicLink(
+                            at: file, withDestinationURL: fixture.home.appendingPathComponent("missing-target-\(index)")
+                        )
+                    }
+                }
+
+                try await AccountSelectionSwitcher(switcher: fixture.switcher).switchAuthentication(
+                    to: selected, in: store)
+
+                XCTAssertEqual(store.preferredProfileID(family: family), selected.id)
+                XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: family)?.credential, credential)
+                for (index, file) in shellFiles.enumerated() {
+                    if shellState == "existing" {
+                        XCTAssertEqual(try Data(contentsOf: file), contents)
+                    } else if shellState == "dangling" {
+                        let destination = fixture.home.appendingPathComponent("missing-target-\(index)").path
+                        XCTAssertEqual(
+                            try FileManager.default.destinationOfSymbolicLink(atPath: file.path), destination)
+                        XCTAssertFalse(FileManager.default.fileExists(atPath: destination))
+                    } else {
+                        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+                        XCTAssertThrowsError(try FileManager.default.destinationOfSymbolicLink(atPath: file.path))
+                    }
+                }
+                if shellState == "missing" {
+                    XCTAssertFalse(
+                        FileManager.default.fileExists(atPath: fixture.home.appendingPathComponent(".config").path))
+                }
+            }
+        }
+    }
+
     // MARK: - Fixtures
 
     private struct Fixture {
@@ -315,11 +398,14 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         let workspace = AccountSignInWorkspace(
             baseDirectory: home.appendingPathComponent("AppSupport/egasu/AccountSignIn")
         )
+        let http = ClaudeReconciliationHTTPClient()
+        http.identities = ["token-a": "acct-a|org-a", "token-a-new": "acct-a|org-a"]
         let switcher = AccountCredentialSwitcher(
             keychain: keychain,
             environment: FakeEnvironment([:]),
             homeDirectory: home,
-            workspace: workspace
+            workspace: workspace,
+            httpClient: http
         )
         return Fixture(
             home: home,

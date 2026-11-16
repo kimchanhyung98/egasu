@@ -4,7 +4,7 @@ import XCTest
 
 @MainActor
 final class CodexCredentialImportRaceTests: XCTestCase {
-    func testDefaultImportWaitsForRefreshBeforeReadingSharedCredentials() throws {
+    func testDefaultImportWaitsForRefreshBeforeReadingSharedCredentials() async throws {
         let home = FileManager.default.temporaryDirectory
             .appendingPathComponent("EgasuTests.CodexImportRace.\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: home) }
@@ -48,7 +48,8 @@ final class CodexCredentialImportRaceTests: XCTestCase {
             do { _ = try authStore.save(refreshedState) }
             catch { XCTFail("Refresh writeback failed: \(error)") }
         }
-        guard writePaused.wait(timeout: .now() + 3) == .success else {
+        let didPause = await loadOffMainActor { writePaused.wait(timeout: .now() + 3) == .success }
+        guard didPause else {
             throw CodexImportRaceError.writeGateNotReached
         }
         DispatchQueue.global(qos: .userInitiated).async {
@@ -57,7 +58,8 @@ final class CodexCredentialImportRaceTests: XCTestCase {
             resumeWrite.signal()
         }
 
-        let profile = try XCTUnwrap(importer.importDefaultAccount(family: "codex", into: profiles))
+        let imported = try await importer.importDefaultAccount(family: "codex", into: profiles)
+        let profile = try XCTUnwrap(imported)
 
         let sharedText = try String(contentsOf: authFile, encoding: .utf8)
         let snapshot = try XCTUnwrap(AccountCredentialVault(keychain: keychain).load(profile: profile))

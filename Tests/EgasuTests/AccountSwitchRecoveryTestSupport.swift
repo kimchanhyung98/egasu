@@ -10,6 +10,7 @@ struct AccountSwitchRecoveryFixture {
     let keychain: SwitchRecoveryKeychain
     let workspace: AccountSignInWorkspace
     let switcher: AccountCredentialSwitcher
+    let http: ClaudeReconciliationHTTPClient
     let a: AccountProfile
     let b: AccountProfile
     let entryA: AccountCredentialVault.Entry
@@ -24,8 +25,14 @@ struct AccountSwitchRecoveryFixture {
         let store = AccountProfilesStore(defaults: defaults, synchronizeDefaults: synchronize)
         let keychain = SwitchRecoveryKeychain()
         let workspace = AccountSignInWorkspace(baseDirectory: root.appendingPathComponent("AccountSignIn"))
+        let http = ClaudeReconciliationHTTPClient()
+        http.identities = [
+            "token-a": "acct-a|org-a", "token-b": "acct-b|org-b",
+            "rotated-a": "acct-a|org-a", "rotated-access-a": "acct-a|org-a"
+        ]
         let switcher = AccountCredentialSwitcher(
-            keychain: keychain, environment: FakeEnvironment([:]), homeDirectory: root, workspace: workspace
+            keychain: keychain, environment: FakeEnvironment([:]), homeDirectory: root, workspace: workspace,
+            httpClient: http
         )
         let a = try store.add(family: "claude", label: "A", identityKey: "acct-a|org-a", id: "profile-a")
         let b = try store.add(family: "claude", label: "B", identityKey: "acct-b|org-b", id: "profile-b")
@@ -43,6 +50,7 @@ struct AccountSwitchRecoveryFixture {
         self.keychain = keychain
         self.workspace = workspace
         self.switcher = switcher
+        self.http = http
         self.a = a
         self.b = b
         self.entryA = entryA
@@ -54,8 +62,11 @@ struct AccountSwitchRecoveryFixture {
     }
 
     var importer: AccountCredentialImporter {
-        AccountCredentialImporter(
-            keychain: keychain, environment: FakeEnvironment([:]), homeDirectory: root, workspace: workspace
+        let http = ClaudeReconciliationHTTPClient()
+        http.identities = ["token-a": "acct-a|org-a", "token-b": "acct-b|org-b", "rotated-access-a": "acct-a|org-a"]
+        return AccountCredentialImporter(
+            keychain: keychain, environment: FakeEnvironment([:]), homeDirectory: root, workspace: workspace,
+            httpClient: http
         )
     }
 
@@ -73,15 +84,14 @@ struct AccountSwitchRecoveryFixture {
         AccountProfilesStore(defaults: try XCTUnwrap(UserDefaults(suiteName: suite)))
     }
 
-    func rotateScopedCredentials(replacingRefreshToken: Bool = false) throws -> AccountCredentialVault.Entry {
-        let home = root.appendingPathComponent(".claude").path
+    func rotateDefaultCredentials(replacingRefreshToken: Bool = false) throws -> AccountCredentialVault.Entry {
         let auth = ClaudeAuthStore(
-            environment: FakeEnvironment([:]), keychain: keychain,
-            scope: .configDir(path: home, keychainLiteral: home), allowsDesktopFallback: false
+            environment: FakeEnvironment([:]), files: FakeFiles([:]), keychain: keychain,
+            scope: .standard, allowsDesktopFallback: false, pinsSharedHome: true
         )
         let generation = try auth.credentialGeneration()
         var credential = try XCTUnwrap(auth.loadCredentialCandidates().first)
-        XCTAssertEqual(credential.source, .keychainCurrentUser(service: scopedService))
+        XCTAssertEqual(credential.source, .keychainCurrentUser(service: baseService))
         credential.oauth.accessToken = "rotated-access-a"
         if replacingRefreshToken { credential.oauth.refreshToken = "rotated-refresh-a" }
         XCTAssertTrue(try auth.save(credential, ifUnchanged: generation))

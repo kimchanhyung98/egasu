@@ -82,11 +82,8 @@ struct DefaultAccountObserver: Sendable {
             hasConfigDirOverride = true
         }
         let anchor = expandTilde(configDir)
-        // override 없으면 state는 `~/.claude.json`, 명시적 CLAUDE_CONFIG_DIR면 (같은 디렉토리라도) home 내부의 state 파일.
-        // pinned mode는 switcher의 two-file 규칙 그대로 — 두 파일이 같은 account를 가리킬 때만 identity 성립.
-        let identityPaths: [String] = pinsClaudeSharedHome
-            ? [expandTilde("~/.claude.json"), anchor + "/.claude.json"]
-            : [hasConfigDirOverride ? anchor + "/.claude.json" : expandTilde("~/.claude.json")]
+        // 기본 상태 파일은 `~/.claude.json`. 명시적 설정 경로는 디렉터리 내부 상태 파일 사용.
+        let identityPaths = [hasConfigDirOverride ? anchor + "/.claude.json" : expandTilde("~/.claude.json")]
         var namedAccounts: [(key: String, label: String?)] = []
         var sawStateFile = false
         for identityPath in identityPaths {

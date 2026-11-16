@@ -109,33 +109,24 @@ struct AccountAddSheet: View {
         let family = family
         let importer = AccountCredentialImporter()
 
-        // 등록 profile 없는 signed-in 기본 계정은 re-login 없이 직접 import.
-        if isFirstAccount {
-            do {
-                if let profile = try importer.importDefaultAccount(family: family, into: store) {
-                    AppLog.info(.config, "accounts: imported the signed-in default \(family) account (\(profile.id.prefix(8))…)")
-                    finish()
-                    return
-                }
-            } catch {
-                fail(error)
-                return
-            }
-        }
-
         // 첫 계정 → Shared Runtime Home으로 공식 로그인; 추가 계정 → 새 Sign-In Workspace 범위의 공식 로그인.
         let profileID = isFirstAccount ? nil : UUID().uuidString
         signInTask = Task {
             do {
+                // 등록 profile 없는 signed-in 기본 계정은 re-login 없이 직접 import.
+                if profileID == nil,
+                    let profile = try await importer.importDefaultAccount(family: family, into: store)
+                {
+                    AppLog.info(.config, "accounts: imported the signed-in default \(family) account (\(profile.id.prefix(8))…)")
+                    finish()
+                    return
+                }
                 let workspace = AccountSignInWorkspace()
-                let home: String
+                let home: String?
                 if let profileID {
                     home = try workspace.prepare(family: family, profileID: profileID).path
                 } else {
-                    home = AccountShellInstaller.sharedConfigurationHome(
-                        family: family,
-                        homeDirectory: FileManager.default.homeDirectoryForCurrentUser
-                    )
+                    home = nil
                 }
                 let code = try await AccountSignInLauncher().runLogin(family: family, home: home)
                 try Task.checkCancellation()
@@ -162,7 +153,7 @@ struct AccountAddSheet: View {
                         into: store
                     )
                 } else {
-                    guard try importer.importDefaultAccount(family: family, into: store) != nil else {
+                    guard try await importer.importDefaultAccount(family: family, into: store) != nil else {
                         AppDiagnostics.record(.accountAdd, result: .failure, category: .authInvalid, providerID: family)
                         phase = .failed(L10n.accounts("The %@ sign-in finished without a usable credential. Nothing was added.", familyTitle))
                         return

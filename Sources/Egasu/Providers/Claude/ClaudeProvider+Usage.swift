@@ -9,13 +9,18 @@ extension ClaudeProvider {
         let config = try authStore.oauthConfig()
         let accountKey: String
         var verifiedThroughProfile = false
-        if let identity = state.accountIdentityKey, identity.contains("|") {
+        let identity = state.accountIdentityKey
+        if let identity, identity.contains("|") {
             let components = identity.split(separator: "|", omittingEmptySubsequences: false)
             guard components.count == 2,
                   components.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
                 AppLog.error(LogTag.plugin("claude"), "usage blocked: invalid account identity")
                 throw ClaudeUsageStateStore.StoreError.identityUnavailable
             }
+        }
+        // 공유 홈의 토큰과 루트 메타데이터는 따로 갱신되므로 사용량 저장 전에 같은 계정인지 확인.
+        let verifiesSharedLogin = authStore.pinsSharedHome && authStore.scope == .standard && state.source != .desktop
+        if let identity, identity.contains("|"), !verifiesSharedLogin {
             accountKey = identity
         } else {
             if case .accountSnapshot = state.source, state.accountIdentityKey?.nilIfEmpty == nil {

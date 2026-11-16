@@ -135,22 +135,22 @@ final class AccountSignInProbeTests: XCTestCase {
             withIntermediateDirectories: true
         )
         defer { try? FileManager.default.removeItem(at: home) }
-        try Data(#"{"claudeAiOauth":{"accessToken":"stale-file-token"}}"#.utf8)
-            .write(to: home.appendingPathComponent(".claude/.credentials.json"))
         try Data(#"{"oauthAccount":{"accountUuid":"acct-a","organizationUuid":"org-a"}}"#.utf8)
             .write(to: home.appendingPathComponent(".claude.json"))
         try Data(#"{"oauthAccount":{"accountUuid":"acct-a","organizationUuid":"org-a"}}"#.utf8)
             .write(to: home.appendingPathComponent(".claude/.claude.json"))
         keychain.currentUserValues[
-            ClaudeAuthStore.baseKeychainServiceName(environment: FakeEnvironment([:]))
-        ] = #"{"claudeAiOauth":{"accessToken":"stale-base-token"}}"#
+            ClaudeAuthStore.scopedKeychainServiceName(
+                forConfigDirLiteral: home.appendingPathComponent(".claude").path, environment: FakeEnvironment([:])
+            )
+        ] = #"{"claudeAiOauth":{"accessToken":"stale-scoped-token"}}"#
 
         let state = makeProbe(keychain: keychain, home: home).state(for: profile, isSelected: true)
 
         XCTAssertEqual(state, .needsSignIn)
     }
 
-    func testSelectedClaudeAcceptsTheBaseLoginBeforeTheManagedHomeIsInitialized() throws {
+    func testSelectedClaudeUsesTheBaseLoginEvenWhenScopedAuthenticationIsStale() throws {
         let keychain = ServiceKeychain()
         let profile = profile(id: "p9", family: "claude", identityKey: "acct-a|org-a")
         let credential = #"{"claudeAiOauth":{"accessToken":"token-a"}}"#
@@ -172,16 +172,28 @@ final class AccountSignInProbeTests: XCTestCase {
         let state = makeProbe(keychain: keychain, home: home).state(for: profile, isSelected: true)
 
         XCTAssertEqual(state, .ready(identityKey: "acct-a|org-a", label: nil))
+
+        try FileManager.default.createDirectory(
+            at: home.appendingPathComponent(".claude"), withIntermediateDirectories: true)
+        try Data(#"{"oauthAccount":{"accountUuid":"old-account","organizationUuid":"old-org"}}"#.utf8)
+            .write(to: home.appendingPathComponent(".claude/.claude.json"))
+        keychain.currentUserValues[
+            ClaudeAuthStore.scopedKeychainServiceName(
+                forConfigDirLiteral: home.appendingPathComponent(".claude").path, environment: FakeEnvironment([:])
+            )
+        ] = #"{"claudeAiOauth":{"accessToken":"stale-scoped-token"}}"#
+
+        XCTAssertEqual(
+            makeProbe(keychain: keychain, home: home).state(for: profile, isSelected: true),
+            .ready(identityKey: "acct-a|org-a", label: nil)
+        )
     }
 
     func testSelectedClaudeSharedHomeReadFailureNeedsSignIn() throws {
         let home = FileManager.default.temporaryDirectory
             .appendingPathComponent("AccountSignInProbeTests-\(UUID().uuidString)")
-        let scopedService = ClaudeAuthStore.scopedKeychainServiceName(
-            forConfigDirLiteral: home.appendingPathComponent(".claude").path,
-            environment: FakeEnvironment([:])
-        )
-        let keychain = SharedReadThrowingProbeKeychain(failingService: scopedService)
+        let baseService = ClaudeAuthStore.baseKeychainServiceName(environment: FakeEnvironment([:]))
+        let keychain = SharedReadThrowingProbeKeychain(failingService: baseService)
         let profile = profile(id: "p-shared-read-failure", family: "claude", identityKey: "acct-a|org-a")
         try AccountCredentialVault(keychain: keychain).save(
             .init(

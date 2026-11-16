@@ -5,7 +5,11 @@ extension AccountCredentialSwitcher {
 
     /// Settings 토글 트랜잭션 — target snapshot 검증, 떠나는 계정의 rotated credential 보존, target 인증만 적용, 적용 identity 검증, 실패 시 rollback.
     /// 선택 상태 갱신은 caller 몫 — 이 함수 반환 후에만.
-    func switchAuthentication(to selected: AccountProfile, from current: AccountProfile?) throws {
+    func switchAuthentication(
+        to selected: AccountProfile,
+        from current: AccountProfile?,
+        verifiedClaudeDeparture: AccountCredentialVault.Entry? = nil
+    ) throws {
         guard AccountProfilesStore.isSupportedFamily(selected.family) else {
             throw Error.unsupportedFamily(selected.family)
         }
@@ -34,6 +38,12 @@ extension AccountCredentialSwitcher {
            let active,
            identity(of: active, family: current.family)?.identityKey == current.identityKey {
             var preserved = active
+            if current.family == "claude" {
+                // 변경된 기본 인증은 비동기 전환 경계에서 검증한 값만 저장.
+                let verified = try verifiedClaudeDeparture ?? loadSnapshot(for: current, allowInteraction: true)
+                guard let verified, verified == active else { throw ClaudeAuthError.credentialsChanged }
+                preserved = verified
+            }
             if current.family == "codex",
                let snapshot = try loadSnapshot(for: current, allowInteraction: true),
                snapshot.codexStaleSharedCredentialFingerprints?.contains(CodexAuthStore.credentialFingerprint(active.credential)) == true,
