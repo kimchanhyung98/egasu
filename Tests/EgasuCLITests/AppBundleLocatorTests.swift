@@ -51,7 +51,8 @@ final class AppBundleLocatorTests: XCTestCase {
         )
 
         XCTAssertEqual(located.bundleIdentifier, "com.example.dev")
-        XCTAssertEqual(StorageNamespace(bundleIdentifier: located.bundleIdentifier).name, "egasu.com.example.dev")
+        XCTAssertTrue(
+            StorageNamespace(bundleIdentifier: located.bundleIdentifier).name.hasPrefix("egasu.suite."))
     }
 
     func testLegacyEnvironmentStillSelectsDefaultsSuite() {

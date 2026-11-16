@@ -1,6 +1,7 @@
+import CryptoKit
 import Foundation
 
-/// egasu 소유 저장 위치의 이름 — 운영 번들은 "egasu", 다른 번들(개발 빌드 등)은 접미사를 붙여 운영 데이터와 분리.
+/// 저장 위치 이름 — 운영은 "egasu", 표준 개발은 "egasu.dev", 그 외 식별자는 전체 값의 해시로 분리.
 /// "OpenUsage" 이름은 저장소 이전 원본과 구버전이 공유하는 실행 잠금에 유지.
 struct StorageNamespace: Equatable, Sendable {
     static let productionBundleIdentifier = "com.kimchanhyung98.openusage"
@@ -16,9 +17,12 @@ struct StorageNamespace: Equatable, Sendable {
             name = "egasu"
             return
         }
-        let suffix =
-            identifier.hasPrefix(production + ".") ? String(identifier.dropFirst(production.count + 1)) : identifier
-        name = "egasu.\(suffix)"
+        if identifier == production + ".dev" {
+            name = "egasu.dev"
+            return
+        }
+        let digest = SHA256.hash(data: Data(identifier.utf8)).map { String(format: "%02x", $0) }.joined()
+        name = "egasu.suite.\(digest)"
     }
 
     var isProduction: Bool { name == "egasu" }

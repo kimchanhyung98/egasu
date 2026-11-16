@@ -27,8 +27,8 @@ final class StorageMigrationTests: XCTestCase {
     func testProductionUsesEgasuAndOtherBundlesStaySeparate() {
         XCTAssertEqual(StorageNamespace(bundleIdentifier: "com.kimchanhyung98.openusage").name, "egasu")
         XCTAssertEqual(StorageNamespace(bundleIdentifier: "com.kimchanhyung98.openusage.dev").name, "egasu.dev")
-        XCTAssertEqual(
-            StorageNamespace(bundleIdentifier: "com.apple.dt.xctest.tool").name, "egasu.com.apple.dt.xctest.tool")
+        XCTAssertTrue(
+            StorageNamespace(bundleIdentifier: "com.apple.dt.xctest.tool").name.hasPrefix("egasu.suite."))
         XCTAssertNotEqual(StorageNamespace.current.name, "egasu", "테스트는 실제 운영 저장소를 쓰지 않음")
         XCTAssertEqual(
             AccountCredentialVault.service(
