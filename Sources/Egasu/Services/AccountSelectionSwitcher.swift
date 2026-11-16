@@ -60,12 +60,18 @@ struct AccountSelectionSwitcher {
         }
 
         let state = try await readSwitchState(in: store, expecting: previousRecord)
-        let active = try await verifiedDeparture(
+        let departure = try await verifiedDeparture(
             previousRecord == nil ? previous : nil, state: state, in: store, expecting: previousRecord
         )
-        let activeFingerprint = active.map { AccountSwitchJournal.fingerprint($0.credential) }
-        let canPreservePrevious = previousRecord == nil
-            && active.flatMap { switcher.identity(of: $0, family: "claude")?.identityKey } == previous.identityKey
+        let activeFingerprint = departure.active.map { AccountSwitchJournal.fingerprint($0.credential) }
+        let verifiedIdentity = departure.verified?.identityKey
+        let canPreservePrevious =
+            previousRecord == nil
+            && (verifiedIdentity == previous.identityKey
+                || (!previous.identityKey.contains("|")
+                    && departure.active.flatMap { switcher.identity(of: $0, family: "claude")?.identityKey }
+                        == previous.identityKey
+                    && verifiedIdentity.map { String($0.prefix { $0 != "|" }) } == previous.identityKey))
         let record = AccountSwitchJournal.Record(
             previousProfileID: previous.id,
             previousIdentity: previous.identityKey,
@@ -85,7 +91,7 @@ struct AccountSelectionSwitcher {
             // 재시도 중 혼합된 공유 인증은 어느 계정의 저장 인증에도 반영하지 않음.
             try switcher.switchAuthentication(
                 to: selected, from: previousRecord == nil ? previous : nil,
-                verifiedClaudeDeparture: canPreservePrevious ? active : nil
+                verifiedClaudeDeparture: previousRecord == nil ? departure.verified : nil
             )
             let applied = try await readSwitchState(in: store, expecting: record)
             guard applied.matches(
@@ -107,18 +113,23 @@ struct AccountSelectionSwitcher {
         state: AccountSwitchJournal.SharedState,
         in store: AccountProfilesStore,
         expecting record: AccountSwitchJournal.Record?
-    ) async throws -> AccountCredentialVault.Entry? {
+    ) async throws -> (
+        active: AccountCredentialVault.Entry?, verified: AccountCredentialSwitcher.VerifiedClaudeExternalAuthentication?
+    ) {
         let active = try switcher.readSharedAuthentication(family: "claude")
-        guard let previous,
-            active.flatMap({ switcher.identity(of: $0, family: "claude")?.identityKey }) == previous.identityKey
-        else { return active }
+        guard let previous, let active,
+            let activeIdentity = switcher.identity(of: active, family: "claude")?.identityKey,
+            activeIdentity == previous.identityKey
+                || (!activeIdentity.contains("|")
+                    && activeIdentity == String(previous.identityKey.prefix { $0 != "|" }))
+        else { return (active, nil) }
         let profiles = store.profiles
         let preferred = store.preferredProfileID(family: "claude")
         let revision = store.authenticationRevision
         let observer = switcher
         let observation = try await Task.detached(priority: .utility) {
             let snapshot = try observer.loadSnapshot(for: previous, allowInteraction: true)
-            let verified = try await observer.readSharedClaudeExternalAuthentication(comparedTo: snapshot)?.observed
+            let verified = try await observer.readSharedClaudeExternalAuthentication(comparedTo: snapshot)
             let currentSnapshot = try observer.loadSnapshot(for: previous, allowInteraction: true)
             let currentShared = try observer.readSharedAuthentication(family: "claude")
             let currentState = try observer.readClaudeSwitchState()
@@ -136,14 +147,14 @@ struct AccountSelectionSwitcher {
         else {
             throw AccountIdentityReplacementError.pendingTransaction
         }
-        guard observation.verified == active,
+        guard observation.verified?.observed == active,
             observation.currentSnapshot == observation.snapshot,
-            observation.currentShared == observation.verified,
+            observation.currentShared == observation.verified?.observed,
             observation.currentState == state
         else {
             throw ClaudeAuthError.credentialsChanged
         }
-        return observation.verified
+        return (active, observation.verified)
     }
 
     @discardableResult

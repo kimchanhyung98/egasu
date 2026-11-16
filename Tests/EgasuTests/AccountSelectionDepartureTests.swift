@@ -66,6 +66,105 @@ final class AccountSelectionDepartureTests: XCTestCase {
         }
     }
 
+    func testBareSharedIdentityPreservesVerifiedFullSnapshotAndRestores() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let bare = AccountCredentialVault.Entry(
+            credential: AccountSwitchRecoveryFixture.entry("a", token: "rotated-access-a").credential,
+            claudeOAuthAccount: #"{"accountUuid":"acct-a"}"#
+        )
+        try fixture.switcher.applySharedAuthentication(bare, family: "claude")
+
+        try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+
+        let saved = try XCTUnwrap(fixture.switcher.loadSnapshot(for: fixture.a))
+        XCTAssertEqual(fixture.http.requests.count, 1)
+        XCTAssertEqual(saved.credential, bare.credential)
+        XCTAssertEqual(fixture.switcher.identity(of: saved, family: "claude")?.identityKey, fixture.a.identityKey)
+        let home = try fixture.workspace.directory(family: "claude", profileID: fixture.a.id).path
+        XCTAssertEqual(try fixture.switcher.readAuthentication(family: "claude", home: home), saved)
+        try await fixture.selectionSwitcher.switchAuthentication(to: fixture.a, in: fixture.store)
+        XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), saved)
+        XCTAssertNil(try fixture.journal.load())
+    }
+
+    func testBareSharedIdentityProfileFailurePreservesState() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let bare = AccountCredentialVault.Entry(
+            credential: AccountSwitchRecoveryFixture.entry("a", token: "rotated-access-a").credential,
+            claudeOAuthAccount: #"{"accountUuid":"acct-a"}"#
+        )
+        try fixture.switcher.applySharedAuthentication(bare, family: "claude")
+        fixture.http.response = HTTPResponse(statusCode: 401, headers: [:], body: Data())
+        let state = try fixture.switcher.readClaudeSwitchState()
+        do {
+            try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+            XCTFail("Expected the profile verification failure")
+        } catch {
+            XCTAssertEqual(error as? ClaudeAuthError, .tokenExpired)
+        }
+        XCTAssertEqual(fixture.http.requests.count, 1)
+        try fixture.assertSavedAccountsUnchanged()
+        XCTAssertEqual(try fixture.switcher.readClaudeSwitchState(), state)
+        XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.a.id)
+        XCTAssertNil(try fixture.journal.load())
+    }
+
+    func testBareSharedIdentityWriteFailureKeepsSnapshotAndAllowsExplicitRetry() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let bare = AccountCredentialVault.Entry(
+            credential: AccountSwitchRecoveryFixture.entry("a", token: "rotated-access-a").credential,
+            claudeOAuthAccount: #"{"accountUuid":"acct-a"}"#
+        )
+        fixture.keychain.currentUserValues[fixture.baseService] = bare.credential
+        try Data(#"{"oauthAccount":\#(bare.claudeOAuthAccount!)}"#.utf8)
+            .write(to: fixture.root.appendingPathComponent(".claude.json"))
+        fixture.keychain.beforeWrite = { _, value in
+            if value == fixture.entryB.credential { throw SwitchRecoveryKeychain.Failure.injected }
+        }
+        do {
+            try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+            XCTFail("Expected the injected write failure")
+        } catch {
+            XCTAssertTrue(error is SwitchRecoveryKeychain.Failure)
+        }
+        let saved = try XCTUnwrap(fixture.switcher.loadSnapshot(for: fixture.a))
+        XCTAssertEqual(saved.credential, bare.credential)
+        XCTAssertEqual(fixture.switcher.identity(of: saved, family: "claude")?.identityKey, fixture.a.identityKey)
+        XCTAssertNotNil(try fixture.journal.load())
+        XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.a.id)
+        fixture.keychain.beforeWrite = nil
+        try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+        XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.b.id)
+        XCTAssertEqual(try fixture.switcher.loadSnapshot(for: fixture.a), saved)
+        XCTAssertNil(try fixture.journal.load())
+    }
+
+    func testLegacyBareProfilePreservesVerifiedRawAndRestores() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let legacy = try fixture.store.add(family: "claude", label: "Legacy", identityKey: "acct-a", id: "legacy")
+        let old = AccountCredentialVault.Entry(
+            credential: fixture.entryA.credential, claudeOAuthAccount: #"{"accountUuid":"acct-a"}"#
+        )
+        let rotated = AccountCredentialVault.Entry(
+            credential: AccountSwitchRecoveryFixture.entry("a", token: "rotated-access-a").credential,
+            claudeOAuthAccount: old.claudeOAuthAccount
+        )
+        try fixture.switcher.saveSnapshot(old, for: legacy)
+        try fixture.switcher.writeWorkspaceAuthentication(old, for: legacy)
+        try fixture.switcher.applySharedAuthentication(rotated, family: "claude")
+        fixture.store.setPreferred(family: "claude", profileID: legacy.id)
+
+        try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+
+        XCTAssertEqual(try fixture.switcher.loadSnapshot(for: legacy), rotated)
+        XCTAssertEqual(fixture.http.requests.count, 1)
+        let home = try fixture.workspace.directory(family: "claude", profileID: legacy.id).path
+        XCTAssertEqual(try fixture.switcher.readAuthentication(family: "claude", home: home), rotated)
+        try await fixture.selectionSwitcher.switchAuthentication(to: legacy, in: fixture.store)
+        XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), rotated)
+        XCTAssertNil(try fixture.journal.load())
+    }
+
     func testUnchangedDepartureDoesNotRequestProfile() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
 
@@ -280,15 +379,15 @@ final class AccountSelectionDepartureTests: XCTestCase {
     func testSynchronousSwitchCannotCaptureTokenChangedAfterVerification() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         _ = try fixture.rotateDefaultCredentials()
-        let verified = try await fixture.switcher.readSharedClaudeExternalAuthentication(comparedTo: fixture.entryA)
-        let observed = try XCTUnwrap(verified?.observed)
+        let verification = try await fixture.switcher.readSharedClaudeExternalAuthentication(comparedTo: fixture.entryA)
+        let verified = try XCTUnwrap(verification)
         fixture.keychain.currentUserValues[fixture.baseService] = AccountSwitchRecoveryFixture.entry("c").credential
         let state = try fixture.switcher.readClaudeSwitchState()
         let writes = fixture.keychain.writeCount
 
         XCTAssertThrowsError(
             try fixture.switcher.switchAuthentication(
-                to: fixture.b, from: fixture.a, verifiedClaudeDeparture: observed
+                to: fixture.b, from: fixture.a, verifiedClaudeDeparture: verified
             )
         ) { error in
             XCTAssertEqual(error as? ClaudeAuthError, .credentialsChanged)

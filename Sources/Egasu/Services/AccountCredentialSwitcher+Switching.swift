@@ -8,7 +8,7 @@ extension AccountCredentialSwitcher {
     func switchAuthentication(
         to selected: AccountProfile,
         from current: AccountProfile?,
-        verifiedClaudeDeparture: AccountCredentialVault.Entry? = nil
+        verifiedClaudeDeparture: VerifiedClaudeExternalAuthentication? = nil
     ) throws {
         guard AccountProfilesStore.isSupportedFamily(selected.family) else {
             throw Error.unsupportedFamily(selected.family)
@@ -31,27 +31,41 @@ extension AccountCredentialSwitcher {
             throw Error.snapshotIdentityMismatch(selected.label)
         }
 
-        // 활성 credential은 적용 후 rotate됐을 수 있음 — 현재 profile의 snapshot·workspace에 보존, 단 shared home이 그 profile 계정임이 증명될 때만.
+        // 활성 credential은 적용 후 rotate됐을 수 있음 — 현재 profile과 일치할 때만 보존.
         let active = try readSharedAuthentication(family: selected.family)
-        if let current,
-           current.family == selected.family,
-           let active,
-           identity(of: active, family: current.family)?.identityKey == current.identityKey {
-            var preserved = active
+        if selected.family == "claude", let verifiedClaudeDeparture, active != verifiedClaudeDeparture.observed {
+            throw ClaudeAuthError.credentialsChanged
+        }
+        if let current, current.family == selected.family, let active {
+            let activeIdentity = identity(of: active, family: current.family)?.identityKey
+            var preserved: AccountCredentialVault.Entry?
             if current.family == "claude" {
-                // 변경된 기본 인증은 비동기 전환 경계에서 검증한 값만 저장.
-                let verified = try verifiedClaudeDeparture ?? loadSnapshot(for: current, allowInteraction: true)
-                guard let verified, verified == active else { throw ClaudeAuthError.credentialsChanged }
-                preserved = verified
+                if let verifiedClaudeDeparture {
+                    if verifiedClaudeDeparture.identityKey == current.identityKey {
+                        preserved = verifiedClaudeDeparture.snapshot
+                    } else if !current.identityKey.contains("|"), activeIdentity == current.identityKey,
+                        String(verifiedClaudeDeparture.identityKey.prefix { $0 != "|" }) == current.identityKey
+                    {
+                        preserved = verifiedClaudeDeparture.observed
+                    }
+                } else if activeIdentity == current.identityKey {
+                    let saved = try loadSnapshot(for: current, allowInteraction: true)
+                    guard saved == active else { throw ClaudeAuthError.credentialsChanged }
+                    preserved = active
+                }
+            } else if activeIdentity == current.identityKey {
+                preserved = active
+                if current.family == "codex",
+                   let snapshot = try loadSnapshot(for: current, allowInteraction: true),
+                   snapshot.codexStaleSharedCredentialFingerprints?.contains(CodexAuthStore.credentialFingerprint(active.credential)) == true,
+                   identity(of: snapshot, family: current.family)?.identityKey == current.identityKey {
+                    preserved = snapshot
+                }
             }
-            if current.family == "codex",
-               let snapshot = try loadSnapshot(for: current, allowInteraction: true),
-               snapshot.codexStaleSharedCredentialFingerprints?.contains(CodexAuthStore.credentialFingerprint(active.credential)) == true,
-               identity(of: snapshot, family: current.family)?.identityKey == current.identityKey {
-                preserved = snapshot
+            if let preserved {
+                try saveSnapshot(preserved, for: current)
+                try writeWorkspaceAuthentication(preserved, for: current)
             }
-            try saveSnapshot(preserved, for: current)
-            try writeWorkspaceAuthentication(preserved, for: current)
         }
 
         do {

@@ -23,7 +23,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         let verified = try await fixture.switcher.readSharedClaudeExternalAuthentication(
             comparedTo: fixture.switcher.loadSnapshot(for: personal)
         )
-        try fixture.switcher.switchAuthentication(to: work, from: personal, verifiedClaudeDeparture: verified?.observed)
+        try fixture.switcher.switchAuthentication(to: work, from: personal, verifiedClaudeDeparture: verified)
 
         // authentication만 이동: credential 파일, 양쪽 keychain service, 두 state 파일의 `oauthAccount` 키
         XCTAssertEqual(
@@ -70,7 +70,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         let verified = try await fixture.switcher.readSharedClaudeExternalAuthentication(
             comparedTo: fixture.switcher.loadSnapshot(for: personal)
         )
-        try fixture.switcher.switchAuthentication(to: work, from: personal, verifiedClaudeDeparture: verified?.observed)
+        try fixture.switcher.switchAuthentication(to: work, from: personal, verifiedClaudeDeparture: verified)
         try fixture.switcher.switchAuthentication(to: personal, from: work)
 
         let sharedHome = fixture.home.appendingPathComponent(".claude")
@@ -108,7 +108,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         let verified = try await fixture.switcher.readSharedClaudeExternalAuthentication(
             comparedTo: fixture.switcher.loadSnapshot(for: personal)
         )
-        try fixture.switcher.switchAuthentication(to: work, from: personal, verifiedClaudeDeparture: verified?.observed)
+        try fixture.switcher.switchAuthentication(to: work, from: personal, verifiedClaudeDeparture: verified)
 
         XCTAssertEqual(
             try XCTUnwrap(fixture.vault.load(profile: personal)).credential,
@@ -248,7 +248,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
 
         XCTAssertThrowsError(
             try fixture.switcher.switchAuthentication(
-                to: work, from: personal, verifiedClaudeDeparture: verified?.observed)
+                to: work, from: personal, verifiedClaudeDeparture: verified)
         ) { error in
             XCTAssertTrue(error is CountingKeychain.WriteFailure)
         }
