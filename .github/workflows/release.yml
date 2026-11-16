@@ -243,11 +243,16 @@ jobs:
       - name: 게시된 Pages 커밋 기록
         run: |
           git fetch --no-tags --depth=1 origin gh-pages
-          git rev-parse FETCH_HEAD > "$RUNNER_TEMP/revision.txt"
+          mkdir -p "$RUNNER_TEMP/pages-publication"
+          git rev-parse FETCH_HEAD > "$RUNNER_TEMP/pages-publication/revision.txt"
+          printf '%s\n' "$PUBLICATION_TAG" > "$RUNNER_TEMP/pages-publication/tag.txt"
+          git rev-parse HEAD > "$RUNNER_TEMP/pages-publication/source.txt"
+        env:
+          PUBLICATION_TAG: ${{ steps.meta.outputs.tag }}
 
       - name: 검증된 게시 커밋 전달
         uses: actions/upload-artifact@v7
         with:
           name: pages-publication-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/revision.txt
+          path: ${{ runner.temp }}/pages-publication/
           if-no-files-found: error

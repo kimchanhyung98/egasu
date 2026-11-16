@@ -81,6 +81,11 @@ SwiftPM package, SwiftUI content hosted in an AppKit-owned `NSStatusItem` + cust
 
 Releases are automated: pushing a `v*` tag on `main` builds, signs, notarizes, and publishes a new version. A plain tag (`v0.10.0`) ships to everyone; a pre-release suffix (`v0.10.0-beta.1`) ships to the beta channel. The pipeline lives in [.github/workflows/release.yml](.github/workflows/release.yml), and the step-by-step is in the `release-swift` skill.
 
+앱·사이트·가격표는 `main` 이력에 포함된 버전 태그를 기준으로 게시.
+`main` 푸시는 CI 검증만 수행하며, 수동 게시에도 대상 태그 필수.
+Pages 재배포는 해당 태그의 성공한 게시 실행 결과 사용.
+자세한 조건은 [게시 버전 보호](/docs/updates.md#유지-관리자-게시-버전-보호) 참조.
+
 ### Release setup (one-time)
 
 The release workflow needs these repository secrets (Settings → Secrets and variables → Actions):

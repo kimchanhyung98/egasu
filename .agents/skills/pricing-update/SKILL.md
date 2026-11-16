@@ -5,7 +5,10 @@ description: Sync egasu's pricing supplement with Cursor's published model prici
 
 # Pricing Update
 
-`Sources/Egasu/Resources/pricing_supplement.json` prices the models no public catalog carries (Cursor-native models like `auto`, `composer-*`, `github_bugbot`), supplies fast-variant multipliers, and maps provider log/CSV slugs to canonical pricing keys. On merge to `main`, `.github/workflows/pricing-supplement.yml` validates it and publishes it to GitHub Pages; installed apps pick it up within about an hour — no release needed. Full background: `docs/pricing.md`.
+`Sources/Egasu/Resources/pricing_supplement.json`은 공개 카탈로그에 없는 Cursor 전용 모델(`auto`, `composer-*`, `github_bugbot`) 단가·fast 배수·프로바이더 로그와 CSV slug의 가격 키 매핑 제공.
+버전 태그 푸시 또는 대상 태그의 수동 실행 시 `.github/workflows/pricing-supplement.yml`이 검증 후 GitHub Pages에 게시.
+설치된 앱은 앱 업데이트 없이 다음 가격표 갱신에서 반영.
+상세 설명은 [모델 가격](/docs/pricing.md) 참조.
 
 Only the supplement needs manual care. Normal API models (new Claude/GPT/Gemini/Grok releases) are priced automatically by the daily LiteLLM and models.dev fetches — do not add them to the supplement unless they need an alias rule or the catalogs are wrong.
 
@@ -78,16 +81,19 @@ If a new alias rule maps a slug that appears in real usage, add a resolution tes
 
 Branch from `main`, commit (`fix(pricing): ...` or `feat(pricing): ...`), and open a PR following the repo's PR description structure (TL;DR / What was happening / What this changes). Cite the Cursor doc as the source and list each price or alias change explicitly so the owner can verify numbers at a glance. Never push pricing changes directly to `main`.
 
-### 6. Verify publication after merge
+### 6. 태그 게시 결과 확인
 
-Once merged, the `Publish pricing supplement` workflow runs. Confirm it landed:
+승인된 버전 태그를 푸시하거나 `Publish pricing supplement`를 대상 태그로 수동 실행한 뒤 게시 결과 확인.
 
 ```sh
-gh run list --workflow=pricing-supplement.yml --limit 1
+gh run list --repo kimchanhyung98/egasu --workflow=pricing-supplement.yml --limit 1
 curl -s https://egasu.chanhyung.kim/pricing_supplement.json | python3 -c "import json,sys; print(json.load(sys.stdin)['updated_at'])"
 ```
 
-The `updated_at` served must match the merged file. Publishing is two hops: the supplement workflow pushes the file to the `gh-pages` branch, then `.github/workflows/deploy-pages.yml` on `main` deploys that branch to the live site (Pages source is "GitHub Actions"). If the URL is stale after ~10 minutes, check `gh run list --workflow=deploy-pages.yml` and re-run **`gh workflow run deploy-pages.yml --ref main`** (not `--ref gh-pages`).
+라이브 `updated_at`은 게시한 태그의 파일과 일치해야 함.
+가격표 workflow의 `gh-pages` 게시 후 `deploy-pages.yml`이 검증된 게시 커밋을 실제 사이트에 배포.
+수동 가격표 게시도 `gh workflow run pricing-supplement.yml --repo kimchanhyung98/egasu --ref main -f tag=<버전 태그>`처럼 대상 태그 필수.
+Pages 배포가 실패하면 해당 실행을 재시도하거나 `gh workflow run deploy-pages.yml --repo kimchanhyung98/egasu --ref main -f tag=<버전 태그> -f publication_run_id=<성공한 게시 실행 ID>`로 같은 게시 결과 재배포.
 
 ## Optional: refresh bundled snapshots
 

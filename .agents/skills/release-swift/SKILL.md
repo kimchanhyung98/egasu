@@ -5,7 +5,9 @@ description: "Cut a release of egasu (Swift menu-bar app): pick a version, gener
 
 # Release Swift
 
-Pushing a `v*` tag on `main` runs `.github/workflows/release.yml`, which builds, signs, notarizes, attaches `egasu-<version>.dmg` to the GitHub Release, and updates the Sparkle `appcast.xml` on `gh-pages`. CI creates the release with an EMPTY body, so this skill generates the changelog, records it in `CHANGELOG.md`, and publishes the notes onto the release.
+`main` 이력에 포함된 `v*` 태그를 푸시하면 `.github/workflows/release.yml`이 빌드·서명·공증 후 `egasu-<version>.dmg`과 GitHub 자동 생성 릴리스 노트 게시.
+Sparkle `appcast.xml`은 `gh-pages`에 기록한 뒤 Pages로 배포.
+이 스킬은 승인된 변경 내역을 `CHANGELOG.md`에 기록하고, CI 완료 후 자동 생성 릴리스 노트를 승인된 노트로 교체.
 
 ## Channels
 
@@ -37,7 +39,7 @@ Collect commits since the **previous release in the same channel** and categoriz
 
 Author attribution (required on every entry):
 
-- With a PR number `(#123)`: `gh pr view 123 --json author -q '.author.login'`.
+- With a PR number `(#123)`: `gh pr view 123 --repo kimchanhyung98/egasu --json author -q '.author.login'`.
 - Without a PR number: `gh api /repos/kimchanhyung98/egasu/commits/{full_hash} -q '.author.login'`.
 - If the API returns null, fall back to the git author name.
 
@@ -66,7 +68,8 @@ git push origin v{version}
 
 ### 6. Publish the notes
 
-CI creates the release with an empty body, so attach the approved notes after it finishes:
+CI가 `generate_release_notes: true`로 릴리스 노트 생성.
+CI 완료 후 승인된 노트로 교체:
 
 ```sh
 gh run watch
@@ -95,7 +98,14 @@ git fetch origin gh-pages && git show origin/gh-pages:appcast.xml | grep -F "$as
 curl -fsSL "$feed_url" | grep -F "$asset_name"
 ```
 
-The second check matters: publishing is two hops — Release (or pricing-supplement) pushes `appcast.xml` to the **`gh-pages` branch**, then **`.github/workflows/deploy-pages.yml` on `main`** deploys that branch to the live site (Pages source is "GitHub Actions", not legacy branch deploy). Auto deploy runs on `workflow_run` after Release completes; GitHub sometimes returns **"Deployment failed, try again later"** even though `gh-pages` is already correct. If the branch has the version but the live URL does not after ~10 minutes, check `gh run list --workflow=deploy-pages.yml` and re-run **`gh workflow run deploy-pages.yml --ref main`** (must use `main` — the workflow file is not on `gh-pages`). Sparkle clients only see the live URL.
+앱·사이트·가격표의 자동 게시 기준은 버전 태그 푸시.
+수동 게시도 대상 태그 필수.
+게시 workflow가 `gh-pages`에 기록한 커밋·태그·소스 커밋을 전달하면, `main`의 `deploy-pages.yml`이 `workflow_run`으로 검증 후 배포.
+브랜치에 버전이 있어도 실제 URL이 갱신되지 않으면 `gh run list --repo kimchanhyung98/egasu --workflow=deploy-pages.yml`로 실패 확인.
+실패한 배포 실행 재시도는 같은 게시 커밋 사용.
+별도 수동 재배포는 `gh workflow run deploy-pages.yml --repo kimchanhyung98/egasu --ref main -f tag=<버전 태그> -f publication_run_id=<성공한 게시 실행 ID>` 사용.
+최신 `gh-pages`를 임의로 배포하지 않으며, 태그 기록이 없는 옛 산출물·만료된 산출물은 대상 태그로 새 게시 필요.
+Sparkle의 실제 반영 확인은 라이브 URL 기준.
 
 Require `isDraft=false`, `isPrerelease=true` for beta or `false` for stable, the selected `$asset_name` asset, `bodyLen>0`, and the version present in the appcast. If a draft was left behind, migrate its notes/assets onto the published release, then delete it — but only once a separate PUBLISHED release for the tag already exists:
 
@@ -148,4 +158,26 @@ The compare **link text** uses tag names, but the **URL** uses the two full comm
 - The release artifact version is derived from the tag. Never edit `AppInfo` or `script/build_and_run.sh` for a release version.
 - The appcast is append-only: older installs and the other channel's latest build must keep working, so the workflow aborts rather than shrink it.
 
-Release secrets and one-time setup live in the README under [Release setup](../../../README.md#release-setup-one-time).
+## 최초 설정 확인
+
+태그 생성 전에 저장소 Actions secrets와 Pages 설정 확인.
+필수 값이 없으면 태그 생성 전에 누락 항목 보고.
+Secret 이름·사용처의 기준은 [릴리스 워크플로](/.github/workflows/release.yml)와 [릴리스 스크립트](/script/release.sh).
+
+| Actions secret | 필요한 값 |
+|---|---|
+| `APPLE_CERTIFICATE` | 개인 키를 포함한 Developer ID Application `.p12` 인증서의 base64 값 |
+| `APPLE_CERTIFICATE_PASSWORD` | 해당 `.p12` 내보내기 비밀번호 |
+| `APPLE_DEVELOPER_ID_ICLOUD_PROFILE` | 운영 앱 `com.kimchanhyung98.openusage`와 `iCloud.com.kimchanhyung98.openusage` 컨테이너를 허용하는 Developer ID provisioning profile의 base64 값 |
+| `SPARKLE_PRIVATE_KEY` · `SPARKLE_PUBLIC_KEY` | 기존 앱의 `SUPublicEDKey`와 일치하는 Sparkle EdDSA 키 쌍 |
+| `APPLE_ID` · `APPLE_PASSWORD` · `APPLE_TEAM_ID` | 공증용 Apple ID·앱 전용 비밀번호·개발자 팀 ID |
+| `POSTHOG_CLI_API_KEY` · `POSTHOG_CLI_PROJECT_ID` | 선택 항목인 dSYM 업로드용 PostHog 인증·프로젝트 값 |
+
+`POSTHOG_CLI_API_KEY`가 없으면 경고 후 dSYM 업로드만 생략.
+키가 있으면 업로드 실패가 릴리스 실행을 중단.
+`GITHUB_TOKEN`은 Actions가 제공하며 별도 secret 등록 불필요.
+기존 설치의 업데이트 연결을 유지하도록 `SPARKLE_PUBLIC_KEY`와 `script/release.sh`의 `FEED_URL` 기본값 변경 금지.
+
+저장소 **Settings → Pages → Build and deployment → Source**는 **GitHub Actions** 사용.
+[Pages 배포 워크플로](/.github/workflows/deploy-pages.yml)는 기본 브랜치에 유지하고 `github-pages` 환경으로 배포.
+사용자 도메인은 `egasu.chanhyung.kim`이며, DNS·HTTPS와 라이브 appcast 응답을 게시 결과와 별도로 확인.

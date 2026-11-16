@@ -1,30 +1,28 @@
-# main의 랜딩 페이지를 gh-pages에 게시한 뒤 Deploy Pages로 배포 연결.
-# Release·가격표 게시와 같은 그룹으로 직렬화. 대기 작업 취소 시 수동 재실행 필요.
+# 버전 태그의 랜딩 페이지를 gh-pages에 게시한 뒤 Deploy Pages로 배포 연결.
+# Release·가격표 게시와 같은 그룹으로 직렬화.
 name: Publish landing page
 
 on:
   push:
-    branches: [main]
-    paths:
-      - 'site/**'
-      - 'script/site_*.sh'
-      - 'Sources/Egasu/Resources/ProviderIcons/**'
-      - 'Sources/Egasu/Resources/Localization/ko.lproj/*.strings'
-      - 'Sources/Egasu/Resources/Localization/ja.lproj/*.strings'
-      - '.github/workflows/publish-site.yml'
+    tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "게시할 버전 태그(예: v1.0.0-beta.1)"
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   verify:
-    if: github.ref == 'refs/heads/main'
     uses: ./.github/workflows/site.yml
+    with:
+      ref: ${{ inputs.tag || github.ref }}
 
   publish:
     needs: verify
-    if: github.ref == 'refs/heads/main'
     concurrency:
       group: release-appcast
       queue: max
@@ -32,8 +30,19 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-latest
+    env:
+      PUBLICATION_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: 게시 태그 확인
+        run: |
+          source script/version.sh
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          egasu_release_version "$GITHUB_WORKSPACE" "$PUBLICATION_TAG"
 
       - name: 게시된 피드 기준값 기록
         run: |
@@ -53,7 +62,7 @@ jobs:
 
       - name: 랜딩 페이지 조립
         run: |
-          ./script/site_assemble.sh .build/site-preview "$GITHUB_SHA"
+          ./script/site_assemble.sh .build/site-preview "$(git rev-parse HEAD)"
 
       - name: gh-pages 브랜치에 랜딩 페이지 게시
         uses: peaceiris/actions-gh-pages@v4
@@ -73,11 +82,14 @@ jobs:
             echo "::error::Published feeds changed during landing page publication."
             exit 1
           fi
-          git rev-parse FETCH_HEAD > "$RUNNER_TEMP/revision.txt"
+          mkdir -p "$RUNNER_TEMP/pages-publication"
+          git rev-parse FETCH_HEAD > "$RUNNER_TEMP/pages-publication/revision.txt"
+          printf '%s\n' "$PUBLICATION_TAG" > "$RUNNER_TEMP/pages-publication/tag.txt"
+          git rev-parse HEAD > "$RUNNER_TEMP/pages-publication/source.txt"
 
       - name: 검증된 게시 커밋 전달
         uses: actions/upload-artifact@v7
         with:
           name: pages-publication-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/revision.txt
+          path: ${{ runner.temp }}/pages-publication/
           if-no-files-found: error

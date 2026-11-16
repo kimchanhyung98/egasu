@@ -4,7 +4,7 @@
 # 저장소의 Pages 소스를 GitHub Actions로 전환. 이 워크플로우에서 배포 처리.
 #
 # 세 게시 워크플로우의 GITHUB_TOKEN push는 후속 push 워크플로우를 실행하지 않으므로 workflow_run 사용.
-# workflow_run과 수동 실행을 위해 이 파일을 기본 브랜치에 유지.
+# 태그 게시의 workflow_run과 같은 게시 결과의 수동 재배포를 위해 기본 브랜치에 유지.
 name: Deploy Pages
 
 on:
@@ -12,6 +12,15 @@ on:
     workflows: ["Release", "Publish pricing supplement", "Publish landing page"]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "재배포할 버전 태그(예: v1.0.0-beta.1)"
+        required: true
+        type: string
+      publication_run_id:
+        description: "이 태그의 성공한 Release·사이트·가격표 게시 실행 ID"
+        required: true
+        type: string
 
 permissions:
   actions: read
@@ -26,8 +35,11 @@ concurrency:
 
 jobs:
   deploy:
-    # 게시와 사후 검증까지 성공한 실행만 자동 배포.
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    # 자동·수동 모두 성공한 태그 게시 결과를 검증한 뒤 배포.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch'))
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -36,19 +48,50 @@ jobs:
       - name: 배포할 게시 커밋 선택
         run: |
           if [ "$EVENT_NAME" = workflow_dispatch ]; then
-            echo "PAGES_REF=gh-pages" >> "$GITHUB_ENV"
-          else
-            gh run download "$PUBLISH_RUN_ID" --repo "$GITHUB_REPOSITORY" \
-              --name "pages-publication-$PUBLISH_RUN_ATTEMPT" --dir "$RUNNER_TEMP/pages-publication"
-            ref="$(cat "$RUNNER_TEMP/pages-publication/revision.txt")"
-            if [[ ! "$ref" =~ ^[0-9a-f]{40}$ ]]; then
-              echo "::error::Invalid published Pages commit."
+            if [ -z "$REQUESTED_TAG" ] || [[ ! "$MANUAL_RUN_ID" =~ ^[0-9]+$ ]]; then
+              echo "::error::A release tag and a successful publication run ID are required."
               exit 1
             fi
-            echo "PAGES_REF=$ref" >> "$GITHUB_ENV"
+            PUBLISH_RUN_ID="$MANUAL_RUN_ID"
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PUBLISH_RUN_ID" > "$RUNNER_TEMP/publication-run.json"
+            PUBLISH_RUN_ATTEMPT="$(python3 - "$RUNNER_TEMP/publication-run.json" <<'PY'
+          import json, sys
+          with open(sys.argv[1]) as source:
+              run = json.load(source)
+          if (run.get("conclusion") != "success"
+              or run.get("name") not in ["Release", "Publish pricing supplement", "Publish landing page"]
+              or run.get("event") not in ["push", "workflow_dispatch"]):
+              sys.exit("A successful publication workflow run is required.")
+          print(run["run_attempt"])
+          PY
+            )"
           fi
+          gh run download "$PUBLISH_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "pages-publication-$PUBLISH_RUN_ATTEMPT" --dir "$RUNNER_TEMP/pages-publication"
+          ref="$(cat "$RUNNER_TEMP/pages-publication/revision.txt")"
+          tag="$(cat "$RUNNER_TEMP/pages-publication/tag.txt")"
+          source="$(cat "$RUNNER_TEMP/pages-publication/source.txt")"
+          if [[ ! "$ref" =~ ^[0-9a-f]{40}$ ]] || [[ ! "$source" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Invalid published Pages commit."
+            exit 1
+          fi
+          if [[ ! "$tag" =~ ^v(0\.([7-9]|[1-9][0-9]+)|[1-9][0-9]*\.(0|[1-9][0-9]*))\.(0|[1-9][0-9]*)(-beta\.[1-9][0-9]*)?$ ]]; then
+            echo "::error::Invalid publication tag."
+            exit 1
+          fi
+          if [ -n "$REQUESTED_TAG" ] && [ "$REQUESTED_TAG" != "$tag" ]; then
+            echo "::error::The publication does not match the requested tag."
+            exit 1
+          fi
+          {
+            echo "PAGES_REF=$ref"
+            echo "PUBLISH_TAG=$tag"
+            echo "PUBLISH_SOURCE_SHA=$source"
+          } >> "$GITHUB_ENV"
         env:
           EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_TAG: ${{ inputs.tag }}
+          MANUAL_RUN_ID: ${{ inputs.publication_run_id }}
           PUBLISH_RUN_ID: ${{ github.event.workflow_run.id }}
           PUBLISH_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
           GH_TOKEN: ${{ github.token }}
@@ -57,6 +100,14 @@ jobs:
         with:
           ref: ${{ env.PAGES_REF }}
           fetch-depth: 0
+
+      - name: 게시 원본 태그 확인
+        run: |
+          git fetch --no-tags origin "refs/tags/$PUBLISH_TAG"
+          if [ "$(git rev-parse 'FETCH_HEAD^{commit}')" != "$PUBLISH_SOURCE_SHA" ]; then
+            echo "::error::The publication source no longer matches its release tag."
+            exit 1
+          fi
 
       - name: 과거 Pages 배포 차단
         run: |

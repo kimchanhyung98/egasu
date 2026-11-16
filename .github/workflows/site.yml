@@ -2,14 +2,19 @@ name: Site CI
 
 on:
   workflow_call:
+    inputs:
+      ref:
+        description: "검증할 소스 ref"
+        required: true
+        type: string
   push:
     branches: [main]
     paths:
+      - 'site/**'
+      - 'script/site_*.sh'
       - 'Sources/Egasu/**'
-      - '!Sources/Egasu/Resources/ProviderIcons/**'
-      - '!Sources/Egasu/Resources/Localization/ko.lproj/*.strings'
-      - '!Sources/Egasu/Resources/Localization/ja.lproj/*.strings'
       - '.github/workflows/site.yml'
+      - '.github/workflows/publish-site.yml'
       - '.github/workflows/deploy-pages.yml'
       - '.github/workflows/release.yml'
       - '.github/workflows/pricing-supplement.yml'
@@ -31,7 +36,7 @@ permissions:
 jobs:
   verify:
     concurrency:
-      group: site-ci-${{ github.workflow }}-${{ github.ref }}
+      group: site-ci-${{ github.workflow }}-${{ inputs.ref || github.ref }}
       cancel-in-progress: true
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -46,6 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.ref || github.ref }}
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
