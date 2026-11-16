@@ -75,6 +75,16 @@ extension AccountCredentialSwitcher {
             }
         }
 
+        if let expectedTarget {
+            guard try loadSnapshot(for: selected, allowInteraction: true) == expectedTarget else {
+                throw ClaudeAuthError.credentialsChanged
+            }
+            if let verifiedClaudeDeparture,
+                try readSharedAuthentication(family: "claude") != verifiedClaudeDeparture.observed
+            {
+                throw ClaudeAuthError.credentialsChanged
+            }
+        }
         do {
             try applySharedAuthentication(target, family: selected.family)
             let applied = try readSharedAuthentication(family: selected.family)

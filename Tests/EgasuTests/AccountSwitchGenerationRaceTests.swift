@@ -74,6 +74,78 @@ final class AccountSwitchGenerationRaceTests: XCTestCase {
         XCTAssertNotNil(try fixture.journal.load())
     }
 
+    func testSharedAuthenticationChangedDuringFinalTargetReadIsNotOverwritten() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        _ = try fixture.rotateDefaultCredentials()
+        let foreign = AccountSwitchRecoveryFixture.entry("c")
+        let targetService = AccountCredentialVault.service(family: "claude", profileID: fixture.b.id)
+        let baseService = fixture.baseService
+        let reads = OSAllocatedUnfairLock(initialState: 0)
+        let writesAtChange = OSAllocatedUnfairLock<Int?>(initialState: nil)
+        let keychain = fixture.keychain
+        keychain.beforeRead = { service in
+            guard service == targetService else { return }
+            let count = reads.withLock { value in
+                value += 1
+                return value
+            }
+            if count == 3 {
+                keychain.currentUserValues[baseService] = foreign.credential
+                writesAtChange.withLock { $0 = keychain.writeCount }
+            }
+        }
+        do {
+            try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+            XCTFail("Expected credentialsChanged")
+        } catch {
+            XCTAssertEqual(error as? ClaudeAuthError, .credentialsChanged)
+        }
+        keychain.beforeRead = nil
+        XCTAssertEqual(reads.withLock { $0 }, 3)
+        XCTAssertEqual(keychain.currentUserValues[baseService], foreign.credential)
+        XCTAssertEqual(keychain.writeCount, writesAtChange.withLock { $0 })
+        XCTAssertEqual(try fixture.switcher.loadSnapshot(for: fixture.b), fixture.entryB)
+        XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.a.id)
+        XCTAssertNotNil(try fixture.journal.load())
+    }
+
+    func testTargetChangedAfterInitialCheckIsNotApplied() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        _ = try fixture.rotateDefaultCredentials()
+        let state = try fixture.switcher.readClaudeSwitchState()
+        let newer = AccountSwitchRecoveryFixture.entry("b", token: "newer-target")
+        let encoded = String(decoding: try JSONEncoder().encode(newer), as: UTF8.self)
+        let departingService = AccountCredentialVault.service(family: "claude", profileID: fixture.a.id)
+        let targetService = AccountCredentialVault.service(family: "claude", profileID: fixture.b.id)
+        let reads = OSAllocatedUnfairLock(initialState: 0)
+        let keychain = fixture.keychain
+        keychain.beforeRead = { service in
+            guard service == departingService else { return }
+            let count = reads.withLock { value in
+                value += 1
+                return value
+            }
+            if count == 3 { keychain.currentUserValues[targetService] = encoded }
+        }
+        do {
+            try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+            XCTFail("Expected credentialsChanged")
+        } catch {
+            XCTAssertEqual(error as? ClaudeAuthError, .credentialsChanged)
+        }
+        keychain.beforeRead = nil
+        XCTAssertGreaterThanOrEqual(reads.withLock { $0 }, 3)
+        XCTAssertEqual(try fixture.switcher.loadSnapshot(for: fixture.b), newer)
+        XCTAssertEqual(try fixture.switcher.readClaudeSwitchState(), state)
+        XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.a.id)
+        XCTAssertNotNil(try fixture.journal.load())
+        XCTAssertTrue(try fixture.selectionSwitcher.recoverInterruptedSwitch(in: fixture.store))
+        XCTAssertNil(try fixture.journal.load())
+        try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+        XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), newer)
+        XCTAssertNil(try fixture.journal.load())
+    }
+
     func testChangedTargetSnapshotDoesNotApplyUnjournaledGeneration() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         _ = try fixture.rotateDefaultCredentials()
