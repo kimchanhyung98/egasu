@@ -51,19 +51,49 @@ Claude Desktop 접근은 철저히 읽기 전용.
 egasu는 Desktop의 현재 액세스 토큰을 복호화하기 위해 macOS에 `Claude Safe Storage` 키체인 항목 사용 권한을 요청할 수 있음.
 Desktop의 자동 교체되는 갱신 토큰은 절대 쓰지 않고, Desktop의 설정·쿠키·키체인 데이터도 절대 수정하지 않음.
 
-관리형 계정 전환([**Settings → Accounts**(설정 → 계정)](/docs/settings.md))은 `OpenUsage Account Authentication`으로 시작하는 서비스 이름 아래, 계정마다 인증 스냅샷 하나를 macOS 키체인에 보관.
+관리형 계정 전환([**Settings → Accounts**(설정 → 계정)](/docs/settings.md))은 계정마다 인증 스냅샷 하나를 macOS 키체인에 보관.
+서비스 이름 접두어는 운영 `egasu Account Authentication`, 표준 개발 `egasu.dev Account Authentication`, 그 외 설정 도메인 `egasu.suite.<해시> Account Authentication`.
 이 스냅샷 덕분에 다시 전환할 때 이전 로그인을 복원 가능.
 각 스냅샷에는 해당 계정명에 현재 저장된 인증 파일 내용이 담기며, 원본은 이 Mac의 키체인에 보관하고 iCloud·익명 분석으로 전송하지 않음.
-Claude 계정 전환 중 앱 종료에 대비해 `~/Library/Application Support/OpenUsage/AccountSignIn/claude-switch.json`에 복구 기록 저장.
+Claude 계정 전환 중 앱 종료에 대비해 `~/Library/Application Support/egasu/AccountSignIn/claude-switch.json`에 복구 기록 저장.
 기록에는 계정·전환 식별자, 프로바이더 신원, 인증 상태를 비교할 해시만 포함하며 토큰 원문은 저장하지 않음.
 파일은 해당 macOS 사용자만 읽고 쓸 수 있으며 iCloud·익명 분석으로 전송하지 않음.
 선택 상태 저장을 확인하면 기록 삭제; 복구를 확인하지 못한 기록은 보존.
 선택된 관리형 Claude 계정으로 일반 터미널에서 공식 CLI 로그인을 완료하면, egasu가 공유 홈의 새 인증 정보를 검증하고 해당 계정의 스냅샷과 저장 프로바이더 신원을 교체.
 검증된 프로바이더 신원이 바뀌어도 계정명과 선택 상태는 유지하며, 완료되지 않았거나 검증할 수 없는 인증 정보는 복사하지 않음.
-추가 계정의 공식 로그인은 `~/Library/Application Support/OpenUsage/AccountSignIn/<provider>/<account-id>/` 아래 앱 소유 작업 공간에서 실행.
+추가 계정의 공식 로그인은 `~/Library/Application Support/egasu/AccountSignIn/<provider>/<account-id>/` 아래 앱 소유 작업 공간에서 실행.
 작업 공간 디렉터리는 `0700`, 인증 정보 파일은 `0600` 권한 사용.
 계정을 제거하면 작업 공간을 먼저 삭제한 다음 Keychain 스냅샷을 삭제.
 어느 한쪽 삭제가 실패하면 다시 시도할 수 있도록 계정 등록은 그대로 유지.
+
+### 기존 OpenUsage 저장 위치 이전
+
+egasu는 이전 완료 전 시작 시 `OpenUsage` 저장 위치(`~/Library/Application Support/OpenUsage/`, `~/.config/openusage/`, `OpenUsage Account Authentication` 키체인 항목)를 확인.
+대상 파일이 이미 있으면 해당 파일 유지.
+필수 상태나 API 키 이전이 실패하면 앱 시작을 중단하고 다음 실행에서 재시도.
+재생성 가능한 캐시 이전이 실패하면 앱을 시작하고 다음 실행에서 재시도.
+파일 이전 완료 후에는 전체 이전 절차를 반복하지 않음.
+계정 목록을 읽지 못하면 기존 오류를 표시하고 계정 변경을 막으며, 키체인 이전은 다음 앱 실행에서 재시도.
+
+- 로그인 작업 공간·상태·캐시는 새 폴더로 이동.
+- API 키 파일은 새 폴더로 복사 — 원본 OpenUsage 앱이 읽을 수 있어 원래 파일 유지.
+- 계정별 키체인 스냅샷은 새 이름으로 복사하고 원래 항목은 삭제하지 않음.
+- 승인 없이 읽을 수 없는 스냅샷은 해당 계정의 **Fix** 또는 수동 새로 고침의 macOS 승인 창에서 이전.
+  승인 대기 중 계정을 삭제하거나 인증을 새로 저장하면 그 변경을 유지하며 이전 인증을 다시 덮어쓰지 않음.
+
+CLI 조회를 먼저 실행하면 API 키 파일을 복사하고 Claude의 429 대기·마지막 정상 사용량도 이전.
+Claude 상태의 기존 대상 파일은 유지하며 아직 없는 계정 파일만 추가.
+이전 대상 계정의 기존 조회가 진행 중이면 이전을 중단하고 조회 완료 후 재시도.
+기존 잠금 파일은 원래 위치에 유지.
+키 파일 이전 뒤 삭제한 키는 이전 원본에서 다시 복원하지 않으며, 나머지 앱 전용 상태·Keychain 이전은 앱 첫 실행에서 수행.
+CLI의 키 이전 표시만 있는 첫 앱 실행은 신규 설치로 판정해 로컬 프로바이더 탐지.
+
+표준 개발 빌드는 `egasu.dev` 저장소 이름 사용.
+운영·표준 개발 식별자를 제외한 설정 도메인은 고정 저장소 이름 `egasu.suite.<해시>` 사용.
+분리 대상은 앱 소유 파일과 관리형 계정 인증 스냅샷의 Keychain 항목.
+공식 Claude·Codex·Antigravity 도구와 공유하는 Keychain 항목은 기존 이름 유지.
+식별자별 저장소 이름·경로는 [CLI 문서](/docs/cli.md) 참조.
+운영 외 저장소는 첫 실행에서 기존 OpenUsage 자료를 이동하지 않고 로그인 작업 공간·상태·API 키 파일을 복사하며, 캐시는 새로 생성.
 `~/.claude`와 `~/.codex` 데이터는 절대 이동하거나 삭제하지 않음.
 전환을 확정하면 `~/.zshrc` 또는 `~/.config/fish/config.fish`의 작은 `claude`/`codex` 함수도 갱신.
 이 함수는 `>>> OpenUsage` 주석 마커로 감싸여 있어, 표시된 블록을 삭제하면 함수도 제거.
@@ -128,7 +158,7 @@ Reset Watch 알림은 기본값 꺼짐이며, 지표를 표시하지 않고 알�
 공개 이벤트의 중복 통지 방지 기록은 이 Mac에 보관하며 앱 재시작 후에도 유지.
 이 기록에는 Codex 인증 정보·계정 ID·개인 사용량을 포함하지 않고 iCloud로 동기화하지 않음.
 
-재실행할 때마다 변경되지 않은 Claude, Codex, pi 로그를 다시 읽지 않도록, egasu는 파싱된 사용 이벤트를 `~/Library/Application Support/OpenUsage/log-scan-cache/`에 보관.
+재실행할 때마다 변경되지 않은 Claude, Codex, pi 로그를 다시 읽지 않도록, egasu는 파싱된 사용 이벤트를 `~/Library/Application Support/egasu/log-scan-cache/`에 보관.
 이 레코드에는 로컬 합계에 필요한 사용량 메타데이터(프로바이더가 이미 기록한 이벤트별 비용 포함)가 담기지만, 원시 JSONL 줄이나 대화 텍스트는 담기지 않음.
 해당 macOS 계정에만 비공개로 남고, PostHog나 프로바이더, iCloud 어디에도 절대 전송되지 않음.
 오래된 소스 파일 레코드는 스캔 범위가 전진하면서 버려지고, 35일 동안 쓰이지 않은 식별 정보 캐시는 제거.

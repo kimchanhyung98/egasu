@@ -166,8 +166,8 @@ struct ClaudeUsageStateStore: Sendable {
     private let onContention: @Sendable () -> Void
 
     init(
-        directory: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("OpenUsage/claude-usage-state"),
+        directory: URL = StorageNamespace.current.applicationSupportDirectory()
+            .appendingPathComponent("claude-usage-state"),
         onContention: @escaping @Sendable () -> Void = {}
     ) {
         self.directory = directory
@@ -178,35 +178,15 @@ struct ClaudeUsageStateStore: Sendable {
         let key = SHA256.hash(data: Data("claude-oauth-usage\u{0}\(usageURL.absoluteString)\u{0}\(accountKey)".utf8))
             .map { String(format: "%02x", $0) }.joined()
         let fileURL = directory.appendingPathComponent(key).appendingPathExtension("json")
-        do {
-            try FileManager.default.createDirectory(
-                at: directory, withIntermediateDirectories: true,
-                attributes: [.posixPermissions: 0o700]
-            )
-        } catch {
-            AppLog.error(LogTag.plugin("claude"), "usage retry directory unavailable: \(error.localizedDescription)")
-            throw StoreError.storageUnavailable
-        }
-        let descriptor = Darwin.open(
-            fileURL.appendingPathExtension("lock").path,
-            O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR
-        )
-        guard descriptor >= 0 else {
-            AppLog.error(LogTag.plugin("claude"), "usage retry lock open failed (errno=\(errno))")
-            throw StoreError.storageUnavailable
-        }
+        let descriptor = try Self.openLock(for: fileURL)
         let clock = SuspendingClock()
         let deadline = clock.now.advanced(by: .seconds(120))
         var waited = false
         do {
             while true {
                 try Task.checkCancellation()
-                if flock(descriptor, LOCK_EX | LOCK_NB) == 0 {
+                if try Self.tryLock(descriptor) {
                     return Lease(descriptor: descriptor, fileURL: fileURL, waited: waited)
-                }
-                guard errno == EWOULDBLOCK || errno == EINTR else {
-                    AppLog.error(LogTag.plugin("claude"), "usage retry lock failed (errno=\(errno))")
-                    throw StoreError.storageUnavailable
                 }
                 guard clock.now < deadline else { throw StoreError.busy }
                 if !waited { onContention() }
@@ -217,5 +197,44 @@ struct ClaudeUsageStateStore: Sendable {
             Darwin.close(descriptor)
             throw error
         }
+    }
+
+    static func tryAcquireForMigration(fileURL: URL) throws -> Lease {
+        let descriptor = try openLock(for: fileURL)
+        do {
+            guard try tryLock(descriptor) else { throw StoreError.busy }
+            return Lease(descriptor: descriptor, fileURL: fileURL, waited: false)
+        } catch {
+            Darwin.close(descriptor)
+            throw error
+        }
+    }
+
+    private static func openLock(for fileURL: URL) throws -> Int32 {
+        do {
+            try FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700])
+        } catch {
+            AppLog.error(LogTag.plugin("claude"), "usage retry directory unavailable: \(error.localizedDescription)")
+            throw StoreError.storageUnavailable
+        }
+        let descriptor = Darwin.open(
+            fileURL.appendingPathExtension("lock").path,
+            O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
+        guard descriptor >= 0 else {
+            AppLog.error(LogTag.plugin("claude"), "usage retry lock open failed (errno=\(errno))")
+            throw StoreError.storageUnavailable
+        }
+        return descriptor
+    }
+
+    private static func tryLock(_ descriptor: Int32) throws -> Bool {
+        if flock(descriptor, LOCK_EX | LOCK_NB) == 0 { return true }
+        guard errno == EWOULDBLOCK || errno == EINTR else {
+            AppLog.error(LogTag.plugin("claude"), "usage retry lock failed (errno=\(errno))")
+            throw StoreError.storageUnavailable
+        }
+        return false
     }
 }

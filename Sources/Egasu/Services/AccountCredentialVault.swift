@@ -11,22 +11,62 @@ struct AccountCredentialVault {
     }
 
     private let keychain: KeychainAccessing
+    private let pendingMigration: PendingKeychainMigration
+    private let namespace: StorageNamespace
+    private static let mutationLocksLock = NSLock()
+    nonisolated(unsafe) private static var mutationLocks: [String: NSRecursiveLock] = [:]
 
-    init(keychain: KeychainAccessing = SecurityKeychainAccessor()) {
+    init(
+        keychain: KeychainAccessing = SecurityKeychainAccessor(),
+        pendingMigration: PendingKeychainMigration = .shared,
+        namespace: StorageNamespace = .current
+    ) {
         self.keychain = keychain
+        self.pendingMigration = pendingMigration
+        self.namespace = namespace
     }
 
     /// 등록 계정의 snapshot은 존재 확인 실패만으로 제외하지 않음.
     func contains(profile: AccountProfile) -> Bool {
-        keychain.genericPasswordExists(service: service(for: profile)) != false
+        if keychain.genericPasswordExists(service: service(for: profile)) != false { return true }
+        return pendingMigration.contains(family: profile.family, profileID: profile.id)
+            && keychain.genericPasswordExists(
+                service: Self.legacyService(family: profile.family, profileID: profile.id)) != false
     }
 
     func load(profile: AccountProfile, allowInteraction: Bool = false) throws -> Entry? {
         try load(family: profile.family, profileID: profile.id, allowInteraction: allowInteraction)
     }
 
+    /// 1.0.0에서 옮기지 못한(승인이 필요했던) 계정만 옛 이름을 읽어 새 이름으로 저장 — 옛 항목은 지우지 않음.
     func load(family: String, profileID: String, allowInteraction: Bool = false) throws -> Entry? {
-        let service = Self.service(family: family, profileID: profileID)
+        if let entry = try read(
+            service: serviceName(family: family, profileID: profileID), allowInteraction: allowInteraction)
+        {
+            return entry
+        }
+        guard pendingMigration.contains(family: family, profileID: profileID) else { return nil }
+        let legacy = try read(
+            service: Self.legacyService(family: family, profileID: profileID), allowInteraction: allowInteraction)
+        let lock = mutationLock(family: family, profileID: profileID)
+        lock.lock()
+        defer { lock.unlock() }
+        // 승인 대기 중 완료된 저장·삭제 우선 — 계정별 잠금 안에서 이전 조건 재확인.
+        if let entry = try read(
+            service: serviceName(family: family, profileID: profileID), allowInteraction: allowInteraction)
+        {
+            return entry
+        }
+        guard pendingMigration.contains(family: family, profileID: profileID) else { return nil }
+        if let legacy {
+            try write(legacy, family: family, profileID: profileID)
+            AppLog.info(.keychain, "moved a saved \(family) sign-in to the egasu Keychain name")
+        }
+        pendingMigration.finish(family: family, profileID: profileID)
+        return legacy
+    }
+
+    private func read(service: String, allowInteraction: Bool) throws -> Entry? {
         let value: String?
         do {
             value = try keychain.readAppOwnedPassword(
@@ -48,9 +88,17 @@ struct AccountCredentialVault {
     func save(_ entry: Entry, profile: AccountProfile) throws {
         AccountCredentialMutationLock.acquire(family: profile.family)
         defer { AccountCredentialMutationLock.release(family: profile.family) }
+        let lock = mutationLock(family: profile.family, profileID: profile.id)
+        lock.lock()
+        defer { lock.unlock() }
+        try write(entry, family: profile.family, profileID: profile.id)
+        pendingMigration.finish(family: profile.family, profileID: profile.id)
+    }
+
+    private func write(_ entry: Entry, family: String, profileID: String) throws {
         let data = try JSONEncoder().encode(entry)
         try keychain.writeGenericPasswordForCurrentUser(
-            service: service(for: profile),
+            service: serviceName(family: family, profileID: profileID),
             value: String(decoding: data, as: UTF8.self)
         )
     }
@@ -61,6 +109,9 @@ struct AccountCredentialVault {
     ) throws {
         AccountCredentialMutationLock.acquire(family: family)
         defer { AccountCredentialMutationLock.release(family: family) }
+        let lock = mutationLock(family: family, profileID: profileID)
+        lock.lock()
+        defer { lock.unlock() }
         guard var entry = try load(family: family, profileID: profileID, allowInteraction: allowInteraction) else {
             throw AccountCredentialVaultError.missingEntry
         }
@@ -70,23 +121,47 @@ struct AccountCredentialVault {
         }
         let data = try JSONEncoder().encode(entry)
         try keychain.writeGenericPasswordForCurrentUser(
-            service: Self.service(family: family, profileID: profileID),
+            service: serviceName(family: family, profileID: profileID),
             value: String(decoding: data, as: UTF8.self)
         )
     }
 
+    /// 새 이름의 항목만 삭제 — 1.0.0 이름의 항목은 다른 번들(운영 앱)의 것일 수 있어 그대로 둠.
     func delete(profile: AccountProfile) throws {
         AccountCredentialMutationLock.acquire(family: profile.family)
         defer { AccountCredentialMutationLock.release(family: profile.family) }
+        let lock = mutationLock(family: profile.family, profileID: profile.id)
+        lock.lock()
+        defer { lock.unlock() }
         try keychain.deleteGenericPassword(service: service(for: profile))
+        pendingMigration.finish(family: profile.family, profileID: profile.id)
     }
 
-    static func service(family: String, profileID: String) -> String {
-        "OpenUsage Account Authentication v1 \(family) \(profileID)"
+    static func service(family: String, profileID: String, namespace: StorageNamespace = .current) -> String {
+        "\(namespace.name) Account Authentication v1 \(family) \(profileID)"
+    }
+
+    /// 1.0.0까지의 항목 이름 — `StorageMigration`과 승인 대기 계정의 읽기에서만 사용.
+    static func legacyService(family: String, profileID: String) -> String {
+        "\(StorageNamespace.legacyName) Account Authentication v1 \(family) \(profileID)"
     }
 
     private func service(for profile: AccountProfile) -> String {
-        Self.service(family: profile.family, profileID: profile.id)
+        serviceName(family: profile.family, profileID: profile.id)
+    }
+
+    private func serviceName(family: String, profileID: String) -> String {
+        Self.service(family: family, profileID: profileID, namespace: namespace)
+    }
+
+    private func mutationLock(family: String, profileID: String) -> NSRecursiveLock {
+        let service = serviceName(family: family, profileID: profileID)
+        Self.mutationLocksLock.lock()
+        defer { Self.mutationLocksLock.unlock() }
+        if let lock = Self.mutationLocks[service] { return lock }
+        let lock = NSRecursiveLock()
+        Self.mutationLocks[service] = lock
+        return lock
     }
 }
 

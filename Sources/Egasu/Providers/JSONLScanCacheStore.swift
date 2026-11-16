@@ -83,8 +83,8 @@ enum JSONLScanCachePaths {
     static let staleIdentityRetention: TimeInterval = 35 * 86_400
 
     static var defaultDirectory: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("OpenUsage/log-scan-cache", isDirectory: true)
+        StorageNamespace.current.applicationSupportDirectory()
+            .appendingPathComponent("log-scan-cache", isDirectory: true)
     }
 
     static func identityDirectory(

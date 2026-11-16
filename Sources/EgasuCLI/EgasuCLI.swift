@@ -12,7 +12,7 @@ struct EgasuCLI {
                 return
             }
 
-            let app = AppBundleLocator.locate()
+            let app = AppBundleLocator.current
             if arguments.showVersion {
                 print(app.version.map { "egasu \($0)" } ?? "egasu (development build)")
                 return

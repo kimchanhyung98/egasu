@@ -120,8 +120,8 @@
 "Local usage history is unavailable. Showing the last successful totals." = "Local usage history is unavailable. Showing the last successful totals.";
 "Multiple Keychain items matched the service; no credential was changed." = "Multiple Keychain items matched the service; no credential was changed.";
 "No %@ sign-in was found to import." = "No %@ sign-in was found to import.";
-"No OpenRouter API key. Set OPENROUTER_API_KEY or add it to ~/.config/openusage/openrouter.json." = "No OpenRouter API key. Set OPENROUTER_API_KEY or add it to ~/.config/openusage/openrouter.json.";
-"No Z.ai API key. Set ZAI_API_KEY or add it to ~/.config/openusage/zai.json." = "No Z.ai API key. Set ZAI_API_KEY or add it to ~/.config/openusage/zai.json.";
+"No OpenRouter API key. Set OPENROUTER_API_KEY or add it to %@." = "No OpenRouter API key. Set OPENROUTER_API_KEY or add it to %@.";
+"No Z.ai API key. Set ZAI_API_KEY or add it to %@." = "No Z.ai API key. Set ZAI_API_KEY or add it to %@.";
 "No account matches '%@'." = "No account matches '%@'.";
 "No active Cursor subscription." = "No active Cursor subscription.";
 "No active GLM Coding Plan. Subscribe at z.ai/subscribe to see usage." = "No active GLM Coding Plan. Subscribe at z.ai/subscribe to see usage.";
@@ -284,3 +284,5 @@
 "Some local usage has unsupported pricing details. Cost totals may be unavailable." = "Some local usage has unsupported pricing details. Cost totals may be unavailable.";
 "Some Antigravity models have no price. Cost totals may be unavailable." = "Some Antigravity models have no price. Cost totals may be unavailable.";
 "Some Kiro usage has no recorded credit cost. Affected periods show tokens only." = "Some Kiro usage has no recorded credit cost. Affected periods show tokens only.";
+
+"Saved app data could not be moved. Check the app log and try again." = "Saved app data could not be moved. Check the app log and try again.";

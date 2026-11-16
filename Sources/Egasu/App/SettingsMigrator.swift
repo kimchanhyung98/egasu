@@ -112,12 +112,13 @@ enum SettingsMigrator {
         defaults: UserDefaults = .standard,
         domainName: String = Bundle.main.bundleIdentifier ?? "",
         current: Int = SettingsSchema.current,
-        migrations: [SettingsMigration] = SettingsSchema.migrations
+        migrations: [SettingsMigration] = SettingsSchema.migrations,
+        capturedFreshInstall: Bool? = nil
     ) -> Int {
         var version: Int
         if let stored = defaults.object(forKey: schemaVersionKey) as? Int {
             version = stored
-        } else if isFreshInstall(defaults: defaults, domainName: domainName) {
+        } else if capturedFreshInstall ?? isFreshInstall(defaults: defaults, domainName: domainName) {
             defaults.set(current, forKey: schemaVersionKey)
             AppLog.info(.config, "fresh install — settings schema stamped at v\(current)")
             return current
@@ -150,13 +151,14 @@ enum SettingsMigrator {
         return version
     }
 
-    /// 진짜 첫 런치 판별: 빈 도메인 = fresh, 키 존재 + 스키마 버전 부재 = legacy. 빈 `domainName`(unbundled `swift run`)은 fresh 취급.
-    /// `AppDelegate`가 `migrate()` 이전에 호출 필수 — schema stamp가 도메인을 non-empty로 변경.
+    /// 첫 런치 판별: CLI 키 이전 표시만 있는 도메인은 fresh. 빈 `domainName`도 fresh 취급.
+    /// 저장소 이전과 설정 이전 전에 호출 필수 — 완료 표시와 schema stamp가 도메인을 변경.
     static func isFreshInstall(
         defaults: UserDefaults = .standard,
         domainName: String = Bundle.main.bundleIdentifier ?? ""
     ) -> Bool {
         guard !domainName.isEmpty else { return true }
-        return (defaults.persistentDomain(forName: domainName) ?? [:]).isEmpty
+        let keys = Set((defaults.persistentDomain(forName: domainName) ?? [:]).keys)
+        return keys.subtracting([StorageMigration.configCompletedKey]).isEmpty
     }
 }

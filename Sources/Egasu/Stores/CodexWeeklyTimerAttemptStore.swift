@@ -70,8 +70,10 @@ final class CodexWeeklyTimerAttemptStore {
 
     let fileURL: URL
 
-    init(fileURL: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("OpenUsage/codex-weekly-timer-attempts.json")) {
+    init(
+        fileURL: URL = StorageNamespace.current.applicationSupportDirectory()
+            .appendingPathComponent("codex-weekly-timer-attempts.json")
+    ) {
         self.fileURL = fileURL
     }
 

@@ -275,7 +275,8 @@ extension OpenRouterAuthError: UserPresentableError {
     var presentationMessage: LocalizedMessage {
         switch self {
         case .missingKey:
-            .init("No OpenRouter API key. Set OPENROUTER_API_KEY or add it to ~/.config/openusage/openrouter.json.")
+            .init(
+                "No OpenRouter API key. Set OPENROUTER_API_KEY or add it to %@.", [OpenRouterAuthStore.configPaths[0]])
         case .invalidKey:
             .init("OpenRouter API key invalid. Check your key at openrouter.ai/keys.")
         case .saveFailed:
@@ -303,7 +304,7 @@ extension ZAIAuthError: UserPresentableError {
     var presentationMessage: LocalizedMessage {
         switch self {
         case .missingKey:
-            .init("No Z.ai API key. Set ZAI_API_KEY or add it to ~/.config/openusage/zai.json.")
+            .init("No Z.ai API key. Set ZAI_API_KEY or add it to %@.", [ZAIAuthStore.configPaths[0]])
         case .invalidKey:
             .init("Z.ai API key invalid. Check your key at z.ai/manage-apikey/apikey-list.")
         case .saveFailed:

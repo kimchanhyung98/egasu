@@ -44,11 +44,12 @@ GLM-4.5-Flash의 입력·캐시 입력·출력은 무료 요율로 계산하며,
 egasu의 Z.ai 조회에는 사용자가 제공한 API 키 필요.
 다음 순서에서 처음 찾은 키 사용:
 
-1. `~/.config/openusage/zai.json` — `{"apiKey":"…"}`(API Key 카드에서 저장하는 파일)
+1. `~/.config/egasu/zai.json` — `{"apiKey":"…"}`(운영 앱의 API Key 카드에서 저장하는 파일)
 2. `~/.config/zai/key.json`
 3. `ZAI_API_KEY` 환경 변수
 4. `GLM_API_KEY` 환경 변수(레거시 Zhipu 이름도 계속 지원)
 
+표준 개발 빌드·사용자 지정 설정 도메인의 앱 전용 경로는 [CLI 문서](/docs/cli.md) 참조.
 파일을 직접 편집하지 않고 **Customize → Z.ai → API Key**에서 키를 추가하거나 교체 가능.
 앱에서 키를 저장하거나 삭제하면 적용 중인 키로 새로 조회하며, 이전 요청이 진행 중이면 완료를 기다리고 그 결과는 무시.
 이전 요청이 대기 한도보다 오래 걸리면 다음 주기 새로 고침에서 현재 키로 재시도.

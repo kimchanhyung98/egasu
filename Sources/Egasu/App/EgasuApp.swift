@@ -76,10 +76,23 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
         }
-        // 버전드 settings migration. UserDefaults를 읽고 쓰는 모든 코드보다 먼저 실행 필수 —
-        // fresh-install 판정은 migrate 전에 캡처 (schema stamp가 도메인을 non-empty로 변경). `SettingsMigrator` 참고.
+        // 저장소 이전 전에 최초 실행 여부 캡처 — 이전 완료 표시가 설정 도메인을 변경.
         let isFreshInstall = SettingsMigrator.isFreshInstall()
-        SettingsMigrator.migrate()
+        // 1.0.0의 "OpenUsage" 저장 위치를 egasu 이름으로 1회 이전 — 저장소를 사용하는 앱 구성보다 먼저 실행.
+        do {
+            try StorageMigration.runIfNeeded()
+        } catch {
+            AppDiagnostics.failure(.storageMigration, error: error, localContext: "Saved app data migration failed")
+            let alert = NSAlert()
+            alert.messageText = recoveryFailureTitle
+            alert.informativeText = L10n.errors("Saved app data could not be moved. Check the app log and try again.")
+            alert.addButton(withTitle: confirmationTitle)
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
+            NSApp.terminate(nil)
+            return
+        }
+        SettingsMigrator.migrate(capturedFreshInstall: isFreshInstall)
         // 시작은 `SMAppService` login item 단독 담당 — AppKit reopen-on-login opt-out으로 재부팅 시 이중 런치 예방.
         NSApp.disableRelaunchOnLogin()
         // 레거시 Tauri autostart agent 정리 — 로그인 이중 실행 원인 (#607/#874). guard 이후 실행 필수 — 생존 copy만 파일 접근.

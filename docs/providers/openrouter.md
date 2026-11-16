@@ -61,13 +61,14 @@ egasu가 응답의 키 종류를 확인해 관리 키의 통계를 자동 조회
 **Customize → OpenRouter → API Key**에서 Add 선택.
 키 입력.
 Save 선택.
-키는 `~/.config/openusage/openrouter.json`에 저장.
+운영 앱의 키는 `~/.config/egasu/openrouter.json`에 저장.
+표준 개발 빌드·사용자 지정 설정 도메인의 앱 전용 경로는 [CLI 문서](/docs/cli.md) 참조.
 입력란은 하나이며 교체 시 새 키를 사용.
 OpenRouter가 꺼져 있으면 Customize의 프로바이더 목록에서 활성화.
 
 다음 방법으로 직접 키를 제공할 수도 있으며, 아래 순서에서 처음 찾은 키 사용:
 
-1. **설정 파일:** `~/.config/openusage/openrouter.json` — API Key 카드에서 저장하는 파일:
+1. **설정 파일:** `~/.config/egasu/openrouter.json` — 운영 앱의 API Key 카드에서 저장하는 파일:
 
    ```json
    { "apiKey": "sk-or-v1-..." }
