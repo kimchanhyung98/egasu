@@ -31,13 +31,17 @@ for (const file of ['release.yml', 'publish-site.yml', 'pricing-supplement.yml']
   });
 }
 
-test('사이트·가격표 검증과 체크아웃은 수동 태그 또는 push 이벤트 SHA로 고정', () => {
+test('사이트·가격표 입력은 수동 태그 또는 이벤트 SHA, 사이트 게시 소스는 검증한 SHA로 고정', () => {
   const publish = workflow('publish-site.yml');
   assert.match(publish, /uses: \.\/\.github\/workflows\/site\.yml\n    with:\n      ref: \$\{\{ inputs.tag \|\| github.sha \}\}/);
-  for (const file of ['publish-site.yml', 'pricing-supplement.yml']) {
-    assert.match(workflow(file), /ref: \$\{\{ inputs.tag \|\| github.sha \}\}\n          fetch-depth: 0/);
-  }
-  assert.match(workflow('site.yml'), /ref: \$\{\{ inputs.ref \|\| github.ref \}\}/);
+  assert.match(workflow('pricing-supplement.yml'), /ref: \$\{\{ inputs.tag \|\| github.sha \}\}\n          fetch-depth: 0/);
+  assert.match(publish, /needs: verify/);
+  assert.match(publish, /ref: \$\{\{ needs.verify.outputs.source_sha \}\}\n          fetch-depth: 0/);
+  const site = workflow('site.yml');
+  assert.match(site, /ref: \$\{\{ inputs.ref \|\| github.sha \}\}\n          persist-credentials: false/);
+  assert.match(site, /    outputs:\n      source_sha:\n        description: [^\n]+\n        value: \$\{\{ jobs.verify.outputs.source_sha \}\}/);
+  assert.match(site, /  verify:\n    outputs:\n      source_sha: \$\{\{ steps.source.outputs.source_sha \}\}/);
+  assert.match(site, /      - name: 검증한 소스 커밋 기록\n        run: \|\n(?:          [^\n]*\n)+        id: source/);
   assert.match(step('publish-site.yml', '랜딩 페이지 조립'), /"\$\(git rev-parse HEAD\)"/);
   assert.doesNotMatch(step('publish-site.yml', '랜딩 페이지 조립'), /GITHUB_SHA/);
 });
@@ -129,6 +133,33 @@ for (const file of ['publish-site.yml', 'pricing-supplement.yml']) {
     } finally { f.cleanup(); }
   });
 }
+
+test('수동 사이트 검증 후 태그가 이동해도 게시 소스는 검증한 SHA를 유지하고 게시 거부', () => {
+  const f = fixture();
+  try {
+    f.git(f.checkout, 'checkout', '--quiet', '--detach', 'v1.2.3');
+    const verifiedSHA = f.git(f.checkout, 'rev-parse', 'HEAD');
+    const output = join(f.root, 'source-output');
+    const recorded = f.run('site.yml', '검증한 소스 커밋 기록', { GITHUB_OUTPUT: output });
+    assert.equal(recorded.status, 0, recorded.stderr);
+    assert.equal(readFileSync(output, 'utf8'), `source_sha=${verifiedSHA}\n`);
+    const sourceSHA = readFileSync(output, 'utf8').trim().slice('source_sha='.length);
+
+    writeFileSync(join(f.remote, 'changed.txt'), 'changed after verification');
+    f.commit();
+    const movedSHA = f.git(f.remote, 'rev-parse', 'HEAD');
+    f.git(f.remote, 'tag', '--force', 'v1.2.3');
+    f.git(f.checkout, 'fetch', '--quiet', 'origin', '+refs/tags/v1.2.3:refs/tags/v1.2.3');
+    f.git(f.checkout, 'checkout', '--quiet', '--detach', sourceSHA);
+
+    const result = f.run('publish-site.yml', '게시 태그 확인', { PUBLICATION_TAG: 'v1.2.3' });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Release tag does not point to HEAD/);
+    assert.equal(f.git(f.checkout, 'rev-parse', 'HEAD'), verifiedSHA);
+    assert.equal(f.git(f.checkout, 'rev-parse', 'refs/tags/v1.2.3'), movedSHA);
+    assert.equal(f.git(f.checkout, 'rev-parse', 'origin/main'), movedSHA);
+  } finally { f.cleanup(); }
+});
 
 test('Pages는 원격 태그와 게시 소스 커밋이 같을 때만 배포 허용', () => {
   const f = fixture();
