@@ -9,7 +9,10 @@ normalized_command="$(hook_normalized_command)"
 command_prefix='((command|env)[[:space:]]+)*'
 git_command='(git|/[[:alnum:]_./-]*/git)'
 git_option='([[:space:]]+(-c|-C)[[:space:]]+[^[:space:];&|]+|[[:space:]]+--[^[:space:];&|]+)*'
+push_option='([[:space:]]+-[^[:space:];&|]+)*'
+upstream_remote="(upstream|\"upstream\"|'upstream')"
 
-if hook_grep_command "$normalized_command" "${HOOK_COMMAND_BOUNDARY}${command_prefix}${git_command}${git_option}[[:space:]]+push${HOOK_COMMAND_END}"; then
-  hook_deny "Blocked git push by repository policy."
+if hook_grep_command "$normalized_command" "${HOOK_COMMAND_BOUNDARY}${command_prefix}${git_command}${git_option}[[:space:]]+push${push_option}[[:space:]]+${upstream_remote}${HOOK_COMMAND_END}" \
+  || hook_grep_command "$normalized_command" "${HOOK_COMMAND_BOUNDARY}${command_prefix}${git_command}${git_option}[[:space:]]+push${push_option}[[:space:]]+--repo=${upstream_remote}${HOOK_COMMAND_END}"; then
+  hook_deny "Blocked git push upstream by repository policy."
 fi
