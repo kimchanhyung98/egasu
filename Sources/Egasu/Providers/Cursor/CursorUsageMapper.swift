@@ -318,6 +318,12 @@ enum CursorUsageMapper {
         if canonical.hasPrefix("cursor/") {
             canonical = String(canonical.dropFirst("cursor/".count))
         }
+        if canonical.hasPrefix("gemini/") {
+            canonical = String(canonical.dropFirst("gemini/".count))
+        }
+        if canonical.hasPrefix("fireworks_ai/accounts/fireworks/routers/") {
+            canonical = String(canonical.dropFirst("fireworks_ai/accounts/fireworks/routers/".count))
+        }
         guard canonical.hasSuffix("-fast") else { return canonical }
         let base = String(canonical.dropLast("-fast".count))
         return base.isEmpty ? canonical : base

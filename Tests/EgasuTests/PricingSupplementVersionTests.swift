@@ -62,6 +62,7 @@ final class PricingSupplementVersionTests: XCTestCase {
         let data = try Data(contentsOf: url)
         let legacy = try JSONDecoder().decode(LegacySupplement.self, from: data)
         XCTAssertEqual(legacy.pricing["grok-4.5"]?.cacheReadPerMillion, 0.5)
+        XCTAssertEqual(legacy.pricing["gpt-5.6-sol"]?.inputPerMillion, 5)
         XCTAssertNil(legacy.pricing["claude-haiku-5-5"])
 
         let geminiRule = try XCTUnwrap(legacy.aliasRules.first { rule in
@@ -71,6 +72,7 @@ final class PricingSupplementVersionTests: XCTestCase {
 
         let modern = try PricingSupplement.decode(from: data)
         XCTAssertEqual(modern.pricing["grok-4.5"]?.cacheReadPerMillion, 0.3)
+        XCTAssertEqual(modern.pricing["gpt-5.6-sol"]?.inputPerMillion, 5)
         XCTAssertEqual(modern.canonicalName(for: "gemini-3.5-flash"), "gemini-3.6-flash")
         XCTAssertEqual(modern.pricing["claude-haiku-5-5"]?.longContextThresholdTokens, 100_000)
     }

@@ -1,6 +1,6 @@
 {
   "$comment": "egasu 가격 보충 파일. 단위 USD/100만 토큰. pricing·alias_rules는 기존 앱과 호환되는 항목. pricing_v2·alias_rules_v2는 장문·공급 경로별 계산을 지원하는 앱 전용 확장. cursor/ 항목은 Cursor CSV 전용 요율.",
-  "updated_at": "2026-11-08T14:15:12Z",
+  "updated_at": "2026-11-15T14:37:05Z",
   "pricing": {
     "gpt-6.1-sol": {
       "input_per_million": 2,
@@ -211,11 +211,10 @@
       "output_per_million": 22.5
     },
     "gpt-5.6-sol": {
-      "$comment": "OpenAI GPT-5.6 Sol 할인 요율. 공식 최소 유지 기한 2026-11-21.",
-      "input_per_million": 4.0,
-      "cache_write_per_million": 5.0,
-      "cache_read_per_million": 0.4,
-      "output_per_million": 20.0
+      "input_per_million": 5.0,
+      "cache_write_per_million": 6.25,
+      "cache_read_per_million": 0.5,
+      "output_per_million": 30.0
     },
     "gpt-5.6-terra": {
       "input_per_million": 2.0,
@@ -238,6 +237,24 @@
     }
   },
   "pricing_v2": {
+    "openai/gpt-5.6-sol": {
+      "input_per_million": 5,
+      "cache_write_per_million": 6.25,
+      "cache_read_per_million": 0.5,
+      "output_per_million": 30
+    },
+    "gpt-5.6-sol-fast": {
+      "input_per_million": 10,
+      "cache_write_per_million": 12.5,
+      "cache_read_per_million": 1,
+      "output_per_million": 60
+    },
+    "gemini/gemini-4-carbon": {
+      "input_per_million": 4,
+      "cache_write_per_million": 4,
+      "cache_read_per_million": 0.2,
+      "output_per_million": 20
+    },
     "openai/gpt-5.5": {
       "$comment": "OpenAI 공식 캐시 할인. 공개 카탈로그에서 캐시 단가가 누락된 접두사 항목 보정.",
       "input_per_million": 5,
@@ -569,25 +586,22 @@
       }
     },
     "gemini-4-argon": {
-      "$comment": "Google 공식 할인 단가. 2026-11-30까지 유지, 이후 공식 표 재확인 필요.",
-      "input_per_million": 2,
-      "cache_write_per_million": 2,
-      "cache_read_per_million": 0.1,
-      "output_per_million": 10
+      "input_per_million": 4,
+      "cache_write_per_million": 4,
+      "cache_read_per_million": 0.2,
+      "output_per_million": 20
     },
     "gemini-3.8-flash": {
-      "$comment": "Google 공식 할인 단가. 2026-12-31까지 유지, 이후 공식 표 재확인 필요.",
-      "input_per_million": 0.75,
-      "cache_write_per_million": 0.75,
-      "cache_read_per_million": 0.075,
-      "output_per_million": 3.75
+      "input_per_million": 1.5,
+      "cache_write_per_million": 1.5,
+      "cache_read_per_million": 0.15,
+      "output_per_million": 7.5
     },
     "gemini-3.6-flash": {
-      "$comment": "Google 공식 할인 단가. 2026-12-31까지 유지. Cursor 요율과 구분.",
-      "input_per_million": 0.75,
-      "cache_write_per_million": 0.75,
-      "cache_read_per_million": 0.075,
-      "output_per_million": 3.75
+      "input_per_million": 1.5,
+      "cache_write_per_million": 1.5,
+      "cache_read_per_million": 0.15,
+      "output_per_million": 7.5
     },
     "gemini-3.5-flash-lite": {
       "input_per_million": 0.3,
@@ -781,6 +795,15 @@
     "gpt-5.6-luna": 2.0
   },
   "alias_rules_v2": [
+    {"pattern": "(?i)^(?:openai/)?gpt-5\\.6(?:-sol)?(?:-(?:none|low|medium|high|xhigh|max|ultra))?[-.@]fast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-5.6-sol-fast"},
+    {"pattern": "(?i)^(?:openai/)?gpt-5\\.6(?:-sol)?(?:-(?:none|low|medium|high|xhigh|max|ultra))?(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-5.6-sol"},
+    {"$comment": "공급자 없는 Fast 이름은 기존 Fireworks 요율 유지. models.dev의 같은 이름에 합쳐진 다른 판매처 할인 요율과 구분.", "pattern": "(?i)^kimi-k3-fast$", "canonical": "fireworks_ai/accounts/fireworks/routers/kimi-k3-fast"},
+    {"pattern": "(?i)^(?:anthropic/)?(?:claude-fable-5[.-]2|claude-5[.-]2-fable)(?:\\[1m\\])?(?:-thinking)?(?:-(?:low|medium|high|xhigh|max))?[-.@]fast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "claude-fable-5-2-fast"},
+    {"pattern": "(?i)^(?:anthropic/)?(?:claude-fable-5[.-]2|claude-5[.-]2-fable)(?:\\[1m\\])?(?:-thinking)?(?:-(?:low|medium|high|xhigh|max))?(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "claude-fable-5-2"},
+    {"pattern": "(?i)^(?:anthropic/)?(?:claude-mythos-5[.-]2|claude-5[.-]2-mythos)(?:\\[1m\\])?(?:-thinking)?(?:-(?:low|medium|high|xhigh|max))?[-.@]fast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "claude-mythos-5-2-fast"},
+    {"pattern": "(?i)^(?:anthropic/)?(?:claude-mythos-5[.-]2|claude-5[.-]2-mythos)(?:\\[1m\\])?(?:-thinking)?(?:-(?:low|medium|high|xhigh|max))?(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "claude-mythos-5-2"},
+    {"pattern": "(?i)^(?:(?:google|gemini)/)?gemini-4-carbon(?:-(?:low|medium|high))?$", "canonical": "gemini/gemini-4-carbon"},
+    {"pattern": "(?i)^(?:(?:google|gemini)/)?gemini-4-hydrogen(?:-(?:low|medium|high|xhigh))?$", "canonical": "gemini/gemini-4-hydrogen"},
     {"pattern": "(?i)^(?:anthropic/)?claude-opus-4[-.]6(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "claude-opus-4-6"},
     {"pattern": "(?i)^(?:anthropic/)?claude-opus-4[-.]7(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "claude-opus-4-7"},
     {"pattern": "(?i)^(?:xai/)?(?:grok-4[.-]5-latest|grok-build-latest)$", "canonical": "grok-4.5"},
@@ -811,11 +834,11 @@
     {"pattern": "(?i)^(?:xai/)?grok\\-4\\.20\\-multi\\-agent\\-0309(?:-thinking)?$", "canonical": "xai/grok-4.20-multi-agent-0309"},
     {"pattern": "(?i)^cursor/(?:google/)?gemini-3[.-]5-flash(?:-preview)?(?:-(?:low|medium|high))?$", "canonical": "cursor/gemini-3.5-flash"},
     {"pattern": "(?i)^cursor/(?:google/)?gemini-3[.-]6-flash(?:-preview)?(?:-(?:low|medium|high))?$", "canonical": "cursor/gemini-3.6-flash"},
-    {"pattern": "(?i)^(?:google/)?gemini-3[.-]5-flash(?:-preview)?(?:-(?:low|medium|high))?$", "canonical": "gemini-3.6-flash"},
-    {"pattern": "(?i)^(?:google/)?gemini-3[.-]6-flash(?:-preview)?(?:-(?:low|medium|high))?$", "canonical": "gemini-3.6-flash"},
-    {"pattern": "(?i)^(?:google/)?gemini-3[.-]7-flash(?:-preview)?(?:-(?:low|medium|high))?$", "canonical": "gemini-3.8-flash"},
-    {"pattern": "(?i)^(?:google/)?gemini-3[.-]8-flash(?:-preview)?(?:-(?:low|medium|high))?$", "canonical": "gemini-3.8-flash"},
-    {"pattern": "(?i)^(?:google/)?gemini-4-argon(?:-preview)?(?:-(?:minimal|low|medium|high))?$", "canonical": "gemini-4-argon"},
+    {"pattern": "(?i)^(?:(?:google|gemini)/)?gemini-3[.-]5-flash(?:-preview)?(?:-(?:low|medium|high))?$", "canonical": "gemini-3.6-flash"},
+    {"pattern": "(?i)^(?:(?:google|gemini)/)?gemini-3[.-]6-flash(?:-preview)?(?:-(?:low|medium|high))?$", "canonical": "gemini-3.6-flash"},
+    {"pattern": "(?i)^(?:(?:google|gemini)/)?gemini-3[.-]7-flash(?:-preview)?(?:-(?:low|medium|high))?$", "canonical": "gemini-3.8-flash"},
+    {"pattern": "(?i)^(?:(?:google|gemini)/)?gemini-3[.-]8-flash(?:-preview)?(?:-(?:low|medium|high))?$", "canonical": "gemini-3.8-flash"},
+    {"pattern": "(?i)^(?:(?:google|gemini)/)?gemini-4-argon(?:-preview)?(?:-(?:minimal|low|medium|high))?$", "canonical": "gemini-4-argon"},
     {"pattern": "(?i)^(?:google/)?gemini-3[.-]5-flash-lite(?:-preview)?$", "canonical": "gemini-3.5-flash-lite"},
     {"pattern": "(?i)^cursor/(?:zai/|z-ai/)?glm-5[.-]3-flash(?:-(?:high|max))?$", "canonical": "cursor/glm-5.3-flash"},
     {"pattern": "(?i)^(?:zai/|z-ai/)?glm\\-5\\.3\\-flash(?:-(?:high|max))?$", "canonical": "glm-5.3-flash"},

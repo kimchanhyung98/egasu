@@ -15,9 +15,9 @@ final class CodexUsagePricingTests: XCTestCase {
 
     func testBundledStandardRequestsMatchNativeAndPi() throws {
         let cases: [(String, Double)] = [
-            ("gpt-5.6-sol", 1.98), ("gpt-6-astra", 4.95),
+            ("gpt-5.6-sol", 2.55), ("gpt-6-astra", 4.95),
             ("gpt-5.6-terra", 1.02), ("gpt-5.6-luna", 0.102),
-            ("gpt-daybreak-blue-latest", 1.98), ("gpt-6-rosalind", 7.425)
+            ("gpt-daybreak-blue-latest", 2.55), ("gpt-6-rosalind", 7.425)
         ]
         for (model, expected) in cases {
             let native = CodexLogUsageScanner.aggregate(events: [
@@ -39,11 +39,11 @@ final class CodexUsagePricingTests: XCTestCase {
 
     func testLongContextThresholdIncludesReadAndWriteButNotOutput() throws {
         let cases: [(TokenBreakdown, Double)] = [
-            (.init(input: 200_000, cacheRead: 72_000, output: 1_000), 0.8488),
-            (.init(input: 200_001, cacheRead: 72_000, output: 1_000), 1.687608),
-            (.init(input: 200_000, cacheWrite5m: 72_000, output: 1_000), 1.18),
-            (.init(input: 200_001, cacheWrite5m: 72_000, output: 1_000), 2.350008),
-            (.init(input: 1, output: 300_000), 6.000004)
+            (.init(input: 200_000, cacheRead: 72_000, output: 1_000), 1.066),
+            (.init(input: 200_001, cacheRead: 72_000, output: 1_000), 2.11701),
+            (.init(input: 200_000, cacheWrite5m: 72_000, output: 1_000), 1.48),
+            (.init(input: 200_001, cacheWrite5m: 72_000, output: 1_000), 2.94501),
+            (.init(input: 1, output: 300_000), 9.000005)
         ]
         for (tokens, expected) in cases {
             XCTAssertEqual(try XCTUnwrap(CodexUsagePricing.estimate(
@@ -344,7 +344,7 @@ final class CodexUsagePricingTests: XCTestCase {
         let event = CodexLogUsageScanner.Event(timestamp: date, model: "codex-auto-review", input: 300_000,
             cached: 100_000, output: 10_000, reasoning: 0, total: 310_000, isFast: true, pricingModel: "gpt-5.6-sol")
         let scan = CodexLogUsageScanner.aggregate(events: [event], since: .distantPast, pricing: pricing)
-        XCTAssertEqual(try XCTUnwrap(scan.series.daily.first?.costUSD), 3.96, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(scan.series.daily.first?.costUSD), 5.1, accuracy: 1e-9)
         XCTAssertEqual(scan.modelUsage?.daily.first?.models.first?.model, "codex-auto-review")
         XCTAssertTrue(scan.unknownModelsByDay.isEmpty)
     }
@@ -394,7 +394,7 @@ final class CodexUsagePricingTests: XCTestCase {
             tokens: .init(input: 300_000, output: 10_000), total: 310_000
         )
         let generic = UsageRecordFixture.history(records: [entry], providerID: "claude", since: .distantPast, pricing: pricing)
-        XCTAssertEqual(try XCTUnwrap(generic.series.daily.first?.costUSD), 1.4, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(generic.series.daily.first?.costUSD), 1.8, accuracy: 1e-9)
         let otherCard = UsageRecordFixture.history(
             records: [entry], providerID: "codex", since: .distantPast, pricing: pricing,
             costEstimator: CodexUsagePricing.estimateRecord
@@ -466,7 +466,7 @@ final class CodexUsagePricingTests: XCTestCase {
             .init(pricing.estimatedCostDollars(model: record.effectiveModel!, tokens: record.tokens!))
         })
         let codex = await scanner.scan(providerID: "codex", now: now, pricing: pricing, costEstimator: CodexUsagePricing.estimateRecord)
-        XCTAssertEqual(try XCTUnwrap(generic?.series.daily.first?.costUSD), 1.4, accuracy: 1e-9)
-        XCTAssertEqual(try XCTUnwrap(codex?.series.daily.first?.costUSD), 2.7, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(generic?.series.daily.first?.costUSD), 1.8, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(codex?.series.daily.first?.costUSD), 3.45, accuracy: 1e-9)
     }
 }
