@@ -212,7 +212,8 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
             return
         } catch {
             AppDiagnostics.failure(.weeklyTimer, error: error, providerID: candidate.providerID)
-            fail(candidate, "Usage timer message could not be prepared. Refresh to try again.")
+            fail(candidate, (error as? UsageTimerError)?.errorDescription
+                ?? "Usage timer message could not be prepared. Refresh to try again.")
             preparationRetries.insert(accountKey)
             return
         }
@@ -272,7 +273,8 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
                 return
             } catch {
                 AppDiagnostics.failure(.weeklyTimer, error: error, providerID: candidate.providerID)
-                fail(candidate, "Usage timer message could not be prepared. Refresh to try again.")
+                fail(candidate, (error as? UsageTimerError)?.errorDescription
+                    ?? "Usage timer message could not be prepared. Refresh to try again.")
                 preparationRetries.insert(accountKey)
                 return
             }

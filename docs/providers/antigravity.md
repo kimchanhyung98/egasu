@@ -37,6 +37,13 @@ Argon 주간 한도는 공유 Gemini 주간 한도와 합치지 않음.
 마우스를 올리면 첫 메시지 후 세션이 시작된다는 설명 표시.
 주간 미터는 응답에 유효한 재설정 시각이 있을 때 카운트다운 표시.
 
+## 구독 타이머
+
+적용 한도·실행 조건·CLI 로그인 요건은 [구독 타이머 자동 시작](/docs/refreshing.md#구독-타이머-자동-시작) 참조.
+타이머 실행 시 임시 HOME에서 기존 macOS Keychain 로그인만 참조.
+사용자의 CLI 설정·훅·대화 기록은 임시 실행 환경과 분리.
+Argon 한도는 자동 메시지 대상에서 제외.
+
 ## 로컬 사용량과 비용
 
 앱·CLI·독립 실행형 Antigravity IDE의 `~/.gemini/antigravity/conversations/*.db`, `~/.gemini/antigravity-cli/conversations/*.db`, `~/.gemini/antigravity-ide/conversations/*.db`를 읽기 전용으로 조회.

@@ -103,6 +103,12 @@ extension ClaudeProvider {
             var mapped = try ClaudeUsageMapper.mapUsageResponse(response, credentials: working.oauth, now: observedAt)
             mapped.liveQuotaObservedAt = observedAt
             mapped.quotaObservedAt = observedAt
+            usageTimerCredentialState = working
+            let haikuLimits = mapped.lines.filter { $0.label == "Session" || $0.label == "Weekly" }
+            usageTimerObservations = UsageTimerObservation.hasExhaustedQuota(haikuLimits) ? [] : [UsageTimerObservation.from(
+                lines: mapped.lines, accountKey: UsageTimerObservation.accountKey(family: "claude", identity: accountKey),
+                timerID: "claude.session", observedAt: observedAt, startRule: .missingReset
+            )].compactMap { $0 }
             record.succeeded(mapped, at: observedAt)
             let saved = record
             try await loadOffMainActor { try lease.save(saved) }

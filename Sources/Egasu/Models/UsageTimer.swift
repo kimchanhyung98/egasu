@@ -91,4 +91,17 @@ protocol UsageTimerProviding: ProviderRuntime {
 @MainActor
 struct UsageTimerExecutors {
     var codex: any CodexWeeklyTimerExecuting
+    var cli: any UsageTimerCLIExecuting
+}
+
+enum UsageTimerError: Error, LocalizedError {
+    case accountChanged, usageUnavailable, currentLoginRequired
+
+    var errorDescription: String? {
+        switch self {
+        case .accountChanged: "Usage timer account changed. Refresh this account and try again."
+        case .usageUnavailable: "Usage timer could not verify current quota data. No message was sent."
+        case .currentLoginRequired: "Usage timer requires this account to be signed in to the provider's CLI."
+        }
+    }
 }

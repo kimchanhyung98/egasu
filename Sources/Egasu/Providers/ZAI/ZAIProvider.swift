@@ -33,6 +33,8 @@ final class ZAIProvider: ProviderRuntime {
         self.pricing = pricing
     }
 
+    var usageTimerObservations: [UsageTimerObservation] = []
+
     var widgetDescriptors: [WidgetDescriptor] {
         [
             .percent(id: "zai.session", provider: provider, title: "Session",
@@ -56,6 +58,7 @@ final class ZAIProvider: ProviderRuntime {
     }
 
     func refresh() async -> ProviderSnapshot {
+        usageTimerObservations = []
         let refreshedAt = now()
         guard let auth = await loadOffMainActor({ [authStore] in authStore.loadAPIKey() }) else {
             return ProviderSnapshot.error(provider: provider, error: ZAIAuthError.missingKey)
@@ -74,6 +77,8 @@ final class ZAIProvider: ProviderRuntime {
             }
             do {
                 let mapped = try ZAIUsageMapper.map(quotaBody: body, subscriptionBody: subscription)
+                let observedAt = now()
+                recordUsageTimer(lines: mapped.lines, apiKey: auth.apiKey, observedAt: observedAt)
                 let statistics = await loadStatistics(apiKey: auth.apiKey, at: refreshedAt)
                 if Task.isCancelled {
                     return ProviderSnapshot.error(provider: provider, error: CancellationError())
@@ -84,7 +89,8 @@ final class ZAIProvider: ProviderRuntime {
                     refreshedAt: refreshedAt,
                     warning: statistics.warnings.isEmpty ? nil : statistics.warnings.joined(separator: " "),
                     warningPresentation: statistics.warnings.isEmpty ? nil : statistics.warnings.map { LocalizedMessage($0) },
-                    isDegraded: statistics.isDegraded ? true : nil
+                    isDegraded: statistics.isDegraded ? true : nil,
+                    liveQuotaObservedAt: observedAt
                 )
             } catch {
                 return ProviderSnapshot.error(provider: provider, error: error)

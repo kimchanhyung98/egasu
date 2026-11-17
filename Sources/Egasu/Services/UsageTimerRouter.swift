@@ -96,6 +96,7 @@ final class UsageTimerRouter {
         identityKeys: [String: String] = [:],
         isProviderEnabled: @escaping (String) -> Bool,
         executor: any CodexWeeklyTimerExecuting = CodexWeeklyTimerExecutor(),
+        cliExecutor: any UsageTimerCLIExecuting = UsageTimerCLIExecutor(),
         store: UsageTimerAttemptStore = UsageTimerAttemptStore(),
         report: @escaping (String, [String]?) -> Void,
         refresh: @escaping @MainActor (String, @escaping @MainActor () -> Bool) async -> Void,
@@ -106,7 +107,7 @@ final class UsageTimerRouter {
         self.bindings = Dictionary(uniqueKeysWithValues: providers.compactMap { $0 as? any UsageTimerProviding }.map { ($0.provider.id, Binding(provider: $0)) })
         self.identityKeys = identityKeys
         self.isProviderEnabled = isProviderEnabled
-        self.executors = UsageTimerExecutors(codex: executor)
+        self.executors = UsageTimerExecutors(codex: executor, cli: cliExecutor)
         self.store = store
         self.publishWarning = report
         self.refresh = refresh

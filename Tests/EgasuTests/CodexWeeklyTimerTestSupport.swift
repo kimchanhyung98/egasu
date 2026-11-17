@@ -1,4 +1,5 @@
 import Foundation
+import XCTest
 @testable import Egasu
 
 @MainActor
@@ -300,5 +301,16 @@ extension UsageTimerRouterTests {
         }
 
         func remove() { try? FileManager.default.removeItem(at: root) }
+    }
+}
+
+@MainActor
+struct UnexpectedUsageTimerCLI: UsageTimerCLIExecuting {
+    func execute(
+        _ configuration: UsageTimerCLIConfiguration,
+        canLaunch: @escaping @MainActor () async -> Bool
+    ) async -> UsageTimerExecutionResult {
+        XCTFail("Codex timer tests must not use the provider CLI executor")
+        return .init(launched: false, completed: false)
     }
 }

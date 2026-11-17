@@ -86,9 +86,13 @@ final class ClaudeProvider: ProviderRuntime {
         return load.desktopStatus == .permissionRequired || load.desktopStatus == .stale
     }
 
+    var usageTimerObservations: [UsageTimerObservation] = []
+    var usageTimerCredentialState: ClaudeCredentialState?
     var refreshIsDegraded = false
 
     func refresh() async -> ProviderSnapshot {
+        usageTimerObservations = []
+        usageTimerCredentialState = nil
         refreshIsDegraded = false
         return await refresh(
             credentialReloadsRemaining: 1,

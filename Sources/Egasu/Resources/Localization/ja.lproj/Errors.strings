@@ -305,3 +305,10 @@
 "Usage timer message completed, but the server reset time could not be confirmed." = "使用量タイマーのメッセージ処理は完了しましたが、サーバーのリセット時刻を確認できませんでした。";
 "Usage timer message completion could not be confirmed. Retries wait at least five minutes and are limited to 2 attempts per usage window." = "使用量タイマーのメッセージ処理の完了を確認できませんでした。再試行には最低5分の間隔が必要で、試行回数は各使用枠の対象期間内に2回までです。";
 "Usage timer messages paused: this quota reached the limit of 2 attempts in its usage window. Usage checks will continue." = "使用量タイマーのメッセージ送信を一時停止しました。この使用枠では、対象期間内の試行上限2回に達しました。使用量の確認は継続します。";
+"Usage timer could not verify current quota data. No message was sent." = "使用量タイマーが最新の使用上限を確認できませんでした。メッセージは送信していません。";
+"Usage timer requires this account to be signed in to the provider's CLI." = "使用量タイマーを開始するには、プロバイダーのCLIにこのアカウントでログインしてください。";
+"Usage timer requires the provider's current CLI. Install or update it and refresh." = "使用量タイマーにはプロバイダーの最新CLIが必要です。インストールまたは更新後に再読み込みしてください。";
+"Usage timer message did not complete. Check the provider's CLI login and refresh." = "使用量タイマーのメッセージが完了しませんでした。プロバイダーのCLIへのログインを確認し、再読み込みしてください。";
+"Usage timer temporary files could not be removed." = "使用量タイマーの一時ファイルを削除できませんでした。";
+"Usage timer could not load the CLI model list. Check the CLI login and refresh." = "使用量タイマーでCLIのモデル一覧を読み込めませんでした。CLIのログインを確認して更新してください。";
+"Usage timer CLI execution failed. Refresh to try again." = "使用量タイマーのCLI実行に失敗しました。更新して再試行してください。";
