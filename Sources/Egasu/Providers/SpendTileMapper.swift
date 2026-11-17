@@ -1,7 +1,7 @@
 import Foundation
 
 /// 로컬 일별 token/cost 데이터를 공용 Today / Yesterday / Last 30 Days spend 타일로 변환.
-/// 모든 spend 추적 provider가 여기를 거쳐 타일 렌더 통일 — Claude/Codex/Grok은 CLI 로그, Cursor는 CSV export가 공급하고, `DailyUsageSeries`가 provider 중립 per-day carrier.
+/// 모든 spend 추적 provider가 여기를 거쳐 타일 렌더 통일 — Claude/Codex/Grok은 CLI 로그, Cursor는 사용 이벤트가 공급하고, `DailyUsageSeries`가 provider 중립 per-day carrier.
 enum SpendTileMapper {
     /// 세 spend 타일(Today / Yesterday / Last 30 Days) 추가. usage 없는 기간은 타일을 만들지 않아 "No data" — 여기서의 0은 "아직 집계 전"과 구분 불가라 자신 있는 `$0.00 · 0 tokens`는 금지. source 읽기 실패 시에도 호출자가 아무것도 추가하지 않음.
     /// `estimated`는 달러 값의 로컬 추정 마커(ⓘ) 여부. `estimatedDays`가 있으면 기간별 비용 출처로 판정. `unknownModelsByDay`는 `yyyy-MM-dd` day key → 가격 산정 불가 모델 집합 — Today/Yesterday는 자기 날의 집합, Last 30 Days는 window 전체의 합집합.

@@ -13,7 +13,7 @@ struct CursorUsageClient: Sendable {
     static let restUsageURL = URL(string: "https://cursor.com/api/usage")!
     static let usageSummaryURL = URL(string: "https://cursor.com/api/usage-summary")!
     static let stripeURL = URL(string: "https://cursor.com/api/auth/stripe")!
-    static let exportCSVURL = URL(string: "https://cursor.com/api/dashboard/export-usage-events-csv")!
+    static let usageEventsURL = URL(string: "https://cursor.com/api/dashboard/get-filtered-usage-events")!
     static let clientID = "KbZUR41cY7W6zRSdpSUJ7I7mLYBKOCmB"
 
     var http: any HTTPClient
@@ -83,26 +83,69 @@ struct CursorUsageClient: Sendable {
         ))
     }
 
-    /// `[start, end]`의 dashboard usage CSV GET(epoch-ms query param, token strategy) — Stripe/REST 호출과 같은 `WorkosCursorSessionToken` cookie 사용. access token에 쓸 만한 session이 없으면 nil.
-    func fetchUsageCSV(accessToken: String, start: Date, end: Date) async throws -> HTTPResponse? {
+    func fetchUsageEventsPage(
+        accessToken: String, start: Date, end: Date, page: Int, pageSize: Int = 1_000
+    ) async throws -> HTTPResponse? {
         guard let session = Self.session(from: accessToken) else { return nil }
-        var components = URLComponents(url: Self.exportCSVURL, resolvingAgainstBaseURL: false)
-        components?.queryItems = [
-            URLQueryItem(name: "startDate", value: String(Int(start.timeIntervalSince1970 * 1000))),
-            URLQueryItem(name: "endDate", value: String(Int(end.timeIntervalSince1970 * 1000))),
-            URLQueryItem(name: "strategy", value: "tokens")
+        let body: [String: Any] = [
+            "startDate": String(Int(start.timeIntervalSince1970 * 1000)),
+            "endDate": String(Int(end.timeIntervalSince1970 * 1000)),
+            "page": page,
+            "pageSize": pageSize
         ]
-        guard let url = components?.url else { return nil }
-
         return try await http.send(HTTPRequest(
-            method: "GET",
-            url: url,
+            method: "POST",
+            url: Self.usageEventsURL,
             headers: [
                 "Cookie": "WorkosCursorSessionToken=\(session.sessionToken)",
-                "Accept": "text/csv"
+                "Content-Type": "application/json",
+                "Origin": "https://cursor.com"
             ],
-            timeout: 30
+            body: try JSONSerialization.data(withJSONObject: body),
+            timeout: 15
         ))
+    }
+
+    /// 총건수·기간·전체 합계를 검증한 뒤 반환. 일부 페이지만 받은 결과는 정상 이력으로 사용하지 않음.
+    func fetchUsageEvents(accessToken: String, start: Date, end: Date) async throws -> [CursorUsageEvent] {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(30))
+        var events: [CursorUsageEvent] = []
+        var expectedCount: Int?
+        var totalTokens = 0
+        var totalCost = 0.0
+        var page = 1
+        while true {
+            try Task.checkCancellation()
+            guard ContinuousClock.now < deadline else { throw CursorUsageError.connectionFailed }
+            guard
+                let response = try await fetchUsageEventsPage(
+                    accessToken: accessToken, start: start, end: end, page: page)
+            else {
+                throw CursorAuthError.notLoggedIn
+            }
+            guard (200..<300).contains(response.statusCode) else {
+                throw CursorHistoryError.http(response.statusCode, retryAfter: response.header("retry-after"))
+            }
+            let parsed = try CursorUsageEvents.parsePage(response.body)
+            if let expectedCount, expectedCount != parsed.totalCount { throw CursorUsageError.invalidResponse }
+            expectedCount = parsed.totalCount
+            guard parsed.events.count <= 1_000,
+                parsed.events.count <= parsed.totalCount - events.count,
+                !parsed.events.isEmpty || parsed.totalCount == events.count
+            else { throw CursorUsageError.invalidResponse }
+            for event in parsed.events {
+                guard event.date >= start, event.date <= end else { throw CursorUsageError.invalidResponse }
+                let sum = totalTokens.addingReportingOverflow(event.tokens.totalTokens)
+                totalCost += event.costUSD
+                guard !sum.overflow, totalCost.isFinite, (totalCost * 100).isFinite else {
+                    throw CursorUsageError.invalidResponse
+                }
+                totalTokens = sum.partialValue
+            }
+            events.append(contentsOf: parsed.events)
+            if events.count == parsed.totalCount { return events }
+            page += 1
+        }
     }
 
     private func connectPost(_ url: URL, accessToken: String) async throws -> HTTPResponse {

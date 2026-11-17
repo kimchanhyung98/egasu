@@ -108,7 +108,7 @@ DeepSeek Harness는 `DSH_HOME` 또는 기본 `~/.dsh` 아래 `sessions`의 최�
 현재 계정의 인증·설정으로 과거 호출의 계정·서비스 티어를 채우지 않음.
 Pi·OMP에서 계정 신원을 확인할 수 없는 기록은 계정별 스냅샷 카드에 합산하지 않음.
 기존 Claude 다중 로그인 시 공유 harness 기록을 제외하는 규칙 유지.
-Cursor처럼 계정 전체 내보내기를 사용하는 provider에는 같은 호출일 수 있는 로컬 기록을 자동 가산하지 않음.
+Cursor처럼 계정 전체 사용 이벤트를 사용하는 provider에는 같은 호출일 수 있는 로컬 기록을 자동 가산하지 않음.
 
 ### 중복과 세션
 
@@ -289,7 +289,7 @@ IDE globalStorage의 별도 형식과 원격 V3 저장소는 수집하지 않음
 
 Claude Code·Codex CLI·Grok Build의 특수 원장·캐시·추론 토큰 해석은 기존 native 수집기에 유지.
 Antigravity·Copilot·Devin·Kimi·Kiro·OpenCode는 현재 검증된 원본 해석 유지.
-Cursor 계정 전체 내보내기는 로컬 기록과 별도 범위로 유지.
+Cursor 계정 전체 사용 이벤트는 로컬 기록과 별도 범위로 유지.
 native 결과와 공통 adapter의 이력은 비용 완전성을 보존하는 같은 일별 집계에서 병합.
 native 파서의 원본 기록 형식을 강제로 교체하지 않음.
 공유 구독 한도가 같아도 같은 호출의 원장을 카드 간에 중복 합산하지 않음.
@@ -298,7 +298,8 @@ native 파서의 원본 기록 형식을 강제로 교체하지 않음.
 
 | 수집 대상 | 연결 방식 |
 |---|---|
-| Claude Code·Desktop Code·Cowork, Codex CLI, Cursor IDE, Grok Build | 기존 native 로그·내보내기 해석 유지 |
+| Claude Code·Desktop Code·Cowork, Codex CLI, Grok Build | 기존 native 로그 해석 유지 |
+| Cursor IDE | 계정 전체 사용 이벤트 API 조회 |
 | Antigravity 앱·CLI·IDE Extension | 기존 세 제품군 DB 경로를 한 수집기에서 조회 |
 | GitHub Copilot CLI, OpenCode | 기존 SQLite 원장 유지, 공유 도구의 명시된 귀속만 추가 |
 | Devin CLI·Desktop | CLI 원장 수집. Desktop 이전 ACP 캐시는 관측값으로 보존, 최신 메시지 캐시의 요청 원장은 미확인 |

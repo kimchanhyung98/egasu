@@ -153,12 +153,10 @@ final class CursorOptionalEndpointTests: XCTestCase {
         let diagnostics = DiagnosticEventRecorder()
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let yesterday = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: -1, to: now))
-        let iso = ISO8601DateFormatter()
-        let csv = """
-        Date,Model,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens
-        \(iso.string(from: now)),test-model,0,0,0,1000000
-        \(iso.string(from: yesterday)),test-model,0,0,0,500000
-        """
+        let body = try CursorEventFixture.page([
+            CursorEventFixture.event(date: now, tokens: 1_000_000, cents: 1_000),
+            CursorEventFixture.event(date: yesterday, tokens: 500_000, cents: 500)
+        ])
         let pricing = ModelPricing(
             supplement: PricingSupplement(),
             primary: PricingCatalog(entries: ["test-model": ModelRates(
@@ -167,8 +165,8 @@ final class CursorOptionalEndpointTests: XCTestCase {
             secondary: PricingCatalog()
         )
         let provider = makeProvider(pricing: pricing) { request in
-            if request.url.path == CursorUsageClient.exportCSVURL.path {
-                return HTTPResponse(statusCode: 200, headers: [:], body: Data(csv.utf8))
+            if request.url.path == CursorUsageClient.usageEventsURL.path {
+                return HTTPResponse(statusCode: 200, headers: [:], body: body)
             }
             if request.url.absoluteString.hasPrefix(CursorUsageClient.restUsageURL.absoluteString) {
                 return HTTPResponse(statusCode: 200, headers: [:], body: Data(
@@ -204,7 +202,7 @@ final class CursorOptionalEndpointTests: XCTestCase {
                 continue
             }
             XCTAssertEqual(values, [
-                MetricValue(number: dollars, kind: .dollars, estimated: true),
+                MetricValue(number: dollars, kind: .dollars, estimated: false),
                 MetricValue(number: tokens, kind: .count, label: "tokens")
             ])
         }
@@ -222,12 +220,12 @@ final class CursorOptionalEndpointTests: XCTestCase {
         let failures: [(HTTPResponse?, ErrorCategory)] = [
             (nil, .network),
             (HTTPResponse(statusCode: 503, headers: [:], body: Data()), .http5xx),
-            (HTTPResponse(statusCode: 200, headers: [:], body: Data("not-csv".utf8)), .decoding)
+            (HTTPResponse(statusCode: 200, headers: [:], body: Data("not-json".utf8)), .decoding)
         ]
         for (response, category) in failures {
             let diagnostics = DiagnosticEventRecorder()
             let provider = makeProvider { request in
-                if request.url.path == CursorUsageClient.exportCSVURL.path {
+                if request.url.path == CursorUsageClient.usageEventsURL.path {
                     guard let response else { throw URLError(.cannotConnectToHost) }
                     return response
                 }
@@ -261,7 +259,7 @@ final class CursorOptionalEndpointTests: XCTestCase {
             XCTAssertEqual(diagnostics.events.filter { $0.operation == .historyScan }, [
                 DiagnosticEvent(.historyScan, result: .degraded, category: category, providerID: "cursor")
             ])
-            XCTAssertTrue(logs.contains("usage CSV"), logs)
+            XCTAssertTrue(logs.contains("usage events"), logs)
             XCTAssertFalse(logs.contains(makeCursorJWT(includeSubject: true)), logs)
         }
     }

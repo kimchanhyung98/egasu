@@ -47,8 +47,8 @@ final class CursorProvider: ProviderRuntime {
             .usageTrend(provider: provider)
                 .exportingHistory(
                     scope: .accountWide,
-                    estimatedCost: true,
-                    sourceNote: "From your Cursor usage export"
+                    estimatedCost: false,
+                    sourceNote: WidgetData.cursorUsageHistoryNote
                 )
         ] + WidgetDescriptor.spendTiles(
             provider: provider,
@@ -62,12 +62,16 @@ final class CursorProvider: ProviderRuntime {
     }
 
     private var refreshIsDegraded = false
+    private var historyRetryAfter: Date?
+    private var historySessionID: String?
     private var refreshedKeychainToken: (source: CursorAuthState, accessToken: String)?
 
     func refresh() async -> ProviderSnapshot {
         refreshIsDegraded = false
         guard let state = await loadOffMainActor({ [authStore] in authStore.loadAuthState() }) else {
             refreshedKeychainToken = nil
+            historyRetryAfter = nil
+            historySessionID = nil
             return ProviderSnapshot.error(provider: provider, error: CursorAuthError.notLoggedIn)
         }
 
@@ -132,7 +136,7 @@ final class CursorProvider: ProviderRuntime {
                 unavailableMessage: fallback.message
             )
             let history = await appendSpendLines(to: &mapped.lines, accessToken: currentToken)
-            return snapshot(mapped, usageHistory: history)
+            return snapshot(mapped, usageHistory: history, accessToken: currentToken)
         }
 
         if shouldTryGenericRequestFallback(usage: usage) {
@@ -143,7 +147,7 @@ final class CursorProvider: ProviderRuntime {
                     unavailableMessage: "Cursor request-based usage data unavailable. Try again later."
                 )
                 let history = await appendSpendLines(to: &mapped.lines, accessToken: currentToken)
-                return snapshot(mapped, usageHistory: history)
+                return snapshot(mapped, usageHistory: history, accessToken: currentToken)
             } catch {
                 noteDegraded(.cursorFallback, error: error, localContext: "optional request-based usage fallback failed")
             }
@@ -158,56 +162,54 @@ final class CursorProvider: ProviderRuntime {
             stripeBalanceCents: stripeBalanceCents
         )
         let history = await appendSpendLines(to: &mapped.lines, accessToken: currentToken)
-        return snapshot(mapped, usageHistory: history)
+        return snapshot(mapped, usageHistory: history, accessToken: currentToken)
     }
 
-    /// CSV 실패 시 nil 이력 반환 — 기존 한도 유지, 저장소에서 마지막 정상 지출 이력 보존.
+    /// 이력 실패 시 한도는 유지하고 저장소의 마지막 정상 이력을 경고와 함께 표시.
     private func appendSpendLines(to lines: inout [MetricLine], accessToken: String) async -> ProviderUsageHistory? {
-        let calendar = Calendar.current
+        let sessionID = CursorUsageClient.session(from: accessToken)?.userID
+        if historySessionID != sessionID {
+            historyRetryAfter = nil
+            historySessionID = sessionID
+        }
+        if let historyRetryAfter, now() < historyRetryAfter {
+            noteDegraded(
+                .historyScan, category: .http(429), localContext: "usage events retry deferred after rate limit")
+            return nil
+        }
         let end = now()
-        let startOfToday = calendar.startOfDay(for: end)
-        let start = calendar.date(byAdding: .day, value: -29, to: startOfToday) ?? startOfToday
-
-        let response: HTTPResponse?
+        let today = Calendar.current.startOfDay(for: end)
+        let start = Calendar.current.date(byAdding: .day, value: -29, to: today) ?? today
         do {
-            response = try await usageClient.fetchUsageCSV(accessToken: accessToken, start: start, end: end)
+            let events = try await usageClient.fetchUsageEvents(accessToken: accessToken, start: start, end: end)
+            let pricing = await pricing()
+            historyRetryAfter = nil
+            AppDiagnostics.record(.historyScan, result: .success, providerID: provider.id)
+            return CursorUsageMapper.appendSpendLines(rows: events, now: end, pricing: pricing, to: &lines)
+        } catch CursorHistoryError.http(let status, let retryAfter) {
+            if status == 429 { historyRetryAfter = Self.retryDate(retryAfter, receivedAt: now()) }
+            noteDegraded(
+                .historyScan, category: .http(status), localContext: "usage events request returned HTTP \(status)")
         } catch {
-            noteDegraded(.historyScan, error: error, localContext: "usage CSV request failed")
-            return nil
-        }
-        guard let response else {
-            noteDegraded(.historyScan, category: .authInvalid, localContext: "usage CSV request could not be prepared from the current session")
-            return nil
-        }
-        guard (200..<300).contains(response.statusCode) else {
-            noteDegraded(.historyScan, category: .http(response.statusCode), localContext: "usage CSV request returned HTTP \(response.statusCode)")
-            return nil
-        }
-        guard let csv = String(data: response.body, encoding: .utf8) else {
-            noteDegraded(.historyScan, category: .decoding, localContext: "usage CSV response was not valid UTF-8")
-            return nil
-        }
-        let pricing = await pricing()
-        do {
-            let parsed = try CursorUsageCSV.parse(csv: csv, pricing: pricing)
-            if parsed.rejectedRowCount > 0 {
-                noteDegraded(.historyScan, category: .decoding,
-                             localContext: "usage CSV ignored \(parsed.rejectedRowCount) malformed row\(parsed.rejectedRowCount == 1 ? "" : "s")")
-                if parsed.rows.isEmpty { return nil }
-            }
-            if parsed.rejectedRowCount == 0 { AppDiagnostics.record(.historyScan, result: .success, providerID: provider.id) }
-            return CursorUsageMapper.appendSpendLines(rows: parsed.rows, now: end, pricing: pricing, to: &lines)
-        } catch let error as CursorUsageCSVError {
-            switch error {
-            case .missingColumns(let columns):
-                noteDegraded(.historyScan, category: .decoding, error: error, localContext: "usage CSV missing required columns: \(columns.joined(separator: ", "))")
-            case .malformedCSV:
-                noteDegraded(.historyScan, category: .decoding, error: error, localContext: "usage CSV is structurally malformed")
-            }
-        } catch {
-            noteDegraded(.historyScan, category: .decoding, error: error, localContext: "usage CSV could not be parsed")
+            noteDegraded(
+                .historyScan, category: error as? CursorUsageError == .invalidResponse ? .decoding : nil,
+                error: error, localContext: "usage events history could not be loaded completely")
         }
         return nil
+    }
+
+    static func retryDate(_ value: String?, receivedAt: Date) -> Date {
+        if let value, let seconds = Double(value), seconds.isFinite, seconds >= 0 {
+            return receivedAt.addingTimeInterval(seconds)
+        }
+        if let value {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            formatter.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss zzz"
+            if let date = formatter.date(from: value), date > receivedAt { return date }
+        }
+        return receivedAt.addingTimeInterval(3_600)
     }
 
     private func fetchUsageWithRetry(
@@ -448,14 +450,19 @@ final class CursorProvider: ProviderRuntime {
         AppDiagnostics.record(operation, result: .degraded, category: category, providerID: provider.id, error: error, localContext: localContext)
     }
 
-    private func snapshot(_ mapped: CursorMappedUsage, usageHistory: ProviderUsageHistory? = nil) -> ProviderSnapshot {
-        ProviderSnapshot.make(
+    private func snapshot(
+        _ mapped: CursorMappedUsage, usageHistory: ProviderUsageHistory?, accessToken: String
+    ) -> ProviderSnapshot {
+        var snapshot = ProviderSnapshot.make(
             provider: provider,
             plan: mapped.plan,
             lines: mapped.lines,
             refreshedAt: now(),
             usageHistory: usageHistory,
+            warning: usageHistory == nil ? "Cursor usage history could not be refreshed. Try again later." : nil,
             isDegraded: refreshIsDegraded ? true : nil
         )
+        snapshot.producedByIdentityKey = CursorUsageClient.session(from: accessToken)?.userID
+        return snapshot
     }
 }

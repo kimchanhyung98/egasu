@@ -20,7 +20,8 @@ The app updates itself in place via signed, notarized [Sparkle](docs/updates.md)
 - **[Claude](docs/providers/claude.md)** — session, weekly, model-specific limits, extra usage, local daily spend
 - **[Codex](docs/providers/codex.md)** — session, weekly, credits, local daily spend
 - **[Copilot](docs/providers/copilot.md)** — AI credits, extra usage, organization billing, chat and completions
-- **[Cursor](docs/providers/cursor.md)** — credits, total/auto/API usage, requests, on-demand, per-day spend
+- **[Cursor](/docs/providers/cursor.md)** — 전체·Auto·API 사용량, 요청·크레딧, 추가 사용량, 서버 보고 기반 일별 추가 과금·토큰.
+  이력 조회 실패 시 같은 계정으로 확인한 마지막 정상 이력 유지.
 - **[Devin](docs/providers/devin.md)** — weekly and daily quota, extra usage balance
 - **[Grok](docs/providers/grok.md)** — weekly shared pool, pay-as-you-go, local daily spend
 - **[Kimi](/docs/providers/kimi.md)** — 5시간·주간·월간 총한도, 추가 지출·잔액.
@@ -65,9 +66,9 @@ For working on the code, see the developer docs: [architecture](docs/architectur
 - macOS 15 (Sequoia) or later
 - Universal binary — runs natively on both Apple Silicon and Intel Macs
 
-The Today / Yesterday / Last 30 Days spend tiles are computed natively from local CLI logs (Claude,
-Codex, and Grok) or Cursor's usage export — no Node.js or other runtime needed. Dollars are estimated
-with [dynamically refreshed model pricing](docs/pricing.md).
+Today·Yesterday·Last 30 Days는 로컬 CLI 기록(Claude·Codex·Grok) 또는 Cursor 사용 이벤트에서 집계.
+Cursor 비용은 서버가 보고한 추가 과금액 사용.
+로컬 토큰 기반 비용은 [동적으로 갱신되는 모델 가격](/docs/pricing.md)으로 추정.
 
 
 

@@ -6,7 +6,7 @@ struct ProviderSnapshotCache {
         var snapshots: [String: ProviderSnapshot]
         /// Card id → 저장된 snapshot을 생산한 account identity key. `ProviderSnapshot`이 local HTTP API
         /// (`LocalUsageAPI`)로 그대로 직렬화되므로 필드가 아닌 sidecar map — stamp는 cache bookkeeping,
-        /// wire 데이터 아님. account identity 없는 provider(claude/codex family 외)에는 부재.
+        /// wire 데이터 아님. 계정 식별을 확인하지 못한 프로바이더에는 부재.
         var producedByIdentityKeys: [String: String]
     }
 
@@ -131,7 +131,13 @@ struct ProviderSnapshotCache {
             return Payload(snapshots: [:], producedByIdentityKeys: [:])
         }
         do {
-            return try decoder.decode(Payload.self, from: data)
+            var payload = try decoder.decode(Payload.self, from: data)
+            for id in payload.snapshots.keys where ProviderAccountID.family(of: id) == "cursor" {
+                if payload.snapshots[id]?.usageHistory?.estimatedCost == nil {
+                    payload.snapshots[id]?.usageHistory?.estimatedCost = true
+                }
+            }
+            return payload
         } catch {
             AppLog.warn(.cache, "cache decode failed, dropping stored snapshots: \(error.localizedDescription)")
             return Payload(snapshots: [:], producedByIdentityKeys: [:])

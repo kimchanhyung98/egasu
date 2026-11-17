@@ -10,7 +10,7 @@ struct DailyUsageAccumulator {
     private var totalCost = UsageCostTotal()
     private var rejectedNumericRows = 0
 
-    /// 로컬 캘린더 기준 `yyyy-MM-dd` day key — accumulator·`SpendTileMapper`·Cursor CSV 집계가 공유하는 단일 계약.
+    /// 로컬 캘린더 기준 `yyyy-MM-dd` day key — accumulator·`SpendTileMapper`·Cursor 사용 이벤트 집계가 공유하는 단일 계약.
     static func dayKey(from date: Date, calendar: Calendar = .current) -> String {
         let components = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)

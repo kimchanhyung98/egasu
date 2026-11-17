@@ -247,10 +247,9 @@ enum CursorUsageMapper {
         return (false, "")
     }
 
-    /// Cursor CSV 행에서 공용 Today / Yesterday / Last 30 Days spend 타일 추가. 행을 로컬 캘린더 일 단위 `DailyUsageSeries`로 집계해 Claude/Codex/Grok 타일과 같은 `SpendTileMapper`에 전달 — source note만 다르고 출력 동일. cost는 export된 token 수로 로컬 계산이라 달러 값에 추정 아이콘.
-    /// 모델 breakdown 행은 raw CSV slug가 아닌 base 모델로 그룹화 — Cursor는 thinking effort/fast 조합마다 slug를 export해 근사 중복 행이 실제 순위를 가림. supplement의 alias rule이 slug를 canonical pricing key로 축약하고 `-fast` canonical은 base로 흡수. raw slug는 `variants`로 생존 — 행 tooltip의 effort별 breakdown.
+    /// 서버 보고 비용을 일별로 합산. 별칭은 모델 표시를 묶는 용도로만 사용.
     static func appendSpendLines(
-        rows: [CursorUsageCSVRow],
+        rows: [CursorUsageEvent],
         now: Date,
         pricing: ModelPricing,
         to lines: inout [MetricLine]
@@ -259,34 +258,26 @@ enum CursorUsageMapper {
         var costByDay: [String: UsageCostTotal] = [:]
         var tokensByDay: [String: Int] = [:]
         var modelsByDay: [String: [String: ModelAccumulator]] = [:]
-        // 가격 미확정 토큰은 보존하고 불완전한 비용만 생략. 토큰이 0이면 미확정 모델 목록에서도 제외.
-        var unknownModelsByDay: [String: Set<String>] = [:]
         for row in rows {
             let day = DailyUsageAccumulator.dayKey(from: row.date, calendar: calendar)
             let model = row.model.trimmingCharacters(in: .whitespacesAndNewlines)
-            if row.imputedCostDollars == nil {
-                guard row.tokens.totalTokens > 0 else { continue }
-                if !model.isEmpty {
-                    unknownModelsByDay[day, default: []].insert(model)
-                }
-            }
-            costByDay[day, default: UsageCostTotal()].add(row.imputedCostDollars)
+            costByDay[day, default: UsageCostTotal()].add(row.costUSD)
             tokensByDay[day, default: 0] += row.tokens.totalTokens
             let modelName = model.isEmpty ? ModelUsageEntry.unattributedModelName : model
             let family = model.isEmpty ? modelName : familyName(for: model, pricing: pricing)
             modelsByDay[day, default: [:]][family, default: ModelAccumulator()].add(
                 variant: modelName,
                 tokens: row.tokens.totalTokens,
-                costUSD: row.imputedCostDollars
+                costUSD: row.costUSD
             )
         }
 
-        // 일별 raw 달러 합산 후 마지막에 한 번만 센트 단위로 snap — 행마다 반올림하면 바쁜 날 sub-cent drift 누적.
+        // 원본 소수 비용을 유지하고 기간·모델 표시 경계에서 한 번만 반올림.
         let daily = tokensByDay.keys.sorted(by: >).map { day in
             DailyUsageEntry(
                 date: day,
                 totalTokens: tokensByDay[day] ?? 0,
-                costUSD: costByDay[day]?.value.map { ($0 * 100).rounded() / 100 }
+                costUSD: costByDay[day]?.value
             )
         }
         let series = DailyUsageSeries(daily: daily)
@@ -298,16 +289,15 @@ enum CursorUsageMapper {
                 }
             )
         })
-        SpendTileMapper.appendTokenUsage(series, to: &lines, now: now, estimated: true,
-                                         unknownModelsByDay: unknownModelsByDay,
-                                         modelUsage: modelUsage,
-                                         modelSourceNote: "From your Cursor usage export")
-        // Cursor tokens는 로컬 CLI 로그가 아닌 server export CSV에서 옴 — trend note는 로그 스캔 provider들의 "estimated from local logs" 대신 그 source를 명시. tokens는 어느 쪽이든 측정값.
-        SpendTileMapper.appendUsageTrend(series, to: &lines, now: now, note: "From your Cursor usage export")
+        SpendTileMapper.appendTokenUsage(
+            series, to: &lines, now: now, estimated: false,
+            modelUsage: modelUsage,
+            modelSourceNote: WidgetData.cursorUsageHistoryNote)
+        SpendTileMapper.appendUsageTrend(series, to: &lines, now: now, note: WidgetData.cursorUsageHistoryNote)
         return ProviderUsageHistory(
             series: series,
             modelUsage: modelUsage,
-            unknownModelsByDay: unknownModelsByDay
+            estimatedCost: false
         )
     }
 
