@@ -305,3 +305,10 @@
 "Usage timer message completed, but the server reset time could not be confirmed." = "Usage timer message completed, but the server reset time could not be confirmed.";
 "Usage timer message completion could not be confirmed. Retries wait at least five minutes and are limited to 2 attempts per usage window." = "Usage timer message completion could not be confirmed. Retries wait at least five minutes and are limited to 2 attempts per usage window.";
 "Usage timer messages paused: this quota reached the limit of 2 attempts in its usage window. Usage checks will continue." = "Usage timer messages paused: this quota reached the limit of 2 attempts in its usage window. Usage checks will continue.";
+"Usage timer could not verify current quota data. No message was sent." = "Usage timer could not verify current quota data. No message was sent.";
+"Usage timer requires this account to be signed in to the provider's CLI." = "Usage timer requires this account to be signed in to the provider's CLI.";
+"Usage timer requires the provider's current CLI. Install or update it and refresh." = "Usage timer requires the provider's current CLI. Install or update it and refresh.";
+"Usage timer message did not complete. Check the provider's CLI login and refresh." = "Usage timer message did not complete. Check the provider's CLI login and refresh.";
+"Usage timer temporary files could not be removed." = "Usage timer temporary files could not be removed.";
+"Usage timer could not load the CLI model list. Check the CLI login and refresh." = "Usage timer could not load the CLI model list. Check the CLI login and refresh.";
+"Usage timer CLI execution failed. Refresh to try again." = "Usage timer CLI execution failed. Refresh to try again.";

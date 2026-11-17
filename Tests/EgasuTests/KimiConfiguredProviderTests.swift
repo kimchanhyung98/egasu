@@ -1,4 +1,5 @@
 import Foundation
+import os
 import XCTest
 @testable import Egasu
 
@@ -80,6 +81,7 @@ final class KimiConfiguredProviderTests: XCTestCase {
             let snapshot = await provider.refresh()
 
             XCTAssertTrue(detected)
+            XCTAssertTrue(provider.usageTimerObservations.isEmpty)
             XCTAssertNil(snapshot.errorCategory)
             XCTAssertEqual(http.requests.map(\.method), ["GET"])
             XCTAssertEqual(fixture.files.files, before)
@@ -203,6 +205,156 @@ final class KimiConfiguredProviderTests: XCTestCase {
         XCTAssertEqual(fixture.files.files[fixture.credential.path], Self.credential("scoped-token", expiresAt: 2_060))
     }
 
+    func testUsageTimerRetainsGlobalServerAndDoesNotWriteTokenToConfig() async throws {
+        let fixture = try fixture(domain: "ai", token: Self.jwt)
+        defer { try? FileManager.default.removeItem(at: fixture.home) }
+        let http = RoutingHTTPClient { _ in Self.usageResponse }
+        let provider = provider(fixture, http: http)
+        _ = await provider.quotaSnapshot()
+        let observation = try XCTUnwrap(provider.usageTimerObservations.first)
+        let cli = ConfigCaptureCLI()
+        let session = try await provider.prepareUsageTimer(
+            observation, executors: .init(codex: UsageTimerRouterTests.Executor(), cli: cli)
+        )
+
+        _ = await session?.send { true }
+
+        let config = try XCTUnwrap(cli.config)
+        XCTAssertTrue(config.contains("https://api.kimi.ai/coding/v1"))
+        XCTAssertFalse(config.contains(Self.jwt))
+        XCTAssertEqual(cli.request?.environment["EGASU_KIMI_TOKEN"], Self.jwt)
+    }
+
+    func testIdenticalSubjectsOnDifferentServersHaveDifferentTimerAccounts() async throws {
+        var keys: [String] = []
+        for domain in ["com", "ai"] {
+            let fixture = try fixture(domain: domain, token: Self.jwt)
+            defer { try? FileManager.default.removeItem(at: fixture.home) }
+            let provider = provider(fixture, http: RoutingHTTPClient { _ in Self.usageResponse })
+            _ = await provider.quotaSnapshot()
+            keys.append(try XCTUnwrap(provider.usageTimerObservations.first?.accountKey))
+        }
+        XCTAssertNotEqual(keys[0], keys[1])
+    }
+
+    func testValidLegacyOAuthRetainsUsageTimerObservation() async throws {
+        let fixture = try fixture(domain: "com")
+        defer { try? FileManager.default.removeItem(at: fixture.home) }
+        let files = FakeFiles([
+            fixture.home.appendingPathComponent(".kimi/credentials/kimi-code.json").path:
+                Self.credential(Self.jwt, expiresAt: 9_000)
+        ])
+        let now = now
+        let provider = KimiProvider(
+            authStore: KimiAuthStore(files: files, environment: FakeEnvironment(), homeDirectory: { fixture.home }),
+            usageClient: KimiUsageClient(http: RoutingHTTPClient { _ in Self.usageResponse }),
+            now: { now }, pricing: { .empty }
+        )
+
+        let snapshot = await provider.quotaSnapshot()
+
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertEqual(provider.usageTimerObservations.count, 1)
+    }
+
+    func testTimerCanLaunchAfterCredentialsRotateDuringPreparation() async throws {
+        let fixture = try fixture(domain: "ai", token: Self.jwt)
+        defer { try? FileManager.default.removeItem(at: fixture.home) }
+        let rotated = Self.jwt + "-rotated"
+        let http = RoutingHTTPClient { request in
+            if request.method == "POST" {
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(
+                    #"{"access_token":"\#(rotated)","refresh_token":"rotated-refresh","expires_in":3600}"#.utf8
+                ))
+            }
+            return Self.usageResponse
+        }
+        let provider = provider(fixture, http: http)
+        _ = await provider.quotaSnapshot()
+        let observation = try XCTUnwrap(provider.usageTimerObservations.first)
+        fixture.files.files[fixture.credential.path] = Self.credential(Self.jwt, expiresAt: 2_060)
+        let cli = ConfigCaptureCLI()
+
+        let session = try await provider.prepareUsageTimer(
+            observation, executors: .init(codex: UsageTimerRouterTests.Executor(), cli: cli)
+        )
+        _ = await session?.send { true }
+
+        XCTAssertNotNil(cli.config)
+        XCTAssertEqual(cli.request?.environment["EGASU_KIMI_TOKEN"], rotated)
+    }
+
+    func testChangingConfiguredServerAfterPreparationBlocksTimer() async throws {
+        let fixture = try fixture(domain: "ai", token: Self.jwt)
+        defer { try? FileManager.default.removeItem(at: fixture.home) }
+        let provider = provider(fixture, http: RoutingHTTPClient { _ in Self.usageResponse })
+        _ = await provider.quotaSnapshot()
+        let observation = try XCTUnwrap(provider.usageTimerObservations.first)
+        let cli = ConfigCaptureCLI()
+        let session = try await provider.prepareUsageTimer(
+            observation, executors: .init(codex: UsageTimerRouterTests.Executor(), cli: cli)
+        )
+        let configPath = fixture.home.appendingPathComponent("config.toml").path
+        fixture.files.files[configPath] = fixture.files.files[configPath]?.replacingOccurrences(of: ".kimi.ai", with: ".kimi.com")
+        fixture.files.files[fixture.home.appendingPathComponent("credentials/kimi-code.json").path]
+            = Self.credential(Self.jwt, expiresAt: 9_000)
+
+        _ = await session?.send { true }
+
+        XCTAssertNil(cli.config)
+        XCTAssertNil(cli.request)
+    }
+
+    func testTimerAcceptsMissingOrZeroExpiryAndRequiresFiniteExpiryBuffer() async throws {
+        for expiry in [nil, 0, 2_090, 2_121] as [Double?] {
+            let fixture = try fixture(domain: "ai", token: Self.jwt)
+            defer { try? FileManager.default.removeItem(at: fixture.home) }
+            var body: [String: Any] = ["access_token": Self.jwt]
+            if let expiry { body["expires_at"] = expiry }
+            fixture.files.files[fixture.credential.path] = String(
+                decoding: try JSONSerialization.data(withJSONObject: body), as: UTF8.self)
+            let provider = provider(fixture, http: RoutingHTTPClient { _ in Self.usageResponse })
+            _ = await provider.quotaSnapshot()
+            let observation = try XCTUnwrap(provider.usageTimerObservations.first)
+            let cli = ConfigCaptureCLI()
+            do {
+                let prepared = try await provider.prepareUsageTimer(
+                    observation, executors: .init(codex: UsageTimerRouterTests.Executor(), cli: cli))
+                let session = try XCTUnwrap(prepared)
+                _ = await session.send { true }
+                XCTAssertNotNil(cli.request)
+                XCTAssertNotEqual(expiry, 2_090)
+            } catch {
+                XCTAssertEqual(expiry, 2_090)
+                XCTAssertNil(cli.request)
+            }
+        }
+    }
+
+    func testQueuedTimerRechecksRemainingTokenLifetimeBeforeLaunch() async throws {
+        let fixture = try fixture(domain: "ai", token: Self.jwt, expiresAt: 2_121)
+        defer { try? FileManager.default.removeItem(at: fixture.home) }
+        fixture.files.files[fixture.credential.path] = fixture.files.files[fixture.credential.path]?
+            .replacingOccurrences(of: #","refresh_token":"test-refresh""#, with: "")
+        let clock = OSAllocatedUnfairLock(initialState: now)
+        let provider = KimiProvider(
+            authStore: KimiAuthStore(files: fixture.files, environment: FakeEnvironment(["KIMI_CODE_HOME": fixture.home.path])),
+            usageClient: KimiUsageClient(http: RoutingHTTPClient { _ in Self.usageResponse }, now: { clock.withLock { $0 } }),
+            now: { clock.withLock { $0 } }, pricing: { .empty })
+        _ = await provider.quotaSnapshot()
+        let observation = try XCTUnwrap(provider.usageTimerObservations.first)
+        let cli = ConfigCaptureCLI()
+        let prepared = try await provider.prepareUsageTimer(
+            observation, executors: .init(codex: UsageTimerRouterTests.Executor(), cli: cli))
+        let session = try XCTUnwrap(prepared)
+        clock.withLock { $0.addTimeInterval(122) }
+
+        let result = await session.send { true }
+
+        XCTAssertFalse(result.launched)
+        XCTAssertNil(cli.request)
+    }
+
     private func fixture(
         domain: String, token: String = "scoped-token", expiresAt: Double = 9_000, apiKey: String? = nil
     ) throws -> Fixture {
@@ -248,6 +400,7 @@ final class KimiConfiguredProviderTests: XCTestCase {
         #"{"access_token":"\#(token)","refresh_token":"test-refresh","expires_at":\#(expiresAt),"expires_in":3600}"#
     }
 
+    private static let jwt = "e30." + Data(#"{"sub":"same-subject"}"#.utf8).base64EncodedString() + ".signature"
     private nonisolated static let usageResponse = HTTPResponse(
         statusCode: 200, headers: [:],
         body: Data(
@@ -284,4 +437,27 @@ final class KimiConfiguredProviderTests: XCTestCase {
         func remove(_ path: String) throws { try base.remove(path) }
     }
 
+    private final class ConfigCaptureCLI: UsageTimerCLIExecuting {
+        var config: String?
+        var request: StreamingProcessRequest?
+
+        func execute(
+            _ configuration: UsageTimerCLIConfiguration, canLaunch: @escaping @MainActor () async -> Bool
+        ) async -> UsageTimerExecutionResult {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("kimi-timer-test-\(UUID())")
+            defer { try? FileManager.default.removeItem(at: directory) }
+            do {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                guard await canLaunch() else { return .init(launched: false, completed: false) }
+                request = try UsageTimerCLIExecutor().makeRequest(
+                    configuration, executable: URL(fileURLWithPath: "/test/kimi"), directory: directory
+                )
+                config = try String(contentsOf: directory.appendingPathComponent("config.toml"), encoding: .utf8)
+                return .init(launched: false, completed: false)
+            } catch {
+                XCTFail("Unexpected timer setup error: \(error)")
+                return .init(launched: false, completed: false)
+            }
+        }
+    }
 }

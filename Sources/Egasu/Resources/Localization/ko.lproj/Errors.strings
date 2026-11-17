@@ -305,3 +305,10 @@
 "Usage timer message completed, but the server reset time could not be confirmed." = "사용량 타이머 메시지 처리는 완료되었지만 서버의 초기화 시각을 확인하지 못했습니다.";
 "Usage timer message completion could not be confirmed. Retries wait at least five minutes and are limited to 2 attempts per usage window." = "사용량 타이머 메시지 처리 완료 여부를 확인하지 못했습니다. 재시도 간격은 최소 5분이며, 시도 횟수는 한도 기간 동안 2회로 제한됩니다.";
 "Usage timer messages paused: this quota reached the limit of 2 attempts in its usage window. Usage checks will continue." = "사용량 타이머 메시지 전송이 일시 중지되었습니다. 이 한도의 대상 기간에서 시도 상한인 2회에 도달했습니다. 사용량 조회는 계속됩니다.";
+"Usage timer could not verify current quota data. No message was sent." = "사용량 타이머가 최신 한도 정보를 확인하지 못했습니다. 메시지를 보내지 않았습니다.";
+"Usage timer requires this account to be signed in to the provider's CLI." = "사용량 타이머를 시작하려면 해당 프로바이더의 CLI에 이 계정으로 로그인하세요.";
+"Usage timer requires the provider's current CLI. Install or update it and refresh." = "사용량 타이머에는 프로바이더의 최신 CLI가 필요합니다. 설치하거나 업데이트한 뒤 새로고침하세요.";
+"Usage timer message did not complete. Check the provider's CLI login and refresh." = "사용량 타이머 메시지가 완료되지 않았습니다. 프로바이더의 CLI 로그인을 확인한 뒤 새로고침하세요.";
+"Usage timer temporary files could not be removed." = "사용량 타이머의 임시 파일을 삭제하지 못했습니다.";
+"Usage timer could not load the CLI model list. Check the CLI login and refresh." = "사용량 타이머에서 CLI 모델 목록을 불러오지 못했습니다. CLI 로그인을 확인한 뒤 새로고침하세요.";
+"Usage timer CLI execution failed. Refresh to try again." = "사용량 타이머의 CLI 실행에 실패했습니다. 새로고침하여 다시 시도하세요.";

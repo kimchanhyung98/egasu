@@ -313,6 +313,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
             let snapshot = await provider.refresh()
 
             XCTAssertNil(snapshot.errorCategory)
+            XCTAssertTrue(provider.usageTimerObservations.isEmpty)
             XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Weekly", "Claude", "Claude Weekly"])
             XCTAssertFalse(routing.requests.isEmpty)
             XCTAssertTrue(routing.requests.allSatisfy { $0.url.host == "127.0.0.1" })

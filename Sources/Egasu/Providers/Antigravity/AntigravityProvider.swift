@@ -50,6 +50,9 @@ final class AntigravityProvider: ProviderRuntime {
         self.pricing = pricing
     }
 
+    var usageTimerObservations: [UsageTimerObservation] = []
+    var usageTimerCredential: AntigravityKeychainToken?
+
     var widgetDescriptors: [WidgetDescriptor] {
         [
             .percent(id: AntigravityMetric.geminiID, provider: provider, title: AntigravityMetric.sessionLabel, sessionStartSignal: .zeroUsage)
@@ -89,12 +92,29 @@ final class AntigravityProvider: ProviderRuntime {
     }
 
     func refresh() async -> ProviderSnapshot {
+        usageTimerObservations = []
+        usageTimerCredential = nil
         let refreshedAt = now()
         var quota: StrategyResult?
+        var quotaObservedAt: Date?
         var quotaError: Error?
         do {
             try Task.checkCancellation()
             quota = try await probe()
+            quotaObservedAt = usageTimerObservations.first?.observedAt ?? now()
+            if usageTimerCredential == nil, let quota,
+               quota.lines.contains(where: {
+                   guard [
+                       AntigravityMetric.sessionLabel, AntigravityMetric.weeklyLabel,
+                       AntigravityMetric.claudeLabel, AntigravityMetric.claudeWeeklyLabel
+                   ].contains($0.label) else { return false }
+                   if case .progress(_, let used, _, .percent, _, _, _) = $0 { return used == 0 }
+                   return false
+               }), let credentials = try await loadOffMainActor({ [authStore] in try authStore.loadKeychainToken() }),
+               credentials.refreshToken?.isEmpty == false {
+                // LS 응답에는 인증 주체가 없음. 자동 전송 후보만 Keychain 인증으로 다시 조회.
+                _ = try await probeCloudCode()
+            }
             try Task.checkCancellation()
         } catch {
             if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled {
@@ -124,7 +144,7 @@ final class AntigravityProvider: ProviderRuntime {
         let history = scan?.usageHistory
         let hasLocalUsage = history?.series.daily.contains { $0.totalTokens > 0 || ($0.costUSD ?? 0) > 0 } == true
             || history?.unknownModelsByDay.values.contains(where: { !$0.isEmpty }) == true
-        if let quotaError, !hasLocalUsage {
+        if let quotaError, quota == nil, !hasLocalUsage {
             return ProviderSnapshot.error(provider: provider, error: quotaError)
         }
 
@@ -166,11 +186,12 @@ final class AntigravityProvider: ProviderRuntime {
             warning: warnings.isEmpty ? nil : warnings.joined(separator: " "),
             warningPresentation: warningPresentations.isEmpty ? nil : warningPresentations,
             authenticationIssue: quotaError.flatMap { ProviderAuthenticationIssue(error: $0) },
-            isDegraded: warnings.isEmpty ? nil : true
+            isDegraded: warnings.isEmpty ? nil : true,
+            liveQuotaObservedAt: usageTimerObservations.first?.observedAt ?? quotaObservedAt
         )
     }
 
-    private struct StrategyResult {
+    struct StrategyResult {
         var plan: String?
         var lines: [MetricLine]
     }
@@ -259,7 +280,7 @@ final class AntigravityProvider: ProviderRuntime {
 
     // MARK: - Cloud Code
 
-    private func probeCloudCode() async throws -> StrategyResult {
+    func probeCloudCode() async throws -> StrategyResult {
         let authStore = self.authStore
         let keychainToken = try await loadOffMainActor { try authStore.loadKeychainToken() }
 
@@ -284,7 +305,9 @@ final class AntigravityProvider: ProviderRuntime {
         var sawAuthFailure = false
         for token in tokens {
             switch await fetchCloudCode(token: token) {
-            case .success(let result): return result
+            case .success(let result):
+                recordUsageTimer(lines: result.lines, credentials: keychainToken)
+                return result
             case .authFailed: sawAuthFailure = true
             case .unavailable: break
             }
@@ -302,7 +325,9 @@ final class AntigravityProvider: ProviderRuntime {
                     )
                 }
                 switch await fetchCloudCode(token: accessToken) {
-                case .success(let result): return result
+                case .success(let result):
+                    recordUsageTimer(lines: result.lines, credentials: keychainToken)
+                    return result
                 case .authFailed: throw AntigravityError.authExpired
                 // 갱신된 token은 유효 — 여기서의 non-2xx는 auth 불량이 아닌 일시 장애.
                 case .unavailable: throw AntigravityError.unavailable

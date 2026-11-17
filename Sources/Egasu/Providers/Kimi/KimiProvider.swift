@@ -17,6 +17,9 @@ final class KimiProvider: ProviderRuntime {
     let now: @Sendable () -> Date
     let pricing: @Sendable () async -> ModelPricing
 
+    var usageTimerObservations: [UsageTimerObservation] = []
+    var usageTimerCredential: KimiCredentialDocument?
+
     var retainsDedicatedSpendOnScanFailure: Bool { true }
 
     init(
@@ -117,7 +120,9 @@ final class KimiProvider: ProviderRuntime {
         snapshot.isDegraded = true
     }
 
-    private func quotaSnapshot() async -> ProviderSnapshot {
+    func quotaSnapshot() async -> ProviderSnapshot {
+        usageTimerObservations = []
+        usageTimerCredential = nil
         do {
             guard var document = try await loadOffMainActor({ [authStore] in
                 try authStore.loadCredentialDocument()
@@ -163,11 +168,24 @@ final class KimiProvider: ProviderRuntime {
                 requestFailed: KimiUsageError.requestFailed
             )
             let mapped = try KimiUsageMapper.map(response.body)
+            let observedAt = now()
+            if !usesAPIKey,
+               let subject = ProviderParse.jwtPayload(accessToken)?["sub"] as? String, !subject.isEmpty,
+               !UsageTimerObservation.hasExhaustedQuota(mapped.lines) {
+                // 기존 기본 서버의 계정 키 유지, 다른 서버의 동명 계정은 분리.
+                let identity = document.service == .standard
+                    ? subject : "\(document.service.baseURL)|\(document.service.oauthHost)|\(subject)"
+                usageTimerCredential = document
+                usageTimerObservations = [UsageTimerObservation.from(
+                    lines: mapped.lines, accountKey: UsageTimerObservation.accountKey(family: "kimi", identity: identity),
+                    timerID: "kimi.session", observedAt: observedAt
+                )].compactMap { $0 }
+            }
             return ProviderSnapshot.make(
                 provider: provider,
                 plan: mapped.plan,
                 lines: mapped.lines,
-                refreshedAt: now()
+                refreshedAt: observedAt, liveQuotaObservedAt: observedAt
             )
         } catch {
             return ProviderSnapshot.error(provider: provider, error: normalized(error))

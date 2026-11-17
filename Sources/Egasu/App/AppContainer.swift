@@ -224,7 +224,7 @@ final class AppContainer {
         )
         self.softLimitCoordinator = softLimitCoordinator
         let usageTimer = UsageTimerRouter(
-            providers: providers.compactMap { $0 as? CodexProvider },
+            providers: providers,
             identityKeys: accountAssembly.identityKeysByCard,
             isProviderEnabled: { [enablement] in enablement.isEnabled($0) },
             report: { [weak dataStore] in dataStore?.setAutomationWarning($1, for: $0) },
@@ -493,7 +493,7 @@ final class AppContainer {
             identityKeys: assembly.identityKeysByCard
         )
         usageTimer.reconfigure(
-            providers: nextProviders.compactMap { $0 as? CodexProvider }, identityKeys: assembly.identityKeysByCard
+            providers: nextProviders, identityKeys: assembly.identityKeysByCard
         )
         var refreshes: [String: Task<Void, Never>] = [:]
         for providerID in addedIDs where enablement.isEnabled(providerID) {

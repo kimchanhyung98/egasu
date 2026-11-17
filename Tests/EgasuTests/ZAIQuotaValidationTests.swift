@@ -202,7 +202,9 @@ final class ZAIQuotaValidationProviderTests: XCTestCase {
         XCTAssertNil(snapshot.plan)
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertNil(snapshot.authenticationIssue)
-        XCTAssertNil(snapshot.liveQuotaObservedAt)
+        XCTAssertNotNil(snapshot.liveQuotaObservedAt)
+        let observation = try XCTUnwrap(provider.usageTimerObservations.first { $0.timerID == "zai.session" })
+        XCTAssertFalse(observation.canStart(at: Date()))
         XCTAssertEqual(descriptors.first { $0.id == "zai.session" }?.softLimitWindow, .fiveHours)
         XCTAssertEqual(descriptors.first { $0.id == "zai.weekly" }?.softLimitWindow, .weekly)
     }

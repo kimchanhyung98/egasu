@@ -67,13 +67,30 @@
 
 ## 구독 타이머 자동 시작
 
-현재 자동 시작 대상은 활성 Codex 계정의 기본·Spark 풀에 있는 세션·주간 한도.
+자동 시작 대상은 활성 Codex·Claude·Antigravity·Kimi·Z.ai 계정의 지원 한도.
 최신 서버 사용량으로 미시작 후보를 확인하고, 짧은 구독 메시지를 보내 기간 시작 유도.
 메시지는 사용량을 소모할 수 있으며 서버 리셋 시각을 직접 변경하는 명령은 아님.
 
-- 서버 응답에 명시된 5시간·7일 윈도, 정확한 사용률 0%, 이동하는 미래 절대 리셋 시각 사용.
+| 프로바이더 | 적용 범위 | 실행 조건 |
+|---|---|---|
+| Codex | 기본·Spark 풀의 5시간 세션과 주간 | 이동하는 미래 절대 리셋 시각 재확인 |
+| Claude | 5시간 세션 | 미래 리셋 시각이 없는 0% 한도, 공통 Session·Weekly 소진 시 제외 |
+| Antigravity | Gemini·Claude/GPT 풀의 5시간 세션과 주간 | Keychain 인증으로 Cloud Code 한도를 확인하고 소진된 풀 제외 |
+| Kimi | 5시간 세션 | 확인된 OAuth 계정과 같은 Code 서버, 월간 총한도 소진 시 제외 |
+| Z.ai | 서버가 보고한 5시간 세션 | Coding Plan API 키와 남은 구독 한도 확인 |
+
+Claude·Kimi·Z.ai의 주간·월간 한도는 자동 메시지 대상에서 제외.
+Cursor·Devin·Grok·OpenCode·OpenRouter·Qwen·Trae 등 위 표에 없는 프로바이더도 자동 메시지 대상에서 제외.
+Antigravity의 Argon 한도는 자동 메시지 대상에서 제외.
+
+- Claude는 정확한 사용률 0%와 미래 리셋 시각 부재를 미시작 후보로 사용.
+- Codex·Antigravity는 서버 응답의 5시간·7일 윈도, Kimi·Z.ai는 5시간 윈도 사용.
+  정확한 사용률 0%와 이동하는 미래 절대 리셋 시각을 확인.
 - 같은 한도 풀의 다른 한도가 소진되면 전송 생략.
-- 전송 전에 65초 간격으로 재확인하며, 60초 이내 리셋 시각 차이는 같은 시각으로 처리.
+- 이동하는 리셋 시각은 전송 전에 65초 간격으로 재확인하며, 60초 이내 차이는 같은 시각으로 처리.
+- 이동 시각 판정은 앱의 관측 정책이며 프로바이더가 보장한 미시작 플래그는 아님.
+- 앱 시작 및 현지 매시 00·15·30·45분 확인.
+- 일반·수동 새로 고침의 최신 응답도 같은 판단 경로로 전달.
 - 캐시·CLI 조회·조회 실패·이전 계정 응답은 자동 실행에 사용하지 않음.
 - 전송 예약은 계정·한도 풀·기간별로 실행 전에 저장.
 - 각 세션 한도는 최근 5시간 최대 2회, 각 주간 한도는 최근 24시간 최대 2회.
@@ -85,7 +102,45 @@
 - 비활성화 후 재활성화·계정 재연결·저장 상태 복구 뒤에도 상한에 막힌 각 타이머의 경고 복원.
 - 한 타이머의 경고 해제로 다른 타이머의 경고를 지우지 않음.
 
-Codex의 모델 선택·임시 인증·서버 재확인 조건은 [세션·주간 타이머](/docs/providers/codex.md#세션주간-타이머-자동-시작) 참조.
+- 계정·인증·활성화 상태와 최신 관측값을 실행 직전에 다시 확인.
+- 전송 뒤 Claude는 새 미래 리셋 시각, 나머지는 연속 조회의 고정 리셋 시각으로 시작 확인.
+
+### 프로바이더별 실행 경로
+
+
+- Codex: 공식 `codex exec`의 격리된 임시 인증·세션 사용.
+- Claude: 공식 `claude --print --model haiku` 사용.
+  사용량 조회에 쓴 계정의 OAuth access token을 임시 프로세스 환경에만 전달.
+  임시 홈·설정 경로에서 사용량 조회에 사용한 OAuth 토큰으로 해당 계정만 인증.
+  기존 CLI 로그인과 공유 홈 인증은 변경하지 않음.
+  실행 직전 해당 계정 인증을 다시 확인하고, 토큰 변경·삭제 시 전송 중단.
+  공통 Session·Weekly 한도 소진 시 전송 중단.
+  Haiku에 적용되지 않는 Fable·Sonnet 한도는 시작 조건에서 제외.
+- Kimi: Node.js Kimi Code CLI 2.0.1 이상의 공식 `kimi --prompt` 사용.
+  Python CLI 1.x는 메시지 실행 전에 호환 오류로 차단.
+  인증 스토어에서 읽은 유효한 OAuth access token을 임시 프로세스 환경에만 전달.
+  주체 식별자와 충분한 토큰 유효 기간이 있는 응답만 자동 실행에 사용.
+  API 키만 있는 계정은 자동 메시지 대상에서 제외하고, OAuth 조회와 같은 Code 서버 사용.
+- Antigravity: 공식 `agy --print`와 현재 Keychain 로그인 사용.
+  LS 응답만으로 인증 주체를 추정하지 않고, 자동 실행 후보는 Keychain 인증의 Cloud Code 응답으로 재확인.
+  CLI 모델 목록에서 해당 풀의 사용 가능한 모델 선택.
+- Z.ai: 공식 지원 도구인 Claude Code의 `--bare`와 Coding Plan 전용 엔드포인트 사용.
+  일반 API 과금 엔드포인트로 전환하지 않음.
+
+CLI는 별도 작업 폴더에서 실행하며 사용자 프로젝트를 읽지 않는 요청.
+Claude·Kimi의 도구 사용 비활성화, Antigravity는 모든 도구에 승인이 필요한 `strict` 설정 사용.
+자격 증명·모델 응답 본문은 로그에 기록하지 않음.
+설치된 CLI가 필요한 실행 옵션을 지원하지 않으면 오류 안내.
+
+### 근거
+
+- [Claude 사용량 한도](https://support.claude.com/en/articles/11647753-how-do-usage-and-length-limits-work), [Claude Code 비대화형 실행](https://code.claude.com/docs/en/headless).
+- [Kimi 멤버십 갱신 기준](https://www.kimi.com/en/help/membership/membership-update-rules), [Kimi CLI](https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-command).
+- [Antigravity 요금제](https://antigravity.google/docs/plans), [비대화형 실행](https://antigravity.google/docs/cli/headless).
+- [Z.ai 한도·지원 도구](https://docs.z.ai/devpack/faq).
+- [Devin 달력 기준 한도](https://docs.devin.ai/desktop/accounts/quota), [Kiro 결제 주기](https://kiro.dev/docs/billing/).
+- [OpenCode Go 한도](https://opencode.ai/docs/console/go/).
+
 
 ## 캐싱
 

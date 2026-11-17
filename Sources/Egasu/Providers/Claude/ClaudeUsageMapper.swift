@@ -25,6 +25,15 @@ enum ClaudeUsageMapper {
         guard let body = ProviderParse.jsonObject(response.body) else {
             throw ClaudeUsageError.invalidResponse
         }
+        for key in ["five_hour", "seven_day"] {
+            guard let value = body[key], !(value is NSNull) else { continue }
+            guard let window = value as? [String: Any],
+                  let used = ProviderParse.number(window["utilization"]), used >= 0
+            else { throw ClaudeUsageError.invalidResponse }
+            if let reset = window["resets_at"], !(reset is NSNull), resetDate(reset) == nil {
+                throw ClaudeUsageError.invalidResponse
+            }
+        }
 
         var lines: [MetricLine] = []
         appendUsageWindow(body["five_hour"], label: "Session", periodDurationMs: sessionPeriodMs, to: &lines)

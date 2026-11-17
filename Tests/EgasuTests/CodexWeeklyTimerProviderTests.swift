@@ -13,7 +13,7 @@ final class CodexWeeklyTimerProviderTests: XCTestCase {
             _ = await fixture.provider.refresh()
             let observation = try XCTUnwrap(fixture.provider.usageTimerObservations.first { $0.timerID == timerID })
             let executor = ModelRecordingExecutor()
-            let prepared = try await fixture.provider.prepareUsageTimer(observation, executors: .init(codex: executor))
+            let prepared = try await fixture.provider.prepareUsageTimer(observation, executors: .init(codex: executor, cli: UnexpectedUsageTimerCLI()))
             let session = try XCTUnwrap(prepared)
             XCTAssertEqual(session.observation.timerID, timerID)
 
@@ -39,7 +39,7 @@ final class CodexWeeklyTimerProviderTests: XCTestCase {
             for pool in ["default", "spark"] {
                 let timerID = "codex.\(pool).session"
                 let observation = try XCTUnwrap(observations.first { $0.timerID == timerID })
-                let session = try await fixture.provider.prepareUsageTimer(observation, executors: .init(codex: executor))
+                let session = try await fixture.provider.prepareUsageTimer(observation, executors: .init(codex: executor, cli: UnexpectedUsageTimerCLI()))
                 XCTAssertEqual(session == nil, pool == exhaustedPool, timerID)
                 if let session {
                     let result = await session.send { true }
