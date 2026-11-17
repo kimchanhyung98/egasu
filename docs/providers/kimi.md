@@ -33,7 +33,7 @@ Extra Usage를 활성화하고 사용 가능한 잔액이 있으면 추가 사�
 지역별 가격과 연간 결제액은 [구독 요금제](/docs/pricing.md#구독-요금제) 참조.
 기존 구독은 이름·갱신·한도 유지 가능하므로, 이전 멤버십 등급의 Adagio·Moderato·Allegretto·Allegro·Vivace 매핑 유지.
 새 이름을 담은 등급은 그 이름을 표시하고, `goods_version`만으로 기존 등급을 새 요금제로 치환하지 않음.
-`usages` 응답에 `limit_7d`가 없으면 Weekly 행 미생성.
+현재 형식의 `usages` 응답에 `limit_7d`가 없으면 Weekly 행 미생성.
 레거시 응답의 `usage`가 있으면 Weekly 행 표시.
 알 수 없는 등급도 읽기 쉬운 형태로 유지.
 
@@ -44,7 +44,8 @@ Extra Usage를 활성화하고 사용 가능한 잔액이 있으면 추가 사�
 `monthlyUsed.priceInCents`·`monthlyChargeLimit.priceInCents`는 100으로 나눠 지출·상한으로 변환.
 `monthlyChargeLimitEnabled`가 참일 때만 지출 상한 적용하며, 이 필드는 추가 사용량 활성화 스위치가 아님.
 상한이 없으면 지출액만 표시하며, 명시적 0 상한은 무제한으로 바꾸지 않음.
-USD는 금액·상한 게이지로 표시하고, CNY 등 다른 통화는 통화 코드를 붙인 금액으로 표시.
+USD 지출은 양수 상한이 켜진 경우 금액·상한 게이지로 표시.
+명시적 0 상한은 금액·상한 문구로 표시하고, CNY 등 다른 통화는 통화 코드를 붙인 금액으로 표시.
 다른 통화의 금액을 USD로 환산하거나 USD API 지표로 내보내지 않음.
 추가 사용량의 지갑 만료일을 월간 지출 초기화일로 사용하지 않음.
 자세한 과금·상한 규칙은 [글로벌 추가 사용량](https://www.kimi.ai/help/membership/membership-extra-usage)·[중국 추가 사용량](https://www.kimi.com/en/help/membership/membership-extra-usage) 참조.
@@ -179,7 +180,7 @@ Kimi Code 파서가 집계한 행만 보충 집계에서 제외하며 같은 파
 
 - OAuth: `oauth.storage`·`oauth.key`·`oauth.oauth_host`와 `base_url` 확인.
   선택한 서버 슬롯의 인증 파일을 읽으며 키체인 항목은 조회하지 않음.
-- API 키: `api_key` 또는 `api_key_env`가 가리키는 환경 변수 사용.
+- API 키: `api_key`의 키 원문 또는 `api_key_env`가 가리키는 환경 변수 사용.
   두 선언이 없을 때만 해당 프로바이더의 `env`에 지정된 키 사용.
   종류별 키는 `kimi`의 `KIMI_API_KEY`, `anthropic`의 `ANTHROPIC_API_KEY`, `openai`·`openai_responses`의 `OPENAI_API_KEY`.
   OAuth와 API 키가 함께 선언된 설정은 오류로 처리.

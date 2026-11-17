@@ -121,12 +121,12 @@ enum KimiUsageMapper {
         }
 
         let spending: MetricLine
-        if currency == "USD", capped, cap.amount > 0 {
+        if currency == "USD", capped {
             spending = .progress(label: "Extra Usage", used: used.amount, limit: cap.amount, format: .dollars)
         } else if currency == "USD", !capped {
             spending = .values(label: "Extra Usage", values: [MetricValue(number: used.amount, kind: .dollars)])
         } else {
-            // 비USD 금액과 명시적 0 상한은 통화·상한을 그대로 표시. USD 수치나 무제한으로 오인하지 않음.
+            // 비USD 금액은 통화·상한을 그대로 표시. USD 수치로 오인하지 않음.
             let text =
                 walletAmount(used.amount, currency: currency)
                 + (capped ? " / " + walletAmount(cap.amount, currency: currency) : "")

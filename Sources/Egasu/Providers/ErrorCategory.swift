@@ -163,11 +163,11 @@ extension GrokUsageError: CategorizedError {
 extension KimiAuthError: CategorizedError {
     var errorCategory: ErrorCategory {
         switch self {
-        case .notLoggedIn: .notLoggedIn
+        case .notLoggedIn, .apiKeyMissing: .notLoggedIn
         case .credentialsUnreadable, .credentialLockUnavailable,
              .credentialLockCompromised, .credentialSaveFailed: .credentialAccess
         case .credentialsInvalid, .unsupportedConfiguration, .configurationInvalid,
-            .apiKeyMissing, .apiKeyRejected:
+            .apiKeyRejected:
             .authInvalid
         case .authExpired, .refreshRejected: .authExpired
         case .refreshResponseInvalid: .decoding

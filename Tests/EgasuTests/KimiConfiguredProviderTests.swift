@@ -106,6 +106,38 @@ final class KimiConfiguredProviderTests: XCTestCase {
         XCTAssertEqual(fixture.files.files, before)
     }
 
+    func testMissingConfiguredAPIKeyIsAnExpectedAuthenticationFailure() async throws {
+        for declaration in ["api_key = \"\"", "api_key_env = \"MISSING_KIMI_KEY\""] {
+            let fixture = try fixture(domain: "ai", apiKey: "")
+            defer { try? FileManager.default.removeItem(at: fixture.home) }
+            let path = fixture.home.appendingPathComponent("config.toml").path
+            fixture.files.files[path] = fixture.files.files[path]?
+                .replacingOccurrences(of: "api_key = \"\"", with: declaration)
+            let before = fixture.files.files
+            let http = RoutingHTTPClient { _ in
+                XCTFail("Missing configured keys must not use another credential")
+                return Self.usageResponse
+            }
+            let provider = provider(fixture, http: http)
+            let detected = await provider.hasLocalCredentials()
+            let snapshot = await provider.refresh()
+
+            XCTAssertFalse(detected)
+            XCTAssertEqual(snapshot.errorCategory, .notLoggedIn)
+            XCTAssertEqual(
+                snapshot.lines.first,
+                .badge(
+                    label: MetricLine.errorBadgeLabel,
+                    text: "Kimi API key is missing. Check the CLI provider settings.", colorHex: "#EF4444"
+                )
+            )
+            XCTAssertTrue(http.requests.isEmpty)
+            XCTAssertEqual(fixture.files.files, before)
+        }
+        XCTAssertEqual(KimiAuthError.configurationInvalid.errorCategory, .authInvalid)
+        XCTAssertEqual(KimiAuthError.apiKeyRejected.errorCategory, .authInvalid)
+    }
+
     func testAnthropicCodeAPIKeyUsesCanonicalUsageEndpoint() async throws {
         for domain in ["com", "ai"] {
             let fixture = try fixture(domain: domain, apiKey: "anthropic-code-key")

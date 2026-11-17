@@ -70,7 +70,7 @@ final class KimiExtraUsageTests: XCTestCase {
 
         XCTAssertEqual(
             lines.first { $0.label == "Extra Usage" },
-            .badge(label: "Extra Usage", text: "$0.00 / $0.00"))
+            .progress(label: "Extra Usage", used: 0, limit: 0, format: .dollars))
     }
 
     func testNonDollarWalletPreservesCurrencyAndItsSpendingCap() throws {
@@ -117,18 +117,20 @@ final class KimiExtraUsageTests: XCTestCase {
 
     @MainActor
     func testZeroDollarCapKeepsItsExplicitCapInMenuBarAfterResolution() throws {
-        var wallet = fundedWallet()
-        wallet["monthlyUsed"] = ["currency": "USD", "priceInCents": 0]
-        wallet["monthlyChargeLimit"] = ["currency": "USD", "priceInCents": 0]
-        wallet["monthlyChargeLimitEnabled"] = true
-        var data = try resolvedExtraUsage(wallet)
+        for (cents, expected) in [(0, "$0.00 / $0.00"), (1234, "$12.34 / $0.00")] {
+            var wallet = fundedWallet()
+            wallet["monthlyUsed"] = ["currency": "USD", "priceInCents": cents]
+            wallet["monthlyChargeLimit"] = ["currency": "USD", "priceInCents": 0]
+            wallet["monthlyChargeLimitEnabled"] = true
+            var data = try resolvedExtraUsage(wallet)
 
-        XCTAssertTrue(data.hasData)
-        XCTAssertNil(data.limit)
-        XCTAssertFalse(data.isBounded)
-        for mode in [WidgetDisplayMode.used, .remaining] {
-            data.displayMode = mode
-            XCTAssertEqual(data.menuBarValue, "$0.00 / $0.00")
+            XCTAssertTrue(data.hasData)
+            XCTAssertNil(data.limit)
+            XCTAssertFalse(data.isBounded)
+            for mode in [WidgetDisplayMode.used, .remaining] {
+                data.displayMode = mode
+                XCTAssertEqual(data.menuBarValue, expected)
+            }
         }
     }
 
@@ -161,6 +163,24 @@ final class KimiExtraUsageTests: XCTestCase {
             XCTAssertEqual(balance["kind"] as? String, "balance")
             XCTAssertEqual(balance["unit"] as? String, "usd")
             XCTAssertEqual(balance["available"] as? Double, 5.67)
+        }
+    }
+
+    @MainActor
+    func testZeroDollarCapExportsReportedUsageAndZeroLimit() throws {
+        for cents in [0, 1234] {
+            var wallet = fundedWallet()
+            wallet["monthlyUsed"] = ["currency": "USD", "priceInCents": cents]
+            wallet["monthlyChargeLimit"] = ["currency": "USD", "priceInCents": 0]
+            wallet["monthlyChargeLimitEnabled"] = true
+            let resources = try exportedResources(wallet)
+            let usage = try XCTUnwrap(resources["extraUsage"] as? [String: Any])
+
+            XCTAssertEqual(usage["unit"] as? String, "usd")
+            XCTAssertEqual(usage["used"] as? Double, Double(cents) / 100)
+            XCTAssertEqual(usage["limit"] as? Double, 0)
+            XCTAssertEqual(usage["remaining"] as? Double, 0)
+            XCTAssertNil(usage["utilization"])
         }
     }
 
