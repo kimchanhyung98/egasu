@@ -260,7 +260,10 @@ struct AccountCredentialImporter {
         else {
             return .unchanged
         }
-        guard try switcher.readSharedClaudeAuthenticationForReadiness(allowInteraction: allowInteraction) == observation.shared else {
+        guard
+            try switcher.readSharedClaudeAuthenticationForReadiness(allowInteraction: allowInteraction)
+                == observation.shared
+        else {
             AppLog.warn(.auth, "Claude sign-in changed before applying observation; preserving all authentication")
             throw ClaudeAuthError.credentialsChanged
         }
@@ -284,7 +287,10 @@ struct AccountCredentialImporter {
             profile.id == selected.id
             ? selectedSnapshot
             : try switcher.loadSnapshot(for: profile, allowInteraction: allowInteraction)
-        guard try switcher.readSharedClaudeAuthenticationForReadiness(allowInteraction: allowInteraction) == shared else {
+        guard
+            try switcher.readSharedClaudeAuthenticationForReadiness(allowInteraction: allowInteraction)
+                == shared
+        else {
             AppLog.warn(.auth, "Claude sign-in changed during observation; preserving all authentication")
             throw ClaudeAuthError.credentialsChanged
         }

@@ -7,7 +7,8 @@ final class AccountSynchronousDepartureGenerationTests: XCTestCase {
         for change in ["same-account-token", "foreign-account", "logout"] {
             let fixture = try AccountSwitchRecoveryFixture(test: self)
             _ = try fixture.rotateDefaultCredentials()
-            let verified = try await fixture.switcher.readSharedClaudeExternalAuthentication(comparedTo: fixture.entryA)
+            let verified = try await fixture.switcher.readSharedClaudeExternalAuthentication(
+                comparedTo: fixture.entryA, allowInteraction: true)
             XCTAssertNotNil(verified)
             XCTAssertEqual(fixture.http.requests.count, 1)
 

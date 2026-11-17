@@ -3,6 +3,19 @@ import XCTest
 
 final class AccountReadinessInteractionTests: XCTestCase {
     @MainActor
+    func testUserInitiatedSwitchAllowsKeychainApprovalForDepartureVerification() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let rotated = try fixture.rotateDefaultCredentials()
+
+        try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+
+        XCTAssertFalse(fixture.keychain.noninteractiveReadServices.contains(fixture.baseService))
+        XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.b.id)
+        XCTAssertEqual(try fixture.switcher.loadSnapshot(for: fixture.a), rotated)
+        XCTAssertNil(try fixture.journal.load())
+    }
+
+    @MainActor
     func testExternalReconciliationKeepsTheRequestedPolicyThroughObservationAndConsistencyChecks() async throws {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent("ReconciliationPolicy-\(UUID())")
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)

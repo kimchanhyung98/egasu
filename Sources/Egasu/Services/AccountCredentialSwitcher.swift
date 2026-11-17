@@ -117,7 +117,7 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
 
     /// CLI 인증은 그대로 두고 변경된 토큰의 계정·조직을 확인한 뒤 egasu 저장본에 반영.
     func readSharedClaudeExternalAuthentication(
-        comparedTo previousSnapshot: AccountCredentialVault.Entry?, allowInteraction: Bool = false
+        comparedTo previousSnapshot: AccountCredentialVault.Entry?, allowInteraction: Bool
     ) async throws -> VerifiedClaudeExternalAuthentication? {
         guard let observed = try sharedClaudeAuthentication(allowInteraction: allowInteraction),
             let expectedIdentity = identity(of: observed, family: "claude")?.identityKey
