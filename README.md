@@ -4,9 +4,9 @@ Track your AI coding subscriptions from the macOS menu bar — native Swift edit
 
 egasu shows how much of your AI coding plans you've used: session and weekly limits, credits, and spend, all in one popover. Pin your most important metrics straight into the menu bar.
 
-<p align="center">
-  <img src="assets/screenshot.jpg?v=20260706" alt="egasu menu bar tracker showing Claude and Codex session, weekly, and spend usage" width="900">
-</p>
+| Minimal | Cards |
+|---|---|
+| ![All Usage Minimal](/docs/assets/all-usage-light.png) | ![All Usage Cards](/docs/assets/all-usage-cards-light.png) |
 
 ## Installation
 
@@ -35,7 +35,9 @@ Most providers read the credentials already on your machine (keychain, auth file
 ## Features
 
 - **Menu bar pins.** Pin metrics to the menu bar (up to 2 per provider); render as compact text or mini bars. The strip hides metrics with no data instead of showing placeholders.
-- **Dashboard popover.** Provider-grouped meters with live reset countdowns and pace indicators. Click usage or reset values to flip their display everywhere; right-click a row to hide or star it, refresh its provider, or open Accounts.
+- **[All Usage](/docs/dashboard.md#all-usage).** 등록 계정별 사용량·초기화 시각·사용 속도 표시.
+  Minimal은 프로바이더별 계정 묶음, Cards는 계정별 독립 카드.
+  행 우클릭으로 표시·메뉴 막대 고정·새로 고침·Accounts 관리 연결.
 - **[계정 전환](/docs/cli.md#계정).** Claude·Codex의 기본 인증 저장소를 쓰는 새 CLI 세션에 선택한 로그인 적용.
   셸 설정 파일·터미널 환경을 유지하며, Claude 첫 등록·외부 로그인과 전환 중 보존할 변경된 인증은 토큰의 계정·조직을 검증한 뒤 저장본에 반영.
   선택된 Claude 공유 로그인은 사용량 조회에서도 계정·조직 일치 검증.
@@ -55,7 +57,7 @@ Most providers read the credentials already on your machine (keychain, auth file
   기존 Claude 조회가 진행 중이면 완료 후 재시도.
 - **[Local HTTP API](docs/local-http-api.md).** Other local apps can read machine-friendly limits from `127.0.0.1:6736/v1/limits`; the legacy `/v1/usage` UI contract remains supported. It is loopback-only, rejects browser-origin requests, and never serves credentials.
 - **[Proxy support](docs/proxy.md).** Route provider requests through SOCKS5 or HTTP(S) via `~/.openusage/config.json`.
-- **Native settings.** Launch at login, global shortcut, icon style, theme, density, 12/24-hour time — see [Settings](docs/settings.md).
+- **[네이티브 설정](/docs/settings.md).** 로그인 시 실행, 단축키, 메뉴 막대 표시, 테마, All Usage 배치와 12/24시간 표기.
 - **[Automatic updates](docs/updates.md).** Signed, notarized in-app updates via Sparkle, with an optional beta channel.
 
 

@@ -30,6 +30,7 @@ final class WidgetDataStore {
 
     private static let meterStyleKey = "meterStyle"
     private static let resetDisplayModeKey = "resetDisplayMode"
+    private static let showsAccountEmailsKey = "showsAccountEmails"
     static let defaultSlowProviderRefreshThreshold: TimeInterval = 10
     static let defaultProviderRefreshTimeout: TimeInterval = 120
 
@@ -107,6 +108,11 @@ final class WidgetDataStore {
         set { displaySettings.showsPaceMarks = newValue }
     }
 
+    /// 계정명 대신 로그인 이메일 표시 — 저장하며 기본은 꺼짐, 계정명 클릭으로 전환.
+    var showsAccountEmails: Bool {
+        didSet { defaults.set(showsAccountEmails, forKey: Self.showsAccountEmailsKey) }
+    }
+
     init(
         registry: WidgetRegistry,
         providers: [ProviderRuntime],
@@ -151,6 +157,7 @@ final class WidgetDataStore {
         self.resolveDisplayName = resolveDisplayName
         self.meterStyle = defaults.enumValue(forKey: Self.meterStyleKey, default: .used)
         self.resetDisplayMode = defaults.enumValue(forKey: Self.resetDisplayModeKey, default: .absolute)
+        self.showsAccountEmails = defaults.bool(forKey: Self.showsAccountEmailsKey)
         self.displaySettings = displaySettings ?? DisplaySettingsStore(defaults: defaults)
         self.snapshots = refreshCoordinator.localSnapshots
         refreshCoordinator.onSnapshotsChanged = { [weak self] rendered in

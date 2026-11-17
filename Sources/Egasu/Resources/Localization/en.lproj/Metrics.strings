@@ -191,3 +191,10 @@
 "Over 50% left, resets in under 24 hours." = "Over 50% left, resets in under 24 hours.";
 "Use It or Lose It" = "Use It or Lose It";
 "Warning" = "Warning";
+
+"%lldd" = "%lldd";
+"%lldmo" = "%lldmo";
+"%lldmo %lldd" = "%lldmo %lldd";
+"%lldy" = "%lldy";
+"%lldy %lldmo" = "%lldy %lldmo";
+"Soft limit at %lld%%" = "Soft limit at %lld%%";

@@ -191,3 +191,10 @@
 "Over 50% left, resets in under 24 hours." = "50% 넘게 남았고 24시간 안에 초기화됩니다.";
 "Use It or Lose It" = "초기화 전 사용";
 "Warning" = "경고";
+
+"%lldd" = "%lld일";
+"%lldmo" = "%lld개월";
+"%lldmo %lldd" = "%lld개월 %lld일";
+"%lldy" = "%lld년";
+"%lldy %lldmo" = "%lld년 %lld개월";
+"Soft limit at %lld%%" = "소프트 한도 %lld%%";

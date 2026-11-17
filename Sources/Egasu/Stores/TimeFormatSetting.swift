@@ -34,4 +34,20 @@ enum TimeFormatSetting: String, Hashable, Sendable, CaseIterable, UserDefaultsBa
             Date.FormatStyle(date: .omitted, time: .shortened, locale: Locale(components: components))
         )
     }
+    /// 요일 약칭과 시각 — 앱의 Auto·12h·24h 선택 적용.
+    func weekdayTime(_ date: Date, base: Locale = L10n.locale, systemLocale: Locale = .current) -> String {
+        var components = Locale.Components(locale: base)
+        switch self {
+        case .auto:
+            components.hourCycle = systemLocale.hourCycle
+        case .twelveHour:
+            components.hourCycle = .oneToTwelve
+        case .twentyFourHour:
+            components.hourCycle = .zeroToTwentyThree
+        }
+        return date.formatted(
+            Date.FormatStyle(locale: Locale(components: components)).weekday(.abbreviated).hour().minute()
+        )
+    }
+
 }

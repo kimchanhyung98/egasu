@@ -151,7 +151,7 @@ final class WidgetDataStoreTests: XCTestCase {
             resetsAt: nil,
             periodDurationMs: ClaudeUsageMapper.weeklyPeriodMs
         )
-        XCTAssertEqual(weekly.boundedSubtitle, "Resets in 7d 0h")
+        XCTAssertEqual(weekly.boundedSubtitle, "Resets in 7d")
     }
 
     func testDollarLimitSubtitleIsNotAReset() {
@@ -228,7 +228,7 @@ final class WidgetDataStoreTests: XCTestCase {
             countSuffix: "requests",
             periodDurationMs: CursorUsageMapper.billingPeriodMs
         )
-        XCTAssertEqual(requests.boundedSubtitle, "Resets in 30d 0h")
+        XCTAssertEqual(requests.boundedSubtitle, "Resets in 30d")
     }
 
     func testCreditsRenderDollarAndCountCombinedInvariantToMeterStyle() async {

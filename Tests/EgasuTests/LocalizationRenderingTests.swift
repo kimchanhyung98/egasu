@@ -17,7 +17,7 @@ final class LocalizationRenderingTests: XCTestCase {
                 var rasters: [Raster] = []
                 for models in [[], ["unpriced-model"]] as [[String]] {
                     row.unknownModels = models
-                    let view = WidgetRowView(data: row)
+                    let view = DashboardMetricRow(model: row.dashboardRow(), chartPoints: row.chartPoints)
                         .frame(width: 320)
                         .background(appearance == .light ? Color.white : Color.black)
                         .environment(\.colorScheme, appearance)
@@ -50,7 +50,7 @@ final class LocalizationRenderingTests: XCTestCase {
                         let variant = "\(language.rawValue)-\(density.rawValue)-\(appearance)"
                         let dashboard = VStack(spacing: 0) {
                             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                                WidgetRowView(data: row)
+                                DashboardMetricRow(model: row.dashboardRow(), chartPoints: row.chartPoints)
                             }
                         }
                         .padding(14)

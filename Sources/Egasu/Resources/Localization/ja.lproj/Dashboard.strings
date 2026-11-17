@@ -93,3 +93,16 @@
 "Open Accounts to choose what to show." = "アカウントで表示する項目を選択してください。";
 "Priority" = "優先";
 "Report an Issue…" = "問題を報告…";
+
+"Add an Account" = "アカウントを追加";
+"Edit Account…" = "アカウントを編集…";
+"Every metric is hidden. Turn them back on in Accounts." = "すべての指標が非表示です。アカウントで再表示してください。";
+"Manage Accounts…" = "アカウントを管理…";
+"Pin" = "ピン留め";
+"Refresh" = "更新";
+"Rename" = "名前を変更";
+"Unpin" = "ピン留めを解除";
+"Waiting for Usage" = "使用量を待機中";
+"a reset expires within 48 hours" = "48時間以内に期限切れのリセットあり";
+"a reset expires within 7 days" = "7日以内に期限切れのリセットあり";
+"egasu shows the AI tools you're signed in to on this Mac. Add an account to track more, even several of the same provider." = "egasuはこのMacでサインインしているAIツールを表示します。アカウントを追加すると、同じプロバイダーの複数のアカウントも追跡できます。";

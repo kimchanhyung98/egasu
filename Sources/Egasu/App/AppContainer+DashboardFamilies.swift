@@ -142,10 +142,9 @@ extension AppContainer {
 
     private func dashboardAccount(for group: ProviderGroup) -> DashboardAccount {
         let cardID = group.provider.id
-        // `group.widgets`의 표시 순서 유지 — 항상 표시 → 필요 시 표시.
-        let descriptors = group.widgets
-            .compactMap { layout.descriptor(for: $0) }
-            .filter { !Self.hidesMetric($0.id, onCard: cardID) }
+        // 기존 공유 이미지의 펼침 분할과 별개로 계정의 저장된 행 순서 사용.
+        let descriptors = layout.orderedSupportedMetrics(for: cardID)
+            .filter { layout.isMetricEnabled($0.id) && !Self.hidesMetric($0.id, onCard: cardID) }
         let providerName = ProviderAccountID.cardTitle(providerID: cardID, fallback: group.provider.displayName)
         if dataStore.isWaitingForFirstReading(cardID) {
             return DashboardAccount(

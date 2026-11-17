@@ -2,8 +2,6 @@ import SwiftUI
 
 struct ReorderLift {
     enum Payload {
-        case dashboardProvider(provider: Provider, plan: String?, rows: [WidgetData])
-        case dashboardMetric(data: WidgetData)
         case view(AnyView)
     }
 
@@ -58,33 +56,12 @@ struct ReorderLiftPreview: View {
     @ViewBuilder
     private var preview: some View {
         switch lift.payload {
-        case .dashboardProvider(let provider, let plan, let rows):
-            dashboardProviderPreview(provider: provider, plan: plan, rows: rows)
-        case .dashboardMetric(let data):
-            dashboardMetricPreview(data)
         case .view(let view):
             view
         }
     }
 
-    private func dashboardProviderPreview(provider: Provider, plan: String?, rows: [WidgetData]) -> some View {
-        // 라이브 대시보드 섹션과 동일 구성 (헤더 + 공유 메트릭 카드)
-        VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
-            ProviderSectionHeader(provider: provider, displayName: container.displayName(for: provider), plan: plan)
-                .padding(.horizontal, 8)
 
-            DashboardMetricCard {
-                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                    WidgetRowView(data: row)
-                }
-            }
-        }
-    }
-
-    private func dashboardMetricPreview(_ data: WidgetData) -> some View {
-        WidgetRowView(data: data)
-            .liftedRowSurface()
-    }
 
 }
 

@@ -374,9 +374,9 @@ final class CodexScheduledResetTests: XCTestCase {
             for mode in [ResetDisplayMode.absolute, .relative] {
                 store.resetDisplayMode = mode
                 let data = store.data(for: descriptor)
-                let label = try XCTUnwrap(data.boundedTrailingText())
+                let label = try XCTUnwrap(data.compactResetText())
                 try withHosting(
-                    WidgetRowView(data: data, onToggleResetDisplay: { store.resetDisplayMode.toggle() })
+                    DashboardMetricRow(model: data.dashboardRow(), onToggleResetDisplay: { store.resetDisplayMode.toggle() })
                         .frame(width: PanelMetrics.width - 28)
                         .environment(\.hoverTooltipsDisabled, true)
                         .defaultAppStorage(defaults)
@@ -388,8 +388,8 @@ final class CodexScheduledResetTests: XCTestCase {
                 XCTAssertEqual(store.resetDisplayMode, toggled)
                 XCTAssertEqual(defaults.string(forKey: "resetDisplayMode"), toggled.rawValue)
                 XCTAssertEqual(store.data(for: weekly).resetDisplayMode, toggled)
-                XCTAssertNotEqual(store.data(for: descriptor).boundedTrailingText(), label)
-                try withHosting(WidgetRowView(data: data).defaultAppStorage(defaults)) { hosting in
+                XCTAssertNotEqual(store.data(for: descriptor).compactResetText(), label)
+                withHosting(DashboardMetricRow(model: data.dashboardRow()).defaultAppStorage(defaults)) { hosting in
                     XCTAssertNil(accessibilityButton(named: label, in: hosting))
                 }
             }
@@ -400,7 +400,6 @@ final class CodexScheduledResetTests: XCTestCase {
         let suite = "EgasuTests.ForecastTimeLayout.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.set(DensitySetting.regular.rawValue, forKey: DensitySetting.key)
         var data = WidgetData(title: "Reset Watch", icon: .providerMark("codex"), kind: .percent, used: 99, limit: 100)
         data.forecast = .init(deadline: Date().addingTimeInterval(5 * 24 * 3600), isScheduled: true)
         let export = ProcessInfo.processInfo.environment["EGASU_RESET_DISPLAY_SCREENSHOTS"]
@@ -413,7 +412,7 @@ final class CodexScheduledResetTests: XCTestCase {
                     data.resetDisplayMode = mode
                     @MainActor func render(interactive: Bool) throws -> NSImage {
                         try XCTUnwrap(ShareCardRenderer.image(
-                            for: WidgetRowView(data: data, onToggleResetDisplay: interactive ? {} : nil)
+                            for: DashboardMetricRow(model: data.dashboardRow(), onToggleResetDisplay: interactive ? {} : nil)
                                 .frame(width: PanelMetrics.width - 28)
                                 .background(Color.black)
                                 .environment(\.colorScheme, .dark)
