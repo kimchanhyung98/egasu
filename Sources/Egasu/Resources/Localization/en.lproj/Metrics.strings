@@ -198,3 +198,5 @@
 "%lldy" = "%lldy";
 "%lldy %lldmo" = "%lldy %lldmo";
 "Soft limit at %lld%%" = "Soft limit at %lld%%";
+
+"Failed" = "Failed";

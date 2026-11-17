@@ -9,6 +9,7 @@ extension AppContainer {
         for cardID in orderedAccountCardIDs(groups.map(\.provider.id)) {
             guard let group = byID[cardID] else { continue }
             let account = dashboardAccount(for: group)
+            guard account.isVisible(headerNotice: dataStore.headerNotice(for:)) else { continue }
             let familyID = Self.dashboardFamilyID(for: cardID)
             if let index = families.firstIndex(where: { $0.id == familyID }) {
                 families[index].accounts.append(account)

@@ -22,6 +22,7 @@ struct DashboardLiveRow: View {
             }
         }
         .onChange(of: line.data.modelBreakdown) { _, _ in hover.dismiss() }
+        .onChange(of: line.data.chartPoints) { _, _ in hover.dismiss() }
         // 초기화권 사용이 강제 새로고침을 일으키므로 고정 중이면 결과 배너를 위해 유지.
         .onChange(of: line.data.expiriesAt) { _, _ in
             if !hover.isPinned { hover.dismiss() }
@@ -34,7 +35,7 @@ struct DashboardLiveRow: View {
     }
 
     private func row(now: Date) -> some View {
-        let data = line.data
+        let data = line.data.presented(at: now)
         return DashboardMetricRow(
             model: data.dashboardRow(now: now),
             chartPoints: data.chartPoints,
@@ -48,22 +49,22 @@ struct DashboardLiveRow: View {
         )
     }
 
-    private func paceTooltip(_ data: WidgetData, now: Date) -> String? {
-        let soft = data.softLimitUsedFraction.map {
-            L10n.metrics("Soft limit at %lld%%", Int(($0 * 100).rounded()))
-        }
-        let lines = [data.paceTooltip(now: now), soft].compactMap { $0 }
+    func paceTooltip(_ data: WidgetData, now: Date) -> String? {
+        let lines = [data.paceTooltip(now: now), data.softLimitStatusText].compactMap { $0 }
         return lines.isEmpty ? nil : lines.joined(separator: "\n")
     }
 
-    private func valueTooltip(_ data: WidgetData, now: Date) -> String? {
+    func valueTooltip(_ data: WidgetData, now: Date) -> String? {
+        let data = data.presented(at: now)
+        if data.isChart { return data.chartNote }
         if data.isForecast { return data.forecastTooltip(now: now) }
         if data.isBounded { return data.meterStyleTooltip }
         return hasDetail ? nil : data.unboundedValueTooltip
     }
 
-    private var hasDetail: Bool {
+    var hasDetail: Bool {
         line.data.hasModelBreakdown || (line.data.showsResetExpiries && line.data.hasData)
+            || (line.data.isChart && line.data.hasData && !line.data.chartPoints.isEmpty)
     }
 
     private var figure: (AnyView) -> AnyView {
@@ -95,6 +96,10 @@ struct DashboardLiveRow: View {
         let data = line.data
         if let breakdown = data.modelBreakdown {
             ModelUsageDetail(title: data.localizedTitle, breakdown: breakdown) { inside in
+                hover.detailHover(inside)
+            }
+        } else if data.isChart {
+            UsageTrendDetail(title: data.localizedTitle, points: data.chartPoints, note: data.chartNote) { inside in
                 hover.detailHover(inside)
             }
         } else if data.showsResetExpiries {

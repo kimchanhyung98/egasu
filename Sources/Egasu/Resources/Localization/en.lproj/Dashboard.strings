@@ -106,3 +106,5 @@
 "a reset expires within 48 hours" = "a reset expires within 48 hours";
 "a reset expires within 7 days" = "a reset expires within 7 days";
 "egasu shows the AI tools you're signed in to on this Mac. Add an account to track more, even several of the same provider." = "egasu shows the AI tools you're signed in to on this Mac. Add an account to track more, even several of the same provider.";
+
+"No usage to show. Check visible metrics in Accounts." = "No usage to show. Check visible metrics in Accounts.";

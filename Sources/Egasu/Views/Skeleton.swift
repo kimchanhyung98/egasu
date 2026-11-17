@@ -32,7 +32,10 @@ private struct Shimmer: ViewModifier {
                         .offset(x: proxy.size.width * (2 * progress - 2))
                     }
                 }
-                .onAppear {
+                .task {
+                    progress = 0
+                    await Task.yield()
+                    guard !Task.isCancelled else { return }
                     withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) { progress = 1 }
                 }
         }

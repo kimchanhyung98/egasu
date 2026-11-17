@@ -457,6 +457,26 @@ final class ResetDisplayTests: XCTestCase {
         }
     }
 
+    func testCompactClockChangesFromTimeToWeekdayAndThenMonthDayAtTheDayBoundaries() {
+        let calendar = utcCalendar()
+        let now = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1, hour: 12))!
+        for language in LanguageSetting.allCases {
+            L10n.withLanguage(language) {
+                for days in [0, 1, 6, 7, 8] {
+                    let date = calendar.date(byAdding: .day, value: days, to: now)!
+                    let text = Formatters.compactClock(date, now: now, calendar: calendar)
+                    if days == 0 {
+                        XCTAssertEqual(text, TimeFormatSetting.current.shortTime(date))
+                    } else if days < 7 {
+                        XCTAssertEqual(text, TimeFormatSetting.current.weekdayTime(date))
+                    } else {
+                        XCTAssertEqual(text, Formatters.monthDayLabel(date))
+                    }
+                }
+            }
+        }
+    }
+
     func testCountdownUsesLocalCalendarAcrossMonthEndLeapDayAndDST() {
         for zone in ["Asia/Seoul", "America/Los_Angeles"] {
             var calendar = utcCalendar()

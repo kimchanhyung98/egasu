@@ -52,7 +52,7 @@ extension WidgetData {
                 ),
                 showsClockTimes: data.resetDisplayMode == .absolute,
                 paceMark: data.paceMark(now: now),
-                softLimitMark: data.softLimitMark,
+                softLimitMark: data.softLimitMarkerFraction,
                 cardValue: data.headline,
                 cardReset: data.boundedTrailingText(now: now)
             )
@@ -77,7 +77,8 @@ extension WidgetData {
     /// 초기화 열의 짧은 표기 — 카운트다운("3h 5m") 또는 시각("토 02:59").
     func compactResetText(now: Date = Date()) -> String? {
         if let forecast {
-            guard !forecast.refreshFailed, let deadline = forecast.deadline else { return nil }
+            if forecast.refreshFailed { return L10n.metrics("Failed") }
+            guard let deadline = forecast.deadline else { return nil }
             guard deadline.timeIntervalSince(now) > 0 else { return Formatters.imminent }
             return Self.resetReading(deadline, as: resetDisplayMode, now: now)
         }
@@ -93,17 +94,11 @@ extension WidgetData {
         }
     }
 
-    /// Soft Limit 안내선 위치 — 사용 비율을 표시 방향으로 변환.
-    var softLimitMark: Double? {
-        guard let softLimitUsedFraction, isQuotaMeter else { return nil }
-        let used = min(max(softLimitUsedFraction, 0), 1)
-        return displayMode == .remaining ? 1 - used : used
-    }
-
     /// Reset Watch 값의 호버 문구 — 투표율·예정·실패의 전체 설명.
     func forecastTooltip(now: Date = Date()) -> String? {
         guard isForecast else { return nil }
-        let lines = [communityVoteLabel, boundedTrailingText(now: now)].compactMap { $0 }
+        let data = presented(at: now)
+        let lines = [data.communityVoteLabel, data.boundedTrailingText(now: now)].compactMap { $0 }
         return lines.isEmpty ? nil : lines.joined(separator: "\n")
     }
 

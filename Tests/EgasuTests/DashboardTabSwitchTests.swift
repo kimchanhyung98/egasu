@@ -53,7 +53,25 @@ final class DashboardTabSwitchTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(150))
         if #available(macOS 27, *) {
             XCTAssertTrue(try showsBlue(in: bottomBar(), of: host), "패널이 맞으면 아래 바 밑 내용이 다시 보임")
+        } else {
+            let frost = try XCTUnwrap(
+                descendants(of: host).compactMap { $0 as? NSVisualEffectView }.first {
+                    $0.material == .menu && $0.blendingMode == .withinWindow
+                })
+            XCTAssertFalse(frost.isHiddenOrHasHiddenAncestor)
+            var opacity: CGFloat = 1
+            var ancestor: NSView? = frost
+            while let view = ancestor {
+                opacity *= view.alphaValue
+                ancestor = view.superview
+            }
+            XCTAssertGreaterThan(opacity, 0, "이전 macOS에서는 내용이 있는 아래 바에 별도 흐림 표시")
+            XCTAssertEqual(host.bounds.height, 300, accuracy: 1)
         }
+    }
+
+    private func descendants(of view: NSView) -> [NSView] {
+        view.subviews.flatMap { [$0] + descendants(of: $0) }
     }
 
     // MARK: - Fixtures

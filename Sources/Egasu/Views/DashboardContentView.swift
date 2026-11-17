@@ -53,7 +53,7 @@ struct DashboardContentView: View {
 
     @ViewBuilder
     private var allUsageContent: some View {
-        if layout.displayGroups.isEmpty {
+        if container.dashboardFamilies().isEmpty {
             hiddenMetricsNotice
         } else {
             WidgetGroupedListView(
@@ -64,7 +64,7 @@ struct DashboardContentView: View {
     }
 
     private var hiddenMetricsNotice: some View {
-        Text(L10n.dashboard("Every metric is hidden. Turn them back on in Accounts."))
+        Text(L10n.dashboard("No usage to show. Check visible metrics in Accounts."))
             .font(.system(size: 12))
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)

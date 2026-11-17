@@ -78,7 +78,7 @@ struct DashboardMetricRow: View {
                 if layoutStyle == .cards {
                     VStack(alignment: .leading, spacing: 4) {
                         label
-                        figure(AnyView(TrendBars(points: chartPoints, height: 18)))
+                        figure(AnyView(TrendBars(points: chartPoints, height: 18).hoverTooltip(valueTooltip)))
                     }
                     .padding(.vertical, 6)
                 } else {
@@ -89,6 +89,7 @@ struct DashboardMetricRow: View {
                             AnyView(
                                 TrendBars(points: chartPoints)
                                     .frame(maxWidth: .infinity)
+                                    .hoverTooltip(valueTooltip)
                             ))
                     }
                 }
@@ -166,6 +167,7 @@ struct DashboardMetricRow: View {
                 .hoverTooltip(resetTooltip)
         } else {
             text
+                .hoverTooltip(resetTooltip)
         }
     }
 }

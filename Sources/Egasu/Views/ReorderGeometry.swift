@@ -35,14 +35,11 @@ struct ReorderLift {
 
 struct ReorderLiftPreview: View {
     let lift: ReorderLift
-    @Environment(AppContainer.self) private var container
-
-    // 프리뷰는 라이브 화면과 동일 뷰 재사용 — density도 함께 읽어 모든 density에서 원본 블록과 일치
-    @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
 
     var body: some View {
         preview
             .frame(width: lift.sourceFrame.width)
+            .background(Theme.panelBody, in: Theme.cardShape)
             .scaleEffect(1.025)
             .shadow(color: .black.opacity(0.18), radius: 14, x: 0, y: 8)
             .position(

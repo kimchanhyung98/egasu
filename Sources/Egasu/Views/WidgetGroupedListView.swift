@@ -206,7 +206,7 @@ struct WidgetGroupedListView: View {
             active: $activeMetricID,
             lift: $reorderLift,
             makeLift: { value in
-                let preview = DashboardMetricRow(model: line.data.dashboardRow(), chartPoints: line.data.chartPoints, layoutStyle: layoutStyle)
+                let preview = DashboardMetricRow(model: line.data.dashboardRow(), chartPoints: line.data.chartPoints, layoutStyle: layoutStyle, valueTooltip: line.data.isChart ? line.data.chartNote : nil)
                     .padding(.horizontal, DashboardGrid.cardPadding)
                     .liftedRowSurface()
                 return ReorderLift.make(id: line.id, payload: .view(AnyView(preview)), value: value, frames: rowFrames)
@@ -261,7 +261,8 @@ struct WidgetGroupedListView: View {
                     dataStore.plan(for: account.id).map { (account.id, $0) }
                 })
                 let preview = DashboardProviderSection(family: family, layoutStyle: layoutStyle) { account in
-                    DashboardAccountRows(account: account, plan: plans[account.id], layoutStyle: layoutStyle)
+                    DashboardAccountRows(account: dataStore.showsAccountEmails ? account.showingEmail : account,
+                                         plan: plans[account.id], layoutStyle: layoutStyle)
                 }
                 return ReorderLift.make(id: frameID, payload: .view(AnyView(preview)), value: value, frames: rowFrames)
             },

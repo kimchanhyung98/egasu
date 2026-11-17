@@ -11,21 +11,20 @@ final class LocalizationRenderingTests: XCTestCase {
         var row = WidgetData(title: "Today", icon: MockData.codex.icon, kind: .count, used: 123456, limit: nil,
                              values: [MetricValue(number: 123456, kind: .count, label: "tokens")])
         row.isUsagePeriod = true
-        for density in DensitySetting.allCases {
-            defaults.set(density.rawValue, forKey: DensitySetting.key)
+        for layoutStyle in DashboardLayoutStyle.allCases {
             for appearance in [ColorScheme.light, .dark] {
                 var rasters: [Raster] = []
                 for models in [[], ["unpriced-model"]] as [[String]] {
                     row.unknownModels = models
-                    let view = DashboardMetricRow(model: row.dashboardRow(), chartPoints: row.chartPoints)
+                    let view = DashboardMetricRow(model: row.dashboardRow(), chartPoints: row.chartPoints, layoutStyle: layoutStyle)
                         .frame(width: 320)
                         .background(appearance == .light ? Color.white : Color.black)
                         .environment(\.colorScheme, appearance)
                         .environment(\.hoverTooltipsDisabled, true)
                         .defaultAppStorage(defaults)
-                    rasters.append(try rasterize(view, width: 320, name: "\(density)-\(appearance)", export: nil))
+                    rasters.append(try rasterize(view, width: 320, name: "\(layoutStyle)-\(appearance)", export: nil))
                 }
-                XCTAssertFalse(visiblyDiffers(rasters[0], rasters[1]), "\(density)-\(appearance)")
+                XCTAssertFalse(visiblyDiffers(rasters[0], rasters[1]), "\(layoutStyle)-\(appearance)")
             }
         }
     }
@@ -48,25 +47,28 @@ final class LocalizationRenderingTests: XCTestCase {
                     try L10n.withLanguage(language) {
                         let rows = sampleRows()
                         let variant = "\(language.rawValue)-\(density.rawValue)-\(appearance)"
-                        let dashboard = VStack(spacing: 0) {
-                            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                                DashboardMetricRow(model: row.dashboardRow(), chartPoints: row.chartPoints)
+                        for layoutStyle in DashboardLayoutStyle.allCases {
+                            let dashboard = VStack(spacing: 0) {
+                                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                                    DashboardMetricRow(model: row.dashboardRow(), chartPoints: row.chartPoints, layoutStyle: layoutStyle)
+                                }
                             }
+                            .padding(14)
+                            .frame(width: 320)
+                            .background(appearance == .light ? Color.white : Color.black)
+                            .environment(\.colorScheme, appearance)
+                            .environment(\.hoverTooltipsDisabled, true)
+                            .defaultAppStorage(defaults)
+                            let surface = "dashboard-\(layoutStyle.rawValue)"
+                            renderedBySurface[surface, default: [:]][language] = try rasterize(
+                                dashboard, width: 320, name: "\(surface)-\(variant)", export: export
+                            )
                         }
-                        .padding(14)
-                        .frame(width: 320)
-                        .background(appearance == .light ? Color.white : Color.black)
-                        .environment(\.colorScheme, appearance)
-                        .environment(\.hoverTooltipsDisabled, true)
-                        .defaultAppStorage(defaults)
                         let share = ShareCardView(
                             provider: MockData.codex, plan: "Plus", rows: rows, appearance: appearance
                         )
                         .defaultAppStorage(defaults)
 
-                        renderedBySurface["dashboard", default: [:]][language] = try rasterize(
-                            dashboard, width: 320, name: "dashboard-\(variant)", export: export
-                        )
                         renderedBySurface["share", default: [:]][language] = try rasterize(
                             share, width: Int(ShareCardView.width), name: "share-\(variant)", export: export
                         )

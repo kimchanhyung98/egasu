@@ -26,7 +26,11 @@ struct LevelIndicator: View {
                         .fill(Theme.severityColor(.warning))
                         .frame(width: 1)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .visualEffect { content, proxy in content.offset(x: proxy.size.width * softLimitMark - 0.5) }
+                        .visualEffect { content, proxy in
+                            content.offset(
+                                x: MeterMarkerGeometry.offset(
+                                    track: proxy.size.width, fraction: softLimitMark, markerWidth: 1))
+                        }
                         .accessibilityHidden(true)
                 }
             }
@@ -36,7 +40,11 @@ struct LevelIndicator: View {
                         .fill(Theme.paceMark)
                         .frame(width: 2, height: 12)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .visualEffect { content, proxy in content.offset(x: proxy.size.width * paceMark - 1) }
+                        .visualEffect { content, proxy in
+                            content.offset(
+                                x: MeterMarkerGeometry.offset(
+                                    track: proxy.size.width, fraction: paceMark, markerWidth: 2))
+                        }
                         .accessibilityHidden(true)
                 }
             }

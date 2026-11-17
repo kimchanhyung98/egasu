@@ -9,7 +9,7 @@ struct DashboardFamily: Identifiable {
     var accounts: [DashboardAccount]
 
     func isVisible(headerNotice: (String) -> String?) -> Bool {
-        accounts.contains { !$0.lines.isEmpty || !$0.waitingMetricIDs.isEmpty || headerNotice($0.id) != nil }
+        accounts.contains { $0.isVisible(headerNotice: headerNotice) }
     }
 
     /// 이메일 계정명을 뺀 사본 — Privacy Mode가 꺼진 공유 이미지용.
@@ -47,6 +47,10 @@ struct DashboardAccount: Identifiable {
     }
 
     var id: String { provider.id }
+    func isVisible(headerNotice: (String) -> String?) -> Bool {
+        !lines.isEmpty || !waitingMetricIDs.isEmpty || headerNotice(id) != nil
+    }
+
     var isNamedByEmail: Bool { name?.contains("@") ?? false }
     /// Priority 둘째 줄 — 계정명, 없으면 프로바이더 표시명.
     var subtitle: String { name ?? providerName }

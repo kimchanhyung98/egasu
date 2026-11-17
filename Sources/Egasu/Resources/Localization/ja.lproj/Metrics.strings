@@ -198,3 +198,5 @@
 "%lldy" = "%lld年";
 "%lldy %lldmo" = "%lld年 %lldか月";
 "Soft limit at %lld%%" = "ソフト上限 %lld%%";
+
+"Failed" = "更新失敗";

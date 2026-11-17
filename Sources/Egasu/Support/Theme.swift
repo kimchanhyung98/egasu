@@ -22,7 +22,7 @@ enum Theme {
 
     static let notice = AnyShapeStyle(severityColor(.warning))
 
-    static let positive = AnyShapeStyle(severityColor(.normal))
+    static let positive = AnyShapeStyle(Color(nsColor: .systemGreen))
 
     enum Spacing {
         static let xs: CGFloat = 4
@@ -64,8 +64,7 @@ enum Theme {
     static let trayNSColor: NSColor = .textBackgroundColor
     static var traySurface: Color { Color(nsColor: trayNSColor) }
 
-    /// grouped card를 `traySurface` 위로 띄우는 semantic fill — 시스템 자체의 `.fill.quaternary`.
-    /// 수동 튜닝 값 없음 — light/dark와 Increase Contrast 자동 추적.
+    /// 카드의 시스템 채움 — 밝기·대비 설정에 맞춰 변경.
     static let cardFill = Color(nsColor: .quaternarySystemFill)
 
     static let cardCornerRadius: CGFloat = 12
@@ -85,6 +84,7 @@ extension View {
     /// 여러 행 provider preview는 hairline 없이 그림자만으로 분리감 표현.
     func liftedRowSurface() -> some View {
         cardSurface()
+            .background(Theme.panelBody, in: Theme.cardShape)
             .overlay { Theme.cardShape.strokeBorder(.separator, lineWidth: 0.5) }
     }
 

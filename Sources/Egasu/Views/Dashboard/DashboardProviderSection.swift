@@ -60,7 +60,15 @@ struct DashboardProviderHeader: View {
                 .font(DashboardGrid.headerFont)
                 .lineLimit(1)
             if let serviceIssue {
-                ServerIssueIcon(issue: serviceIssue, providerName: family.displayName)
+                let icon = ServerIssueIcon(issue: serviceIssue, providerName: family.displayName)
+                if let link = family.provider.visibleLinks.first(where: { $0.label == "Status" }),
+                    let url = URL(string: link.url)
+                {
+                    Link(destination: url) { icon }
+                        .buttonStyle(.plain)
+                } else {
+                    icon
+                }
             }
             Spacer(minLength: DashboardGrid.columnGap)
             ProviderIcon(source: family.provider.icon, inset: 0.04)
@@ -200,7 +208,8 @@ struct DashboardAccountRows: View {
             DashboardAccountCaption(account: account, plan: plan)
             DashboardLineStack(account: account, layoutStyle: layoutStyle) { line in
                 DashboardMetricRow(
-                    model: line.data.dashboardRow(), chartPoints: line.data.chartPoints, layoutStyle: layoutStyle)
+                    model: line.data.dashboardRow(), chartPoints: line.data.chartPoints, layoutStyle: layoutStyle,
+                    valueTooltip: line.data.isChart ? line.data.chartNote : nil)
             }
         }
     }
