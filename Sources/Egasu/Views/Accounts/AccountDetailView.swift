@@ -130,7 +130,7 @@ struct AccountMetricSettingsCard: View {
         guard let position = reordered.firstIndex(where: { $0.id == metric.id }) else { return }
         AccessibilityNotification.Announcement(
             L10n.accounts(
-                "Moved %@ to position %lld of %lld.", L10n.metrics(metric.title), position + 1, reordered.count)
+                "Moved metric %@ to position %lld of %lld.", L10n.metrics(metric.title), position + 1, reordered.count)
         ).post()
     }
 

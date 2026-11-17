@@ -2,6 +2,20 @@ import XCTest
 @testable import Egasu
 
 final class AccountsLocalizationTests: XCTestCase {
+    func testMetricReorderAnnouncementNamesTheMetricAndPreservesPositionInEveryLanguage() {
+        let expected: [LanguageSetting: String] = [
+            .english: "Moved metric Session to position 2 of 3.",
+            .korean: "세션 지표를 전체 3개 중 2번째로 이동했습니다.",
+            .japanese: "指標「セッション」を全 3 件中 2 番目に移動しました。"
+        ]
+        for language in LanguageSetting.allCases {
+            let message = L10n.withLanguage(language) {
+                L10n.accounts("Moved metric %@ to position %lld of %lld.", L10n.metrics("Session"), 2, 3)
+            }
+            XCTAssertEqual(message, expected[language])
+        }
+    }
+
     func testConditionalAccountActionsAndKeyPromptsUseEveryLanguage() {
         let keys = ["Optional", "Required", "Sign In Again…", "Add API Key…", "Replace API Key…", "Signing In…"]
         let expected: [LanguageSetting: [String]] = [

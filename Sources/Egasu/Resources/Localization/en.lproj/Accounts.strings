@@ -73,3 +73,5 @@
 "Sign In Again…" = "Sign In Again…";
 "Add API Key…" = "Add API Key…";
 "Replace API Key…" = "Replace API Key…";
+
+"Moved metric %@ to position %lld of %lld." = "Moved metric %@ to position %lld of %lld.";

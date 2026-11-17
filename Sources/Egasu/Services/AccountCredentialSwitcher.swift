@@ -104,7 +104,7 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
 
     /// 선택된 Claude의 터미널 준비 상태용 기본 인증과 루트 계정 정보.
     /// 프로필 API 호출 없이 현재 CLI가 사용할 로그인만 확인 — 영구 저장본 교체와 구분.
-    func readSharedClaudeAuthenticationForReadiness(allowInteraction: Bool = true) throws -> AccountCredentialVault.Entry? {
+    func readSharedClaudeAuthenticationForReadiness(allowInteraction: Bool = false) throws -> AccountCredentialVault.Entry? {
         try sharedClaudeAuthentication(allowInteraction: allowInteraction)
     }
 
@@ -117,9 +117,9 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
 
     /// CLI 인증은 그대로 두고 변경된 토큰의 계정·조직을 확인한 뒤 egasu 저장본에 반영.
     func readSharedClaudeExternalAuthentication(
-        comparedTo previousSnapshot: AccountCredentialVault.Entry?
+        comparedTo previousSnapshot: AccountCredentialVault.Entry?, allowInteraction: Bool = false
     ) async throws -> VerifiedClaudeExternalAuthentication? {
-        guard let observed = try sharedClaudeAuthentication(),
+        guard let observed = try sharedClaudeAuthentication(allowInteraction: allowInteraction),
             let expectedIdentity = identity(of: observed, family: "claude")?.identityKey
         else { return nil }
         if observed == previousSnapshot, expectedIdentity.contains("|") {

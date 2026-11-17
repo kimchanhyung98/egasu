@@ -11,6 +11,11 @@ struct AccountsView: View {
     @State private var rowFrames: [String: CGRect] = [:]
     @State private var reconciliationError: String?
 
+    private struct ReconciliationRequest: Equatable {
+        let authenticationRevision: Int
+        let isSwitching: Bool
+    }
+
     var body: some View {
         PopoverScrollView {
             VStack(alignment: .leading, spacing: PanelMetrics.sectionSpacing) {
@@ -31,7 +36,13 @@ struct AccountsView: View {
             container.accountProfiles.reloadFromDefaults()
             container.refreshAccountCatalog()
         }
-        .task {
+        .task(
+            id: ReconciliationRequest(
+                authenticationRevision: container.accountProfiles.authenticationRevision,
+                isSwitching: container.accountSwitch.isSwitching
+            )
+        ) {
+            guard !container.accountSwitch.isSwitching else { return }
             let message = await container.reconcileExternalClaudeAuthenticationAndRefreshCatalog()
             guard !Task.isCancelled else { return }
             reconciliationError = message

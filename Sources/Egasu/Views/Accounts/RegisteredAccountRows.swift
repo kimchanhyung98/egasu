@@ -10,7 +10,6 @@ struct RegisteredAccountRows: View {
     @Environment(PopoverState.self) private var popover
     @State private var signInState: AccountSignInProbe.State?
     @State private var probeRefreshID = 0
-    @State private var isSigningIn = false
     @State private var isRequestingKeychainAccess = false
     @State private var signInTask: Task<Void, Never>?
     @State private var hasPendingSwitch = false
@@ -22,8 +21,9 @@ struct RegisteredAccountRows: View {
     private var store: AccountProfilesStore { container.accountProfiles }
     private var familyTitle: String { profile.family == "claude" ? "Claude" : "Codex" }
     private var isSelected: Bool { store.preferredProfileID(family: profile.family) == profile.id }
+    private var isSigningIn: Bool { popover.signingInAgainAccountID == profile.id }
     private var isBusy: Bool {
-        isSigningIn || popover.signingInAgainAccountID != nil
+        popover.signingInAgainAccountID != nil
             || isRequestingKeychainAccess || container.accountSwitch.isSwitching
     }
 
@@ -198,12 +198,10 @@ struct RegisteredAccountRows: View {
     /// 공식 재로그인 결과로 이 계정의 인증 교체 — Codex는 시도별 독립 작업 공간, 선택된 계정이면 공유 홈도 갱신.
     private func signInAgain() {
         guard !isBusy else { return }
-        isSigningIn = true
         popover.signingInAgainAccountID = profile.id
         actionError = nil
         signInTask = Task {
             defer {
-                isSigningIn = false
                 popover.signingInAgainAccountID = nil
                 refreshSwitchRecovery()
             }

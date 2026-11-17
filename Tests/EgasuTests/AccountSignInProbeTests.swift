@@ -251,8 +251,6 @@ private struct ThrowingProbeKeychain: KeychainAccessing {
 }
 
 private final class SharedReadThrowingProbeKeychain: KeychainAccessing, @unchecked Sendable {
-    private struct ReadFailure: Error {}
-
     private var values: [String: String] = [:]
     private let failingService: String
 
@@ -273,7 +271,7 @@ private final class SharedReadThrowingProbeKeychain: KeychainAccessing, @uncheck
     }
 
     func readGenericPasswordForCurrentUser(service: String) throws -> String? {
-        if service == failingService { throw ReadFailure() }
+        if service == failingService { throw KeychainError.readFailed("Keychain approval required.") }
         return values[service]
     }
 }

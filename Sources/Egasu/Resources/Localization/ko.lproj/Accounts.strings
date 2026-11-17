@@ -73,3 +73,5 @@
 "Sign In Again…" = "다시 로그인…";
 "Add API Key…" = "API 키 추가…";
 "Replace API Key…" = "API 키 교체…";
+
+"Moved metric %@ to position %lld of %lld." = "%1$@ 지표를 전체 %3$lld개 중 %2$lld번째로 이동했습니다.";

@@ -63,7 +63,7 @@ Claude·Codex 계정의 추가·전환·재로그인 동작은 [Claude와 Codex 
   저장 로그인을 Keychain에서 읽지 못하면 **Sign In Again…** 대신 **Allow Keychain Access…** 표시 — macOS 승인 창을 띄워 다시 읽고, 성공하면 그 계정 사용량을 새로 조회.
   저장 로그인 자체가 없으면 **Sign-In Needed**와 **Sign In Again…** 표시.
   이 경우 **Use This Account**는 비활성, **Remove Account…**는 [계정 제거 조건](/docs/accounts.md#계정-제거) 적용.
-  재로그인 중 브라우저를 눌러도 Accounts 패널 유지.
+  재로그인 중 브라우저 로그인 창으로 이동해도 Accounts 패널 유지.
   계정 상세에서 뒤로 가거나 패널을 직접 닫으면 진행 중인 재로그인 취소.
 - OpenRouter·Z.ai: API 키 상태(Not Set, From Your Environment, Saved in App, Custom Key)와 **Add API Key…**·**Replace API Key…**.
   저장한 키는 환경 변수보다 우선하며 저장 직후 새로 고침.

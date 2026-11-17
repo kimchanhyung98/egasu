@@ -60,7 +60,7 @@ struct AccountSignInProbe: Sendable {
                 shared = try switcher.readSharedClaudeAuthenticationForReadiness(allowInteraction: allowInteraction)
             } catch {
                 AppLog.error(.auth, "shared Claude home read failed during readiness probe: \(error.localizedDescription)")
-                return .readFailed(UserFacingErrors.message(error))
+                return error is KeychainError ? .readFailed(UserFacingErrors.message(error)) : .needsSignIn
             }
             guard let shared,
                   switcher.identity(of: shared, family: profile.family)?.identityKey == profile.identityKey
