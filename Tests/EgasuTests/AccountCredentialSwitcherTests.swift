@@ -21,7 +21,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         )
 
         let verified = try await fixture.switcher.readSharedClaudeExternalAuthentication(
-            comparedTo: fixture.switcher.loadSnapshot(for: personal)
+            comparedTo: fixture.switcher.loadSnapshot(for: personal), allowInteraction: true
         )
         try fixture.switcher.switchAuthentication(to: work, from: personal, verifiedClaudeDeparture: verified)
 
@@ -68,7 +68,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         )
 
         let verified = try await fixture.switcher.readSharedClaudeExternalAuthentication(
-            comparedTo: fixture.switcher.loadSnapshot(for: personal)
+            comparedTo: fixture.switcher.loadSnapshot(for: personal), allowInteraction: true
         )
         try fixture.switcher.switchAuthentication(to: work, from: personal, verifiedClaudeDeparture: verified)
         try fixture.switcher.switchAuthentication(to: personal, from: work)
@@ -106,7 +106,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         )
 
         let verified = try await fixture.switcher.readSharedClaudeExternalAuthentication(
-            comparedTo: fixture.switcher.loadSnapshot(for: personal)
+            comparedTo: fixture.switcher.loadSnapshot(for: personal), allowInteraction: true
         )
         try fixture.switcher.switchAuthentication(to: work, from: personal, verifiedClaudeDeparture: verified)
 
@@ -242,7 +242,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
             profile: work
         )
         let verified = try await fixture.switcher.readSharedClaudeExternalAuthentication(
-            comparedTo: fixture.switcher.loadSnapshot(for: personal)
+            comparedTo: fixture.switcher.loadSnapshot(for: personal), allowInteraction: true
         )
         fixture.keychain.failingCurrentUserServices = [baseClaudeService()]
 

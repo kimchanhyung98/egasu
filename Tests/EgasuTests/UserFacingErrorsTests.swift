@@ -156,9 +156,8 @@ final class UserFacingErrorsTests: XCTestCase {
         ] {
             L10n.withLanguage(language) {
                 let message = UserFacingErrors.message(error)
-                XCTAssertTrue(message.contains(L10n.common("Settings")))
-                XCTAssertTrue(message.contains(L10n.accounts("Accounts")))
-                XCTAssertTrue(message.contains(L10n.accounts("Manage %@ Account", "Claude")))
+                XCTAssertTrue(message.contains(L10n.common("Accounts")), "새 Accounts 화면 경로 안내")
+                XCTAssertFalse(message.contains(L10n.common("Settings")), "Settings → Accounts는 없어진 경로")
                 XCTAssertTrue(message.contains(action))
                 XCTAssertFalse(message.contains("["))
                 XCTAssertFalse(message.contains("]"))
@@ -192,10 +191,9 @@ final class UserFacingErrorsTests: XCTestCase {
         for language in [LanguageSetting.english, .korean, .japanese] {
             L10n.withLanguage(language) {
                 let message = UserFacingErrors.message(error)
-                XCTAssertTrue(message.contains(L10n.common("Settings")))
-                XCTAssertTrue(message.contains(L10n.accounts("Accounts")))
-                XCTAssertTrue(message.contains(L10n.accounts("Manage %@ Account", "Claude")))
-                XCTAssertTrue(message.contains(L10n.accounts("Sign In Again")))
+                XCTAssertTrue(message.contains(L10n.common("Accounts")))
+                XCTAssertFalse(message.contains(L10n.common("Settings")))
+                XCTAssertTrue(message.contains(L10n.accounts("Sign In Again…").replacingOccurrences(of: "…", with: "")))
                 XCTAssertFalse(message.contains("%@"))
                 XCTAssertEqual(error.localizedDescription, diagnostic)
                 if language == .english {

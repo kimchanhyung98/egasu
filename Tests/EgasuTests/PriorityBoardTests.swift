@@ -284,6 +284,15 @@ final class PriorityBoardTests: XCTestCase {
         )
     }
 
+    func testLoginEmailComesFromTheAccountLabel() {
+        XCTAssertEqual(AppContainer.loginEmail(fromAccountLabel: "me@example.com"), "me@example.com")
+        XCTAssertEqual(
+            AppContainer.loginEmail(fromAccountLabel: "me@example.com (me@example.com's Organization)"),
+            "me@example.com")
+        XCTAssertEqual(AppContainer.loginEmail(fromAccountLabel: "me@example.com (Acme (US))"), "me@example.com")
+        XCTAssertNil(AppContainer.loginEmail(fromAccountLabel: "Acme Team"), "이메일이 없는 라벨")
+    }
+
     private func line(_ id: String, used: Double, resetIn: TimeInterval, period: Int? = nil) -> DashboardLine {
         var data = WidgetData(title: id, icon: .providerMark("codex"), kind: .percent, used: used, limit: 100)
         data.resetsAt = now.addingTimeInterval(resetIn)

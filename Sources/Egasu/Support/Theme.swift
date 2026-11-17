@@ -25,6 +25,36 @@ enum Theme {
 
     static let positive = AnyShapeStyle(Color(nsColor: .systemGreen))
 
+    enum Spacing {
+        static let xs: CGFloat = 4
+        static let s: CGFloat = 6
+        static let m: CGFloat = 8
+        static let l: CGFloat = 10
+        static let xl: CGFloat = 12
+        static let xxl: CGFloat = 14
+    }
+
+    static let panelBodyNSColor: NSColor = .windowBackgroundColor
+    static let panelBody = Color(nsColor: panelBodyNSColor)
+    static let hairline = adaptive(light: NSColor(white: 0, alpha: 0.05), dark: NSColor(white: 1, alpha: 0.06))
+    static let controlFill = adaptive(light: NSColor(white: 0, alpha: 0.06), dark: NSColor(white: 1, alpha: 0.1))
+    static let segmentThumb = adaptive(light: .white, dark: NSColor(white: 1, alpha: 0.18))
+
+    static func severityColor(_ severity: WidgetData.MeterSeverity) -> Color {
+        switch severity {
+        case .neutral: Color(nsColor: .systemGray)
+        case .normal: Color(nsColor: .systemBlue)
+        case .warning: Color(nsColor: .systemOrange)
+        case .critical: Color(nsColor: .systemRed)
+        }
+    }
+
+    private static func adaptive(light: NSColor, dark: NSColor) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+        })
+    }
+
     // MARK: - Surfaces
 
     /// grouped card 뒤 popover의 불투명 backdrop("tray") — 문서 view가 쓰는 밝은 page surface인 `textBackgroundColor`.
@@ -63,6 +93,14 @@ extension View {
             .toggleStyle(.switch)
             .controlSize(.small)
     }
+    func inlineGroupedForm() -> some View {
+        formStyle(.grouped)
+            .scrollDisabled(true)
+            .scrollContentBackground(.hidden)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.vertical, -16)
+    }
+
 }
 
 /// `cardSurface`의 구현 — 불투명 page base(`traySurface`) 위에 `.fill.quaternary` 합성, borderless grouped box.

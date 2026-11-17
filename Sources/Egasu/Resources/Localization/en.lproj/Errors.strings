@@ -34,10 +34,10 @@
 "Claude Desktop login is stale. Open Claude Desktop, then refresh egasu." = "Claude Desktop login is stale. Open Claude Desktop, then refresh egasu.";
 "Claude account identity could not be verified. Sign in again before refreshing usage." = "Claude account identity could not be verified. Sign in again before refreshing usage.";
 "Claude account state is invalid: %@" = "Claude account state is invalid: %@";
-"Claude account switch recovery is required. Open Settings → Accounts → Manage Claude Account, then choose the Use Claude option for the account you want to use." = "Claude account switch recovery is required. Open Settings → Accounts → Manage Claude Account, then choose the Use Claude option for the account you want to use.";
+"Claude account switch recovery is required. Open Accounts, open the Claude account you want to use, then choose Use Claude." = "Claude account switch recovery is required. Open Accounts, open the Claude account you want to use, then choose Use Claude.";
 "Claude login changed during refresh. Refresh again." = "Claude login changed during refresh. Refresh again.";
 "Claude sign-in has not finished updating its account state. Finish signing in and try again." = "Claude sign-in has not finished updating its account state. Finish signing in and try again.";
-"Claude sign-ins in different locations conflict. Open Settings → Accounts → Manage Claude Account, then choose Sign In Again." = "Claude sign-ins in different locations conflict. Open Settings → Accounts → Manage Claude Account, then choose Sign In Again.";
+"Claude sign-ins in different locations conflict. Open Accounts, open the Claude account, then choose Sign In Again." = "Claude sign-ins in different locations conflict. Open Accounts, open the Claude account, then choose Sign In Again.";
 "Claude usage retry data could not be read. Check the app log before retrying." = "Claude usage retry data could not be read. Check the app log before retrying.";
 "Claude usage retry data could not be saved or opened. Check the app log and try again." = "Claude usage retry data could not be saved or opened. Check the app log and try again.";
 "Codex CLI could not be found for the weekly timer message." = "Codex CLI could not be found for the weekly timer message.";

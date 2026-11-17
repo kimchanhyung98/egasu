@@ -29,11 +29,9 @@ struct SettingsScreen: View {
     @State private var notificationsAuth: NotificationsAuthState = .authorized
 
     var body: some View {
-        ScrollViewReader { proxy in
+        ScrollViewReader { _ in
             PopoverScrollView {
-                content { id, direction in
-                    proxy.scrollTo(id, anchor: direction.scrollAnchor)
-                }
+                content
             }
             .onGeometryChange(for: CGRect.self) { proxy in
                 proxy.frame(in: .named(reorderSpaceName))
@@ -43,11 +41,10 @@ struct SettingsScreen: View {
         }
     }
 
-    private func content(scrollToAccount: @escaping (String, AccountSettingsReorderDirection) -> Void) -> some View {
+    private var content: some View {
         @Bindable var store = container.dataStore
         @Bindable var layout = container.layout
         @Bindable var updater = updater
-        @Bindable var transparency = container.transparency
         @Bindable var privacy = container.privacy
         @Bindable var notifications = container.notificationSettings
         return VStack(alignment: .leading, spacing: density.sectionSpacing) {
@@ -73,12 +70,6 @@ struct SettingsScreen: View {
                 }
                 LanguageSettingsRow(selection: $language)
             }
-            AccountsSettingsSection(
-                reorderSpaceName: reorderSpaceName,
-                reorderLift: $reorderLift,
-                scrollViewportFrame: scrollViewportFrame,
-                scrollToAccount: scrollToAccount
-            )
             ICloudSyncSettingsSection(sync: container.iCloudSync)
             section(L10n.settings("Appearance")) {
                 row(L10n.settings("Icon Style")) {
@@ -96,35 +87,6 @@ struct SettingsScreen: View {
                 }
                 row(L10n.settings("Time Format")) {
                     picker($timeFormat, options: TimeFormatSetting.allCases, label: \.label)
-                }
-                // 시스템 접근성 설정·party easter egg에 양보 — 일시정지 시 아래 notice 표시
-                row(L10n.settings("Increase Transparency")) {
-                    Toggle("", isOn: $transparency.increaseTransparency)
-                        .settingsSwitchStyle()
-                        // party mode가 look 소유 중 — 토글 무효를 dim으로 표시, 저장값은 egg 종료 후 복원
-                        .disabled(transparency.secretCodeActive)
-                }
-                // egg 우선: Party 실행 중엔 접근성 notice보다 party notice 우선
-                if transparency.secretCodeActive {
-                    inlineNotice(L10n.settings("Party mode is on, so this stays paused."))
-                } else if transparency.isPaused {
-                    inlineNotice(L10n.settings("macOS Reduce Transparency or Increase Contrast is on, so this stays paused."))
-                }
-                // 두 행은 시크릿 코드 입력 후에만 노출. Party Mode off는 egg 종료 (두 행 숨김),
-                // Drunk Mode off는 party 유지 — Party off는 Drunk도 함께 해제.
-                if transparency.secretCodeActive {
-                    row(L10n.settings("Party Mode")) {
-                        Toggle("", isOn: $transparency.partyModeActive)
-                            .settingsSwitchStyle()
-                    }
-                    row(L10n.settings("Drunk Mode")) {
-                        Toggle("", isOn: $transparency.drunkMode)
-                            .settingsSwitchStyle()
-                    }
-                    // egg도 접근성 플래그에 양보 — party가 평범해 보이는 이유 설명
-                    if transparency.partyPaused {
-                        inlineNotice(L10n.settings("macOS Reduce Transparency or Increase Contrast is on, so the party stays paused."))
-                    }
                 }
             }
             section(L10n.settings("Usage Display")) {
@@ -198,12 +160,7 @@ struct SettingsScreen: View {
                     .padding(.vertical, density.controlRowPadding)
                 }
             }
-            ScreenCrossLinkRow(
-                systemImage: "slider.horizontal.3",
-                title: L10n.settings("Customize"),
-                subtitle: L10n.settings("Choose what's visible and where"),
-                destination: .customize
-            )
+
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)

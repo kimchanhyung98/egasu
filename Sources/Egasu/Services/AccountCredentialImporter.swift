@@ -260,7 +260,10 @@ struct AccountCredentialImporter {
         else {
             return .unchanged
         }
-        guard try switcher.readSharedClaudeAuthenticationForReadiness() == observation.shared else {
+        guard
+            try switcher.readSharedClaudeAuthenticationForReadiness(allowInteraction: allowInteraction)
+                == observation.shared
+        else {
             AppLog.warn(.auth, "Claude sign-in changed before applying observation; preserving all authentication")
             throw ClaudeAuthError.credentialsChanged
         }
@@ -271,7 +274,8 @@ struct AccountCredentialImporter {
         for selected: AccountProfile, profiles: [AccountProfile], allowInteraction: Bool = false
     ) async throws -> ExternalClaudeObservation? {
         let selectedSnapshot = try switcher.loadSnapshot(for: selected, allowInteraction: allowInteraction)
-        guard let verified = try await switcher.readSharedClaudeExternalAuthentication(comparedTo: selectedSnapshot)
+        guard let verified = try await switcher.readSharedClaudeExternalAuthentication(
+            comparedTo: selectedSnapshot, allowInteraction: allowInteraction)
         else { return nil }
         let shared = verified.observed
         let identityKey = verified.identityKey
@@ -283,7 +287,10 @@ struct AccountCredentialImporter {
             profile.id == selected.id
             ? selectedSnapshot
             : try switcher.loadSnapshot(for: profile, allowInteraction: allowInteraction)
-        guard try switcher.readSharedClaudeAuthenticationForReadiness() == shared else {
+        guard
+            try switcher.readSharedClaudeAuthenticationForReadiness(allowInteraction: allowInteraction)
+                == shared
+        else {
             AppLog.warn(.auth, "Claude sign-in changed during observation; preserving all authentication")
             throw ClaudeAuthError.credentialsChanged
         }
@@ -500,7 +507,7 @@ struct AccountCredentialImporter {
             guard let observed = try readDefaultCredential(family: family) else { return nil }
             let observer = switcher
             let entry = try await Task.detached(priority: .utility) {
-                try await observer.readSharedClaudeExternalAuthentication(comparedTo: nil)
+                try await observer.readSharedClaudeExternalAuthentication(comparedTo: nil, allowInteraction: true)
             }.value
             try Task.checkCancellation()
             guard try store.pendingIdentityReplacement() == replacement else {

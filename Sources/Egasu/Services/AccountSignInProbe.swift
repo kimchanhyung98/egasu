@@ -33,7 +33,7 @@ struct AccountSignInProbe: Sendable {
         self.homeDirectory = homeDirectory
     }
 
-    func state(for profile: AccountProfile, isSelected: Bool = false) -> State {
+    func state(for profile: AccountProfile, isSelected: Bool = false, allowInteraction: Bool = false) -> State {
         let switcher = AccountCredentialSwitcher(
             keychain: keychain,
             environment: environment,
@@ -41,7 +41,7 @@ struct AccountSignInProbe: Sendable {
         )
         let snapshot: AccountCredentialVault.Entry?
         do {
-            snapshot = try switcher.loadSnapshot(for: profile)
+            snapshot = try switcher.loadSnapshot(for: profile, allowInteraction: allowInteraction)
         } catch AccountCredentialVaultError.missingEntry {
             return .needsSignIn
         } catch {
@@ -57,10 +57,10 @@ struct AccountSignInProbe: Sendable {
         if isSelected, profile.family == "claude" {
             let shared: AccountCredentialVault.Entry?
             do {
-                shared = try switcher.readSharedClaudeAuthenticationForReadiness()
+                shared = try switcher.readSharedClaudeAuthenticationForReadiness(allowInteraction: allowInteraction)
             } catch {
                 AppLog.error(.auth, "shared Claude home read failed during readiness probe: \(error.localizedDescription)")
-                return .needsSignIn
+                return error is KeychainError ? .readFailed(UserFacingErrors.message(error)) : .needsSignIn
             }
             guard let shared,
                   switcher.identity(of: shared, family: profile.family)?.identityKey == profile.identityKey

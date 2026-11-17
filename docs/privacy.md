@@ -51,7 +51,7 @@ Claude Desktop 접근은 철저히 읽기 전용.
 egasu는 Desktop의 현재 액세스 토큰을 복호화하기 위해 macOS에 `Claude Safe Storage` 키체인 항목 사용 권한을 요청할 수 있음.
 Desktop의 자동 교체되는 갱신 토큰은 절대 쓰지 않고, Desktop의 설정·쿠키·키체인 데이터도 절대 수정하지 않음.
 
-관리형 계정 전환([**Settings → Accounts**(설정 → 계정)](/docs/settings.md))은 계정마다 인증 스냅샷 하나를 macOS 키체인에 보관.
+관리형 계정 전환([**Accounts**](/docs/accounts.md))은 계정마다 인증 스냅샷 하나를 macOS 키체인에 보관.
 서비스 이름 접두어는 운영 `egasu Account Authentication`, 표준 개발 `egasu.dev Account Authentication`, 그 외 설정 도메인 `egasu.suite.<해시> Account Authentication`.
 이 스냅샷 덕분에 다시 전환할 때 이전 로그인을 복원 가능.
 각 스냅샷에는 해당 계정명에 현재 저장된 인증 파일 내용이 담기며, 원본은 이 Mac의 키체인에 보관하고 iCloud·익명 분석으로 전송하지 않음.

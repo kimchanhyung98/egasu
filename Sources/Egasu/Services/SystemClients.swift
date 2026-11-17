@@ -303,6 +303,7 @@ protocol KeychainAccessing: Sendable {
     func writeGenericPassword(service: String, value: String) throws
     func deleteGenericPassword(service: String) throws
     func readGenericPasswordForCurrentUser(service: String) throws -> String?
+    func readGenericPasswordForCurrentUser(service: String, allowInteraction: Bool) throws -> String?
     func writeGenericPasswordForCurrentUser(service: String, value: String) throws
     /// Claude Code 공유 항목의 CLI 접근 승인을 유지하는 저장.
     func writeCLISharedPassword(service: String, value: String, forCurrentUser: Bool) throws
@@ -324,6 +325,10 @@ extension KeychainAccessing {
 
     func readGenericPasswordForCurrentUser(service: String) throws -> String? {
         try readGenericPassword(service: service)
+    }
+
+    func readGenericPasswordForCurrentUser(service: String, allowInteraction: Bool) throws -> String? {
+        try readAppOwnedPassword(service: service, forCurrentUser: true, allowInteraction: allowInteraction)
     }
 
     func writeGenericPasswordForCurrentUser(service: String, value: String) throws {
@@ -411,6 +416,10 @@ struct SecurityKeychainAccessor: KeychainAccessing {
 
     func readGenericPasswordForCurrentUser(service: String) throws -> String? {
         try readPassword(["find-generic-password", "-a", currentUserAccount(), "-s", service, "-w"], service: service)
+    }
+
+    func readGenericPasswordForCurrentUser(service: String, allowInteraction: Bool) throws -> String? {
+        try appPasswordReader.read(service: service, account: currentUserAccount(), allowInteraction: allowInteraction)
     }
 
     func readGenericPassword(service: String, account: String) throws -> String? {

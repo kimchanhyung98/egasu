@@ -6,6 +6,7 @@ final class PanelOutsideClickMonitor {
     private let panel: MenuBarPanel
     private let statusItem: NSStatusItem
     private let isMorphing: () -> Bool
+    private let isSigningIn: () -> Bool
     private let onInsidePanelClick: () -> Void
     private let onDismiss: () -> Void
     private var monitors: [Any] = []
@@ -14,12 +15,14 @@ final class PanelOutsideClickMonitor {
         panel: MenuBarPanel,
         statusItem: NSStatusItem,
         isMorphing: @escaping () -> Bool,
+        isSigningIn: @escaping () -> Bool = { false },
         onInsidePanelClick: @escaping () -> Void,
         onDismiss: @escaping () -> Void
     ) {
         self.panel = panel
         self.statusItem = statusItem
         self.isMorphing = isMorphing
+        self.isSigningIn = isSigningIn
         self.onInsidePanelClick = onInsidePanelClick
         self.onDismiss = onDismiss
     }
@@ -70,6 +73,7 @@ final class PanelOutsideClickMonitor {
         let buttonWindowID = statusItem.button?.window.map(ObjectIdentifier.init)
         let context = PanelOutsideClickContext(
             isMorphing: isMorphing(),
+            isSigningIn: isSigningIn(),
             hasAttachedSheet: panel.attachedSheet != nil,
             isOnStatusButton: isOnStatusButton(screenPoint),
             isInsidePanel: isInsidePanel,
@@ -98,6 +102,7 @@ final class PanelOutsideClickMonitor {
 
 struct PanelOutsideClickContext {
     var isMorphing = false
+    var isSigningIn = false
     var hasAttachedSheet = false
     var isOnStatusButton = false
     var isInsidePanel = false
@@ -109,6 +114,7 @@ struct PanelOutsideClickContext {
 enum PanelOutsideClickPolicy {
     static func shouldKeepOpen(_ context: PanelOutsideClickContext) -> Bool {
         context.isMorphing
+            || context.isSigningIn
             || context.hasAttachedSheet
             || context.isOnStatusButton
             || context.isInsidePanel

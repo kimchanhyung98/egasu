@@ -17,7 +17,7 @@ Xcode 프로젝트는 없음.
 - `Stores/` — UI가 관찰하는 변경 가능한 상태.
 - `Services/` — 공통 인프라(HTTP, 로컬 API, 프로세스 실행).
 - `Support/` — 작은 공통 헬퍼(포맷팅, 파싱, 애니메이션).
-- `Views/` — SwiftUI 화면(대시보드, Customize, 설정, 메뉴 막대 스트립).
+- `Views/` — SwiftUI 화면(대시보드, Accounts, 설정, 메뉴 막대 스트립).
 
 ## 구성 요소 연결
 
@@ -131,12 +131,15 @@ UI는 관찰 가능한 몇 개의 스토어에서 읽음:
 - `WidgetDataStore` — 화면·로컬 API의 표시 스냅샷, 표시 설정, 알림 입력.
   조회·캐시·동기화 처리는 아래 사용량 처리 모듈에 위임.
 - `LayoutStore` — 어떤 지표를 표시할지, 프로바이더/지표 순서, 메뉴 막대에 별표한 지표.
-  이 전부를 프로바이더당 한 벌만 저장하므로, 한 프로바이더의 모든 계정 카드가 같은 레이아웃 설정 공유.
+  한도 지표의 표시·순서는 계정별 저장.
+  이력·Reset Watch는 프로바이더 공통 설정이며, 메뉴 막대 별표도 프로바이더 단위.
 - 계정 표시 설정 — 공통 표시 모드 하나와 프로바이더 계열별 관리형 계정 순서를 인증·레이아웃과 분리해 로컬 저장.
   순서는 안정적인 관리형 프로필 ID를 사용하므로 이름, 로그인이나 런타임 카드 ID가 바뀌어도 계정 위치 유지.
   초기 개발 빌드의 계열별 모드는 `openusage.accountCardPresentation.v1`의 `modesByFamily`에 저장.
   공통 모드를 `openusage.accountCardDisplayMode.v1`에 저장하기 전까지 이전 형식의 값을 읽기 전용 대체 값으로 사용.
   공통 모드의 저장 키를 분리해 초기 빌드가 계정 순서를 다시 저장해도 공통 모드 유지.
+- `PopoverState` — 대시보드·Accounts·Settings 탐색, 계정 상세·추가 시트와 패널 표시 상태.
+- `AccountRenameStore` — 이름 편집의 초안·저장·취소와 패널 닫기 시 저장.
 - `ProviderEnablementStore` — 사용자가 켜거나 끈 프로바이더.
 - `ProviderStatusStore` — 프로바이더 계열별 공식 서버 상태.
   `AppContainer`에서 공개 상태 전용 HTTP 클라이언트 전달.
@@ -277,9 +280,9 @@ Reset Watch 평가기의 입력은 조회 결과인 `receive`와 설정 변경�
 ## 계정 표시
 
 프로바이더 순서와 계정 순서는 각각 별도 관리.
-Customize는 레이아웃의 표준 프로바이더 계열 순서, Settings는 계열 내부 관리형 계정 순서 편집.
+Accounts는 레이아웃의 프로바이더 계열 순서와 계열 내부 관리형 계정 순서 편집.
 표시 계층은 두 순서와 표시 모드를 합성하며, Dashboard와 Share Screenshot은 같은 최종 카드 목록과 제목 사용.
-제품 동작은 [대시보드](/docs/dashboard.md)와 [설정](/docs/settings.md) 참조.
+제품 동작은 [대시보드](/docs/dashboard.md)와 [계정](/docs/accounts.md) 참조.
 
 ## 프로세스 실행과 Codex 자동화
 
@@ -431,7 +434,9 @@ Settings 카드는 보관된 출력 표시.
 대시보드 콘텐츠는 키 입력을 받을 수 있는 커스텀 `NSPanel`에 표시.
 패널은 `.nonactivatingPanel` 스타일과 `canBecomeKey = true` 사용.
 열 때 `makeKeyAndOrderFront`를 호출해 앱 전체 활성화 없이 키 입력 대상이 되도록 처리.
-키보드 탐색과 Settings의 단축키 입력도 이 패널에서 처리.
+키보드 탐색, Accounts 이름 입력·시트와 Settings 단축키 입력도 이 패널에서 처리.
+`PanelHeightController`는 현재 화면의 바·본문 높이와 화면의 사용 가능한 영역으로 패널 높이 결정.
+`PopoverScrollView`는 화면별 본문 높이와 스크롤 경계를 전달.
 `App/`이 AppKit 계층을 소유하고 내부에 SwiftUI 뷰 표시.
 
 ## 플랫폼 지원

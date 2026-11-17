@@ -5,7 +5,6 @@ import XCTest
 final class FirstRunSeederTests: XCTestCase {
     func testFreshInstallSeedsFallbackSynchronouslyThenDetectedSet() async {
         let enablement = ProviderEnablementStore(defaults: makeDefaults("detect"))
-        let onboarding = OnboardingStore(defaults: makeDefaults("detect-onboarding"))
         let providers = [
             stub("claude", hasCredentials: true),
             stub("codex", hasCredentials: false),
@@ -16,12 +15,11 @@ final class FirstRunSeederTests: XCTestCase {
 
         let task = FirstRunSeeder.seedIfNeeded(
             isFreshInstall: true, providers: providers,
-            enablement: enablement, onboarding: onboarding
+            enablement: enablement
         )
 
         // probe 완료 전: fallback set 동기 반영 — 전체 provider 노출 방지
         XCTAssertEqual(enablement.enabledIDs, ["claude", "codex"])
-        XCTAssertTrue(onboarding.isCustomizeHintPending)
         // 현재 출시 provider 전부 "seen" baseline 처리 — `NewProviderSeeder`는 이후 릴리스 추가분만 probe
         XCTAssertEqual(enablement.knownIDs, ["claude", "codex", "cursor", "grok", "kimi"])
 
@@ -63,7 +61,7 @@ final class FirstRunSeederTests: XCTestCase {
         let task = FirstRunSeeder.seedIfNeeded(
             isFreshInstall: captured,
             providers: [stub("claude", hasCredentials: false), stub("grok", hasCredentials: true)],
-            enablement: enablement, onboarding: OnboardingStore(defaults: defaults))
+            enablement: enablement)
         XCTAssertNotNil(task)
         await task?.value
         XCTAssertEqual(enablement.enabledIDs, ["grok"])
@@ -101,26 +99,23 @@ final class FirstRunSeederTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: target.path))
         SettingsMigrator.migrate(defaults: defaults, domainName: domain, capturedFreshInstall: captured)
         let enablement = ProviderEnablementStore(defaults: defaults)
-        let onboarding = OnboardingStore(defaults: defaults)
         let task = FirstRunSeeder.seedIfNeeded(
             isFreshInstall: captured,
             providers: [stub("claude", hasCredentials: false), stub("grok", hasCredentials: true)],
-            enablement: enablement, onboarding: onboarding)
+            enablement: enablement)
         XCTAssertNotNil(task)
         await task?.value
         XCTAssertEqual(enablement.enabledIDs, ["grok"])
-        XCTAssertTrue(onboarding.isCustomizeHintPending)
         XCTAssertFalse(SettingsMigrator.isFreshInstall(defaults: defaults, domainName: domain))
     }
 
     func testNothingDetectedKeepsClaudeAndCodexFallback() async {
         let enablement = ProviderEnablementStore(defaults: makeDefaults("none"))
-        let onboarding = OnboardingStore(defaults: makeDefaults("none-onboarding"))
         let providers = ["claude", "codex", "kimi", "grok"].map { stub($0, hasCredentials: false) }
 
         let task = FirstRunSeeder.seedIfNeeded(
             isFreshInstall: true, providers: providers,
-            enablement: enablement, onboarding: onboarding
+            enablement: enablement
         )
         await task?.value
 
@@ -129,17 +124,15 @@ final class FirstRunSeederTests: XCTestCase {
 
     func testExistingInstallIsNeverSeeded() async {
         let enablement = ProviderEnablementStore(defaults: makeDefaults("existing"))
-        let onboarding = OnboardingStore(defaults: makeDefaults("existing-onboarding"))
 
         let task = FirstRunSeeder.seedIfNeeded(
             isFreshInstall: false, providers: [stub("claude", hasCredentials: true)],
-            enablement: enablement, onboarding: onboarding
+            enablement: enablement
         )
 
         XCTAssertNil(task)
         XCTAssertNil(enablement.enabledIDs, "an existing install keeps legacy all-on semantics")
         XCTAssertTrue(enablement.isEnabled("grok"))
-        XCTAssertFalse(onboarding.isCustomizeHintPending, "existing installs never see the hint card")
     }
 
     func testAlreadySeededStoreIsNotReseeded() {
@@ -147,11 +140,10 @@ final class FirstRunSeederTests: XCTestCase {
         let defaults = makeDefaults("idempotent")
         let enablement = ProviderEnablementStore(defaults: defaults)
         enablement.seedEnabledProviders(["grok"])
-        let onboarding = OnboardingStore(defaults: makeDefaults("idempotent-onboarding"))
 
         let task = FirstRunSeeder.seedIfNeeded(
             isFreshInstall: true, providers: [stub("claude", hasCredentials: true)],
-            enablement: enablement, onboarding: onboarding
+            enablement: enablement
         )
 
         XCTAssertNil(task)
@@ -160,13 +152,12 @@ final class FirstRunSeederTests: XCTestCase {
 
     func testUserToggleDuringDetectionWins() async {
         let enablement = ProviderEnablementStore(defaults: makeDefaults("toggle-wins"))
-        let onboarding = OnboardingStore(defaults: makeDefaults("toggle-wins-onboarding"))
         let providers = [stub("claude", hasCredentials: true), stub("codex", hasCredentials: false),
                          stub("kimi", hasCredentials: false), stub("devin", hasCredentials: true)]
 
         let task = FirstRunSeeder.seedIfNeeded(
             isFreshInstall: true, providers: providers,
-            enablement: enablement, onboarding: onboarding
+            enablement: enablement
         )
         // probe 진행 중 사용자 toggle — 사용자 선택 우선
         enablement.setEnabled(false, for: "codex")
@@ -226,7 +217,6 @@ final class FirstRunSeederTests: XCTestCase {
 
     func testCancelledDetectionKeepsFallbackInsteadOfPartialResult() async {
         let enablement = ProviderEnablementStore(defaults: makeDefaults("cancelled"))
-        let onboarding = OnboardingStore(defaults: makeDefaults("cancelled-onboarding"))
         let first = expectation(description: "First probe started")
         let gate = ProbeGate(onFirst: { first.fulfill() })
         let providers: [ProviderRuntime] = [
@@ -235,7 +225,7 @@ final class FirstRunSeederTests: XCTestCase {
             stub("codex", hasCredentials: true)
         ]
         let task = FirstRunSeeder.seedIfNeeded(
-            isFreshInstall: true, providers: providers, enablement: enablement, onboarding: onboarding
+            isFreshInstall: true, providers: providers, enablement: enablement
         )
         await fulfillment(of: [first], timeout: 2)
         task?.cancel()
@@ -251,8 +241,6 @@ final class FirstRunSeederTests: XCTestCase {
         for changedSelection in [false, true] {
             let defaults = makeDefaults("cancel-retry-\(changedSelection)")
             let enablement = ProviderEnablementStore(defaults: defaults)
-            let onboardingDefaults = makeDefaults("cancel-retry-onboarding-\(changedSelection)")
-            let onboarding = OnboardingStore(defaults: onboardingDefaults)
             let queue = BackgroundWorkQueue()
             let acquired = await queue.acquire("test:block-first-detection")
             let ticket = try XCTUnwrap(acquired)
@@ -260,26 +248,23 @@ final class FirstRunSeederTests: XCTestCase {
                              stub("cursor", hasCredentials: true)]
             let first = try XCTUnwrap(FirstRunSeeder.seedIfNeeded(
                 isFreshInstall: true, providers: providers, enablement: enablement,
-                onboarding: onboarding, workQueue: queue
+                workQueue: queue
             ))
             XCTAssertTrue(enablement.isInitialDetectionPending)
             XCTAssertNil(NewProviderSeeder.reconcileIfNeeded(providers: providers, enablement: enablement))
             if changedSelection { enablement.setEnabled(false, for: "codex") }
-            onboarding.dismissCustomizeHint()
             first.cancel()
             await first.value
             queue.finish(ticket)
 
             let restarted = ProviderEnablementStore(defaults: defaults)
-            let restartedOnboarding = OnboardingStore(defaults: onboardingDefaults)
             XCTAssertTrue(restarted.isInitialDetectionPending)
             let retry = try XCTUnwrap(FirstRunSeeder.seedIfNeeded(
                 isFreshInstall: false, providers: providers, enablement: restarted,
-                onboarding: restartedOnboarding, workQueue: queue
+                workQueue: queue
             ))
             let previousSelection: Set<String> = changedSelection ? ["claude"] : ["claude", "codex"]
             XCTAssertEqual(restarted.enabledIDs, previousSelection)
-            XCTAssertFalse(restartedOnboarding.isCustomizeHintPending)
             XCTAssertNil(NewProviderSeeder.reconcileIfNeeded(providers: providers, enablement: restarted))
             await retry.value
 
@@ -289,7 +274,6 @@ final class FirstRunSeederTests: XCTestCase {
             XCTAssertFalse(completed.isInitialDetectionPending)
             XCTAssertNil(FirstRunSeeder.seedIfNeeded(
                 isFreshInstall: false, providers: providers, enablement: completed,
-                onboarding: restartedOnboarding
             ))
             XCTAssertNil(NewProviderSeeder.reconcileIfNeeded(providers: providers, enablement: completed))
         }
@@ -309,20 +293,7 @@ final class FirstRunSeederTests: XCTestCase {
         XCTAssertEqual(gate.arrivals, ids)
     }
 
-    // MARK: - OnboardingStore persistence
 
-    func testCustomizeHintFlagPersistsAcrossInstances() {
-        let defaults = makeDefaults("hint-persist")
-        let store = OnboardingStore(defaults: defaults)
-        XCTAssertFalse(store.isCustomizeHintPending)
-
-        store.markCustomizeHintPending()
-        XCTAssertTrue(OnboardingStore(defaults: defaults).isCustomizeHintPending)
-
-        store.dismissCustomizeHint()
-        XCTAssertFalse(store.isCustomizeHintPending)
-        XCTAssertFalse(OnboardingStore(defaults: defaults).isCustomizeHintPending)
-    }
 
     // MARK: - Helpers
 

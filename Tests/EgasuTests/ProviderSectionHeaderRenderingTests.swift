@@ -29,7 +29,7 @@ final class ProviderSectionHeaderRenderingTests: XCTestCase {
             )
             .padding(.horizontal, 22)
             .padding(.vertical, 12)
-            .frame(width: PanelHeightController.panelWidth)
+            .frame(width: PanelMetrics.width)
             .background(Color.black)
             .environment(\.colorScheme, .dark)
             .defaultAppStorage(defaults)
@@ -71,7 +71,7 @@ final class ProviderSectionHeaderRenderingTests: XCTestCase {
             )
             .padding(.horizontal, 22)
             .padding(.vertical, 12)
-            .frame(width: PanelHeightController.panelWidth)
+            .frame(width: PanelMetrics.width)
             .background(Color.black)
             .environment(\.colorScheme, .dark)
             .defaultAppStorage(defaults)
@@ -128,12 +128,12 @@ final class ProviderSectionHeaderRenderingTests: XCTestCase {
                         let view = header(refreshing: refreshing, disrupted: disrupted)
                             .padding(.horizontal, 22)
                             .padding(.vertical, 12)
-                            .frame(width: PanelHeightController.panelWidth)
+                            .frame(width: PanelMetrics.width)
                             .background(appearance == .light ? Color.white : Color.black)
                             .environment(\.colorScheme, appearance)
                             .defaultAppStorage(defaults)
                         try withHosting(view) { hosting, _ in
-                            XCTAssertEqual(hosting.bounds.width, PanelHeightController.panelWidth, accuracy: 0.5, variant)
+                            XCTAssertEqual(hosting.bounds.width, PanelMetrics.width, accuracy: 0.5, variant)
                             XCTAssertGreaterThan(hosting.bounds.height, 24, variant)
                             XCTAssertLessThanOrEqual(hosting.bounds.height, 52, variant)
                             let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
@@ -188,12 +188,12 @@ final class ProviderSectionHeaderRenderingTests: XCTestCase {
                     let view = header(refreshing: refreshing, disrupted: true, mode: .separateCards)
                         .padding(.horizontal, 22)
                         .padding(.vertical, 12)
-                        .frame(width: PanelHeightController.panelWidth)
+                        .frame(width: PanelMetrics.width)
                         .background(appearance == .light ? Color.white : Color.black)
                         .environment(\.colorScheme, appearance)
                         .defaultAppStorage(defaults)
                     try withHosting(view) { hosting, _ in
-                        XCTAssertEqual(hosting.bounds.width, PanelHeightController.panelWidth, accuracy: 0.5, variant)
+                        XCTAssertEqual(hosting.bounds.width, PanelMetrics.width, accuracy: 0.5, variant)
                         XCTAssertLessThanOrEqual(hosting.bounds.height, 52, variant)
                         let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
                         hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
@@ -223,7 +223,7 @@ final class ProviderSectionHeaderRenderingTests: XCTestCase {
                 displayName: provider.displayName,
                 serviceStatus: .disrupted(issue)
             )
-            .frame(width: PanelHeightController.panelWidth)
+            .frame(width: PanelMetrics.width)
             .highPriorityGesture(reorderDragGesture(
                 id: provider.id,
                 coordinateSpaceName: "status-header",

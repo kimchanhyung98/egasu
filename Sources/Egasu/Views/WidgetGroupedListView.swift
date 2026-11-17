@@ -162,8 +162,8 @@ struct WidgetGroupedListView: View {
                 Task { await container.refresh(providerID: group.provider.id, force: true) }
             }
             .disabled(container.accountSwitch.blocksRefresh(for: group.provider.id))
-            Button(L10n.dashboard("Customize…")) {
-                openCustomize(for: group.provider.id)
+            Button(L10n.common("Accounts")) {
+                openAccount(for: group.provider.id)
             }
             Divider()
             Button(L10n.dashboard("Share Screenshot")) { _ = shareCard(group) }
@@ -342,8 +342,8 @@ struct WidgetGroupedListView: View {
             }
             .disabled(container.accountSwitch.blocksRefresh(for: providerID))
         }
-        Button(L10n.dashboard("Customize…")) {
-            openCustomize(for: providerID)
+        Button(L10n.common("Accounts")) {
+            openAccount(for: providerID)
         }
     }
 
@@ -365,13 +365,10 @@ struct WidgetGroupedListView: View {
         }
     }
 
-    /// dashboard에서 해당 provider의 Customize metric(L2)으로 직행 — provider 리스트를 거치지 않음.
+    /// 대시보드에서 해당 카드의 Accounts 상세 열기.
     /// 계정 카드는 해당 카드의 설정으로 연결하여 숨긴 한도 복원.
-    private func openCustomize(for providerID: String) {
-        withAnimation(Motion.modeSwitch) {
-            layout.customizeProviderID = providerID
-            layout.isEditing = true
-        }
+    private func openAccount(for providerID: String) {
+        container.popover.openAccounts(providerID)
     }
 
     private func providerDragGesture(for group: ProviderGroup) -> some Gesture {

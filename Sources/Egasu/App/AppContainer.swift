@@ -33,12 +33,9 @@ final class AppContainer {
     let softLimitCoordinator: SoftLimitCoordinator
     /// Settings opt-in 토글과 앱 종료 flush가 공유하는 일간 rollup.
     let telemetry: TelemetryRecorder
-    /// SwiftUI surface와 AppKit panel이 공유하는 Popover 투명도 단일 상태.
-    let transparency: PopoverTransparencyStore
+    let popover = PopoverState()
     /// 캡처 중 strip을 wordmark로 교체하도록 status item updater가 참조.
     let privacy: MenuBarPrivacyStore
-    /// 1회성 onboarding 상태. 신규 설치에서만 `FirstRunSeeder`가 pending 표시 — 기존 설치는 hint 카드 미노출.
-    let onboarding: OnboardingStore
     /// Codex reset credit claim 라우터. 카드별 자체 auth store·usage client 경유 —
     /// 되돌릴 수 없는 claim이 항상 카드가 표시하는 계정의 credential을 사용하도록 보장.
     let codexResetClaim: CodexResetClaimRouter
@@ -55,7 +52,7 @@ final class AppContainer {
     /// 현재 provider catalog를 만든 account 입력 — 동일 입력의 재조립은 in-flight refresh를 무효화하지 않음.
     private var accountAssembly: ProviderAccountAssembly
     /// 온디맨드 credential 재탐지(Customize "Reset All")용으로 보관하는 provider runtime 목록.
-    private var providers: [ProviderRuntime]
+    private(set) var providers: [ProviderRuntime]
     /// 127.0.0.1:6736의 읽기 전용 로컬 usage API (포트 점유 시 조용히 비활성).
     private let localAPI: LocalUsageServer
     /// 주기 refresh와 shared-home 재인증 reconciliation task 수명.
@@ -197,12 +194,10 @@ final class AppContainer {
             resetWatchNotifications?.configurationDidChange()
         }
         // 신규 설치는 최소 구성으로 시작 — enabled-provider 목록 seed. 이후 런치에서는 no-op.
-        let onboarding = OnboardingStore()
         self.seedTask = FirstRunSeeder.seedIfNeeded(
             isFreshInstall: isFreshInstall,
             providers: providers,
             enablement: enablement,
-            onboarding: onboarding,
             workQueue: workQueue
         )
         // 업데이트로 추가된 provider도 첫 런치에 동일한 credential 탐지 적용. 처음 보는 provider가 없으면 no-op.
@@ -212,7 +207,6 @@ final class AppContainer {
             workQueue: workQueue
         )
         self.providers = providers
-        self.onboarding = onboarding
         self.registry = registry
         self.enablement = enablement
         self.apiKeyProviders = apiKeyProviders
@@ -270,7 +264,6 @@ final class AppContainer {
             workQueue: workQueue
         )
 
-        self.transparency = PopoverTransparencyStore()
         self.privacy = MenuBarPrivacyStore()
         self.localAPI = LocalUsageServer(state: { [layout, enablement, dataStore] in
             LocalUsageAPI.State(
@@ -345,24 +338,15 @@ final class AppContainer {
         )
     }
 
-    /// Customize의 계정별 제목 — 기본 행은 프로바이더 이름.
-    func customizeDisplayName(for provider: Provider) -> String {
-        let name = displayName(for: provider)
-        guard ProviderAccountID.isAccountCard(provider.id) else { return name }
-        let account = accountProfileLabel(for: provider.id)
-            ?? accounts.resolvedDisplayName(cardID: provider.id)
-            ?? provider.displayName
-        return L10n.settings("%@: %@", name, account)
-    }
-
     /// 관리형 profile 기반 카드의 profile label; 아니면 `nil`.
     func accountProfileLabel(for cardID: String) -> String? {
-        guard let profileID = accountProfileIDsByCardID[cardID] else { return nil }
+        guard let profileID = accountProfileID(for: cardID) else { return nil }
         return accountProfiles.profile(id: profileID)?.label
     }
 
     func accountProfileID(for cardID: String) -> String? {
         accountProfileIDsByCardID[cardID]
+            ?? AccountCardPresentationPlanner.snapshotProfileID(for: cardID, profiles: accountProfiles.profiles)
     }
 
     /// family의 현재 선택된 관리형 profile이 backing하는 표시 카드.
@@ -443,15 +427,22 @@ final class AppContainer {
     /// 메뉴 바 star는 family 설정이라 재지정 불필요 — 표시 값만 선택 카드를 따라감.
     /// 이후 dashboard picker 변경은 view 전용 — terminal 전환 없음.
     func syncDashboardUsageAccount(to profile: AccountProfile) async {
-        guard let cardID = DashboardUsageAccountSelection.selectAfterAccountSwitch(
+        if DashboardUsageAccountSelection.selectAfterAccountSwitch(
             family: profile.family,
             profileID: profile.id,
             availableCardIDs: registry.providers.map(\.id)
-        ) else {
+        ) != nil {
+            noteAccountSelectionChanged()
+        }
+        await refreshSharedRuntime(afterSwitchingTo: profile)
+    }
+
+    func refreshSharedRuntime(afterSwitchingTo profile: AccountProfile) async {
+        guard registry.providers.contains(where: { $0.id == profile.family }) else {
+            AppLog.error(.config, "account switch could not find the shared \(profile.family) usage runtime")
             return
         }
-        noteAccountSelectionChanged()
-        await dataStore.refreshAfterAccountSelection(providerID: cardID)
+        await dataStore.refreshAfterAccountSelection(providerID: profile.family)
     }
 
     /// Settings의 관리형 profile 변경 직후 account 카드 추가/제거 반영.
@@ -465,6 +456,12 @@ final class AppContainer {
             accountProfiles: accountProfiles
         )
         guard assembly != accountAssembly else {
+            popover.reconcileAccountDetail(
+                in: registry,
+                previousProfileIDsByCard: accountProfileIDsByCardID,
+                nextProfileIDsByCard: accountProfileIDsByCardID,
+                registeredProfiles: accountProfiles.profiles
+            )
             return refreshReauthenticatedAccounts(alreadyScheduledCardIDs: addedIDs)
         }
         accountAssembly = assembly
@@ -484,8 +481,14 @@ final class AppContainer {
 
         registry = nextRegistry
         providers = nextProviders
-        accountProfileIDsByCardID = nextProfileIDs
         layout.replaceRegistry(nextRegistry, profileIDsByCardID: nextProfileIDs)
+        popover.reconcileAccountDetail(
+            in: nextRegistry,
+            previousProfileIDsByCard: accountProfileIDsByCardID,
+            nextProfileIDsByCard: nextProfileIDs,
+            registeredProfiles: accountProfiles.profiles
+        )
+        accountProfileIDsByCardID = nextProfileIDs
         dataStore.replaceProviderCatalog(
             registry: nextRegistry,
             providers: nextProviders,
@@ -624,13 +627,6 @@ final class AppContainer {
         } else {
             enablement.setEnabled(enabled, for: providerID)
         }
-    }
-
-    /// Customize "Reset All"의 enablement 절반 — 첫 런치 credential 탐지 재실행.
-    /// `FirstRunSeeder.reseed`에 위임; await 가능한 탐지 task 반환.
-    @discardableResult
-    func reseedEnabledProviders() -> Task<Void, Never> {
-        FirstRunSeeder.reseed(providers: providers, enablement: enablement, workQueue: workQueue)
     }
 
     static func accountProfileIDsByCardID(

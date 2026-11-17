@@ -9,6 +9,13 @@ extension AppContainer {
         return dataStore.accountStatus(for: cardID, localState: localState)
     }
 
+    /// Keychain 접근 실패는 해당 카드만 수동 갱신하고, 나머지 문제는 계정 상세로 연결.
+    func fixAccount(_ cardID: String, openAccount: (String) -> Void) {
+        guard dataStore.needsKeychainApproval(cardID) else { return openAccount(cardID) }
+        guard !dataStore.refreshingProviderIDs.contains(cardID) else { return }
+        Task { await refresh(providerID: cardID, force: true) }
+    }
+
     /// 동일 provider 신원으로 재로그인한 경우도 새 credential 기준으로 해당 카드만 재확인.
     @discardableResult
     func refreshReauthenticatedAccounts(alreadyScheduledCardIDs: Set<String>) -> [String: Task<Void, Never>] {

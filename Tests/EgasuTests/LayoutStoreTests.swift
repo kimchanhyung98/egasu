@@ -1316,21 +1316,6 @@ final class LayoutStoreTests: XCTestCase {
         XCTAssertEqual(store.metricCount(for: "missing"), 0)
     }
 
-    func testCustomizeProviderIDClearsWhenLeavingCustomize() {
-        let store = makeStore("RouteClears")
-        store.screen = .customize
-        store.customizeProviderID = "claude"
-        XCTAssertEqual(store.customizeProviderID, "claude")
-
-        store.screen = .dashboard
-        XCTAssertNil(store.customizeProviderID, "leaving Customize resets the L2 selection back to the list")
-
-        // Settings 직접 이동 시에도 L2 선택 해제
-        store.screen = .customize
-        store.customizeProviderID = "codex"
-        store.screen = .settings
-        XCTAssertNil(store.customizeProviderID)
-    }
 
     // MARK: - Share confirmation
 

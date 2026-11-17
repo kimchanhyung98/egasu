@@ -379,7 +379,8 @@ final class AccountSelectionDepartureTests: XCTestCase {
     func testSynchronousSwitchCannotCaptureTokenChangedAfterVerification() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         _ = try fixture.rotateDefaultCredentials()
-        let verification = try await fixture.switcher.readSharedClaudeExternalAuthentication(comparedTo: fixture.entryA)
+        let verification = try await fixture.switcher.readSharedClaudeExternalAuthentication(
+            comparedTo: fixture.entryA, allowInteraction: true)
         let verified = try XCTUnwrap(verification)
         fixture.keychain.currentUserValues[fixture.baseService] = AccountSwitchRecoveryFixture.entry("c").credential
         let state = try fixture.switcher.readClaudeSwitchState()

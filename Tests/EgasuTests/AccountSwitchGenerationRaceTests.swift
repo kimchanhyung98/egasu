@@ -13,7 +13,8 @@ final class AccountSwitchGenerationRaceTests: XCTestCase {
             }
             let baseline = try fixture.switcher.loadSnapshot(for: fixture.a)
             XCTAssertEqual(baseline != nil, hasSnapshot)
-            let verification = try await fixture.switcher.readSharedClaudeExternalAuthentication(comparedTo: baseline)
+            let verification = try await fixture.switcher.readSharedClaudeExternalAuthentication(
+                comparedTo: baseline, allowInteraction: true)
             let verified = try XCTUnwrap(verification)
             XCTAssertEqual(verified.baseline, baseline)
             let newer = AccountSwitchRecoveryFixture.entry("a", token: "newer-snapshot")

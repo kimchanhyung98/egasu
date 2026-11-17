@@ -88,3 +88,8 @@
 
 "Burning Fast" = "急速な消費";
 "Current usage unavailable." = "現在の使用量を取得できません。";
+
+"All Usage" = "すべての使用量";
+"Open Accounts to choose what to show." = "アカウントで表示する項目を選択してください。";
+"Priority" = "優先";
+"Report an Issue…" = "問題を報告…";

@@ -138,6 +138,7 @@ final class SwitchRecoveryKeychain: KeychainAccessing, @unchecked Sendable {
         var currentUserValues: [String: String] = [:]
         var currentUserModificationDates: [String: Date] = [:]
         var writeCount = 0
+        var noninteractiveReadServices: [String] = []
         var readFailureService: String?
         var beforeRead: (@Sendable (String) throws -> Void)?
         var beforeWrite: ((String, String) throws -> Void)?
@@ -163,6 +164,8 @@ final class SwitchRecoveryKeychain: KeychainAccessing, @unchecked Sendable {
 
     var writeCount: Int { lock.withLock { state.writeCount } }
 
+    var noninteractiveReadServices: [String] { lock.withLock { state.noninteractiveReadServices } }
+
     var readFailureService: String? {
         get { lock.withLock { state.readFailureService } }
         set { lock.withLock { state.readFailureService = newValue } }
@@ -178,12 +181,25 @@ final class SwitchRecoveryKeychain: KeychainAccessing, @unchecked Sendable {
         set { lock.withLock { state.beforeWrite = newValue } }
     }
 
+    func readAppOwnedPassword(service: String, forCurrentUser: Bool, allowInteraction: Bool) throws -> String? {
+        if !allowInteraction {
+            lock.withLock { state.noninteractiveReadServices.append(service) }
+        }
+        return try forCurrentUser
+            ? readGenericPasswordForCurrentUser(service: service)
+            : readGenericPassword(service: service)
+    }
+
     func readGenericPassword(service: String) throws -> String? {
         try beforeRead?(service)
         return try lock.withLock {
             if service == state.readFailureService { throw Failure.injected }
             return state.values[service]
         }
+    }
+
+    func readGenericPassword(service: String, allowInteraction: Bool) throws -> String? {
+        try readAppOwnedPassword(service: service, forCurrentUser: false, allowInteraction: allowInteraction)
     }
 
     func readGenericPasswordForCurrentUser(service: String) throws -> String? {

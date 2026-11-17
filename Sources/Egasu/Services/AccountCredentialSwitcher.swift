@@ -28,11 +28,11 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
             case .incompleteClaudeAuthentication:
                 "Claude sign-in has not finished updating its account state. Finish signing in and try again."
             case .conflictingClaudeAuthentication:
-                "Claude sign-ins in different locations conflict. Open Settings → Accounts → Manage Claude Account, then choose Sign In Again."
+                "Claude sign-ins in different locations conflict. Open Accounts, open the Claude account, then choose Sign In Again."
             case .switchVerificationFailed(let label):
                 "Switching to \(label) could not be verified. Check the selected account and try again."
             case .switchRecoveryRequired:
-                "Claude account switch recovery is required. Open Settings → Accounts → Manage Claude Account, then choose the Use Claude option for the account you want to use."
+                "Claude account switch recovery is required. Open Accounts, open the Claude account you want to use, then choose Use Claude."
             case .selectionSaveFailed:
                 "egasu couldn't save the selected account. The recovery record was kept. Try again."
             }
@@ -104,8 +104,8 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
 
     /// 선택된 Claude의 터미널 준비 상태용 기본 인증과 루트 계정 정보.
     /// 프로필 API 호출 없이 현재 CLI가 사용할 로그인만 확인 — 영구 저장본 교체와 구분.
-    func readSharedClaudeAuthenticationForReadiness() throws -> AccountCredentialVault.Entry? {
-        try sharedClaudeAuthentication()
+    func readSharedClaudeAuthenticationForReadiness(allowInteraction: Bool = false) throws -> AccountCredentialVault.Entry? {
+        try sharedClaudeAuthentication(allowInteraction: allowInteraction)
     }
 
     struct VerifiedClaudeExternalAuthentication: Sendable {
@@ -117,9 +117,9 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
 
     /// CLI 인증은 그대로 두고 변경된 토큰의 계정·조직을 확인한 뒤 egasu 저장본에 반영.
     func readSharedClaudeExternalAuthentication(
-        comparedTo previousSnapshot: AccountCredentialVault.Entry?
+        comparedTo previousSnapshot: AccountCredentialVault.Entry?, allowInteraction: Bool
     ) async throws -> VerifiedClaudeExternalAuthentication? {
-        guard let observed = try sharedClaudeAuthentication(),
+        guard let observed = try sharedClaudeAuthentication(allowInteraction: allowInteraction),
             let expectedIdentity = identity(of: observed, family: "claude")?.identityKey
         else { return nil }
         if observed == previousSnapshot, expectedIdentity.contains("|") {
@@ -156,24 +156,29 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
         return .init(observed: observed, baseline: previousSnapshot, snapshot: snapshot, identityKey: verifiedIdentity)
     }
 
-    private func sharedClaudeAuthentication() throws -> AccountCredentialVault.Entry? {
+    private func sharedClaudeAuthentication(allowInteraction: Bool = true) throws -> AccountCredentialVault.Entry? {
         let service = ClaudeAuthStore.baseKeychainServiceName(environment: environment)
         let stateURL = homeDirectory.appendingPathComponent(".claude.json")
         let stored =
-            try claudeKeychainCredential(service: service)
+            try claudeKeychainCredential(service: service, allowInteraction: allowInteraction)
             ?? readTextIfPresent(homeDirectory.appendingPathComponent(".claude/.credentials.json"))
         guard let stored, isUsableClaudeCredential(stored) else { return nil }
         let account = try claudeOAuthAccount(inFirstOf: [stateURL])
         return .init(credential: stored, claudeOAuthAccount: account)
     }
 
-    private func claudeKeychainCredential(service: String) throws -> String? {
-        if let value = try keychain.readGenericPasswordForCurrentUser(service: service),
-            isUsableClaudeCredential(value)
-        {
+    private func claudeKeychainCredential(service: String, allowInteraction: Bool) throws -> String? {
+        // 승인 허용 경로는 기존 CLI 읽기 유지, 화면의 자동 준비 확인만 승인 창 없는 조회 사용.
+        let scoped = try allowInteraction
+            ? keychain.readGenericPasswordForCurrentUser(service: service)
+            : keychain.readGenericPasswordForCurrentUser(service: service, allowInteraction: false)
+        if let value = scoped, isUsableClaudeCredential(value) {
             return value
         }
-        if let value = try keychain.readGenericPassword(service: service), isUsableClaudeCredential(value) {
+        let generic = try allowInteraction
+            ? keychain.readGenericPassword(service: service)
+            : keychain.readGenericPassword(service: service, allowInteraction: false)
+        if let value = generic, isUsableClaudeCredential(value) {
             return value
         }
         return nil

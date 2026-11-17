@@ -130,7 +130,8 @@ struct AccountSelectionSwitcher {
         let observer = switcher
         let observation = try await Task.detached(priority: .utility) {
             let snapshot = try observer.loadSnapshot(for: previous, allowInteraction: true)
-            let verified = try await observer.readSharedClaudeExternalAuthentication(comparedTo: snapshot)
+            let verified = try await observer.readSharedClaudeExternalAuthentication(
+                comparedTo: snapshot, allowInteraction: true)
             let currentSnapshot = try observer.loadSnapshot(for: previous, allowInteraction: true)
             let currentShared = try observer.readSharedAuthentication(family: "claude")
             let currentState = try observer.readClaudeSwitchState()
