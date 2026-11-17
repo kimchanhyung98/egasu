@@ -166,7 +166,9 @@ extension KimiAuthError: CategorizedError {
         case .notLoggedIn: .notLoggedIn
         case .credentialsUnreadable, .credentialLockUnavailable,
              .credentialLockCompromised, .credentialSaveFailed: .credentialAccess
-        case .credentialsInvalid, .unsupportedConfiguration: .authInvalid
+        case .credentialsInvalid, .unsupportedConfiguration, .configurationInvalid,
+            .apiKeyMissing, .apiKeyRejected:
+            .authInvalid
         case .authExpired, .refreshRejected: .authExpired
         case .refreshResponseInvalid: .decoding
         }

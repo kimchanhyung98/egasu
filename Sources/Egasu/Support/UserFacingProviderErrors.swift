@@ -149,6 +149,12 @@ extension KimiAuthError: UserPresentableError {
             .init("Kimi credentials are invalid. Run `kimi` to log in again.")
         case .unsupportedConfiguration:
             .init("Custom Kimi API or OAuth hosts are not supported.")
+        case .configurationInvalid:
+            .init("Kimi configuration is invalid. Check config.toml.")
+        case .apiKeyMissing:
+            .init("Kimi API key is missing. Check the CLI provider settings.")
+        case .apiKeyRejected:
+            .init("Kimi API key was rejected. Check the CLI provider settings.")
         case .authExpired, .refreshRejected:
             .init("Kimi session expired. Run `kimi` to log in again.")
         case .refreshResponseInvalid:

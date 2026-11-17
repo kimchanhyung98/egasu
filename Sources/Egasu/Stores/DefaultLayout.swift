@@ -24,7 +24,7 @@ enum DefaultLayout {
         "grok.weekly", "grok.trend",
         "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30",
 
-        "kimi.session", "kimi.weekly",
+        "kimi.session", "kimi.weekly", "kimi.total", "kimi.extra", "kimi.extraBalance",
 
         "kiro.credits",
 

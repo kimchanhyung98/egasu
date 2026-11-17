@@ -17,7 +17,11 @@ final class KimiTotalSpendTests: XCTestCase {
 
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertNil(snapshot.warning)
-        XCTAssertEqual(provider.widgetDescriptors.map(\.id), ["kimi.session", "kimi.weekly"])
+        XCTAssertEqual(
+            provider.widgetDescriptors.map(\.id),
+            [
+                "kimi.session", "kimi.weekly", "kimi.total", "kimi.extra", "kimi.extraBalance"
+        ])
         XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Weekly"])
         XCTAssertEqual(snapshot.plan, "Allegro")
         XCTAssertTrue(provider.provider.usesDedicatedSpendLines)
@@ -46,6 +50,64 @@ final class KimiTotalSpendTests: XCTestCase {
         XCTAssertNil(snapshot.plan)
         XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Weekly"])
         XCTAssertEqual(tokens(snapshot), 190)
+    }
+
+    func testRequestlessNativeWireReachesDashboardTokensAndEstimatedCostThroughTheStore() async throws {
+        let root = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let path = root.appendingPathComponent("sessions/workspace/session/agents/main/wire.jsonl")
+        let timestamp = Int(now.timeIntervalSince1970 * 1_000)
+        var rows: [[String: Any]] = [["type": "metadata", "protocol_version": "1.5", "created_at": timestamp]]
+        let bucketTotals = [
+            "inputOther": 253_227, "output": 38_432, "inputCacheRead": 12_847_872, "inputCacheCreation": 0
+        ]
+        for index in 0..<64 {
+            rows.append([
+                "type": "usage.record", "agentId": "main", "model": "kimi-code/k3.1-pro",
+                "usageScope": "turn", "time": timestamp,
+                "usage": bucketTotals.mapValues { $0 / 64 + (index < $0 % 64 ? 1 : 0) }
+            ])
+        }
+        var wire = Data()
+        for row in rows {
+            wire.append(try JSONSerialization.data(withJSONObject: row))
+            wire.append(0x0A)
+        }
+        try UsageRecordFixture.write(wire, to: path)
+        let provider = makeProvider(
+            root: root, pricing: TestPricing.bundled,
+            usageJSON: #"""
+        {"goods_version":2,"usages":{"limit_5h":{"used_ratio":0.3},"limit_7d":{"used_ratio":"0.2"}}}
+        """#)
+        let suite = "KimiTotalSpendTests.requestless.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let fixedNow = now
+        let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", now: { fixedNow })
+        let store = WidgetDataStore(registry: .from([provider]), providers: [provider], cache: cache,
+            defaults: defaults, now: { fixedNow })
+
+        await store.refreshAll(force: true)
+
+        let snapshot = try XCTUnwrap(store.snapshots["kimi"])
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertNil(snapshot.warning)
+        XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Weekly"])
+        XCTAssertNotNil(snapshot.totalSpendLines)
+        for period: TotalSpendPeriod in [.today, .last30] {
+            let total = TotalSpendAggregator.total(
+                for: period, providers: [provider.provider], snapshots: store.snapshots)
+            XCTAssertEqual(total.totalTokens, 13_139_531, period.rawValue)
+            XCTAssertEqual(total.projection(for: .tokens).centerValue, 13_139_531, period.rawValue)
+            XCTAssertFalse(total.projection(for: .tokens).isEmpty, period.rawValue)
+            XCTAssertEqual(total.totalUSD, 3.4603484, accuracy: 0.0000001, period.rawValue)
+            XCTAssertFalse(total.projection(for: .cost).isEmpty, period.rawValue)
+            XCTAssertFalse(total.projection(for: .costPerMtok).isEmpty, period.rawValue)
+            XCTAssertEqual(
+                total.projection(for: .costPerMtok).centerValue, 3.4603484 / 13.139531,
+                accuracy: 0.0000001, period.rawValue)
+            XCTAssertTrue(total.isEstimated, period.rawValue)
+        }
     }
 
     func testStoreRetainsSameDayTotalsOnFullHistoryFailureThenRecoversAndAcceptsEmptyHistory() async throws {

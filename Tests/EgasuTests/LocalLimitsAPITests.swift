@@ -242,7 +242,7 @@ final class LocalLimitsAPITests: XCTestCase {
             "copilot": ["premiumCredits", "extraUsage", "orgCredits", "orgSpend", "chat", "completions"],
             "devin": ["daily", "weekly", "extraUsageBalance"],
             "grok": ["weekly"],
-            "kimi": ["session", "weekly"],
+            "kimi": ["session", "weekly", "totalUsage", "extraUsage", "extraUsageBalance"],
             "kiro": ["credits"],
             "opencode": ["session", "weekly", "monthly"],
             "openrouter": ["credits", "balance", "keyLimit"],
@@ -250,5 +250,31 @@ final class LocalLimitsAPITests: XCTestCase {
         ]
 
         XCTAssertEqual(actual, expected)
+    }
+
+    @MainActor
+    func testKimiExportsMonthlyTotalWithoutSeparateCodeContribution() throws {
+        let provider = KimiProvider()
+        let mapped = try KimiUsageMapper.map([
+            "usages": ["limit_month_total": ["used_ratio": 0.25], "limit_month_code": ["used_ratio": 0.15]]
+        ])
+        let snapshot = ProviderSnapshot(
+            providerID: "kimi", displayName: "Kimi", lines: mapped.lines, refreshedAt: fetchedAt
+        )
+        let state = LocalUsageAPI.State(
+            enabledOrderedIDs: ["kimi"], knownIDs: ["kimi"], snapshots: ["kimi": snapshot],
+            limitDescriptors: ["kimi": provider.widgetDescriptors], generatedAt: generatedAt
+        )
+
+        let root = try json(LocalUsageAPI.respond(method: "GET", path: "/v1/limits/kimi", state: state).body)
+        let kimi = try XCTUnwrap((root["providers"] as? [String: Any])?["kimi"] as? [String: Any])
+        let resources = try XCTUnwrap(kimi["resources"] as? [String: Any])
+        let total = try XCTUnwrap(resources["totalUsage"] as? [String: Any])
+
+        XCTAssertEqual(Set(resources.keys), ["totalUsage"])
+        XCTAssertEqual(total["unit"] as? String, "percent")
+        XCTAssertEqual(total["used"] as? Double, 25)
+        XCTAssertEqual(total["limit"] as? Double, 100)
+        XCTAssertEqual(total["remaining"] as? Double, 75)
     }
 }

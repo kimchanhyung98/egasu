@@ -16,10 +16,10 @@ struct KimiUsageClient: Sendable {
         self.now = now
     }
 
-    func fetchUsage(accessToken: String) async throws -> HTTPResponse {
+    func fetchUsage(accessToken: String, service: KimiService = .standard) async throws -> HTTPResponse {
         try await http.send(HTTPRequest(
             method: "GET",
-            url: Self.usageURL,
+            url: service.usageURL,
             headers: [
                 "Authorization": "Bearer \(accessToken)",
                 "Accept": "application/json"
@@ -28,7 +28,7 @@ struct KimiUsageClient: Sendable {
         ))
     }
 
-    func refreshToken(refreshToken: String) async throws -> KimiTokenRefresh {
+    func refreshToken(refreshToken: String, service: KimiService = .standard) async throws -> KimiTokenRefresh {
         let body = [
             "client_id=\(Self.clientID.urlFormEncoded)",
             "grant_type=refresh_token",
@@ -36,7 +36,7 @@ struct KimiUsageClient: Sendable {
         ].joined(separator: "&")
         let response = try await http.send(HTTPRequest(
             method: "POST",
-            url: Self.refreshURL,
+            url: service.refreshURL,
             headers: ["Content-Type": "application/x-www-form-urlencoded"],
             body: Data(body.utf8),
             timeout: 15

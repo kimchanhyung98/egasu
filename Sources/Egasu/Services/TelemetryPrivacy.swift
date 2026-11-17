@@ -12,6 +12,7 @@ enum TelemetryPrivacy {
         "chat", "completions", "payAsYouGo", "auto", "api", "plan", "resets", "resetWatch",
         "sonnetThinking", "gptOss", "geminiPro", "geminiFlash", "geminiWeekly", "claude", "claudeWeekly",
         "rateLimitResets", "spark", "sparkWeekly", "usage", "onDemand", "requests", "yesterday", "last30", "keyLimit",
+        "total", "extraBalance",
     ]
 
     static func providerFamily(_ cardID: String) -> String? {

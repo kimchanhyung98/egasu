@@ -140,7 +140,7 @@ Copilot `premiumCredits`는 할당량 사용 비율일 때 `percent`, 조직 관
 | Copilot | `premiumCredits`, `extraUsage`, `orgCredits`, `orgSpend`, `chat`, `completions` |
 | Devin | `daily`, `weekly`, `extraUsageBalance` |
 | Grok | `weekly` |
-| Kimi | `session`, `weekly` |
+| Kimi | `session`, `weekly`, `totalUsage`, `extraUsage`, `extraUsageBalance` |
 | Kiro | `credits` |
 | OpenCode | `session`, `weekly`, `monthly` |
 | OpenRouter | `credits`, `balance`, `keyLimit` |

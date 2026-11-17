@@ -28,18 +28,62 @@ final class KimiUsagePricingTests: XCTestCase {
         }
     }
 
-    func testMissingOffAndUnknownThinkingKeepEveryTokenWithoutCost() throws {
-        for effort in [nil, "off", "none", "disabled", "unrecognized"] as [String?] {
+    func testRequestlessOfficialCodeAliasesReachTheSharedPriceAndDashboard() throws {
+        for (model, expected) in [("k3", 1.4), ("k3-256k", 1.4), ("k3.1-pro", 4.0), ("k3.1-pro-highspeed", 6.6)] {
+            let parsed = try parse([usage(model: model)])
+            let result = KimiUsageScanner.aggregate([parsed], now: now, pricing: pricing)
+
+            XCTAssertEqual(parsed.records.map(\.tokens), [3_100_000], model)
+            XCTAssertEqual(parsed.invalidRows, 0, model)
+            let input = try XCTUnwrap(parsed.records.first?.pricingInput, model)
+            XCTAssertEqual(input.model, model)
+            XCTAssertNil(input.protocolName, model)
+            XCTAssertNil(input.thinkingEffort, model)
+            XCTAssertTrue(result.warnings.isEmpty, model)
+            for period: TotalSpendPeriod in [.today, .last30] {
+                let total = total(result, period: period)
+                XCTAssertEqual(total.totalTokens, 3_100_000, model)
+                XCTAssertEqual(total.projection(for: .tokens).centerValue, 3_100_000, model)
+                XCTAssertEqual(total.totalUSD, expected, accuracy: 0.000_001, model)
+                XCTAssertEqual(total.projection(for: .cost).centerValue, expected, accuracy: 0.000_001, model)
+                XCTAssertEqual(
+                    total.projection(for: .costPerMtok).centerValue, expected / 3.1, accuracy: 0.000_001, model)
+                XCTAssertTrue(total.isEstimated, model)
+            }
+        }
+    }
+
+    func testRequestlessCacheWritesUseTheDefaultFiveMinutePrice() throws {
+        let parsed = try parse([usage(model: "k3.1-pro", writes: 500_000)])
+        let result = KimiUsageScanner.aggregate([parsed], now: now, pricing: pricing)
+        let input = try XCTUnwrap(parsed.records.first?.pricingInput)
+
+        XCTAssertEqual(input.tokens.cacheWrite5m, 500_000)
+        XCTAssertEqual(input.tokens.cacheWrite1h, 0)
+        XCTAssertEqual(total(result, period: .today).totalTokens, 3_600_000)
+        XCTAssertEqual(total(result, period: .today).totalUSD, 5.5, accuracy: 0.000_001)
+        XCTAssertEqual(
+            total(result, period: .last30).projection(for: .costPerMtok).centerValue, 5.5 / 3.6, accuracy: 0.000_001)
+        XCTAssertTrue(result.warnings.isEmpty)
+    }
+
+    func testExplicitOffAndUnknownThinkingKeepEveryTokenWithoutCost() throws {
+        for effort in ["off", "none", "disabled", "unrecognized"] {
             let parsed = try parse([request(effort: effort), usage()])
             let result = KimiUsageScanner.aggregate([parsed], now: now, pricing: pricing)
             XCTAssertEqual(total(result, period: .today).totalTokens, 3_100_000)
             XCTAssertTrue(total(result, period: .today).projection(for: .cost).isEmpty)
             XCTAssertEqual(result.warnings.count, 1)
         }
-        for effort in ["on", "low", "high", "max"] {
+    }
+
+    func testMissingThinkingUsesTheSamePriceAsExplicitEnabledThinking() throws {
+        for effort in [nil, "on", "low", "high", "max"] as [String?] {
             let parsed = try parse([request(effort: effort), usage()])
             let result = KimiUsageScanner.aggregate([parsed], now: now, pricing: pricing)
             XCTAssertEqual(total(result, period: .today).totalUSD, 1.4, accuracy: 0.000_001)
+            XCTAssertTrue(total(result, period: .today).isEstimated)
+            XCTAssertTrue(result.warnings.isEmpty)
         }
     }
 
@@ -52,26 +96,51 @@ final class KimiUsagePricingTests: XCTestCase {
         }
     }
 
-    func testProtocolAndCacheWriteBoundariesPreserveTokensWithoutAssumingTTL() throws {
-        let cases: [(String, Int, Int, Bool)] = [
-            ("anthropic", 1_000_000, 0, true),
-            ("anthropic", 1_000_000, 1, false),
-            ("openai", 1_000_000, 0, false),
-            ("openai_responses", 1_000_000, 0, false),
-            ("openai", 0, 0, true),
-            ("openai_responses", 0, 0, true),
-            ("openai", 0, 1, false),
-            ("unknown", 0, 0, false)
+    func testMalformedRequestPricingMetadataDoesNotUseDefaults() throws {
+        for field in ["provider", "thinkingEffort"] {
+            for value: Any in [false, 1, NSNull(), ["value": "high"], ["high"]] {
+                var request = request()
+                request[field] = value
+                let result = KimiUsageScanner.aggregate([try parse([request, usage()])], now: now, pricing: pricing)
+
+                XCTAssertEqual(total(result, period: .today).totalTokens, 3_100_000, field)
+                XCTAssertTrue(total(result, period: .today).projection(for: .cost).isEmpty, field)
+                XCTAssertFalse(result.warnings.isEmpty, field)
+            }
+        }
+    }
+
+    func testMissingAndKnownProtocolsPriceNormalizedInputsAndDefaultCacheWrites() throws {
+        let cases: [(String?, Int, Int, Double?)] = [
+            (nil, 1_000_000, 1_000_000, 2.4),
+            ("anthropic", 1_000_000, 0, 1.4),
+            ("anthropic", 1_000_000, 1_000_000, 2.4),
+            ("openai", 1_000_000, 0, 1.4),
+            ("openai_responses", 1_000_000, 0, 1.4),
+            ("openai", 0, 0, 0.4),
+            ("openai_responses", 0, 0, 0.4),
+            ("openai", 0, 1_000_000, 1.4),
+            ("openai_responses", 1_000_000, 1_000_000, 2.4),
+            ("unknown", 1_000_000, 1_000_000, nil)
         ]
-        for (protocolName, input, writes, priced) in cases {
+        for (protocolName, input, writes, expected) in cases {
             let parsed = try parse([
                 request(protocolName: protocolName), usage(input: input, writes: writes)
             ])
             let result = KimiUsageScanner.aggregate([parsed], now: now, pricing: pricing)
             let total = total(result, period: .today)
+            let label = protocolName ?? "missing"
             XCTAssertEqual(total.totalTokens, Double(input + writes + 2_100_000))
-            XCTAssertEqual(!total.projection(for: .cost).isEmpty, priced, protocolName)
-            XCTAssertEqual(result.warnings.isEmpty, priced, protocolName)
+            XCTAssertEqual(result.invalidRows, 0, label)
+            if let expected {
+                XCTAssertEqual(total.totalUSD, expected, accuracy: 0.000_001, label)
+                XCTAssertFalse(total.projection(for: .costPerMtok).isEmpty, label)
+                XCTAssertTrue(result.warnings.isEmpty, label)
+            } else {
+                XCTAssertTrue(total.projection(for: .cost).isEmpty, label)
+                XCTAssertTrue(total.projection(for: .costPerMtok).isEmpty, label)
+                XCTAssertEqual(result.warnings.count, 1, label)
+            }
         }
     }
 
@@ -292,12 +361,13 @@ final class KimiUsagePricingTests: XCTestCase {
     }
 
     private func request(
-        model: String = "k3", protocolName: String = "anthropic", effort: String? = "high"
+        model: String = "k3", protocolName: String? = "anthropic", effort: String? = "high"
     ) -> [String: Any] {
         var row: [String: Any] = [
-            "type": "llm.request", "agentId": "main", "kind": "loop", "provider": protocolName,
+            "type": "llm.request", "agentId": "main", "kind": "loop",
             "model": model, "modelAlias": "kimi-code/\(model)"
         ]
+        row["provider"] = protocolName
         row["thinkingEffort"] = effort
         return row
     }

@@ -218,6 +218,7 @@ actor KimiUsageScanner {
         var result = ParsedFile()
         typealias Request = (alias: String, model: String, protocolName: String?, thinkingEffort: String?)
         var requests: [String: [String: Request]] = [:]
+        var requestContextObserved = false
         // 마지막 JSON이 완전하면 줄바꿈 없이도 처리. append 중인 불완전 행만 다음 스캔으로 보류.
         let tailStart = data.lastIndex(of: 0x0A).map { data.index(after: $0) } ?? data.startIndex
         let tail = data.suffix(from: tailStart)
@@ -227,6 +228,7 @@ actor KimiUsageScanner {
             try Task.checkCancellation()
             guard let object = ProviderParse.jsonObject(line), let type = object["type"] as? String else {
                 requests.removeAll()
+                requestContextObserved = true
                 result.invalidRows += 1
                 continue
             }
@@ -243,6 +245,7 @@ actor KimiUsageScanner {
                 continue
             }
             if type == "llm.request" {
+                requestContextObserved = true
                 guard let agent = object["agentId"] as? String else {
                     requests.removeAll()
                     result.invalidRows += 1
@@ -262,7 +265,10 @@ actor KimiUsageScanner {
                 if let alias = object["modelAlias"] as? String,
                    let model = object["model"] as? String,
                    !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    let request = (alias, model, object["provider"] as? String, object["thinkingEffort"] as? String)
+                    // 타입 오류는 미지원 값으로 유지하여 필드 누락의 기본 가격을 적용하지 않음.
+                    let protocolName = object["provider"].map { $0 as? String ?? "" }
+                    let thinkingEffort = object["thinkingEffort"].map { $0 as? String ?? "" }
+                    let request = (alias, model, protocolName, thinkingEffort)
                     requests[agent, default: [:]]["latest"] = request
                     if let scope { requests[agent, default: [:]][scope] = request }
                 }
@@ -282,7 +288,12 @@ actor KimiUsageScanner {
             let scopedRequest = (object["usageScope"] as? String).flatMap { scope in
                 ["turn", "session"].contains(scope) ? requests[agent]?[scope] : nil
             }
-            guard let request = scopedRequest ?? requests[agent]?["latest"], request.alias == alias,
+            let request = scopedRequest ?? requests[agent]?["latest"]
+            // 요청 상세가 처음부터 없는 wire만 공식 별칭으로 귀속. 명시된 요청이나 손상 경계는 우회하지 않음.
+            let requestlessModel = String(alias.dropFirst("kimi-code/".count))
+            guard
+                request.map({ $0.alias == alias })
+                    ?? (!requestContextObserved && canonicalModel(requestlessModel) != nil),
                   let milliseconds = count(object["time"]),
                   let usage = object["usage"] as? [String: Any],
                   let input = count(usage["inputOther"]),
@@ -302,13 +313,14 @@ actor KimiUsageScanner {
                 continue
             }
             // namespace는 사용자가 재설정 가능하므로 요청 API 모델명도 함께 제한.
-            let model = request.model.lowercased()
+            let model = (request?.model ?? requestlessModel).lowercased()
             guard isKimiRoute(alias: alias, model: model) else { continue }
+            let pricingModel = scopedRequest?.model ?? (request == nil ? requestlessModel : nil)
             result.records.append(Record(
                 timestamp: Date(timeIntervalSince1970: Double(milliseconds) / 1_000),
                 tokens: tokens,
-                pricingInput: cacheReadUnknown ? nil : scopedRequest.map { PricingInput(
-                    model: $0.model, protocolName: $0.protocolName, thinkingEffort: $0.thinkingEffort,
+                pricingInput: cacheReadUnknown ? nil : pricingModel.map { PricingInput(
+                    model: $0, protocolName: scopedRequest?.protocolName, thinkingEffort: scopedRequest?.thinkingEffort,
                     tokens: TokenBreakdown(input: input, cacheWrite5m: cacheWrite, cacheRead: cacheRead, output: output)
                 ) },
                 wireEntryID: UsageJSON.string(object["id"]) ?? "row:\(index)"
@@ -337,15 +349,11 @@ actor KimiUsageScanner {
     }
 
     private static func estimatedCost(_ input: PricingInput?, pricing: ModelPricing) -> Double? {
-        guard let input, let canonical = canonicalModel(input.model),
-              let effort = input.thinkingEffort, ["on", "low", "high", "max"].contains(effort),
-              input.tokens.cacheWrite5m == 0
-        else { return nil }
+        guard let input, let canonical = canonicalModel(input.model) else { return nil }
+        if let effort = input.thinkingEffort, !["on", "low", "high", "max"].contains(effort) { return nil }
+        // 생략된 추론 설정은 모델 기본값, TTL 미분리 캐시 쓰기는 기본 5분 단가로 비용 추정.
         switch input.protocolName {
-        case "anthropic": break
-        case "openai", "openai_responses":
-            // 이 두 decoder의 input에는 TTL 미상의 캐시 쓰기가 포함될 수 있음.
-            guard input.tokens.input == 0 else { return nil }
+        case nil, "anthropic", "openai", "openai_responses": break
         default: return nil
         }
         guard let rates = pricing.resolve(model: canonical),
