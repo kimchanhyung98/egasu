@@ -17,11 +17,9 @@ final class AccountLayoutSwitchTests: XCTestCase {
 
         let next = catalog(selected: "work")
         layout.replaceRegistry(next.registry, profileIDsByCardID: next.mapping)
-        let detailID = "codex"
-        XCTAssertEqual(detailID, "codex")
-        XCTAssertEqual(next.mapping[detailID], "work")
-        XCTAssertNotNil(layout.provider(id: detailID), "전환 후에도 열린 상세가 현재 카탈로그의 계정 표시")
-        assertWorkSettings(layout, cardID: detailID)
+        XCTAssertEqual(next.mapping["codex"], "work")
+        XCTAssertNotNil(layout.provider(id: "codex"), "전환 후에도 열린 상세가 현재 카탈로그의 계정 표시")
+        assertWorkSettings(layout, cardID: "codex")
         XCTAssertFalse(layout.isMetricEnabled("\(personalID).credits"))
         XCTAssertTrue(layout.isMetricEnabled("\(personalID).weekly"))
         XCTAssertEqual(layout.providerOrder, providerOrder, "계정 전환은 프로바이더 순서를 바꾸지 않음")

@@ -83,6 +83,14 @@ enum LayoutBootstrap {
                     }
                 }
                 disabled = existingIDs.subtracting(enabled)
+                if let seeded = persistence.loadSeededDefaults() {
+                    let unseenDefaults = Set(defaults.metricIDs)
+                        .intersection(DefaultLayout.legacyV1DefaultMetricIDs)
+                        .subtracting(seeded.map(ProviderAccountID.canonicalMetricID))
+                    disabled = disabled.filter {
+                        !unseenDefaults.contains(ProviderAccountID.canonicalMetricID($0))
+                    }
+                }
             } else {
                 disabled = currentIDs
                 mayPersist = false
@@ -102,6 +110,7 @@ enum LayoutBootstrap {
         placed.append(contentsOf: legacyPlaced.filter { !currentIDs.contains($0.descriptorID) })
         let hasStoredLayout = persistence.hasStoredLayout || persistence.hasStoredDisabledMetrics
         let metricOrderByProvider = order
+        // 기존 확장 영역의 시드만 계산 — 현재 지표의 숨김 선택은 위에서 보존.
         let seededResult = seedNewDefaultMetrics(
             into: LayoutOrdering.foldingToCanonical(persistence.loadPlaced() ?? []),
             persistence: persistence, hasStoredLayout: hasStoredLayout,
@@ -119,6 +128,13 @@ enum LayoutBootstrap {
                 limit: LayoutStore.maxPinsPerProvider
             )
             shouldPersistPins = pinnedMetricIDs != Set(savedPins)
+        } else if let importedPins = persistence.loadPriorityPins() {
+            // 현재 등록된 항목만 기존 메뉴 막대에 표시하고 원본 계정 ID는 Priority 저장값에 유지.
+            pinnedMetricIDs = LayoutOrdering.foldingPins(
+                importedPins.filter { registry.descriptor(id: $0)?.pinnable == true },
+                order: metricOrderByProvider,
+                limit: LayoutStore.maxPinsPerProvider
+            )
         } else {
             pinnedMetricIDs = Set(defaults.pinnedMetricIDs.filter { registry.hasCanonicalMetric($0) })
         }

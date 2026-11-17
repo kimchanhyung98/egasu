@@ -3,6 +3,75 @@ import XCTest
 
 @MainActor
 final class SharedMetricSettingsTests: XCTestCase {
+    func testSharedReorderKeepsPersonalSlotsWithoutTheBareCard() {
+        for useDivider in [false, true] {
+            let fixture = catalog(includeBare: false)
+            let store = makeStore(defaults: makeDefaults(), catalog: fixture)
+            store.expandedMetricIDs = []
+            let workID = cardID(profile: "work")
+            let trend = "\(workID).trend"
+            for (target, prefix) in [
+                ("\(workID).weekly", ["\(workID).session", trend, "\(workID).weekly"]),
+                ("\(workID).session", [trend, "\(workID).session", "\(workID).weekly"])
+            ] {
+                if useDivider {
+                    var order = store.orderedSupportedMetrics(for: workID).map(\.id).filter { $0 != trend }
+                    let index = order.firstIndex(of: target)!
+                    order.insert(trend, at: index)
+                    let divider = "\(workID)::expanded-divider"
+                    XCTAssertTrue(
+                        store.applyMetricDividerOrder(
+                            order + [divider], dragged: trend, dividerID: divider, in: workID))
+                } else {
+                    XCTAssertTrue(store.reorderMetric(dragged: trend, target: target, in: workID))
+                }
+                XCTAssertEqual(Array(store.orderedSupportedMetrics(for: workID).map(\.id).prefix(3)), prefix)
+            }
+        }
+    }
+
+    func testProviderDragUsesDisplayedFamilyOrderWithoutTheBareCard() {
+        let workID = cardID(profile: "work")
+        let providers = [workID, "cursor", "zai"].map {
+            Provider(id: $0, displayName: $0, icon: .providerMark("codex"))
+        }
+        let registry = WidgetRegistry(providers: providers, descriptors: [])
+        let store = LayoutStore(registry: registry, defaults: makeDefaults(), storageKey: "layout")
+
+        XCTAssertTrue(store.reorderProvider(dragged: workID, target: "cursor"))
+
+        XCTAssertEqual(store.customizeProviderRows.map(\.id), ["cursor", workID, "zai"])
+    }
+
+    func testIncomingAccountWithoutSavedOrderKeepsSharedSlotsAndUsesItsDefaultQuotaOrder() {
+        for switchWhileClosed in [false, true] {
+            let defaults = makeDefaults()
+            let personal = catalog(profiles: ["personal"])
+            var store = makeStore(defaults: defaults, catalog: personal)
+            XCTAssertTrue(store.reorderMetric(dragged: "codex.weekly", target: "codex.session", in: "codex"))
+            XCTAssertTrue(store.reorderMetric(dragged: "codex.trend", target: "codex.spark", in: "codex"))
+            let originalOrder = store.orderedSupportedMetrics(for: "codex").map(\.id)
+            let sharedSlots = originalOrder.enumerated().filter { ProviderAccountID.isSharedMetric($0.element) }
+                .map { "\($0.offset):\($0.element)" }
+            let work = catalog(selected: "work", profiles: ["work"])
+            if switchWhileClosed {
+                store = makeStore(defaults: defaults, catalog: work)
+            } else {
+                store.replaceRegistry(work.registry, profileIDsByCardID: work.mapping)
+            }
+            let nextOrder = store.orderedSupportedMetrics(for: "codex").map(\.id)
+            XCTAssertEqual(
+                nextOrder.enumerated().filter { ProviderAccountID.isSharedMetric($0.element) }
+                    .map { "\($0.offset):\($0.element)" },
+                sharedSlots)
+            XCTAssertEqual(
+                store.accountSettingsMetrics(for: "codex").map(\.id),
+                accountSuffixes(family: "codex").map { "codex.\($0)" })
+            let restored = makeStore(defaults: defaults, catalog: personal)
+            XCTAssertEqual(restored.orderedSupportedMetrics(for: "codex").map(\.id), originalOrder)
+        }
+    }
+
     func testEachAccountUsesTheSameSharedSettingsAndKeepsQuotaSettingsSeparate() {
         for family in ["claude", "codex"] {
             let fixture = catalog(family: family)
@@ -188,7 +257,7 @@ final class SharedMetricSettingsTests: XCTestCase {
 
         store.replaceRegistry(absent.registry, profileIDsByCardID: absent.mapping)
         let relaunched = makeStore(defaults: defaults, catalog: absent)
-        XCTAssertFalse(defaults.stringArray(forKey: "layout.disabledMetrics")?.contains("codex.last30") ?? true)
+        XCTAssertTrue(defaults.stringArray(forKey: "layout.disabledMetrics")?.contains("codex.today") ?? false)
         XCTAssertFalse(relaunched.placed.contains { $0.descriptorID == "codex.today" })
         relaunched.replaceRegistry(initial.registry, profileIDsByCardID: initial.mapping)
 

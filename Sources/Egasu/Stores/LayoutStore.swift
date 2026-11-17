@@ -102,7 +102,7 @@ final class LayoutStore {
         self.defaultPinnedMetricIDs = defaultPinnedMetricIDs
         self.defaultExpandedMetricIDs = defaultExpandedMetricIDs
         self.isProviderEnabled = isProviderEnabled
-        persistence.reconcileAccountProfiles(profileIDsByCardID)
+        persistence.reconcileAccountProfiles(profileIDsByCardID, registry: registry)
 
         let initial = LayoutBootstrap.load(
             registry: registry,
@@ -137,7 +137,7 @@ final class LayoutStore {
     /// 새 카드·프로필 연결에 맞춰 저장된 숨김·순서를 다시 읽고 화면 연결 유지.
     /// 개인 한도와 공통 이력을 구분하고, 프로필 변경 시 undo 이력 초기화.
     func replaceRegistry(_ registry: WidgetRegistry, profileIDsByCardID: [String: String]? = nil) {
-        let profilesChanged = profileIDsByCardID.map { persistence.reconcileAccountProfiles($0) } ?? false
+        let profilesChanged = profileIDsByCardID.map { persistence.reconcileAccountProfiles($0, registry: registry) } ?? false
         guard profilesChanged || registry.providers != self.registry.providers || registry.descriptors != self.registry.descriptors else {
             return
         }

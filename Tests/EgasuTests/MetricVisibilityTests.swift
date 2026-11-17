@@ -3,6 +3,21 @@ import XCTest
 
 @MainActor
 final class MetricVisibilityTests: XCTestCase {
+    func testDirectV1UpgradeAddsUnseenLegacyDefaultsAndKeepsOptionalAndChosenHides() {
+        let defaults = makeDefaults()
+        let persistence = LayoutPersistence(defaults: defaults, storageKey: "layout")
+        persistence.savePlaced([PlacedWidget(descriptorID: "claude.session")])
+        persistence.saveSeededDefaults(["claude.session", "claude.weekly"])
+
+        let store = makeStore(defaults)
+
+        XCTAssertTrue(store.isMetricEnabled("claude.today"), "시드 기록에 아직 없는 이전 기본 ON 지표 추가")
+        XCTAssertFalse(store.isMetricEnabled("claude.weekly"), "이미 제공한 지표의 숨김 선택 유지")
+        XCTAssertFalse(store.isMetricEnabled("claude.extra"), "이전 기본 OFF 지표를 새 기본값만으로 켜지 않음")
+        store.setMetricEnabled("claude.today", false)
+        XCTAssertFalse(makeStore(defaults).isMetricEnabled("claude.today"))
+    }
+
     func testFreshInstallEnablesEveryRegisteredMetricWithoutWritingEnabledList() {
         let defaults = makeDefaults()
         let store = makeStore(defaults)

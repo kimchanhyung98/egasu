@@ -75,7 +75,7 @@ final class LayoutPersistence {
     /// 공유 홈 카드가 다른 등록 계정을 가리키면 개인 설정만 같은 프로필의 새 카드로 이동.
     /// 공통 설정은 기본 프로바이더 ID에 유지하고, 부재 중 프로필은 스냅샷 카드 ID로 보관.
     @discardableResult
-    func reconcileAccountProfiles(_ profileIDsByCard: [String: String]) -> Bool {
+    func reconcileAccountProfiles(_ profileIDsByCard: [String: String], registry: WidgetRegistry) -> Bool {
         let previous = decode([String: String].self, forKey: keys.accountProfilesByCard)
         let knownCards = Set(profileIDsByCard.keys).union(previous?.keys.map { $0 } ?? []).union(loadSeededCards() ?? [])
         let sharedMetricsChanged = removeSharedMetricAliases(knownCards: knownCards)
@@ -128,7 +128,11 @@ final class LayoutPersistence {
             for (cardID, ids) in order where !ProviderAccountID.isAccountCard(cardID) && knownCards.contains(cardID) {
                 guard ids.contains(where: ProviderAccountID.isSharedMetric) else { continue }
                 // 기본 카드의 공통 지표 위치에 새 계정의 개인 순서를 끼워 넣어 양쪽 상대순서 유지.
-                var personalIDs = (nextOrder[cardID] ?? []).makeIterator()
+                let defaultIDs = registry.descriptors(for: cardID)
+                    .filter { !ProviderAccountID.isSharedMetric($0.id) }.map(\.id)
+                let savedIDs = nextOrder[cardID] ?? []
+                var personalIDs = LayoutOrdering.normalizedMetricIDs(
+                    savedIDs, validIDs: defaultIDs + savedIDs).makeIterator()
                 nextOrder[cardID] = ids.compactMap { id in
                     ProviderAccountID.isSharedMetric(id) ? id : personalIDs.next()
                 } + Array(personalIDs)

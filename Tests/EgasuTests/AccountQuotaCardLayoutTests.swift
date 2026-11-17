@@ -5,6 +5,44 @@ import XCTest
 final class AccountQuotaCardLayoutTests: XCTestCase {
     private let cardID = "claude@profile-work"
 
+    func testAccountDividerSharesSectionsAndKeepsQuotaVisibilityIndependent() {
+        let store = makeStore(defaults: makeDefaults("SharedDivider"))
+        store.setMetricEnabled("claude.weekly", false)
+        store.expandedMetricIDs = ["claude.session"]
+        let divider = "\(cardID)::expanded-divider"
+
+        XCTAssertTrue(
+            store.applyMetricDividerOrder(
+                [
+                    "\(cardID).sonnet", divider, "\(cardID).session", "\(cardID).weekly"
+                ], dragged: "\(cardID).weekly", dividerID: divider, in: cardID))
+
+        XCTAssertTrue(store.isExpandedMetric("claude.weekly"))
+        XCTAssertTrue(store.isExpandedMetric("\(cardID).weekly"))
+        XCTAssertFalse(store.isMetricEnabled("claude.weekly"))
+        XCTAssertTrue(store.isMetricEnabled("\(cardID).weekly"))
+        XCTAssertFalse(store.expandedMetricIDs.contains { ProviderAccountID.isAccountCard($0) })
+    }
+
+    func testProviderResetFromAnAccountRestoresItsFamilyAndKeepsOtherProviders() {
+        let store = makeStore(defaults: makeDefaults("FamilyReset"))
+        store.setMetricEnabled("claude.weekly", false)
+        store.setMetricEnabled("\(cardID).weekly", false)
+        XCTAssertTrue(store.reorderMetric(dragged: "\(cardID).sonnet", target: "\(cardID).session", in: cardID))
+        store.setMetricEnabled("codex.session", true)
+        let codex = store.placed.filter { $0.descriptorID.hasPrefix("codex.") }
+
+        store.resetProvider(cardID)
+
+        XCTAssertTrue(store.isMetricEnabled("claude.weekly"))
+        XCTAssertTrue(store.isMetricEnabled("\(cardID).weekly"))
+        XCTAssertEqual(
+            store.accountSettingsMetrics(for: cardID).map(\.id),
+            ["session", "weekly", "sonnet"].map { "\(cardID).\($0)" })
+        XCTAssertEqual(store.placed.filter { $0.descriptorID.hasPrefix("codex.") }, codex)
+        XCTAssertFalse(store.canUndo)
+    }
+
     func testAccountQuotaCardKeepsLegacyOnDemandPresentation() {
         // 기존 확장 영역 소속은 유지하고 개인 지표만 카드별로 복사.
         let defaults = makeDefaults("OnDemandSplit")
@@ -224,6 +262,7 @@ final class AccountQuotaCardLayoutTests: XCTestCase {
         let suiteName = "EgasuTests.AccountCardLayout.\(name).\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
+        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
         return defaults
     }
 

@@ -5,6 +5,31 @@ import XCTest
 final class UpstreamLayoutImportTests: XCTestCase {
     private let layoutKey = "openusage.layout.v1"
 
+    func testV1ImportAppliesResetWatchPlacementAfterFreshSchemaStamp() throws {
+        let fixture = makeDefaults()
+        SettingsMigrator.migrate(
+            defaults: fixture.defaults, domainName: fixture.target, capturedFreshInstall: true)
+        XCTAssertEqual(fixture.defaults.integer(forKey: SettingsMigrator.schemaVersionKey), 3)
+        let order = ["codex": ["codex.session", "codex.rateLimitResets", "codex.weekly"]]
+        fixture.defaults.setPersistentDomain(
+            [
+                layoutKey: try JSONEncoder().encode([PlacedWidget(descriptorID: "codex.session")]),
+                "\(layoutKey).metricOrderByProvider": try JSONEncoder().encode(order),
+                "\(layoutKey).expandedMetrics": ["codex.weekly"]
+            ], forName: fixture.source)
+
+        XCTAssertTrue(importLayout(fixture))
+        XCTAssertEqual(
+            fixture.defaults.stringArray(forKey: "\(layoutKey).expandedMetrics"),
+            ["codex.weekly", "codex.resetWatch"])
+        let saved = try XCTUnwrap(fixture.defaults.data(forKey: "\(layoutKey).metricOrderByProvider"))
+        XCTAssertEqual(
+            try JSONDecoder().decode([String: [String]].self, from: saved)["codex"],
+            ["codex.session", "codex.resetWatch", "codex.rateLimitResets", "codex.weekly"])
+        XCTAssertEqual(fixture.defaults.integer(forKey: SettingsMigrator.schemaVersionKey), 3)
+        XCTAssertNil(fixture.defaults.object(forKey: "openusage.enabledProviders.v1"))
+    }
+
     func testV1ImportsLayoutAndLeavesOtherSettingsAndSourceUntouched() throws {
         let fixture = makeDefaults()
         let placed = try JSONEncoder().encode([PlacedWidget(descriptorID: "claude.session")])
@@ -79,6 +104,7 @@ final class UpstreamLayoutImportTests: XCTestCase {
         XCTAssertTrue(store.isMetricEnabled("claude.session"))
         XCTAssertTrue(store.isMetricEnabled("claude.extra"))
         XCTAssertTrue(storedPriorityPins(fixture).contains("claude.session"))
+        XCTAssertEqual(store.pinnedMetricIDs, ["claude.session"])
         XCTAssertEqual(store.providerOrder, ["cursor", "claude"])
         XCTAssertEqual(store.metricOrderByProvider["claude"], ["claude.extra", "claude.session", "claude.weekly"])
     }
@@ -99,6 +125,7 @@ final class UpstreamLayoutImportTests: XCTestCase {
         XCTAssertTrue(store.isMetricEnabled("claude.session"))
         XCTAssertTrue(store.isMetricEnabled("claude.today"))
         XCTAssertFalse(storedPriorityPins(fixture).contains("claude.weekly"))
+        XCTAssertTrue(store.pinnedMetricIDs.isEmpty, "미등록 계정의 고정으로 기본 카드나 기본 별표를 선택하지 않음")
         store.setMetricEnabled("claude.extra", false)
 
         let reloaded = LayoutStore(registry: .mock, defaults: fixture.defaults)

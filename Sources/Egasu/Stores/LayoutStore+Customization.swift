@@ -192,9 +192,7 @@ extension LayoutStore {
         recordingUndoStep {
             var seen = Set<String>()
             let rows = customizeProviderRows.filter(\.isEnabled)
-            // 기본 행의 패밀리 순서 유지, 추가 계정만 남은 패밀리도 포함.
-            let familyRows = rows.filter { !ProviderAccountID.isAccountCard($0.id) } + rows
-            let shown = familyRows.map { ProviderAccountID.family(of: $0.id) }
+            let shown = rows.map { ProviderAccountID.family(of: $0.id) }
                 .filter { seen.insert($0).inserted }
             let draggedFamily = ProviderAccountID.family(of: dragged)
             let targetFamily = ProviderAccountID.family(of: target)
@@ -294,7 +292,7 @@ extension LayoutStore {
         if providerID == family {
             metricOrderByProvider[family] = next
         } else {
-            var personal = accountSettingsMetrics(for: family).map(\.id).makeIterator()
+            var personal = canonicalMetricOrder(for: family).filter { !ProviderAccountID.isSharedMetric($0) }.makeIterator()
             metricOrderByProvider[family] = next.compactMap {
                 ProviderAccountID.isSharedMetric($0) ? Self.canonical($0) : personal.next()
             } + Array(personal)
@@ -370,7 +368,7 @@ extension LayoutStore {
         if providerID == family {
             metricOrderByProvider[family] = nextOrder
         } else {
-            var personal = accountSettingsMetrics(for: family).map(\.id).makeIterator()
+            var personal = canonicalMetricOrder(for: family).filter { !ProviderAccountID.isSharedMetric($0) }.makeIterator()
             metricOrderByProvider[family] = nextOrder.compactMap {
                 ProviderAccountID.isSharedMetric($0) ? Self.canonical($0) : personal.next()
             } + Array(personal)

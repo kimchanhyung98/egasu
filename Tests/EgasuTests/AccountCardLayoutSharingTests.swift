@@ -169,8 +169,8 @@ final class AccountCardLayoutSharingTests: XCTestCase {
         XCTAssertEqual(layout.customizeProviderRows.map(\.id), [cardID, "codex", "claude"])
         XCTAssertTrue(layout.reorderProvider(dragged: "claude", target: "codex"))
 
-        XCTAssertEqual(layout.customizeProviderRows.map(\.id), [cardID, "claude", "codex"])
-        XCTAssertEqual(layout.providerOrder, [cardID, "claude", "codex"])
+        XCTAssertEqual(layout.customizeProviderRows.map(\.id), ["codex", cardID, "claude"])
+        XCTAssertEqual(layout.providerOrder, ["codex", cardID, "claude"])
         XCTAssertEqual(
             presentation.orderedProfiles(profiles, family: "claude").map(\.id),
             accountOrder,
