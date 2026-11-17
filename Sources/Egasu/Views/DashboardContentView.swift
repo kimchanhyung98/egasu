@@ -24,14 +24,8 @@ struct DashboardContentView: View {
                         .padding(.bottom, density.sectionSpacing)
                         .transition(.scale(scale: 0.95).combined(with: .opacity))
                 }
-                if container.onboarding.isCustomizeHintPending {
-                    CustomizeHintCard()
-                        .padding(.bottom, density.sectionSpacing)
-                        .transition(.scale(scale: 0.95).combined(with: .opacity))
-                }
                 widgetContent
             }
-            .animation(Motion.spring, value: container.onboarding.isCustomizeHintPending)
             .animation(Motion.spring, value: updater.availableUpdateVersion)
             .padding(.horizontal, horizontalPadding)
             .padding(.top, density.contentTopPadding)
@@ -49,7 +43,7 @@ struct DashboardContentView: View {
                 .padding(.bottom, density.sectionSpacing)
         }
         if layout.displayGroups.isEmpty {
-            Text(L10n.dashboard("Turn on Customize to choose what to show."))
+            Text(L10n.dashboard("Open Accounts to choose what to show."))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

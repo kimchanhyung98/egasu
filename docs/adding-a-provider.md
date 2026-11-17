@@ -123,16 +123,17 @@ OpenCode처럼 로컬 기록만 수집하는 프로바이더는 사용량 조회
 
 대부분의 프로바이더는 연동 CLI·앱의 세션이나 키체인에서 기존 인증 정보 사용.
 OpenRouter처럼 사용자 제공 API 키가 필요한 프로바이더는 `APIKeyManaging` 구현.
-그러면 **Customize → 해당 프로바이더** 화면에 공용 API 키 관리 카드 표시.
+그러면 **Accounts → 해당 계정** 화면에 공용 API 키 관리 카드 표시.
 프로바이더별 입력 UI를 별도로 만들 필요 없음.
 
 - 인증 스토어의 `keyStatus()`는 `notSet` / `fromEnvironment` / `saved` / `overrideActive` 중 현재 상태 반환.
-- `currentAPIKey()`는 사용자가 키 표시를 선택했을 때 현재 키 제공.
+- `currentAPIKey()`는 현재 키를 반환하는 내부 계약.
+  Accounts UI는 저장 키의 가림 해제를 제공하지 않음.
 - `saveAPIKey(_:)`와 `deleteAPIKey()`는 인증 스토어가 읽는 설정 파일의 저장 키 관리.
   설정 파일이 환경 변수보다 우선하므로 저장된 키가 환경 변수의 키를 대체.
 - 프로바이더는 위 동작을 인증 스토어에 위임.
 - `AppContainer`는 `APIKeyManaging` 프로바이더를 `apiKeyProviders`로 수집.
-  Customize의 프로바이더 상세 화면은 이 목록에서 해당 프로바이더를 찾아 카드 표시.
+  Accounts의 계정 상세 화면은 이 목록에서 해당 프로바이더를 찾아 카드 표시.
 
 키는 인증 스토어가 이미 확인하는 파일에 저장.
 사용자가 같은 파일을 직접 편집할 수 있도록 별도 저장소 도입 금지.

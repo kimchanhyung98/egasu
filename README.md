@@ -35,7 +35,7 @@ Most providers read the credentials already on your machine (keychain, auth file
 ## Features
 
 - **Menu bar pins.** Pin metrics to the menu bar (up to 2 per provider); render as compact text or mini bars. The strip hides metrics with no data instead of showing placeholders.
-- **Dashboard popover.** Provider-grouped meters with live reset countdowns and pace indicators. Click usage or reset values to flip their display everywhere; right-click a row to hide or star it, refresh its provider, or open Customize.
+- **Dashboard popover.** Provider-grouped meters with live reset countdowns and pace indicators. Click usage or reset values to flip their display everywhere; right-click a row to hide or star it, refresh its provider, or open Accounts.
 - **[계정 전환](/docs/cli.md#계정).** Claude·Codex의 기본 인증 저장소를 쓰는 새 CLI 세션에 선택한 로그인 적용.
   셸 설정 파일·터미널 환경을 유지하며, Claude 첫 등록·외부 로그인과 전환 중 보존할 변경된 인증은 토큰의 계정·조직을 검증한 뒤 저장본에 반영.
   선택된 Claude 공유 로그인은 사용량 조회에서도 계정·조직 일치 검증.
@@ -44,9 +44,8 @@ Most providers read the credentials already on your machine (keychain, auth file
 - **[알림](/docs/settings.md#알림).** 잔량 부족·빠른 소진·기간 종료 전 남은 할당량과 Codex Reset Watch 통지.
   다섯 조건을 개별 선택하며 기본값은 꺼짐.
 - **Global shortcut.** Toggle the popover from anywhere — record any combo in Settings.
-- **Customize.** 프로바이더·지표별 표시, Always Visible·On Demand 배치와 순서 관리.
-  새 지표는 기본 켜짐이며 기존 숨김 선택 유지.
-  Claude·Codex의 한도는 계정별로, 로컬 이력·Reset Watch는 프로바이더별로 설정 저장.
+- **Accounts.** 계정 추가·전환·재로그인·API 키와 계정별 지표 표시·순서 관리.
+  숨긴 계정 복원과 이름 변경·중단된 Claude 전환 복구 지원.
 - **Stale-while-revalidate.** Cached values display instantly at launch; refresh runs every 5 minutes (15 minutes for Claude).
 - **[iCloud 동기화](/docs/icloud-sync.md).** 여러 Mac의 사용 내역을 선택적으로 합산.
   현재·기존 저장 위치를 함께 읽고 기기별 최신 기록 사용.

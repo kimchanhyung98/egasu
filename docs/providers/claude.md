@@ -57,7 +57,7 @@ Claude Code 또는 Claude Desktop에 로그인하면 egasu가 기존 로그인 �
 같은 계정·조직의 기존 캐시·429 대기는 유지하며 메타데이터 누락만으로 재로그인을 요구하지 않음.
 커스텀 설정 디렉터리에서 기본 키체인으로 대체하려면 두 홈의 계정 신원이 일치해야 함.
 
-[**Settings → Accounts**](/docs/settings.md)에 계정이 등록되어 있거나 커스텀 설정 디렉터리에 다른 Claude 로그인이 있으면 Claude Desktop 대체 경로 미사용 — 다른 계정의 로그인일 수 있으므로 인증 실패를 재로그인 안내로 노출.
+[**Accounts**](/docs/accounts.md)에 계정이 등록되어 있거나 커스텀 설정 디렉터리에 다른 Claude 로그인이 있으면 Claude Desktop 대체 경로 미사용 — 다른 계정의 로그인일 수 있으므로 인증 실패를 재로그인 안내로 노출.
 
 Claude Code의 자동 토큰 갱신 유지.
 프로필로 사용 가능함을 확인한 토큰은 사용량 조회 전에 다시 갱신하지 않으며, 사용량 API의 인증 만료 응답 시 갱신.
@@ -156,7 +156,7 @@ Mac의 로컬 시간대를 기준으로 날짜를 묶어 사용자의 달력과 
 
 ## 그 밖의 설정 디렉터리 로그인
 
-**Settings → Accounts**에 Claude 등록 계정이 있으면 대시보드에 표시 가능한 등록 계정만 표시하며, 공유 홈(`~/.claude`) 카드는 별도 추가하지 않음.
+**Accounts**에 Claude 등록 계정이 있으면 대시보드에 표시 가능한 등록 계정만 표시하며, 공유 홈(`~/.claude`) 카드는 별도 추가하지 않음.
 Claude 등록 계정이 없으면 기본 사용량 카드 유지.
 커스텀 설정 디렉터리(별도 `CLAUDE_CONFIG_DIR` 홈)에 있는 Claude 로그인은 카드도, 계정 선택기 항목도 아니며 [CLI](/docs/cli.md)·[로컬 API](/docs/local-http-api.md)에도 없음.
 표시하려면 Settings에서 해당 계정 등록.
@@ -165,7 +165,7 @@ Claude 등록 계정이 없으면 기본 사용량 카드 유지.
 
 ## 관리형 계정 전환
 
-**Settings → Accounts**에서 이름이 지정된 Claude 계정 관리.
+**Accounts**에서 이름이 지정된 Claude 계정 관리.
 첫 계정은 사용할 수 있는 현재 로그인이 있으면 그대로 가져오고, 없으면 기본 인증 저장소에서 공식 로그인.
 추가 계정은 앱 소유 작업 공간 안에서 공식 절차로 로그인하므로 활성 로그인에 영향 없음.
 전환 시 공유 Claude 설정 디렉터리(`~/.claude`)는 그대로 두고 인증 정보만 교체.
@@ -174,16 +174,16 @@ Claude 상태 파일의 인증 정보와 계정 식별 정보는 바뀌지만 MC
 인증 적용 전에 대상과 보존할 저장본을 다시 대조하고, 검증 중 바뀐 저장본이 있으면 전환 중단.
 전환 중 앱이 종료되면 다음 실행에서 전환 기록을 먼저 확인하고, 인증 적용 결과에 맞춰 계정 선택 복구.
 이 복구에서는 이전 계정의 저장 인증과 프로바이더 신원 보존.
-전환 완료를 확인할 수 없으면 자동 로그인 반영을 중단하고 오류 안내; 복구 조건과 재시도는 [설정](/docs/settings.md#계정) 참조.
+전환 완료를 확인할 수 없으면 자동 로그인 반영을 중단하고 오류 안내; 복구 조건과 재시도는 [계정 복구](/docs/accounts.md#중단된-claude-전환-복구) 참조.
 비활성 계정의 사용량 카드는 해당 스냅샷 사용.
 저장된 스냅샷의 계정 UUID가 누락되거나 비어 있으면 프로필 복구와 사용량 조회를 차단하고 재로그인 안내.
 계정 UUID가 있고 조직만 없으면 프로필의 계정 일치를 확인한 뒤 조직별 사용량 조회.
 비활성 계정 카드는 [로컬 API](/docs/local-http-api.md)에 `claude@profile-…` 같은 ID로 표시.
 
-Claude는 **Settings → Accounts**의 공통 **Usage Cards** 설정을 따름.
+Claude는 기존에 저장한 공통 **Usage Cards** 표시 모드 유지.
 기본값 **Single Card**는 **Claude** 카드 하나와 기존 계정 선택기를 유지하며, **Separate Cards**는 표시 가능한 계정마다 선택기 없는 카드 하나를 표시.
 Separate Cards 제목은 **Claude: Account 1** 같은 고정 형식 **{Provider}: {name}** 사용.
-계정 순서는 [설정](/docs/settings.md), 카드 표시·공유 동작은 [대시보드](/docs/dashboard.md) 참조.
+계정 순서는 [Accounts](/docs/accounts.md#계정-순서), 카드 표시·공유 동작은 [대시보드](/docs/dashboard.md) 참조.
 
 대시보드 계정 선택기는 표시할 사용량만 바꾸며 새 Claude 세션에서 사용할 계정은 변경하지 않음.
 로컬 지출과 추세 로그는 공유 설정 홈에 남고 관리형 계정에는 귀속하지 않음.
@@ -200,7 +200,7 @@ Separate Cards 제목은 **Claude: Account 1** 같은 고정 형식 **{Provider}
 egasu는 기본 인증 저장소와 `~/.claude.json`의 계정 정보를 확인하고, 해당 토큰의 계정·조직을 검증한 뒤 비공개 Keychain 스냅샷 갱신.
 별도 인증 경로나 환경 변수를 쓰는 로그인은 이 반영 경로의 대상이라고 보장하지 않음.
 같은 계정의 토큰 갱신은 선택 유지, 등록된 다른 계정의 로그인은 이전 저장 로그인을 보존하고 선택 이동.
-현재 로그인을 확인할 수 없거나 충돌 안내가 표시되면 **Settings → Accounts → Manage Claude Account → Sign In Again** 사용.
+현재 로그인을 확인할 수 없거나 충돌 안내가 표시되면 **Accounts → Claude 계정 → Sign In Again…** 사용.
 검증·저장 실패 시 CLI 로그인을 그대로 두고 egasu에 오류 표시.
 
 ## 서비스 상태
@@ -220,7 +220,7 @@ Claude가 활성화돼 있으면 실행 시, 활성화 시, 5분마다, 대시�
 - **"Not logged in"** — 기본 인증 저장소를 사용하는 `claude` 세션의 `/login` 또는 `claude auth login`으로 재로그인한 뒤 egasu 새로 고침.
   기본 인증 저장소와 `~/.claude.json`의 계정 정보를 읽고 해당 토큰의 계정·조직을 검증할 수 있을 때 관리형 스냅샷 갱신.
   인증·계정 정보가 없거나 파싱할 수 없거나 검증한 신원과 다르면 기존 스냅샷 보존.
-  현재 로그인을 확인할 수 없거나 충돌 안내가 표시되면 **Settings → Accounts → Manage Claude Account → Sign In Again** 사용.
+  현재 로그인을 확인할 수 없거나 충돌 안내가 표시되면 **Accounts → Claude 계정 → Sign In Again…** 사용.
 - **"Claude Desktop login found"** — 수동으로 새로 고침하고 macOS에서 `Claude Safe Storage` 접근을 요청할 때 **Always Allow** 선택.
 - **"Claude Desktop login is stale"** — Claude Desktop을 열어 로그인을 갱신한 뒤 egasu 새로 고침.
 - **"Re-login for live usage"**(Claude 헤더의 황색 경고) — 저장된 로그인은 추론 인증이 가능하지만 `user:profile` 접근 권한이 없어 구독 한도 조회 불가(`claude setup-token`에서 발급한 추론 전용 토큰의 동작).

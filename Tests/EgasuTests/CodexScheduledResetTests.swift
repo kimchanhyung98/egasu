@@ -320,7 +320,7 @@ final class CodexScheduledResetTests: XCTestCase {
         }
     }
 
-    func testScheduledLabelsWrapAtDashboardWidthInsteadOfTruncating() throws {
+    func testScheduledLabelsFitCurrentPanelAndWrapAtNarrowWidths() throws {
         let suiteName = "EgasuTests.ScheduledResetLayout.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -341,10 +341,12 @@ final class CodexScheduledResetTests: XCTestCase {
                             .defaultAppStorage(defaults)))
             }
 
-            let dashboard = try render(width: PanelHeightController.panelWidth - 28)
+            let dashboard = try render(width: PanelMetrics.width - 28)
             let wide = try render(width: ShareCardView.width - 32)
-            XCTAssertEqual(dashboard.size.width, PanelHeightController.panelWidth - 28)
-            XCTAssertGreaterThan(dashboard.size.height, wide.size.height, label)
+            let narrow = try render(width: 240)
+            XCTAssertEqual(dashboard.size.width, PanelMetrics.width - 28)
+            XCTAssertGreaterThanOrEqual(dashboard.size.height, wide.size.height, label)
+            XCTAssertGreaterThan(narrow.size.height, wide.size.height, label)
         }
     }
 
@@ -375,7 +377,7 @@ final class CodexScheduledResetTests: XCTestCase {
                 let label = try XCTUnwrap(data.boundedTrailingText())
                 try withHosting(
                     WidgetRowView(data: data, onToggleResetDisplay: { store.resetDisplayMode.toggle() })
-                        .frame(width: PanelHeightController.panelWidth - 28)
+                        .frame(width: PanelMetrics.width - 28)
                         .environment(\.hoverTooltipsDisabled, true)
                         .defaultAppStorage(defaults)
                 ) { hosting in
@@ -412,7 +414,7 @@ final class CodexScheduledResetTests: XCTestCase {
                     @MainActor func render(interactive: Bool) throws -> NSImage {
                         try XCTUnwrap(ShareCardRenderer.image(
                             for: WidgetRowView(data: data, onToggleResetDisplay: interactive ? {} : nil)
-                                .frame(width: PanelHeightController.panelWidth - 28)
+                                .frame(width: PanelMetrics.width - 28)
                                 .background(Color.black)
                                 .environment(\.colorScheme, .dark)
                                 .environment(\.hoverTooltipsDisabled, true)

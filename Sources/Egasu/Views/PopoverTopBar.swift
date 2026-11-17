@@ -1,73 +1,53 @@
 import SwiftUI
 
-/// 고정 팝오버 내비게이션 chrome.
-/// 슬라이드 중 양쪽 페이지가 같은 바를 그리도록 항상 목적지 screen 기준 렌더링.
+/// 하위 화면 상단 바 — 파란 뒤로 화살표와 가운데 제목.
+/// 화면 전환 중 각 페이지의 바와 내용을 함께 이동.
 struct PopoverTopBar: View {
-    let layout: LayoutStore
-    let height: CGFloat
-    let horizontalPadding: CGFloat
-    let onResetAll: () -> Void
-
-    @Binding var isPresentingResetAllConfirm: Bool
-
-    /// 카드 이름 변경 시 Customize 상세 제목 동기화용.
     @Environment(AppContainer.self) private var container
+    @Environment(PopoverState.self) private var popover
+    let screen: PopoverScreen
 
     @ViewBuilder
     var body: some View {
-        switch layout.screen {
+        switch screen {
         case .dashboard:
             EmptyView()
-        case .customize:
-            if let providerID = layout.customizeProviderID {
-                navigationBar(title: customizeTitle, back: customizeBack) {
-                    resetButton(for: providerID)
+        case .accounts:
+            if let accountID = popover.accountDetailID, let provider = container.accountManagementProvider(id: accountID) {
+                navigationBar(back: { popover.back() }) {
+                    AccountTitle(provider: provider)
+                } trailing: {
+                    ProviderIcon(source: provider.icon, inset: 0.04)
+                        .frame(width: 22, height: 22)
+                        .frame(width: 28, height: 28)
+                        .accessibilityHidden(true)
                 }
             } else {
-                navigationBar(title: customizeTitle, back: customizeBack) {
-                    resetAllButton
-                }
-                .alert(L10n.dashboard("Reset All Customization?"), isPresented: $isPresentingResetAllConfirm) {
-                    Button(L10n.dashboard("Reset All"), role: .destructive) {
-                        withAnimation(Motion.spring) { onResetAll() }
-                    }
-                    Button(L10n.dashboard("Cancel"), role: .cancel) {}
-                } message: {
-                    Text(L10n.dashboard("Turns providers back on for the tools you have installed and resets every provider's metrics and order. Are you sure?"))
+                navigationBar(back: { popover.back() }) {
+                    Text(L10n.common("Accounts"))
+                } trailing: {
+                    EmptyView()
                 }
             }
         case .settings:
-            navigationBar(title: L10n.dashboard("Settings")) {
-                withAnimation(Motion.modeSwitch) { layout.screen = .dashboard }
+            navigationBar(back: { popover.back() }) {
+                Text(L10n.common("Settings"))
             } trailing: {
                 EmptyView()
             }
         }
     }
 
-    private var customizeTitle: String {
-        layout.customizeProviderID.flatMap { id in
-            layout.provider(id: id).map { container.customizeDisplayName(for: $0) }
-        } ?? L10n.dashboard("Customize")
-    }
-
-    private func customizeBack() {
-        if layout.customizeProviderID != nil {
-            withAnimation(Motion.spring) { layout.customizeProviderID = nil }
-        } else {
-            withAnimation(Motion.modeSwitch) { layout.screen = .dashboard }
-        }
-    }
-
-    private func navigationBar<Trailing: View>(
-        title: String,
+    private func navigationBar<Title: View, Trailing: View>(
         back: @escaping () -> Void,
+        @ViewBuilder title: () -> Title,
         @ViewBuilder trailing: () -> Trailing
     ) -> some View {
         ZStack {
-            Text(title)
+            title()
                 .font(.headline)
                 .lineLimit(1)
+                .padding(.horizontal, 40)
                 .frame(maxWidth: .infinity)
 
             HStack(spacing: 0) {
@@ -76,54 +56,54 @@ struct PopoverTopBar: View {
                 trailing()
             }
         }
-        .padding(.horizontal, horizontalPadding)
-        .frame(height: height)
+        .padding(.horizontal, PanelMetrics.margin)
+        .frame(height: 36, alignment: .bottom)
         .frame(maxWidth: .infinity)
-        .barGlass()
     }
 
     private func backButton(action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(L10n.dashboard("Back"), systemImage: "chevron.backward")
                 .labelStyle(.iconOnly)
-                .frame(width: 16, height: 16)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.severityColor(.normal))
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
         }
-        .glassButtonStyle()
-        .buttonBorderShape(.circle)
-        .controlSize(.large)
+        .buttonStyle(.plain)
         .hoverTooltip(L10n.dashboard("Back"))
         .accessibilityLabel(L10n.dashboard("Back"))
     }
+}
 
-    private func resetButton(for providerID: String) -> some View {
-        Button {
-            withAnimation(Motion.spring) { layout.resetProvider(providerID) }
-        } label: {
-            Image(systemName: "arrow.counterclockwise")
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 16, height: 16)
-                .contentShape(Rectangle())
-        }
-        .glassButtonStyle()
-        .buttonBorderShape(.circle)
-        .controlSize(.large)
-        .hoverTooltip(L10n.dashboard("Reset %@", layout.provider(id: providerID).map { container.displayName(for: $0) } ?? providerID))
-        .accessibilityLabel(L10n.dashboard("Reset"))
-    }
+/// 계정 상세 제목 — Claude·Codex 등록 계정은 계정명(누르면 제자리 이름 변경), 그 밖은 프로바이더 이름.
+private struct AccountTitle: View {
+    let provider: Provider
 
-    private var resetAllButton: some View {
-        Button {
-            isPresentingResetAllConfirm = true
-        } label: {
-            Image(systemName: "arrow.counterclockwise")
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 16, height: 16)
-                .contentShape(Rectangle())
+    @Environment(AppContainer.self) private var container
+    @Environment(AccountRenameStore.self) private var renaming
+    @State private var isHovered = false
+
+    var body: some View {
+        if let edit = renaming.edit, edit.cardID == provider.id {
+            InlineRenameField(renaming: renaming, edit: edit)
+                .multilineTextAlignment(.center)
+        } else if let name = container.accountProfileLabel(for: provider.id) {
+            Button {
+                renaming.begin(provider.id)
+            } label: {
+                Text(name)
+                    .concealingAccountName()
+                    .hoverHighlight(isHovered)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { isHovered = $0 }
+            .accessibilityLabel(L10n.accounts("Rename %@", container.displayName(for: provider)))
+        } else {
+            Text(container.displayName(for: provider))
         }
-        .glassButtonStyle()
-        .buttonBorderShape(.circle)
-        .controlSize(.large)
-        .hoverTooltip(L10n.dashboard("Reset All Customization"))
-        .accessibilityLabel(L10n.dashboard("Reset All Customization"))
     }
 }

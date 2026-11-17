@@ -33,7 +33,7 @@ struct AccountSignInProbe: Sendable {
         self.homeDirectory = homeDirectory
     }
 
-    func state(for profile: AccountProfile, isSelected: Bool = false) -> State {
+    func state(for profile: AccountProfile, isSelected: Bool = false, allowInteraction: Bool = false) -> State {
         let switcher = AccountCredentialSwitcher(
             keychain: keychain,
             environment: environment,
@@ -41,7 +41,7 @@ struct AccountSignInProbe: Sendable {
         )
         let snapshot: AccountCredentialVault.Entry?
         do {
-            snapshot = try switcher.loadSnapshot(for: profile)
+            snapshot = try switcher.loadSnapshot(for: profile, allowInteraction: allowInteraction)
         } catch AccountCredentialVaultError.missingEntry {
             return .needsSignIn
         } catch {

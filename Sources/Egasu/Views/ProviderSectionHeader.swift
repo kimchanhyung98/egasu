@@ -156,7 +156,6 @@ struct ProviderSectionHeader: View {
         .onHover { isHovered = $0 }
     }
 }
-
 extension ProviderSectionHeader {
     enum IssueIndicatorKind: Hashable {
         case usage
@@ -246,15 +245,5 @@ struct ProviderPlanBadge: View {
             .font(.system(size: density.planBadgePointSize))
             .foregroundStyle(.secondary)
             .lineLimit(1)
-    }
-}
-
-struct ReorderGrip: View {
-    var body: some View {
-        Image(systemName: "line.3.horizontal")
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(.tertiary)
-            .frame(width: 16, height: 22)
-            .contentShape(Rectangle())
     }
 }

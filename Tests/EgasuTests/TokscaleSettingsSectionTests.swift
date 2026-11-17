@@ -80,7 +80,7 @@ final class TokscaleSettingsSectionTests: XCTestCase {
                     let resultSize = try renderedSize(
                         of: view, export: export?.appendingPathComponent("tokscale-\(variant).png")
                     )
-                    XCTAssertEqual(resultSize.width, PanelHeightController.panelWidth, accuracy: 0.5, variant)
+                    XCTAssertEqual(resultSize.width, PanelMetrics.width, accuracy: 0.5, variant)
                     XCTAssertGreaterThan(resultSize.height, idleHeight + 100, variant)
                     XCTAssertLessThan(resultSize.height, 400, variant)
 
@@ -93,7 +93,7 @@ final class TokscaleSettingsSectionTests: XCTestCase {
                     let dismissedSize = try renderedSize(
                         of: view, export: export?.appendingPathComponent("tokscale-\(variant)-dismissed.png")
                     )
-                    XCTAssertEqual(dismissedSize.width, PanelHeightController.panelWidth, accuracy: 0.5, variant)
+                    XCTAssertEqual(dismissedSize.width, PanelMetrics.width, accuracy: 0.5, variant)
                     XCTAssertLessThan(dismissedSize.height, resultSize.height - 100, variant)
                     if result.exitCode == 0 {
                         XCTAssertGreaterThanOrEqual(dismissedSize.height, idleHeight, variant)
@@ -168,7 +168,7 @@ final class TokscaleSettingsSectionTests: XCTestCase {
         TokscaleSettingsSection(store: store)
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
-            .frame(width: PanelHeightController.panelWidth)
+            .frame(width: PanelMetrics.width)
             .background(appearance == .light ? Color.white : Color.black)
             .environment(\.colorScheme, appearance)
             .defaultAppStorage(defaults)
@@ -207,7 +207,7 @@ final class TokscaleSettingsSectionTests: XCTestCase {
         for controlSize in [ControlSize.regular, .large] {
             cardHeights.append(try renderedSize(of:
                 TokscaleSettingsSection(store: store)
-                    .frame(width: PanelHeightController.panelWidth)
+                    .frame(width: PanelMetrics.width)
                     .controlSize(controlSize)
                     .defaultAppStorage(defaults)
             ).height)
@@ -224,7 +224,7 @@ final class TokscaleSettingsSectionTests: XCTestCase {
                     .cardSurface()
                 }
                 .padding(14)
-                .frame(width: PanelHeightController.panelWidth)
+                .frame(width: PanelMetrics.width)
                 .background(Color.black)
                 .environment(\.colorScheme, .dark)
                 .controlSize(controlSize)
@@ -252,7 +252,7 @@ final class TokscaleSettingsSectionTests: XCTestCase {
     ) throws -> NSSize {
         let hosting = NSHostingView(rootView: view)
         let window = NSWindow(
-            contentRect: .init(x: 0, y: 0, width: PanelHeightController.panelWidth, height: 1000),
+            contentRect: .init(x: 0, y: 0, width: PanelMetrics.width, height: 1000),
             styleMask: .borderless, backing: .buffered, defer: false
         )
         window.isReleasedWhenClosed = false
@@ -288,20 +288,20 @@ final class TokscaleSettingsSectionTests: XCTestCase {
                     let view = TokscaleSettingsSection(store: store)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 12)
-                        .frame(width: PanelHeightController.panelWidth)
+                        .frame(width: PanelMetrics.width)
                         .background(appearance == .light ? Color.white : Color.black)
                         .environment(\.colorScheme, appearance)
                         .defaultAppStorage(defaults)
                     let hosting = NSHostingView(rootView: view)
                     let window = NSWindow(
-                        contentRect: .init(x: 0, y: 0, width: PanelHeightController.panelWidth, height: 1000),
+                        contentRect: .init(x: 0, y: 0, width: PanelMetrics.width, height: 1000),
                         styleMask: .borderless, backing: .buffered, defer: false
                     )
                     window.isReleasedWhenClosed = false
                     window.contentView = hosting
                     window.setContentSize(hosting.fittingSize)
                     hosting.layoutSubtreeIfNeeded()
-                    XCTAssertEqual(hosting.bounds.width, PanelHeightController.panelWidth, accuracy: 0.5)
+                    XCTAssertEqual(hosting.bounds.width, PanelMetrics.width, accuracy: 0.5)
                     XCTAssertGreaterThan(hosting.bounds.height, 0)
                     XCTAssertLessThanOrEqual(
                         hosting.bounds.height, 150,

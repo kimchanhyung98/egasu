@@ -1,0 +1,74 @@
+import AppKit
+import SwiftUI
+import XCTest
+@testable import Egasu
+
+@MainActor
+final class AccountNamePrivacyRenderingTests: XCTestCase {
+
+    func testAccountsEditorRemainsVisibleAndEditableWithPrivacyEnabled() async throws {
+        var savedName = "Private Alias"
+        let renaming = AccountRenameStore(label: { _ in savedName }, rename: { _, name in savedName = name })
+        renaming.begin("codex")
+        let edit = try XCTUnwrap(renaming.edit)
+        let view = InlineRenameField(renaming: renaming, edit: edit)
+            .environment(
+                \.concealsAccountNames, AccountNamePrivacy.concealsAccountNames(on: .accounts, isEnabled: true)
+            )
+            .padding(16)
+            .frame(width: 340, height: 80)
+        let host = NSHostingView(rootView: view)
+        let window = makeWindow(host: host)
+        defer { window.close() }
+        try await settle(host)
+
+        let field = try XCTUnwrap(editableFields(in: host).first)
+        XCTAssertEqual(field.stringValue, "Private Alias")
+        renaming.draft = "Changed in Accounts"
+        renaming.commit(edit)
+        XCTAssertEqual(savedName, "Changed in Accounts")
+        try export(host, name: "accounts-privacy-on")
+    }
+
+    private func makeWindow<Content: View>(host: NSHostingView<Content>) -> NSWindow {
+        host.sizingOptions = []
+        host.frame = NSRect(x: 0, y: 0, width: 340, height: 80)
+        let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.alphaValue = 0
+        window.setFrameOrigin(NSPoint(x: (NSScreen.screens.map(\.frame.maxX).max() ?? 0) + 1_000, y: 0))
+        window.orderFrontRegardless()
+        return window
+    }
+
+    private func settle(_ view: NSView) async throws {
+        view.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        view.layoutSubtreeIfNeeded()
+    }
+
+    private func editableFields(in view: NSView) -> [NSTextField] {
+        let current = (view as? NSTextField).map { $0.isEditable ? [$0] : [] } ?? []
+        return current + view.subviews.flatMap { editableFields(in: $0) }
+    }
+
+    private func export<Content: View>(
+        _ view: NSHostingView<Content>, name: String, renderSwiftUIEffects: Bool = false
+    ) throws {
+        guard let path = ProcessInfo.processInfo.environment["EGASU_PRIVACY_SNAPSHOTS"] else { return }
+        let directory = URL(fileURLWithPath: path)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let bitmap: NSBitmapImageRep
+        if renderSwiftUIEffects {
+            let renderer = ImageRenderer(content: view.rootView.environment(\.colorScheme, .light).background(.white))
+            renderer.scale = 2
+            bitmap = NSBitmapImageRep(cgImage: try XCTUnwrap(renderer.cgImage))
+        } else {
+            bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+        }
+        try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+            .write(to: directory.appendingPathComponent("\(name).png"))
+    }
+}

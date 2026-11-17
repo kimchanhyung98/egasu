@@ -177,7 +177,7 @@ API의 리셋 예정 정보에 시각이 없으면 예측 확률 99%와 **Reset 
 어느 수치도 OpenAI의 보장이 아님.
 
 신규 설치와 레이아웃 초기화 시 꺼짐, **On Demand** 배치, 메뉴 막대 별표 없음.
-지표 순서는 Rate Limit Resets 바로 앞이며 Customize에서 켜기·이동·별표 가능.
+지표 순서는 Rate Limit Resets 바로 앞이며 Accounts의 Codex 계정 상세에서 표시·순서·메뉴 막대 고정 변경 가능.
 
 Reset Watch는 Codex 로그인·인증 및 구독 사용량 새로 고침과 독립적으로 작동.
 Codex 프로바이더가 켜져 있고 지표 표시·메뉴 막대 별표·**Codex Reset Watch** 알림 중 하나라도 켜져 있으면, egasu가 인증 없는 `GET https://codex-resets.com/api/v1/status` 엔드포인트를 일반 사용량과 독립된 15분 주기로 조회.
@@ -353,10 +353,10 @@ Ultrafast도 프로바이더·날짜별 명시 단가 우선 — 같은 요청�
 
 ## 여러 계정
 
-추가 Codex 계정은 [**Settings → Accounts**](/docs/settings.md)에서 등록.
+추가 Codex 계정은 [**Accounts**](/docs/accounts.md)에서 등록.
 첫 계정은 새 로그인 없이 `~/.codex/auth.json`, 레거시 `~/.config/codex/auth.json`, `Codex Auth` 키체인 항목의 현재 로그인 가져오기.
 추가 계정은 앱 소유 작업 공간 안에서 공식 절차로 로그인하므로 활성 로그인에 영향 없음.
-**Settings → Accounts**에서 계정을 전환해도 공유 Codex 설정 홈은 그대로 두고 `auth.json`만 교체.
+**Accounts**에서 계정을 전환해도 공유 Codex 설정 홈은 그대로 두고 `auth.json`만 교체.
 기존 `config.toml`, 스킬, 세션 기록은 계속 공유.
 계정을 관리하고 공유 `auth.json`이 존재하는 동안 공유 홈 런타임은 해당 파일만 읽음 — 등록 계정에 연결된 경우에만 그 계정명으로 대시보드에 표시.
 Settings 전환 시 해당 파일에 기록하며, 파일 기반 Codex 로그인이 파일을 최신 상태로 유지.
@@ -383,10 +383,10 @@ Settings 전환 시 해당 파일에 기록하며, 파일 기반 Codex 로그인
 따라서 비활성 스냅샷 카드에는 계정별 로컬 로그가 없으며 **Single Card**에서 지출 및 추세 행에 기존처럼 **No data** 표시 가능.
 **Separate Cards**의 **Usage Trend**·**Today**·**Yesterday**·**Reset Watch**는 실제 공유 홈 로그인에 해당하는 활성 계정 카드에서만 기존 지표 설정에 따라 표시하며, 비활성 카드에서는 행 자체를 숨김.
 
-Codex는 **Settings → Accounts**의 공통 **Usage Cards** 설정을 따름.
+Codex는 기존에 저장한 공통 **Usage Cards** 표시 모드 유지.
 기본값 **Single Card**는 **Codex** 카드 하나와 기존 계정 선택기를 유지하며, **Separate Cards**는 표시 가능한 계정마다 선택기 없는 카드 하나를 표시.
 Separate Cards 제목은 **Codex: Account 2** 같은 고정 형식 **{Provider}: {name}** 사용.
-계정 순서는 [설정](/docs/settings.md), 카드 표시·공유 동작은 [대시보드](/docs/dashboard.md) 참조.
+계정 순서는 [Accounts](/docs/accounts.md#계정-순서), 카드 표시·공유 동작은 [대시보드](/docs/dashboard.md) 참조.
 
 Codex 등록 계정이 있으면 대시보드·계정 선택기에 표시 가능한 등록 계정만 표시하며, 공유 홈 카드는 별도 추가하지 않음.
 Codex 등록 계정이 없으면 기본 사용량 카드 유지.
@@ -408,7 +408,7 @@ Codex가 활성화돼 있으면 실행 시, 활성화 시, 5분마다, 대시보
 
 ## 문제 해결
 
-- **"Not logged in"** — 관리형 계정은 **Settings → Accounts → Manage… → Sign In Again** 사용.
+- **"Not logged in"** — 관리형 계정은 **Accounts → Codex 계정 → Sign In Again…** 사용.
   완전하고 검증 가능한 로그인은 계정명을 바꾸거나 다른 계정을 선택하지 않고 해당 계정명에 저장된 인증 정보와 프로바이더 신원을 교체.
   그 외에는 `codex`를 실행해 로그인한 뒤 새로 고침.
 - **API 키만 사용하는 설정**에서는 구독 사용량 조회 불가 — 대신 ChatGPT 계정으로 로그인.

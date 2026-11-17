@@ -3,6 +3,65 @@ import XCTest
 
 @MainActor
 final class AccountCardMappingTests: XCTestCase {
+    func testCodexAccountCardsSurviveSharedIdentityChanges() throws {
+        let defaults = makeScratchDefaults()
+        let store = AccountProfilesStore(defaults: defaults)
+        let preferred = try store.add(family: "codex", label: "Account 1", identityKey: "identity-1")
+        let selected = try store.add(family: "codex", label: "Account 2", identityKey: "identity-2")
+        let sameIdentity = try store.add(family: "codex", label: "Account 3", identityKey: selected.identityKey)
+        store.setPreferred(family: "codex", profileID: preferred.id)
+        let profiles = store.profiles(family: "codex")
+        let separateNamedCard = AccountUsageCardPlanner.cardID(family: "codex", profileID: sameIdentity.id)
+        let savedDefaults = defaults.dictionaryRepresentation()
+
+        for sharedIdentity in [preferred.identityKey, selected.identityKey, "unregistered"] {
+            let snapshots = AccountUsageCardPlanner.snapshotCards(
+                profiles: profiles,
+                preferredProfileIDs: ["codex": preferred.id],
+                availableSnapshotProfileIDs: Set(profiles.map(\.id)),
+                sharedHomeIdentityKeys: ["codex": sharedIdentity]
+            )
+            let assembly = ProviderAccountAssembly(
+                identityKeysByCard: ["codex": sharedIdentity],
+                snapshotCards: snapshots,
+                profileIDsByCard: Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0.profileID) })
+            )
+            let mapping = AppContainer.accountProfileIDsByCardID(assembly: assembly, profiles: store)
+            let ordered = AccountCardPresentationPlanner.orderedCardIDs(
+                ["codex"] + snapshots.map(\.id),
+                familyOrder: ["codex"],
+                orderedProfileIDsByFamily: ["codex": profiles.map(\.id)],
+                profileIDsByCardID: mapping
+            )
+
+            XCTAssertEqual(ordered.count, profiles.count, "계정마다 카드 하나")
+            XCTAssertTrue(ordered.contains(separateNamedCard), "a separate account name is not merged by identity")
+            XCTAssertEqual(store.preferredProfileID(family: "codex"), preferred.id)
+            XCTAssertEqual(store.profiles(family: "codex").map(\.identityKey), profiles.map(\.identityKey))
+            XCTAssertTrue(NSDictionary(dictionary: defaults.dictionaryRepresentation()).isEqual(to: savedDefaults))
+        }
+    }
+
+    func testDashboardSwitchIsUnavailableForUnmanagedOrArchivedCards() throws {
+        let profiles = AccountProfilesStore(defaults: makeScratchDefaults())
+        let target = try profiles.add(family: "codex", label: "Work", identityKey: "identity")
+        for (cardID, profileID) in [
+            ("codex", nil),
+            ("codex", "missing"),
+            ("claude", target.id as String?),
+            ("cursor", target.id),
+        ] {
+            XCTAssertNil(AccountCardPresentationPlanner.switchProfile(
+                providerID: cardID, profileID: profileID, profiles: profiles.profiles
+            ))
+        }
+        var archived = target
+        archived.isArchived = true
+        XCTAssertNil(AccountCardPresentationPlanner.switchProfile(
+            providerID: "codex", profileID: target.id, profiles: [archived]
+        ))
+    }
+
     private func makeScratchDefaults() -> UserDefaults {
         let suiteName = "EgasuTests.AccountCardMapping.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

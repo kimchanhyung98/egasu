@@ -41,10 +41,31 @@ final class PanelGeometryTests: XCTestCase {
         XCTAssertEqual(PanelGeometry.clampedHeight(600, maximum: maximum), 170)
     }
 
-    func testHeightClampsToNormalMinimumAndDisplayMaximum() {
-        XCTAssertEqual(PanelGeometry.clampedHeight(50, maximum: 700), 200)
+    func testHeightClampsOnlyToDisplayMaximum() {
+        XCTAssertEqual(PanelGeometry.clampedHeight(50, maximum: 700), 50)
         XCTAssertEqual(PanelGeometry.clampedHeight(900, maximum: 700), 700)
         XCTAssertEqual(PanelGeometry.clampedHeight(520, maximum: 700), 520)
+    }
+
+    func testAttachedSheetReservesRoomAndDismissalRestoresTheContentHeight() {
+        XCTAssertEqual(PanelGeometry.height(content: 120, attachedSheet: 320), 340)
+        XCTAssertEqual(PanelGeometry.height(content: 550, attachedSheet: 320), 550)
+        XCTAssertEqual(PanelGeometry.height(content: 120, attachedSheet: nil), 120)
+        XCTAssertEqual(PanelGeometry.clampedHeight(
+            PanelGeometry.height(content: 120, attachedSheet: 320), maximum: 200
+        ), 200)
+    }
+
+    func testMeasuredHeightsKeepScreensIndependentOfDashboardTabs() {
+        var heights = MeasuredPanelHeights()
+        heights[.dashboard, .allUsage] = 600
+        heights[.dashboard, .priority] = 250
+        heights[.accounts, .allUsage] = 400
+        heights[.settings, .priority] = 700
+        XCTAssertEqual(heights[.dashboard, .allUsage], 600)
+        XCTAssertEqual(heights[.dashboard, .priority], 250)
+        XCTAssertEqual(heights[.accounts, .priority], 400)
+        XCTAssertEqual(heights[.settings, .allUsage], 700)
     }
 
     func testChangingHeightKeepsTopEdgeFixed() {

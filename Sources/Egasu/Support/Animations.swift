@@ -4,6 +4,76 @@ import SwiftUI
 enum Motion {
     static let spring = Animation.spring(response: 0.42, dampingFraction: 0.80)
     static let modeSwitch = Animation.easeInOut(duration: 0.18)
+    static let navigation = Animation.easeInOut(duration: 0.25)
+
+    static func applyReduction(to transaction: inout Transaction, enabled: Bool) {
+        guard enabled else { return }
+        transaction.animation = nil
+        transaction.disablesAnimations = true
+    }
+}
+
+private struct ReduceAnimationsKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// 시스템 동작 줄이기 상태 — 로딩 효과·팝오버·진행 표시의 분기 기준.
+    var reduceAnimations: Bool {
+        get { self[ReduceAnimationsKey.self] }
+        set { self[ReduceAnimationsKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// 하위 뷰에 시스템 동작 줄이기 정책 적용 — 패널 루트에 한 번 연결.
+    func reduceAnimationsWhenRequested() -> some View {
+        modifier(ReduceAnimationsModifier())
+    }
+
+    func animationReduction(_ enabled: Bool) -> some View {
+        modifier(AnimationReductionModifier(enabled: enabled))
+    }
+}
+
+private struct ReduceAnimationsModifier: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+
+    func body(content: Content) -> some View {
+        content.animationReduction(systemReduceMotion)
+    }
+}
+
+private struct AnimationReductionModifier: ViewModifier {
+    let enabled: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.reduceAnimations, enabled)
+            .transaction { transaction in
+                Motion.applyReduction(to: &transaction, enabled: enabled)
+            }
+    }
+}
+
+/// 동작 줄이기에서 회전 대신 정적 아이콘을 표시하는 진행 상태.
+struct MotionAwareProgressView: View {
+    var controlSize: ControlSize = .small
+
+    @Environment(\.reduceAnimations) private var reduceAnimations
+
+    @ViewBuilder
+    var body: some View {
+        if reduceAnimations {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 12, height: 12)
+        } else {
+            ProgressView()
+                .controlSize(controlSize)
+        }
+    }
 }
 
 extension View {

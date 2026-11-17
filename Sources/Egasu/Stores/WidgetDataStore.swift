@@ -346,6 +346,12 @@ final class WidgetDataStore {
         refreshResults[providerID]?.failure?.localizedMessage
     }
 
+    /// Claude·Codex의 Keychain 접근 실패 — 사용자 수동 갱신으로만 승인 요청.
+    func needsKeychainApproval(_ providerID: String) -> Bool {
+        ProviderAccountID.families.contains(ProviderAccountID.family(of: providerID))
+            && refreshResults[providerID]?.failure?.category == .credentialAccess
+    }
+
     /// 마지막 정상 결과의 경고 — 이후 조회가 실패해도 유지될 수 있음.
     /// 화면 표시는 현재 오류를 우선하는 headerNotice(for:) 사용.
     func warningMessage(for providerID: String) -> String? {

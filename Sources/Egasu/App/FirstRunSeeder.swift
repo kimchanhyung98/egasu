@@ -15,7 +15,6 @@ enum FirstRunSeeder {
         isFreshInstall: Bool,
         providers: [ProviderRuntime],
         enablement: ProviderEnablementStore,
-        onboarding: OnboardingStore,
         workQueue: BackgroundWorkQueue = BackgroundWorkQueue()
     ) -> Task<Void, Never>? {
         let isRetry = enablement.isInitialDetectionPending
@@ -24,7 +23,6 @@ enum FirstRunSeeder {
         enablement.setInitialDetectionPending(true)
         // known-provider set baseline — `NewProviderSeeder`가 이후 릴리스에 추가된 provider만 probe.
         enablement.registerKnownProviders(Set(providers.map(\.provider.id)))
-        if !isRetry { onboarding.markCustomizeHintPending() }
         return seedFallbackThenDetect(
             providers: providers, enablement: enablement, logPrefix: "first run", workQueue: workQueue,
             preserveEnabledProviders: isRetry && enablement.enabledIDs != nil

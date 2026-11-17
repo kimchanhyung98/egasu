@@ -58,13 +58,14 @@ egasu가 응답의 키 종류를 확인해 관리 키의 통계를 자동 조회
 앱은 관리 키로 잔액·등급·키 한도·사용 통계만 조회.
 다른 키의 생성·수정·삭제는 수행하지 않음.
 키의 만료 기간과 권한 범위는 [공식 관리 키 문서](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) 참조.
-**Customize → OpenRouter → API Key**에서 Add 선택.
+Accounts의 **Add New Account**에서 **OpenRouter** 선택.
 키 입력.
-Save 선택.
+**Add Account** 선택.
+이미 추가한 계정은 상세의 **Add API Key…**·**Replace API Key…**에서 키 입력 후 **Save** 선택.
 운영 앱의 키는 `~/.config/egasu/openrouter.json`에 저장.
 표준 개발 빌드·사용자 지정 설정 도메인의 앱 전용 경로는 [CLI 문서](/docs/cli.md) 참조.
 입력란은 하나이며 교체 시 새 키를 사용.
-OpenRouter가 꺼져 있으면 Customize의 프로바이더 목록에서 활성화.
+OpenRouter가 꺼져 있으면 Accounts의 **Add New Account**에서 추가.
 
 다음 방법으로 직접 키를 제공할 수도 있으며, 아래 순서에서 처음 찾은 키 사용:
 
@@ -94,7 +95,7 @@ OpenRouter가 꺼져 있으면 Customize의 프로바이더 목록에서 활성�
 
 ## 문제 해결
 
-- **"No OpenRouter API key"** — Customize → OpenRouter → API Key에 키 추가.
+- **"No OpenRouter API key"** — Accounts의 **Add New Account**에서 OpenRouter 키 추가, 또는 계정 상세에서 **Add API Key…** 선택.
   환경 변수를 사용하면 위 설정 절차에 따라 앱 재실행.
 - **"API key invalid"** — 키 거부(401/403).
   openrouter.ai/keys에서 확인하거나 다시 생성.

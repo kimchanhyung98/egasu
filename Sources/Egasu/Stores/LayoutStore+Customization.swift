@@ -259,13 +259,22 @@ extension LayoutStore {
 
     /// 한 provider 내 metric reorder(둘 다 그 provider의 descriptor id) — 전체 metric 순서에서 동작해
     /// disabled metric도 자리 유지. 다른 section의 행에 drop하면 dragged의 On Demand membership이 target을
-    /// 따라감; 저장 순서는 두 section 분할로 재구성. 반환값은 실제 변경 여부(haptics 키).
+    /// 따라감; Accounts는 기존 소속을 유지하고 순서만 변경. 반환값은 실제 변경 여부(haptics 키).
     @discardableResult
-    func reorderMetric(dragged: String, target: String, in providerID: String) -> Bool {
-        recordingUndoStep { reorderMetricImpl(dragged: dragged, target: target, in: providerID) }
+    func reorderMetric(
+        dragged: String, target: String, in providerID: String, preservingExpandedMembership: Bool = false
+    ) -> Bool {
+        recordingUndoStep {
+            reorderMetricImpl(
+                dragged: dragged, target: target, in: providerID,
+                preservingExpandedMembership: preservingExpandedMembership
+            )
+        }
     }
 
-    private func reorderMetricImpl(dragged: String, target: String, in providerID: String) -> Bool {
+    private func reorderMetricImpl(
+        dragged: String, target: String, in providerID: String, preservingExpandedMembership: Bool
+    ) -> Bool {
         func settingsID(_ id: String) -> String {
             ProviderAccountID.isSharedMetric(id) ? Self.canonical(id) : id
         }
@@ -278,16 +287,20 @@ extension LayoutStore {
 
         var expanded = expandedMetricIDs
         let draggedCanonical = Self.canonical(dragged)
-        let membershipChanged = expanded.contains(draggedCanonical) != expanded.contains(Self.canonical(target))
-        if expanded.contains(Self.canonical(target)) {
-            expanded.insert(draggedCanonical)
-        } else {
-            expanded.remove(draggedCanonical)
+        let membershipChanged = !preservingExpandedMembership
+            && expanded.contains(draggedCanonical) != expanded.contains(Self.canonical(target))
+        if !preservingExpandedMembership {
+            if expanded.contains(Self.canonical(target)) {
+                expanded.insert(draggedCanonical)
+            } else {
+                expanded.remove(draggedCanonical)
+            }
         }
-        let consumedExpandOnEnable = !expanded.contains(draggedCanonical)
+        let consumedExpandOnEnable = !preservingExpandedMembership && !expanded.contains(draggedCanonical)
             && defaultExpandedOnEnableIDs.remove(draggedCanonical) != nil
-        let partitioned = ordered.filter { !expanded.contains(Self.canonical($0)) }
-            + ordered.filter { expanded.contains(Self.canonical($0)) }
+        let partitioned = preservingExpandedMembership ? ordered
+            : ordered.filter { !expanded.contains(Self.canonical($0)) }
+                + ordered.filter { expanded.contains(Self.canonical($0)) }
         guard let next = Self.reordered(partitioned, dragged: dragged, target: target) else { return false }
         if providerID == family {
             metricOrderByProvider[family] = next

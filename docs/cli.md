@@ -77,7 +77,7 @@ Claude의 429 대기·마지막 정상 사용량도 조회 전에 이전하여 �
 
 ## 계정
 
-계정 관리는 앱의 [**Settings → Accounts**(설정 → 계정)](/docs/settings.md)에 있음.
+계정 관리는 앱의 [**Accounts**](/docs/accounts.md)에 있음.
 CLI는 동일한 등록 계정과 선택된 터미널 계정을 조회:
 
 ```sh
@@ -89,13 +89,13 @@ egasu account current [claude|codex]         # 선택된 계정의 이름(스크
 도구를 지정하면 계정 이름만 출력하고, 선택된 계정이 없으면 아무것도 출력하지 않음.
 종료 코드는 성공 `0`, 사용법 오류 `2`, 저장된 계정 레지스트리를 읽거나 검증할 수 없을 때 `4`.
 이때 CLI는 빈 계정 목록 대신 오류를 출력.
-계정 목록은 Settings에 저장한 사용자 지정 표시 순서가 아니라 레지스트리 순서 유지.
+계정 목록은 Accounts에 저장한 사용자 지정 표시 순서가 아니라 레지스트리 순서 유지.
 
 계정에는 사용자에게 보이는 폴더도, 실행 명령도 없음.
 전환은 공유 설정 홈의 인증 정보 교체.
 `egasu` 명령 설치 여부와 무관하게 기본 인증 저장소를 쓰는 새 `claude`·`codex` 세션에 선택한 로그인 적용.
 
-Settings → Accounts에서 계정을 전환하면 먼저 확인을 요청.
+Accounts에서 계정을 전환하면 먼저 확인을 요청.
 승인하면 Claude의 기본·`~/.claude` 범위 Keychain 인증, 인증 파일과 계정 메타데이터를 교체.
 Codex는 `~/.codex/auth.json` 교체.
 MCP 설정·메모리·세션 등 다른 공유 홈 데이터 유지.
@@ -129,4 +129,4 @@ egasu는 일반 Claude CLI의 기본 Keychain 인증을 우선하고, 해당 항
 이 확인에서 만료된 토큰을 자동 갱신하지 않으며, CLI에서 로그인을 갱신하거나 **Sign In Again**으로 재로그인한 뒤 재시도.
 외부 로그인 반영은 기본·공유 CLI 인증 저장소의 Keychain·인증 파일·계정 상태 파일을 다시 쓰거나 다른 위치의 로그인을 정리하지 않음.
 egasu의 계정별 Keychain 스냅샷, 앱 소유 로그인 작업 공간, 계정 등록·선택 상태 갱신.
-현재 로그인을 확인할 수 없거나 충돌 안내가 표시되면 **Settings → Accounts → Manage Claude Account → Sign In Again** 사용.
+현재 로그인을 확인할 수 없거나 충돌 안내가 표시되면 **Accounts → Claude 계정 → Sign In Again…** 사용.

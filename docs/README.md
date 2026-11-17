@@ -12,6 +12,7 @@
 
 - [대시보드](/docs/dashboard.md) — 팝오버: 행, 토글, 순서 바꾸기, 키보드 단축키
 - [메뉴 막대](/docs/menu-bar.md) — 지표를 메뉴 막대에 고정하기
+- [계정](/docs/accounts.md) — 계정 추가·전환·복구, API 키, 이름·순서·지표 설정
 - [설정](/docs/settings.md) — 모든 옵션과 각 옵션이 바꾸는 것
 - [새로 고침과 캐싱](/docs/refreshing.md) — 데이터가 갱신되는 시점과 가져오기 실패 시 일어나는 일
 - [iCloud 동기화](/docs/icloud-sync.md) — 여러 Mac의 지출 기록을 합치는 방식

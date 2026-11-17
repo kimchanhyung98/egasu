@@ -223,11 +223,11 @@ extension AccountCredentialSwitcher.Error: UserPresentableError {
         case .incompleteClaudeAuthentication:
             .init("Claude sign-in has not finished updating its account state. Finish signing in and try again.")
         case .conflictingClaudeAuthentication:
-            .init("Claude sign-ins in different locations conflict. Open Settings → Accounts → Manage Claude Account, then choose Sign In Again.")
+            .init("Claude sign-ins in different locations conflict. Open Accounts, open the Claude account, then choose Sign In Again.")
         case .switchVerificationFailed(let label):
             .init("Switching to %@ could not be verified. Check the selected account and try again.", [String(label)])
         case .switchRecoveryRequired:
-            .init("Claude account switch recovery is required. Open Settings → Accounts → Manage Claude Account, then choose the Use Claude option for the account you want to use.")
+            .init("Claude account switch recovery is required. Open Accounts, open the Claude account you want to use, then choose Use Claude.")
         case .selectionSaveFailed:
             .init("egasu couldn't save the selected account. The recovery record was kept. Try again.")
         }

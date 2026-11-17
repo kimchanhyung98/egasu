@@ -4,14 +4,7 @@ struct ReorderLift {
     enum Payload {
         case dashboardProvider(provider: Provider, plan: String?, rows: [WidgetData])
         case dashboardMetric(data: WidgetData)
-        case customizeProviderRow(provider: Provider, isEnabled: Bool, metricCount: Int)
-        case customizeMetric(title: String)
-        case settingsAccountRow(
-            label: String,
-            state: AccountStatus,
-            isSelected: Bool,
-            showsSelectionToggle: Bool
-        )
+        case view(AnyView)
     }
 
     let id: String
@@ -69,18 +62,8 @@ struct ReorderLiftPreview: View {
             dashboardProviderPreview(provider: provider, plan: plan, rows: rows)
         case .dashboardMetric(let data):
             dashboardMetricPreview(data)
-        case .customizeProviderRow(let provider, let isEnabled, let metricCount):
-            customizeProviderRowPreview(provider: provider, isEnabled: isEnabled, metricCount: metricCount)
-        case .customizeMetric(let title):
-            customizeMetricPreview(title)
-        case .settingsAccountRow(let label, let state, let isSelected, let showsSelectionToggle):
-            AccountSettingsLiftRow(
-                label: label,
-                state: state,
-                isSelected: isSelected,
-                showsSelectionToggle: showsSelectionToggle
-            )
-            .liftedRowSurface()
+        case .view(let view):
+            view
         }
     }
 
@@ -103,26 +86,6 @@ struct ReorderLiftPreview: View {
             .liftedRowSurface()
     }
 
-    private func customizeProviderRowPreview(provider: Provider, isEnabled: Bool, metricCount: Int) -> some View {
-        // 라이브 L1 행과 동일 구성의 비활성 렌더 — 프리뷰 전체가 non-interactive
-        ProviderListRow(
-            provider: provider,
-            isEnabled: isEnabled,
-            metricCount: metricCount,
-            handle: { $0 }
-        )
-        .liftedRowSurface()
-    }
-
-    private func customizeMetricPreview(_ title: String) -> some View {
-        CustomizeMetricRow(title: title,
-            trailing: {
-                CustomizeStarPlaceholder()
-                CustomizeSwitchPlaceholder()
-            }
-        )
-        .liftedRowSurface()
-    }
 
 }
 

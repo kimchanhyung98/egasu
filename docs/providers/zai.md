@@ -56,7 +56,7 @@ egasu의 Z.ai 조회에는 사용자가 제공한 API 키 필요.
 4. `GLM_API_KEY` 환경 변수(레거시 Zhipu 이름도 계속 지원)
 
 표준 개발 빌드·사용자 지정 설정 도메인의 앱 전용 경로는 [CLI 문서](/docs/cli.md) 참조.
-파일을 직접 편집하지 않고 **Customize → Z.ai → API Key**에서 키를 추가하거나 교체 가능.
+파일을 직접 편집하지 않고 **Accounts → Z.ai → Add API Key… / Replace API Key…**에서 키를 추가하거나 교체 가능.
 앱에서 키를 저장하거나 삭제하면 적용 중인 키로 새로 조회하며, 이전 요청이 진행 중이면 완료를 기다리고 그 결과는 무시.
 이전 요청이 대기 한도보다 오래 걸리면 다음 주기 새로 고침에서 현재 키로 재시도.
 비활성 프로바이더는 다시 활성화될 때 조회.
@@ -76,7 +76,9 @@ egasu의 Z.ai 조회에는 사용자가 제공한 API 키 필요.
 
 1. [GLM Coding 요금제 구독](https://z.ai/subscribe).
 2. [Z.ai 콘솔](https://z.ai/manage-apikey/apikey-list)에서 API 키 발급.
-3. Customize의 프로바이더 목록에서 Z.ai 활성화.
+3. Accounts의 **Add New Account**에서 **Z.ai** 선택.
+4. 발급한 키 입력.
+5. **Add Account** 선택.
 4. Z.ai 상세의 API Key에서 Add 선택.
 5. 발급한 키 입력.
 6. Save 선택.
@@ -97,7 +99,8 @@ API Key 카드에 저장하는 대신 셸 프로필에서 키 제공 가능.
 
 2. egasu 종료.
 3. egasu 다시 실행.
-4. Customize의 프로바이더 목록에서 Z.ai 활성화.
+4. Accounts의 **Add New Account**에서 **Z.ai** 선택.
+5. 입력란을 비워 둔 채 **Add Account** 선택.
 
 앱은 시작할 때 로그인 셸 환경을 읽음.
 현재 터미널에서만 실행한 `export`는 이미 실행 중인 앱에 적용되지 않음.
@@ -147,7 +150,7 @@ Bearer 접두사는 추가하지 않음.
 
 ## 문제 해결
 
-- **"No Z.ai API key"** — Customize → Z.ai → API Key에 키 추가.
+- **"No Z.ai API key"** — Accounts의 **Add New Account**에서 Z.ai 키 추가, 또는 계정 상세에서 **Add API Key…** 선택.
   환경 변수를 사용하면 위 설정 절차에 따라 앱 재실행.
 - **"Z.ai API key invalid"** — 키 거부(401/403).
   [Z.ai 콘솔](https://z.ai/manage-apikey/apikey-list)에서 다시 생성.

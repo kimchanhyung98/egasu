@@ -8,25 +8,6 @@ final class LayoutStore {
     // Swift의 private은 file-scope — `LayoutStore+Customization.swift`와 공유하는 멤버는 module-internal 유지.
     var placed: [PlacedWidget]
 
-    /// In-popover navigation 전담 store — 아래 forwarding 표면이 유일한 접근 경로(같은 상태로 가는 두 경로 방지).
-    private let navigation = PopoverNavigationStore()
-
-    /// 현재 표시 중인 in-popover screen — footer 버튼·Esc handler·popover-close reset 공용.
-    var screen: PopoverScreen {
-        get { navigation.screen }
-        set { navigation.screen = newValue }
-    }
-    /// DashboardView 수평 slide용 — 떠나는 screen과 per-switch counter.
-    var screenSlideFrom: PopoverScreen { navigation.screenSlideFrom }
-    var screenSlideID: Int { navigation.screenSlideID }
-    var isEditing: Bool {
-        get { navigation.isEditing }
-        set { navigation.isEditing = newValue }
-    }
-    var customizeProviderID: String? {
-        get { navigation.customizeProviderID }
-        set { navigation.customizeProviderID = newValue }
-    }
     var draggingID: UUID?
     /// Persist되는 provider 표시 순서(provider id) — dashboard group과 Customize section 공용.
     var providerOrder: [String]

@@ -10,8 +10,8 @@ const source = (path: string): string => readFileSync(new URL(`../../Sources/Ega
 const englishSource = (path: string): string => source(path)
   .replace(/\bL10n\.\w+\(\s*("(?:\\.|[^"\\])*")\s*\)/g, '$1');
 
-test('Settings covers every native section in display order', () => {
-  const body = englishSource('Views/SettingsScreen.swift').split('return VStack(alignment: .leading, spacing: density.sectionSpacing)')[1].split('ScreenCrossLinkRow(')[0];
+test('Settings preserves native section order with account management on its own screen', () => {
+  const body = englishSource('Views/SettingsScreen.swift').split('return VStack(alignment: .leading, spacing: density.sectionSpacing)')[1].split('    // MARK: - Notifications')[0];
   const sections: Record<string, string> = {
     AccountsSettingsSection: 'Accounts', ICloudSyncSettingsSection: 'iCloud Sync', notificationsSection: 'Notifications',
     TokscaleSettingsSection: 'Tokscale', commandLineSection: 'Command Line', advancedSection: 'Advanced',
@@ -20,7 +20,8 @@ test('Settings covers every native section in display order', () => {
   const native = [...body.matchAll(/section\("([^"]+)"\)|\b(AccountsSettingsSection|ICloudSyncSettingsSection|SoftLimitSettingsSection|notificationsSection|TokscaleSettingsSection|commandLineSection|advancedSection)\b/g)]
     .map((match) => match[1] ?? sections[match[2]]);
   assert.ok(native.includes('General'), 'The native section extractor must find the General section');
-  assert.deepEqual(settingGroups.map((group) => group.title), native);
+  // 계정 미리보기는 별도 계정 데이터 테스트에서 검증.
+  assert.deepEqual(settingGroups.filter((group) => group.id !== 'accounts').map((group) => group.title), native);
 });
 
 test('Settings includes normal native rows and notification triggers', () => {

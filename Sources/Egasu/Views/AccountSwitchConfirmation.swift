@@ -15,6 +15,7 @@ extension View {
 
 private struct AccountSwitchConfirmation: ViewModifier {
     @Environment(AppContainer.self) private var container
+    @Environment(\.concealsAccountNames) private var concealsAccountNames
     @Binding var selection: AccountProfile?
     @Binding var error: String?
     let localStates: [String: AccountSignInProbe.State]
@@ -37,17 +38,25 @@ private struct AccountSwitchConfirmation: ViewModifier {
                 titleVisibility: .visible,
                 presenting: selection
             ) { profile in
-                Button(L10n.accounts("Use %@: %@", profile.family.capitalized, profile.label)) {
+                Button(L10n.accounts("Use %@: %@", profile.family.capitalized, displayName(for: profile))) {
                     switchTo(profile)
                 }
                 .disabled(container.accountSwitch.isSwitching)
                 Button(L10n.accounts("Cancel"), role: .cancel) {}
             } message: { profile in
-                Text(L10n.accounts(
-                    "New %@ sessions using the default sign-in will use %@. Your settings, memory, and sessions stay in place. Custom terminal authentication settings still apply.",
-                    profile.family, profile.label
-                ))
+                Text(
+                    L10n.accounts(
+                        "New %@ sessions using the default sign-in will use %@. Your settings, memory, and sessions stay in place. Custom terminal authentication settings still apply.",
+                        profile.family, displayName(for: profile)
+                    )
+                )
             }
+    }
+
+    private func displayName(for profile: AccountProfile) -> String {
+        AccountNamePrivacy.displayName(
+            profile.label, email: container.accountLoginEmail(for: profile), conceals: concealsAccountNames
+        )
     }
 
     private func switchTo(_ profile: AccountProfile) {
@@ -75,7 +84,9 @@ private struct AccountSwitchConfirmation: ViewModifier {
             AppDiagnostics.record(.accountSwitch, result: .success, providerID: profile.family)
         } onFailure: { switchError in
             AppDiagnostics.failure(.accountSwitch, error: switchError, providerID: profile.family)
-            error = L10n.accounts("Couldn't switch to %@: %@", profile.label, UserFacingErrors.message(switchError))
+            error = AccountNamePrivacy.switchErrorMessage(
+                switchError, name: profile.label, email: container.accountLoginEmail(for: profile), conceals: concealsAccountNames
+            )
         }
     }
 }

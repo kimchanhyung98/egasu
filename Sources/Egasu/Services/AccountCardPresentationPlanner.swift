@@ -2,9 +2,39 @@ import Foundation
 
 /// 기존 runtime 결과를 변경하지 않고 화면에 쓸 계정 카드 순서·표시 대상만 계산.
 enum AccountCardPresentationPlanner {
+    static func managementProviders(
+        _ enabledProviders: [Provider],
+        profiles: [AccountProfile],
+        profileIDsByCardID: [String: String]
+    ) -> [Provider] {
+        let representedProfiles = Set(enabledProviders.compactMap { profileIDsByCardID[$0.id] })
+        let missing = profiles.compactMap { profile -> Provider? in
+            guard !profile.isArchived, !representedProfiles.contains(profile.id),
+                  let provider = enabledProviders.first(where: { $0.id == profile.family }) else { return nil }
+            return Provider(
+                id: AccountUsageCardPlanner.cardID(family: profile.family, profileID: profile.id),
+                displayName: provider.displayName, icon: provider.icon,
+                links: provider.links, usesDedicatedSpendLines: provider.usesDedicatedSpendLines
+            )
+        }
+        return enabledProviders + missing
+    }
+
+    static func snapshotProfileID(for cardID: String, profiles: [AccountProfile]) -> String? {
+        profiles.first {
+            !$0.isArchived && AccountProfilesStore.isSupportedFamily($0.family)
+                && AccountUsageCardPlanner.cardID(family: $0.family, profileID: $0.id) == cardID
+        }?.id
+    }
+
+    static func isInUse(cardID: String, profileID: String?, preferredProfileID: String?) -> Bool {
+        guard ProviderAccountID.families.contains(ProviderAccountID.family(of: cardID)), let profileID else { return false }
+        return profileID == preferredProfileID
+    }
+
     static func switchProfile(
         providerID: String,
-        mode: AccountCardDisplayMode,
+        mode: AccountCardDisplayMode = .separateCards,
         profileID: String?,
         profiles: [AccountProfile]
     ) -> AccountProfile? {
