@@ -10,7 +10,7 @@ enum TelemetryPrivacy {
         "session", "weekly", "monthly", "daily", "today", "week", "month", "trend", "extra",
         "fable", "sonnet", "credits", "balance", "webSearches", "premium", "orgCredits", "orgSpend",
         "chat", "completions", "payAsYouGo", "auto", "api", "plan", "resets", "resetWatch",
-        "sonnetThinking", "gptOss", "geminiPro", "geminiFlash", "geminiWeekly", "claude", "claudeWeekly",
+        "sonnetThinking", "gptOss", "geminiPro", "geminiFlash", "geminiWeekly", "claude", "claudeWeekly", "argonWeekly",
         "rateLimitResets", "spark", "sparkWeekly", "usage", "onDemand", "requests", "yesterday", "last30", "keyLimit",
         "total", "extraBalance",
     ]

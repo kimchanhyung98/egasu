@@ -133,16 +133,32 @@ final class ResetDisplayTests: XCTestCase {
         XCTAssertEqual(suffixed.first?.sample.traySuffix, "resets")
     }
 
-    func testAntigravityWeeklyRowsNeverReadNotStarted() {
+    func testAntigravityWeeklyRowsNeverReadNotStarted() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let period: TimeInterval = 7 * 24 * 3600
-        for id in ["antigravity.geminiWeekly", "antigravity.claudeWeekly"] {
-            var data = WidgetData(title: "Weekly", icon: .providerMark("codex"), kind: .percent, used: 0, limit: 100)
-            data.periodDurationMs = Int(period * 1000)
-            data.resetsAt = now.addingTimeInterval(period / 2)
-            XCTAssertFalse(data.isFreshSessionWindow(now: now), id)
-            XCTAssertNotEqual(data.boundedTrailingText(now: now), "Not started", id)
-            XCTAssertEqual(data.boundedTrailingText(now: now)?.hasPrefix("Resets"), true, id)
+        let provider = AntigravityProvider(usageScan: { _, _ in nil }, pricing: { .empty })
+        let registry = WidgetRegistry(providers: [provider.provider], descriptors: provider.widgetDescriptors)
+        let reset = EgasuISO8601.string(from: now.addingTimeInterval(period / 2))
+        let buckets = ["gemini-weekly", "3p-weekly", "gemini-argon-wtu-weekly"].map {
+            ["bucketId": $0, "remainingFraction": 1, "resetTime": reset] as [String: Any]
+        }
+        let payload = try JSONSerialization.data(withJSONObject: ["groups": [["buckets": buckets]]])
+        let snapshot = ProviderSnapshot(
+            providerID: provider.provider.id, displayName: provider.provider.displayName,
+            lines: try XCTUnwrap(AntigravityUsageMapper.parseQuotaSummary(payload)), refreshedAt: now
+        )
+        try L10n.withLanguage(.english) {
+            for id in ["antigravity.geminiWeekly", "antigravity.claudeWeekly", "antigravity.argonWeekly"] {
+                let descriptor = try XCTUnwrap(registry.descriptor(id: id))
+                var data = WidgetDataResolver.resolve(descriptor, snapshot: snapshot, codexResetWatch: .init())
+                data.resetDisplayMode = .relative
+                XCTAssertTrue(data.hasData, id)
+                XCTAssertEqual(data.used, 0, id)
+                XCTAssertEqual(data.periodDurationMs, Int(period * 1000), id)
+                XCTAssertFalse(data.isFreshSessionWindow(now: now), id)
+                XCTAssertNotEqual(data.boundedTrailingText(now: now), "Not started", id)
+                XCTAssertEqual(data.boundedTrailingText(now: now)?.hasPrefix("Resets"), true, id)
+            }
         }
     }
 
@@ -319,5 +335,70 @@ final class ResetDisplayTests: XCTestCase {
         XCTAssertFalse(data.hasResetLabel())
         XCTAssertNil(data.resetTooltip())
         XCTAssertEqual(data.boundedTrailingText(), "$20 limit")
+    }
+
+    // MARK: - Antigravity 사용률 원값
+
+    private func antigravitySession(fraction: Double, now: Date) -> WidgetData {
+        guard
+            case .progress(_, let used, let limit, _, let resetsAt, let periodMs, _) = AntigravityUsageMapper.line(
+                pool: AntigravityMetric.sessionLabel, fraction: fraction,
+                resetTime: now.addingTimeInterval(2 * 3600), periodMs: MetricPeriod.sessionMs
+            )
+        else { preconditionFailure("expected a progress line") }
+        var data = WidgetData(
+            title: "Session", icon: .providerMark("antigravity"), kind: .percent, used: used, limit: limit)
+        data.resetsAt = resetsAt
+        data.periodDurationMs = periodMs
+        data.sessionStartSignal = .zeroUsage
+        data.displayMode = .remaining
+        data.resetDisplayMode = .relative
+        return data
+    }
+
+    func testAntigravitySessionJustUnderFullKeepsItsCountdownBehindTheRoundedPercent() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let data = antigravitySession(fraction: 0.99965, now: now)
+
+        XCTAssertEqual(data.used, 0.035, accuracy: 0.001)
+        XCTAssertGreaterThan(data.used, 0, "조금 쓴 세션이 미사용으로 반올림되면 안 됨")
+        L10n.withLanguage(.english) {
+            XCTAssertEqual(data.valueText, "100%", "표시만 정수 %로 반올림")
+            XCTAssertFalse(data.isFreshSessionWindow(now: now))
+            XCTAssertEqual(data.boundedTrailingText(now: now), "Resets in 2h")
+        }
+    }
+
+    func testAntigravityUntouchedAndExhaustedWindowsKeepTheirFreshAndCountdownReads() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let untouched = antigravitySession(fraction: 1, now: now)
+        XCTAssertTrue(untouched.isFreshSessionWindow(now: now))
+        L10n.withLanguage(.english) { XCTAssertEqual(untouched.boundedTrailingText(now: now), "Not started") }
+
+        let exhausted = antigravitySession(fraction: 0, now: now)
+        XCTAssertFalse(exhausted.isFreshSessionWindow(now: now))
+        L10n.withLanguage(.english) { XCTAssertEqual(exhausted.boundedTrailingText(now: now), "Resets in 2h") }
+
+        for (fraction, expected) in [(1.5, 0.0), (-0.5, 100.0)] {
+            guard
+                case .progress(_, let used, _, _, _, _, _) = AntigravityUsageMapper.line(
+                    pool: "x", fraction: fraction, resetTime: nil, periodMs: MetricPeriod.sessionMs
+                )
+            else { return XCTFail("expected a progress line") }
+            XCTAssertEqual(used, expected, "fraction \(fraction)는 0...1로 고정")
+        }
+    }
+
+    func testAntigravityWeeklyKeepsTheRawPercentForTheCardToRound() {
+        guard
+            case .progress(_, let used, let limit, _, _, _, _) = AntigravityUsageMapper.line(
+                pool: AntigravityMetric.weeklyLabel, fraction: 0.9742, resetTime: nil, periodMs: MetricPeriod.weekMs
+            )
+        else { return XCTFail("expected a progress line") }
+        XCTAssertEqual(used, 2.58, accuracy: 0.0001)
+        var data = WidgetData(
+            title: "Weekly", icon: .providerMark("antigravity"), kind: .percent, used: used, limit: limit)
+        data.displayMode = .remaining
+        XCTAssertEqual(data.valueText, "97%")
     }
 }

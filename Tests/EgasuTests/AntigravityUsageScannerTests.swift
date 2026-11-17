@@ -209,6 +209,47 @@ final class AntigravityUsageScannerTests: XCTestCase {
         await assertFailure(AntigravityUsageScanner(databasePaths: { [corrupt.path] }))
     }
 
+    func testRollbackDatabaseReadsOnlyHeaderBeforeQueryingUsage() async throws {
+        let db = try AntigravityScannerDatabase()
+        defer { db.remove() }
+        try db.model(index: 0, name: "gemini-3.8-flash")
+        try db.step(index: 1, date: now, input: 100, output: 0)
+        let file = try FileHandle(forReadingFrom: URL(fileURLWithPath: db.path))
+        defer { try? file.close() }
+
+        XCTAssertNil(try AntigravityUsageDatabase.readWALSnapshot(from: file))
+        XCTAssertEqual(try file.offset(), 20)
+        let scan = try await AntigravityUsageScanner(databasePaths: { [db.path] })
+            .scan(now: now, pricing: pricing())
+
+        XCTAssertEqual(scan?.series.daily.first?.totalTokens, 100)
+        XCTAssertNil(scan?.readWarning)
+    }
+
+    func testClosedWALDatabaseWithoutSidecarsRemainsReadable() async throws {
+        let db = try AntigravityScannerDatabase(wal: true)
+        defer { db.remove() }
+        try db.model(index: 0, name: "gemini-3.8-flash")
+        try db.step(index: 1, date: now, input: 100, output: 0)
+        try db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        db.close()
+        for suffix in ["-wal", "-shm"] where FileManager.default.fileExists(atPath: db.path + suffix) {
+            try FileManager.default.removeItem(atPath: db.path + suffix)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: db.path + "-wal"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: db.path + "-shm"))
+        let original = try Data(contentsOf: URL(fileURLWithPath: db.path))
+
+        let scan = try await AntigravityUsageScanner(databasePaths: { [db.path] })
+            .scan(now: now, pricing: pricing())
+
+        XCTAssertEqual(scan?.series.daily.first?.totalTokens, 100)
+        XCTAssertNil(scan?.readWarning)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: db.path)), original)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: db.path + "-wal"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: db.path + "-shm"))
+    }
+
     func testEmptyMetadataIsSkippedAndReportedZeroRemainsARealDailyValue() async throws {
         let db = try AntigravityScannerDatabase()
         defer { db.remove() }
@@ -394,9 +435,13 @@ final class AntigravityScannerDatabase {
         }
     }
 
-    func remove() {
+    func close() {
         sqlite3_close(handle)
         handle = nil
+    }
+
+    func remove() {
+        close()
         try? FileManager.default.removeItem(at: directory)
     }
 

@@ -76,8 +76,22 @@ actor AntigravityUsageScanner {
                 if let cached = cache[path], cached.signature == signature, cached.since <= since {
                     records = cached.records
                 } else {
-                    records = try AntigravityUsageDatabase(path: path).records(since: since)
-                    // 읽는 동안 기록 파일이 바뀌면 이번 일관된 스냅샷만 사용하고 다음 refresh에서 재조회.
+                    let snapshot: Data?
+                    if signature.wal == nil {
+                        let file = try FileHandle(forReadingFrom: URL(fileURLWithPath: path))
+                        defer { try? file.close() }
+                        snapshot = try AntigravityUsageDatabase.readWALSnapshot(from: file)
+                    } else {
+                        snapshot = nil
+                    }
+                    if let snapshot {
+                        // 복사 중 DB 변경·WAL 생성이 있으면 불완전한 복사본 사용 금지.
+                        guard try self.signature(path) == signature else { throw AntigravityUsageScanError.unreadable }
+                        records = try AntigravityUsageDatabase(snapshot: snapshot).records(since: since)
+                    } else {
+                        records = try AntigravityUsageDatabase(path: path).records(since: since)
+                    }
+                    // 읽는 동안 기록 파일이 바뀌면 이번 스냅샷만 사용하고 다음 갱신에서 재조회.
                     if try self.signature(path) == signature {
                         cache[path] = CachedDatabase(signature: signature, since: since, records: records)
                     } else {

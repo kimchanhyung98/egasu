@@ -28,9 +28,10 @@ struct AntigravityUsageClient: Sendable {
         "https://daily-cloudcode-pa.googleapis.com",
         "https://cloudcode-pa.googleapis.com"
     ]
+    /// 실사용량을 보고하는 daily 우선. production은 누락되거나 유효하지 않은 항목만 보충.
     private static let quotaSummaryURLs = [
-        "https://cloudcode-pa.googleapis.com",
-        "https://daily-cloudcode-pa.googleapis.com"
+        "https://daily-cloudcode-pa.googleapis.com",
+        "https://cloudcode-pa.googleapis.com"
     ]
     static let fetchModelsPath = "/v1internal:fetchAvailableModels"
     static let loadCodeAssistPath = "/v1internal:loadCodeAssist"
@@ -89,14 +90,14 @@ struct AntigravityUsageClient: Sendable {
         )
     }
 
-    /// 서버가 요금제 조회를 지원하는 Antigravity 클라이언트 형식.
+    /// 요금제·공유 한도·별도 Argon 한도를 요청하는 Antigravity Hub 클라이언트 형식.
     private static let clientUserAgent: String = {
         #if arch(arm64)
         let architecture = "arm64"
         #else
         let architecture = "amd64"
         #endif
-        return "antigravity/2.24.0 (aidev_client; os_type=darwin; arch=\(architecture))"
+        return "antigravity/hub/2.24.0 (aidev_client; os_type=darwin; arch=\(architecture))"
     }()
 
     private func cloudCode(path: String, token: String, userAgent: String, payload: Data) async -> CloudCodeOutcome {
@@ -117,7 +118,7 @@ struct AntigravityUsageClient: Sendable {
         for base in Self.quotaSummaryURLs {
             guard let url = URL(string: base + Self.quotaSummaryPath) else { continue }
             let request = Self.cloudCodeRequest(
-                url: url, token: token, userAgent: "antigravity", payload: Data("{}".utf8)
+                url: url, token: token, userAgent: Self.clientUserAgent, payload: Data("{}".utf8)
             )
             let response: HTTPResponse
             do {

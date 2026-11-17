@@ -128,6 +128,8 @@ Claude의 429 대기 중에도 캐시 유효 기간을 늘리지 않으며, 마�
 예를 들어 Cursor `totalUsage`는 백분율 기반 요금제에서는 `percent`, 요청 기반 Enterprise 요금제에서는 `requests`, Cursor가 달러 풀을 보고할 때는 `usd`.
 Copilot `premiumCredits`는 할당량 사용 비율일 때 `percent`, 조직 관리 좌석의 개인 사용 크레딧 수일 때 `credits`.
 개인 크레딧 수에는 `used`만 제공하며 `limit`, `remaining`, `utilization`은 생략.
+`percent` 값은 프로바이더가 보고한 정밀도 그대로 반환.
+Antigravity는 잔여 비율에서 계산하므로 `used`·`remaining`이 정수가 아닐 수 있으며, 표시할 때는 필요한 자릿수로 반올림.
 
 ### 공개 리소스
 
@@ -136,7 +138,7 @@ Copilot `premiumCredits`는 할당량 사용 비율일 때 `percent`, 조직 관
 | Claude | `session`, `weekly`, `sonnet`, `fable`, `extraUsage` |
 | Codex | `session`, `weekly`, `spark`, `sparkWeekly`, `credits`, `creditValue`, `rateLimitResets` |
 | Cursor | `totalUsage`, `autoUsage`, `apiUsage`, `onDemand`, `requests`, `credits` |
-| Antigravity | `geminiSession`, `geminiWeekly`, `nonGeminiSession`, `nonGeminiWeekly` |
+| Antigravity | `geminiSession`, `geminiWeekly`, `nonGeminiSession`, `nonGeminiWeekly`, `argonWeekly` |
 | Copilot | `premiumCredits`, `extraUsage`, `orgCredits`, `orgSpend`, `chat`, `completions` |
 | Devin | `daily`, `weekly`, `extraUsageBalance` |
 | Grok | `weekly` |

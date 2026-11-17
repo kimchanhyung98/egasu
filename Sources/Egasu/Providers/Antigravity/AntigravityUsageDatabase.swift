@@ -19,7 +19,36 @@ final class AntigravityUsageDatabase {
         handle = opened
     }
 
+    /// WAL이 없는 고정 복사본을 메모리에서 조회. 원본 DB·보조 파일은 변경하지 않음.
+    convenience init(snapshot: Data) throws {
+        try self.init(path: ":memory:")
+        guard snapshot.count >= 100,
+            let allocation = sqlite3_malloc64(UInt64(snapshot.count) + 20)
+        else { throw AntigravityUsageScanError.unreadable }
+        let bytes = allocation.assumingMemoryBound(to: UInt8.self)
+        snapshot.copyBytes(to: bytes, count: snapshot.count)
+        bytes.advanced(by: snapshot.count).initialize(repeating: 0, count: 20)
+        // 메모리 DB는 WAL 형식을 지원하지 않으므로 복사본의 읽기·쓰기 버전만 전환.
+        if bytes[18] == 2, bytes[19] == 2 {
+            bytes[18] = 1
+            bytes[19] = 1
+        }
+        let flags = UInt32(SQLITE_DESERIALIZE_FREEONCLOSE | SQLITE_DESERIALIZE_READONLY)
+        guard
+            sqlite3_deserialize(handle, "main", bytes, Int64(snapshot.count), Int64(snapshot.count) + 20, flags)
+                == SQLITE_OK
+        else { throw AntigravityUsageScanError.unreadable }
+    }
+
     deinit { sqlite3_close(handle) }
+
+    static func readWALSnapshot(from file: FileHandle) throws -> Data? {
+        guard let header = try file.read(upToCount: 20), header.count == 20,
+            header[18] == 2, header[19] == 2
+        else { return nil }
+        try file.seek(toOffset: 0)
+        return try file.readToEnd()
+    }
 
     func records(since: Date) throws -> [AntigravityUsageRecord] {
         try execute("BEGIN")
