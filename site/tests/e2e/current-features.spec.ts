@@ -72,7 +72,23 @@ test('Reset Watch notifications can be enabled without quota notifications', asy
   await expect(setting).toHaveAttribute('aria-checked', 'false');
   await setting.click();
   await expect(app.getByRole('button', { name: 'Allow Notifications', exact: true })).toBeVisible();
-  for (const name of ['Almost Out', 'Cutting It Close', 'Will Run Out']) {
+  for (const name of ['Critical', 'Warning', 'Burning Fast', 'Use It or Lose It']) {
+    await expect(app.getByRole('switch', { name, exact: true })).toHaveAttribute('aria-checked', 'false');
+  }
+  await page.reload();
+  await openSettings(page);
+  await expect(setting).toHaveAttribute('aria-checked', 'true');
+});
+
+test('unused allowance reminders preserve their choice without enabling other alerts', async ({ page }) => {
+  await openHome(page);
+  await openSettings(page);
+  const app = page.locator('[data-mock]');
+  const setting = app.getByRole('switch', { name: 'Use It or Lose It', exact: true });
+  await expect(setting).toHaveAttribute('aria-checked', 'false');
+  await setting.click();
+  await expect(app.getByRole('button', { name: 'Allow Notifications', exact: true })).toBeVisible();
+  for (const name of ['Critical', 'Warning', 'Burning Fast', 'Codex Reset Watch']) {
     await expect(app.getByRole('switch', { name, exact: true })).toHaveAttribute('aria-checked', 'false');
   }
   await page.reload();

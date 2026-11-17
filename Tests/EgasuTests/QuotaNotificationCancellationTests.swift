@@ -96,6 +96,7 @@ final class QuotaNotificationCancellationTests: XCTestCase {
         settings.warning = true
         var enabledProviders: Set<String> = ["test", "other"]
         let runtime = MutableRuntime()
+        let otherRuntime = MutableRuntime(id: "other")
         let gate = DeliveryGate()
         let waiting = expectation(description: "delivery waiting at \(stage)")
         var attempts: [String] = []
@@ -104,7 +105,7 @@ final class QuotaNotificationCancellationTests: XCTestCase {
         var delivered: [String] = []
         var liveRequests: Set<String> = ["previously-delivered"]
         let store = WidgetDataStore(
-            registry: WidgetRegistry.from([runtime]), providers: [runtime],
+            registry: WidgetRegistry.from([runtime, otherRuntime]), providers: [runtime, otherRuntime],
             cache: ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots"),
             defaults: defaults, isProviderEnabled: { enabledProviders.contains($0) },
             notificationSettings: { settings },

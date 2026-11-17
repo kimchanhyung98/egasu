@@ -47,8 +47,10 @@ final class AlertSettingsTests: XCTestCase {
 
     func testLevelAlertBodiesFollowThePriorityLimits() {
         let limits = PriorityLimits(warning: 40, critical: 15)
-        XCTAssertEqual(PaceMilestone.warning.body(limits), "40% or less left for this window.")
-        XCTAssertEqual(PaceMilestone.critical.body(limits), "15% or less left for this window.")
+        L10n.withLanguage(.english) {
+            XCTAssertEqual(PaceMilestone.warning.body(limits), "40% or less left for this window.")
+            XCTAssertEqual(PaceMilestone.critical.body(limits), "15% or less left for this window.")
+        }
     }
 
     func testConditionDisplayAndNotificationChoicesStayIndependentAcrossRelaunch() throws {

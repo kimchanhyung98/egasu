@@ -18,7 +18,7 @@ struct PriorityItem: Identifiable {
         /// Reset Watch·차트·기간 행처럼 한도가 아닌 행은 nil.
         init?(_ line: DashboardLine, now: Date, burningFast: BurningFast?, useItOrLoseIt: Bool) {
             let data = line.data.presented(at: now)
-            if line.descriptor.balance(in: data) == 0 {
+            if let balance = line.descriptor.balance(in: data), balance <= 0 {
                 self = .emptyBalance
                 return
             }
@@ -184,7 +184,7 @@ struct PriorityBoard {
             usedUp: ranked.filter { $0.reason.section == .usedUp && !$0.isPinned },
             useItOrLoseIt: ranked.filter { $0.reason.section == .useItOrLoseIt && !$0.isPinned },
             notices: notices, waiting: waiting, summary: summary,
-            showsClearRow: !awaitingUsage && notices.isEmpty && runningOut.isEmpty
+            showsClearRow: reportsLimit && !awaitingUsage && notices.isEmpty && runningOut.isEmpty
         )
     }
 

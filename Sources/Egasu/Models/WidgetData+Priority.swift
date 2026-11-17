@@ -16,11 +16,7 @@ extension WidgetData {
     var fillSeverity: MeterSeverity {
         guard isForecast else { return severity }
         guard hasData, let limit, limit > 0 else { return .neutral }
-        let percent = (min(max(used / limit, 0), 1) * 100).rounded()
-        if percent >= 70 { return .critical }
-        if percent >= 60 { return .warning }
-        if percent >= 40 { return .normal }
-        return .neutral
+        return meterState().severity ?? .neutral
     }
 
     /// 막대 호버 툴팁 — 초기화 시점의 예상 사용량.

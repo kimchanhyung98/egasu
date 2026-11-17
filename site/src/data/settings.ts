@@ -82,7 +82,7 @@ export const settingGroups: SettingGroup[] = [
       // 이 두 개는 대시보드의 헤드라인·리셋 라벨과 같은 상태라 서로 반영됨.
       { id: 'showUsageAs', label: 'Show Usage As', control: { kind: 'picker', value: 'Used', options: ['Used', 'Left'] } },
       { id: 'resetTimes', label: 'Reset Times', control: { kind: 'picker', value: 'Exact Time', options: ['Countdown', 'Exact Time'] } },
-      { id: 'alwaysShowPacing', label: 'Always Show Pacing', control: { kind: 'toggle', on: true }, info: true },
+      { id: 'alwaysShowPacing', label: 'Always Show Pacing', control: { kind: 'toggle', on: false }, info: true },
     ],
   },
   {
@@ -99,9 +99,10 @@ export const settingGroups: SettingGroup[] = [
   {
     id: 'notifications', title: 'Notifications',
     rows: [
-      { id: 'underTenPercent', label: 'Almost Out', control: { kind: 'toggle', on: false }, info: true },
-      { id: 'healthyToClose', label: 'Cutting It Close', control: { kind: 'toggle', on: false }, info: true },
-      { id: 'closeToRunningOut', label: 'Will Run Out', control: { kind: 'toggle', on: false }, info: true },
+      { id: 'underTenPercent', label: 'Critical', control: { kind: 'toggle', on: false }, info: true },
+      { id: 'healthyToClose', label: 'Warning', control: { kind: 'toggle', on: false }, info: true },
+      { id: 'closeToRunningOut', label: 'Burning Fast', control: { kind: 'toggle', on: false }, info: true },
+      { id: 'useItOrLoseIt', label: 'Use It or Lose It', control: { kind: 'toggle', on: false }, info: true },
       { id: 'codexResetWatch', label: 'Codex Reset Watch', control: { kind: 'toggle', on: false },
         note: 'Notifies you about new public reset forecasts or scheduled resets. Not a guarantee of an account reset.' },
     ],

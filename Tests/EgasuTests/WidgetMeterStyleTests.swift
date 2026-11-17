@@ -168,7 +168,7 @@ final class WidgetMeterStyleTests: XCTestCase {
         XCTAssertEqual(used.displayedValue, remaining.displayedValue)
     }
 
-    func testUsageDisplayDefaultsMatchForkPreferences() {
+    func testUsageDisplayDefaults() {
         let store = makeEmptyStore(makeUserDefaults("default"))
         XCTAssertEqual(store.meterStyle, .used)
         XCTAssertEqual(store.resetDisplayMode, .absolute)

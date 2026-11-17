@@ -176,6 +176,16 @@ final class PriorityBoardTests: XCTestCase {
         XCTAssertEqual(board.summary, .noReportedLimits)
     }
 
+    func testAllClearRequiresAReportedLimit() {
+        let empty = PriorityBoard.make(accounts: [account("cursor", lines: [])], now: now)
+        XCTAssertEqual(empty.summary, .noReportedLimits)
+        XCTAssertFalse(empty.showsClearRow)
+        let reported = PriorityBoard.make(
+            accounts: [account("codex", lines: [line("codex.weekly", used: 10, resetIn: 3 * 86_400)])], now: now)
+        XCTAssertEqual(reported.summary, .allClear)
+        XCTAssertTrue(reported.showsClearRow)
+    }
+
     func testWaitingAndNoticesDecideSummary() {
         let waiting = DashboardAccount(
             provider: provider("cursor"), providerName: "Cursor", name: nil, lines: [],
@@ -207,19 +217,23 @@ final class PriorityBoardTests: XCTestCase {
         XCTAssertFalse(unknown.isInUse)
     }
 
-    func testEmptyBalanceIsUsedUp() {
-        var balance = WidgetData(
-            title: "Balance", icon: .providerMark("openrouter"), kind: .dollars, used: 0, limit: nil,
-            unboundedValueWord: "left")
-        balance.values = [MetricValue(number: 0, kind: .dollars)]
-        let descriptor = descriptor("openrouter.balance")
-            .exportingLimit("balance", kind: .balance, unit: "usd", source: .value(kind: .dollars))
-        let account = account("openrouter", lines: [DashboardLine(descriptor: descriptor, data: balance)])
-        XCTAssertEqual(PriorityBoard.make(accounts: [account], now: now).usedUp.map(\.id), ["openrouter.balance"])
-        let pinned = PriorityBoard.make(accounts: [account], pinned: ["openrouter.balance"], now: now)
-        XCTAssertEqual(pinned.pinned.map(\.id), ["openrouter.balance"])
-        XCTAssertEqual(pinned.pinned.first?.item?.reason, .emptyBalance)
-        XCTAssertTrue(pinned.usedUp.isEmpty)
+    func testOnlyNonpositiveBalanceIsUsedUp() {
+        for amount in [0.0, -3, 3] {
+            var balance = WidgetData(
+                title: "Balance", icon: .providerMark("openrouter"), kind: .dollars, used: 0, limit: nil,
+                unboundedValueWord: "left")
+            balance.values = [MetricValue(number: amount, kind: .dollars)]
+            let descriptor = descriptor("openrouter.balance")
+                .exportingLimit("balance", kind: .balance, unit: "usd", source: .value(kind: .dollars))
+            let account = account("openrouter", lines: [DashboardLine(descriptor: descriptor, data: balance)])
+            XCTAssertEqual(
+                PriorityBoard.make(accounts: [account], now: now).usedUp.map(\.id),
+                amount <= 0 ? ["openrouter.balance"] : [])
+            let pinned = PriorityBoard.make(accounts: [account], pinned: ["openrouter.balance"], now: now)
+            XCTAssertEqual(pinned.pinned.map(\.id), ["openrouter.balance"])
+            XCTAssertEqual(pinned.pinned.first?.item?.reason, amount <= 0 ? .emptyBalance : nil)
+            XCTAssertTrue(pinned.usedUp.isEmpty)
+        }
     }
 
     func testZeroSpendWithoutABalanceResourceIsNotUsedUp() {

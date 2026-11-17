@@ -148,7 +148,8 @@ enum PaceNotificationLogic {
     static func carriedOver(_ previous: NotificationState, used: Double, resetsAt: Date?, now: Date) -> NotificationState {
         var next = previous
         let usageReset = used == 0 && (previous.previousUsed ?? 0) > 0
-        if resetWindowAdvanced(resetsAt: resetsAt, previousReset: previous.resetsAt, now: now, usageReset: usageReset) {
+        if previous.resetsAt != nil,
+           resetWindowAdvanced(resetsAt: resetsAt, previousReset: previous.resetsAt, now: now, usageReset: usageReset) {
             next.firedMilestones = []
             next.previousSeverity = .normal
             next.previousBucket = .untracked

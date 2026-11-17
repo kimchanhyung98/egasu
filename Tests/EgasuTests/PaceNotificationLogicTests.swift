@@ -60,6 +60,14 @@ final class PaceNotificationLogicTests: XCTestCase {
         XCTAssertFalse(again.fire.contains(.critical))
     }
 
+    func testCriticalRearmsAfterRecoveryToWarningInTheSameWindow() {
+        let primed = step(healthy, fraction: 0.50).newState
+        var first = step(healthy, fraction: 0.10, from: primed)
+        first.newState.firedMilestones.formUnion(first.fire)
+        let recovered = step(healthy, fraction: 0.11, from: first.newState).newState
+        XCTAssertEqual(step(healthy, fraction: 0.10, from: recovered).fire, [.critical])
+    }
+
     func testColdStartPrimesWithoutFiring() {
         let first = step(running, fraction: 0.02)
         XCTAssertTrue(first.fire.isEmpty, "cold start primes, it doesn't fire")

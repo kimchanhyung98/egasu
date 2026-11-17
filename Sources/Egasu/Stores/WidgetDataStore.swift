@@ -35,7 +35,7 @@ final class WidgetDataStore {
 
     /// 화면·API용 조회 결과 — iCloud 동기화가 꺼져 있으면 로컬 원본, 켜져 있으면 다른 Mac의 이력 합산.
     var snapshots: [String: ProviderSnapshot] = [:] {
-        didSet { latchBurningFast() }
+        didSet { latchBurningFast(at: now(), previousSnapshots: oldValue) }
     }
     let displaySettings: DisplaySettingsStore
     private(set) var burningFastWindows: [String: Date] = [:]
@@ -299,6 +299,7 @@ final class WidgetDataStore {
     /// 주기 작업에서 조회 후 호출하여 시간 경과만으로 달라진 소진 속도도 평가.
     /// 평가 대상에서 빠진 지표는 기록 제거 — 다시 활성화·추가하면 새 기준으로 시작.
     func evaluateNotifications(now: Date = Date()) async {
+        latchBurningFast(at: now)
         pendingNotificationEvaluationAt = now
         guard !isEvaluatingNotifications else { return }
         isEvaluatingNotifications = true
@@ -390,14 +391,20 @@ final class WidgetDataStore {
     }
 
     /// 현재 조회 결과의 빠른 소진 상태 기록 — 같은 기간의 회복 기준까지 유지.
-    private func latchBurningFast() {
-        let at = now()
+    private func latchBurningFast(at: Date, previousSnapshots: [String: ProviderSnapshot] = [:]) {
         let previous = BurningFast(latched: burningFastWindows)
         var burning: [String: Date] = [:]
         for descriptor in registry.descriptors {
             let data = data(for: descriptor)
+            var wasBurning = previous.wasBurning(descriptor.id, data, now: at)
+            if wasBurning, let snapshot = previousSnapshots[descriptor.providerID] {
+                let previousData = WidgetDataResolver.resolve(
+                    descriptor, snapshot: snapshot, codexResetWatch: codexResetWatch
+                ).presented(at: at)
+                wasBurning = BurningFast.isBurning(previousData, now: at, wasBurning: true)
+            }
             guard let reset = data.resetsAt,
-                  BurningFast.isBurning(data, now: at, wasBurning: previous.wasBurning(descriptor.id, data, now: at)) else { continue }
+                  BurningFast.isBurning(data, now: at, wasBurning: wasBurning) else { continue }
             burning[descriptor.id] = reset
         }
         if burning != burningFastWindows { burningFastWindows = burning }

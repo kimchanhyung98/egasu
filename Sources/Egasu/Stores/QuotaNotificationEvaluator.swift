@@ -76,7 +76,7 @@ final class QuotaNotificationEvaluator {
             var levelDelivered = false
             for milestone in result.fire {
                 // 두 단계를 한 번에 지나면 켜진 것 중 더 낮은 단계 하나만 — 나머지는 보낸 것으로 침.
-                if levelDelivered, milestone.isLevel {
+                if levelDelivered, milestone.isLevel, isOn(milestone), isProviderEnabled(metric.providerID) {
                     next.firedMilestones.insert(milestone)
                     continue
                 }
@@ -100,7 +100,7 @@ final class QuotaNotificationEvaluator {
             if result.fire.contains(where: \.isPace) && !paceDelivered {
                 next.previousBucket = held.previousBucket
             }
-            if result.fire.contains(where: \.isLevel) && !levelDelivered {
+            if result.fire.filter(\.isLevel).contains(where: { !next.firedMilestones.contains($0) }) {
                 next.previousSeverity = held.previousSeverity
             }
             if !result.fire.isEmpty {

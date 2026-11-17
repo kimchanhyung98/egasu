@@ -225,6 +225,25 @@ final class QuotaResetWindowTests: XCTestCase {
         XCTAssertTrue(restored.isEmpty, "기간 정보만 추가된 첫 소진 상태는 새 악화가 아님")
     }
 
+    func testFirstKnownResetPreservesTheBaselineAndStillReportsNewExhaustion() async {
+        for family in ["codex", "claude"] {
+            for initialUsed in [50.0, 100] {
+                let evaluator = QuotaNotificationEvaluator()
+                _ = await evaluate(evaluator, used: initialUsed, reset: nil, now: base, family: family, period: nil)
+                let reported = await evaluate(
+                    evaluator, used: 100, reset: base.addingTimeInterval(3600), now: base,
+                    family: family, period: 5 * 3600)
+                let expected: Set<String> =
+                    initialUsed == 100
+                    ? []
+                    : [
+                        "\(family).closeToRunningOut", "\(family).underTenPercent"
+                    ]
+                XCTAssertEqual(Set(reported), expected, "\(family), first usage=\(initialUsed)")
+            }
+        }
+    }
+
     func testNaturalRolloverRearmsEvenWhenZeroUsageWasNotObserved() async {
         for used in [40.0, 95.0] {
             let evaluator = QuotaNotificationEvaluator()
