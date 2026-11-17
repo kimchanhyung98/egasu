@@ -139,6 +139,7 @@ struct DashboardView: View {
         HoverPopoverState.dismissAll()
         // 닫힐 때 열린 이름 편집은 저장 — 포커스 이탈이 오지 않음.
         renaming.commit()
+        layout.clearShareConfirmation()
         popover.reset()
         reorderLift = nil
         layout.cancelDrag()

@@ -109,10 +109,15 @@ final class AccountsScreenTests: XCTestCase {
 
     func testAddingAClaudeOrCodexAccountWaitsForAReadableRegistry() {
         XCTAssertTrue(
-            ManagedAccountSignInStep.blocksAdding(isSwitching: false, hasUnreadableRegistry: true),
+            ManagedAccountSignInStep.blocksAdding(
+                isSwitching: false, hasUnreadableRegistry: true, activeProfileCount: 0),
             "공유 홈 로그인을 바꾼 뒤 등록이 실패하지 않게")
-        XCTAssertTrue(ManagedAccountSignInStep.blocksAdding(isSwitching: true, hasUnreadableRegistry: false))
-        XCTAssertFalse(ManagedAccountSignInStep.blocksAdding(isSwitching: false, hasUnreadableRegistry: false))
+        XCTAssertTrue(
+            ManagedAccountSignInStep.blocksAdding(
+                isSwitching: true, hasUnreadableRegistry: false, activeProfileCount: 0))
+        XCTAssertFalse(
+            ManagedAccountSignInStep.blocksAdding(
+                isSwitching: false, hasUnreadableRegistry: false, activeProfileCount: 0))
     }
 
     func testAnAPIKeyProviderCanUseAKeyAlreadyOnThisMac() {
@@ -154,9 +159,43 @@ final class AccountsScreenTests: XCTestCase {
 
     // MARK: - Rename
 
+    func testRenameKeepsTheOriginalProfileWhenTheCardBindingChanges() {
+        for draft in ["Office", ""] {
+            var boundProfile = "work"
+            var names = ["work": "Work", "personal": "Personal"]
+            let emails = ["work": "work@example.com", "personal": "personal@example.com"]
+            let renaming = AccountRenameStore(
+                profileID: { _ in boundProfile }, label: { names[$0] }, email: { emails[$0] },
+                rename: { names[$0] = $1 })
+            renaming.begin("claude")
+            renaming.draft = draft
+
+            boundProfile = "personal"
+            renaming.commit()
+
+            XCTAssertEqual(names["work"], draft.isEmpty ? emails["work"] : draft)
+            XCTAssertEqual(names["personal"], "Personal", "새로 연결된 계정의 이름은 보존")
+            renaming.begin("claude")
+            XCTAssertEqual(renaming.draft, "Personal", "다음 편집은 현재 연결 계정 사용")
+        }
+    }
+
+    func testAccountLimitBlocksAddingBeforeStartingAnotherLogin() {
+        let maximum = AccountProfilesStore.maxProfilesPerFamily
+        XCTAssertFalse(
+            ManagedAccountSignInStep.blocksAdding(
+                isSwitching: false, hasUnreadableRegistry: false, activeProfileCount: maximum - 1))
+        XCTAssertTrue(
+            ManagedAccountSignInStep.blocksAdding(
+                isSwitching: false, hasUnreadableRegistry: false, activeProfileCount: maximum))
+        XCTAssertTrue(
+            ManagedAccountSignInStep.blocksAdding(
+                isSwitching: false, hasUnreadableRegistry: false, activeProfileCount: maximum + 1))
+    }
+
     func testRenameCommitsTrimmedNameAndCancelKeepsTheOldOne() {
         var names = ["claude@profile-work": "Work"]
-        let renaming = AccountRenameStore(label: { names[$0] }, rename: { names[$0] = $1 })
+        let renaming = AccountRenameStore(profileID: { $0 }, label: { names[$0] }, rename: { names[$0] = $1 })
 
         renaming.begin("claude@profile-work")
         XCTAssertEqual(renaming.draft, "Work")
@@ -180,6 +219,7 @@ final class AccountsScreenTests: XCTestCase {
     func testClearingTheNameRemovesItInFavorOfTheSignInEmail() {
         var names = ["claude@profile-work": "Work"]
         let renaming = AccountRenameStore(
+            profileID: { $0 },
             label: { names[$0] }, email: { _ in "me@example.com" }, rename: { names[$0] = $1 }
         )
 
@@ -195,6 +235,7 @@ final class AccountsScreenTests: XCTestCase {
     func testClearingANameThatIsAlreadyTheSignInEmailSavesNothing() {
         var saves = 0
         let renaming = AccountRenameStore(
+            profileID: { $0 },
             label: { _ in "me@example.com" }, email: { _ in "me@example.com" }, rename: { _, _ in saves += 1 }
         )
 
@@ -208,6 +249,7 @@ final class AccountsScreenTests: XCTestCase {
     func testClearingTheNameReportsAFailedSave() {
         struct Failure: Error {}
         let renaming = AccountRenameStore(
+            profileID: { $0 },
             label: { _ in "Work" }, email: { _ in "me@example.com" }, rename: { _, _ in throw Failure() }
         )
 
@@ -221,6 +263,7 @@ final class AccountsScreenTests: XCTestCase {
     func testRenameIgnoresCardsWithoutANameAndStaleEdits() {
         var renamed: [String] = []
         let renaming = AccountRenameStore(
+            profileID: { $0 },
             label: { $0 == "cursor" ? nil : "Work" }, rename: { id, _ in renamed.append(id) })
 
         renaming.begin("cursor")
@@ -237,7 +280,8 @@ final class AccountsScreenTests: XCTestCase {
 
     func testRenameFailureIsReported() {
         struct Failure: Error {}
-        let renaming = AccountRenameStore(label: { _ in "Work" }, rename: { _, _ in throw Failure() })
+        let renaming = AccountRenameStore(
+            profileID: { $0 }, label: { _ in "Work" }, rename: { _, _ in throw Failure() })
         renaming.begin("claude@profile-work")
         renaming.draft = "Office"
         renaming.commit()
@@ -247,6 +291,7 @@ final class AccountsScreenTests: XCTestCase {
     func testSwitchingEditorsKeepsThePreviousFailureUntilAcknowledged() {
         let names = ["claude@profile-work": "Work", "claude@profile-home": "Home"]
         let renaming = AccountRenameStore(
+            profileID: { $0 },
             label: { names[$0] },
             rename: { _, name in
                 throw AccountProfileError.duplicateLabel(name)
@@ -266,6 +311,7 @@ final class AccountsScreenTests: XCTestCase {
 
     func testRenameFailureIsPresentedAfterOpeningAndDismissedByOK() async throws {
         let renaming = AccountRenameStore(
+            profileID: { $0 },
             label: { _ in "Work" },
             rename: { _, name in
                 throw AccountProfileError.duplicateLabel(name)

@@ -9,14 +9,18 @@ struct AccountsView: View {
     @Binding var reorderLift: ReorderLift?
 
     @State private var rowFrames: [String: CGRect] = [:]
+    @State private var reconciliationError: String?
 
     var body: some View {
         PopoverScrollView {
-            content
-                .padding(.horizontal, PanelMetrics.margin)
-                .padding(.top, 7)
-                .padding(.bottom, popover.accountDetailID == nil ? 0 : PanelMetrics.margin)
-                .frame(maxWidth: .infinity)
+            VStack(alignment: .leading, spacing: PanelMetrics.sectionSpacing) {
+                if let reconciliationError { ProblemCard(message: reconciliationError) }
+                content
+            }
+            .padding(.horizontal, PanelMetrics.margin)
+            .padding(.top, 7)
+            .padding(.bottom, popover.accountDetailID == nil ? 0 : PanelMetrics.margin)
+            .frame(maxWidth: .infinity)
         }
         .onPreferenceChange(ReorderFramePreferenceKey.self) { rowFrames = $0 }
         .sheet(isPresented: Bindable(popover).isAddingAccount) {
@@ -27,7 +31,11 @@ struct AccountsView: View {
             container.accountProfiles.reloadFromDefaults()
             container.refreshAccountCatalog()
         }
-        .task { _ = await container.reconcileExternalClaudeAuthenticationAndRefreshCatalog() }
+        .task {
+            let message = await container.reconcileExternalClaudeAuthenticationAndRefreshCatalog()
+            guard !Task.isCancelled else { return }
+            reconciliationError = message
+        }
     }
 
     @ViewBuilder

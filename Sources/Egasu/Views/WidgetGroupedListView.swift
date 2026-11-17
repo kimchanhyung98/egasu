@@ -365,7 +365,7 @@ struct WidgetGroupedListView: View {
         }
     }
 
-    /// dashboard에서 해당 provider의 Customize metric(L2)으로 직행 — provider 리스트를 거치지 않음.
+    /// 대시보드에서 해당 카드의 Accounts 상세 열기.
     /// 계정 카드는 해당 카드의 설정으로 연결하여 숨긴 한도 복원.
     private func openAccount(for providerID: String) {
         container.popover.openAccounts(providerID)

@@ -30,7 +30,6 @@ struct APIKeyRows: View {
                 Button {
                     error = nil
                     isEditing = true
-                    isFieldFocused = true
                 } label: {
                     Text(L10n.accounts(status == .notSet ? "Add API Key…" : "Replace API Key…"))
                         .foregroundStyle(.tint)
@@ -59,10 +58,12 @@ struct APIKeyRows: View {
             SecureField(L10n.accounts("New API Key"), text: $input)
                 .textFieldStyle(.roundedBorder)
                 .focused($isFieldFocused)
+                .onAppear { isFieldFocused = true }
                 .onSubmit(save)
             HStack(spacing: 8) {
                 Button(L10n.customize("Cancel")) {
                     input = ""
+                    error = nil
                     isEditing = false
                 }
                 Button(L10n.customize("Save"), action: save)

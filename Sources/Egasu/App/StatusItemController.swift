@@ -78,6 +78,7 @@ final class StatusItemController: NSObject {
         panel: panel,
         statusItem: statusItem,
         isMorphing: { [weak self] in self?.heightController.isMorphing ?? false },
+        isSigningIn: { [weak self] in self?.container.popover.signingInAgainAccountID != nil },
         onInsidePanelClick: { [weak self] in self?.panel.clearStrayFocus() },
         onDismiss: { [weak self] in self?.hidePanel() }
     )
@@ -96,10 +97,12 @@ final class StatusItemController: NSObject {
 
         // 제자리 계정 이름 변경 — 상단 바 제목과 패널 닫힘 정리가 같은 편집을 공유.
         let renaming = AccountRenameStore(
-            label: { container.accountProfileLabel(for: $0) },
-            email: { container.accountLoginEmail(for: $0) },
-            rename: { cardID, name in
-                guard let profileID = container.accountProfileID(for: cardID) else { return }
+            profileID: { container.accountProfileID(for: $0) },
+            label: { container.accountProfiles.profile(id: $0)?.label },
+            email: { id in
+                container.accountProfiles.profile(id: id).flatMap { container.accountLoginEmail(for: $0) }
+            },
+            rename: { profileID, name in
                 try container.accountProfiles.rename(profileID: profileID, to: name)
                 container.refreshAccountCatalog()
             }

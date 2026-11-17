@@ -34,7 +34,7 @@ enum AccountCardPresentationPlanner {
 
     static func switchProfile(
         providerID: String,
-        mode: AccountCardDisplayMode = .separateCards,
+        mode: AccountCardDisplayMode,
         profileID: String?,
         profiles: [AccountProfile]
     ) -> AccountProfile? {

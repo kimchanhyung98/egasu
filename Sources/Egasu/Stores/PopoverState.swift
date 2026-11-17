@@ -62,7 +62,7 @@ final class PopoverState {
     /// Accounts 화면에서 상세를 연 계정(카드 ID) — nil이면 목록.
     var accountDetailID: String?
     var isAddingAccount = false
-    /// 계정 추가 시트가 새 계정 대신 다시 로그인하는 계정(카드 ID).
+    /// 브라우저 재로그인이 진행 중인 등록 계정 — 취소 처리가 끝날 때까지 외부 클릭으로 닫지 않음.
     var signingInAgainAccountID: String?
     var dashboardTab: DashboardTab
     var settingsTab = SettingsTab.general

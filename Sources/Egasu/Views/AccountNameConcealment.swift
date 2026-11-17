@@ -1,7 +1,7 @@
 import SwiftUI
 
 extension EnvironmentValues {
-    /// Privacy Mode가 켜진 대시보드나 흐림을 요청한 공유 이미지에서 true. Accounts 화면은 예외.
+    /// Privacy Mode가 켜진 대시보드에서 true. Accounts 화면은 예외.
     @Entry var concealsAccountNames = false
 }
 

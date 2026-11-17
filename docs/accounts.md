@@ -14,11 +14,14 @@ Accounts에서는 [Privacy Mode](/docs/settings.md#개인정보)와 관계없이
 - 켜진 프로바이더의 계정을 모두 표시하며, 지표를 모두 숨긴 계정도 포함.
 - 저장 로그인이 없어 대시보드에서 빠진 Claude·Codex 등록 계정도 표시.
   계정명·저장 순서를 유지하며 상세에서 재로그인·제거 가능.
-- 기본 CLI용으로 선택한 Claude·Codex 계정에 **In Use** 배지와 파란색 계정명 표시.
+- 기본 CLI용으로 선택한 Claude·Codex 계정에 **In Use** 배지 표시.
 - 행을 누르면 계정 상세.
 - 순서 변경은 [계정 순서](/docs/accounts.md#계정-순서) 참조.
 
 ## 계정 추가
+
+Claude·Codex는 프로바이더별 최대 10개 계정 등록 가능.
+한도에 도달하면 추가 로그인 시작 불가.
 
 1. 푸터의 **Add New Account** 클릭.
 2. 프로바이더 선택.
@@ -44,6 +47,7 @@ Claude·Codex 계정의 추가·전환·재로그인 동작은 [Claude와 Codex 
   이메일로 바뀐 이름은 이후 로그인이 바뀌어도 자동으로 바뀌지 않음.
   저장 실패 시 기존 이름을 유지하고 오류 알림 표시.
   패널을 닫으며 저장에 실패하면 다음 열기에 안내.
+  편집 중 외부 CLI의 계정이 바뀌어도 편집을 시작한 등록 계정의 이름만 저장.
 - 문제 카드: 사용량을 가져오지 못한 사유.
 - **계정 설정** 카드: 계정별 지표의 손잡이 · 이름 · 핀 · 표시 스위치.
   한도 지표의 표시·순서는 이 계정에만 적용.
@@ -52,12 +56,15 @@ Claude·Codex 계정의 추가·전환·재로그인 동작은 [Claude와 Codex 
   같은 프로바이더의 어느 계정 상세에서 바꿔도 표시·순서·메뉴 막대 고정을 공유.
   대시보드의 공통 이력 배치는 [계정 카드](/docs/dashboard.md#계정-카드) 참조.
 - 지표 순서는 각 설정 카드 안에서 변경.
+  VoiceOver의 **Move Up**·**Move Down** 동작으로도 순서 변경 가능.
   순서를 바꿔도 기존 대시보드의 Always Visible·On Demand 소속은 유지.
   표시 스위치와 메뉴 막대 고정은 독립 — 숨긴 지표도 메뉴 막대에 고정 가능.
 - Claude·Codex 등록 계정: 상태 배지, **Use This Account**, **Sign In Again…**, 중단된 전환 복구, **Remove Account…**.
   저장 로그인을 Keychain에서 읽지 못하면 **Sign In Again…** 대신 **Allow Keychain Access…** 표시 — macOS 승인 창을 띄워 다시 읽고, 성공하면 그 계정 사용량을 새로 조회.
   저장 로그인 자체가 없으면 **Sign-In Needed**와 **Sign In Again…** 표시.
   이 경우 **Use This Account**는 비활성, **Remove Account…**는 [계정 제거 조건](/docs/accounts.md#계정-제거) 적용.
+  재로그인 중 브라우저를 눌러도 Accounts 패널 유지.
+  계정 상세에서 뒤로 가거나 패널을 직접 닫으면 진행 중인 재로그인 취소.
 - OpenRouter·Z.ai: API 키 상태(Not Set, From Your Environment, Saved in App, Custom Key)와 **Add API Key…**·**Replace API Key…**.
   저장한 키는 환경 변수보다 우선하며 저장 직후 새로 고침.
 - 그 밖의 계정의 **Remove Account…**: 감지형 프로바이더는 추적만 끄고 로그인은 그대로.

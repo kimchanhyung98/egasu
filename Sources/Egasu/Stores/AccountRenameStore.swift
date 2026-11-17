@@ -9,6 +9,7 @@ import Observation
 final class AccountRenameStore {
     struct Edit: Equatable {
         let cardID: String
+        fileprivate let profileID: String
         fileprivate let serial: Int
     }
 
@@ -16,32 +17,36 @@ final class AccountRenameStore {
     private(set) var lastError: String?
     var draft = ""
     @ObservationIgnored private var serial = 0
+    @ObservationIgnored private let profileID: @MainActor (String) -> String?
     @ObservationIgnored private let label: @MainActor (String) -> String?
     @ObservationIgnored private let email: @MainActor (String) -> String?
     @ObservationIgnored private let rename: @MainActor (String, String) throws -> Void
 
     /// - Parameters:
-    ///   - label: 카드의 현재 계정명, 이름이 없는 카드는 nil(편집 불가).
-    ///   - email: 카드의 로그인 이메일 — 비운 이름을 대신함, 모르면 nil.
-    ///   - rename: 카드의 계정명 저장.
+    ///   - profileID: 카드에 연결된 등록 계정 ID — 편집 시작 시 고정.
+    ///   - label: 등록 계정의 현재 이름, 이름이 없으면 nil(편집 불가).
+    ///   - email: 등록 계정의 로그인 이메일 — 비운 이름을 대신함, 모르면 nil.
+    ///   - rename: 등록 계정 ID로 이름 저장.
     init(
+        profileID: @escaping @MainActor (String) -> String?,
         label: @escaping @MainActor (String) -> String?,
         email: @escaping @MainActor (String) -> String? = { _ in nil },
         rename: @escaping @MainActor (String, String) throws -> Void
     ) {
+        self.profileID = profileID
         self.label = label
         self.email = email
         self.rename = rename
     }
 
-    func canRename(_ cardID: String) -> Bool { label(cardID) != nil }
+    func canRename(_ cardID: String) -> Bool { profileID(cardID).flatMap(label) != nil }
 
     func begin(_ cardID: String) {
-        guard let current = label(cardID) else { return }
+        guard let profileID = profileID(cardID), let current = label(profileID) else { return }
         commit()
         guard lastError == nil else { return }
         serial += 1
-        edit = Edit(cardID: cardID, serial: serial)
+        edit = Edit(cardID: cardID, profileID: profileID, serial: serial)
         draft = current
     }
 
@@ -50,14 +55,14 @@ final class AccountRenameStore {
         guard let open = close(edit) else { return }
         let typed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         // 비운 이름은 별명 제거 — 로그인 이메일을 이름으로, 이메일을 모르면 기존 이름 유지.
-        guard let name = typed.isEmpty ? email(open.cardID) : typed else {
+        guard let name = typed.isEmpty ? email(open.profileID) : typed else {
             AppLog.error(.config, "account name was cleared but its sign-in email is unknown; keeping the name")
             lastError = L10n.accounts("The sign-in email is unavailable. Enter an account name.")
             return
         }
-        guard name != label(open.cardID) else { return }
+        guard name != label(open.profileID) else { return }
         do {
-            try rename(open.cardID, name)
+            try rename(open.profileID, name)
         } catch {
             AppLog.error(.config, "account rename failed: \(error.localizedDescription)")
             lastError = UserFacingErrors.message(error)

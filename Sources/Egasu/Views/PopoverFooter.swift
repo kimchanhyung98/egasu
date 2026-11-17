@@ -47,13 +47,11 @@ struct PopoverFooter: View {
         .padding(.bottom, PanelMetrics.margin)
         .frame(maxWidth: .infinity)
         .overlay(alignment: .top) {
-            if screen == .dashboard, popover.shareNotice.value || layout.shareConfirmation {
+            if screen == .dashboard, layout.shareConfirmation {
                 shareCopiedPill
                     .offset(y: -34)
             }
         }
-        .animation(Motion.spring, value: popover.shareNotice.value)
-        .animation(Motion.spring, value: popover.shareNotice.trigger)
         .animation(Motion.spring, value: layout.shareConfirmation)
         .animation(Motion.spring, value: layout.pinLimitNotice)
     }
@@ -142,7 +140,7 @@ struct PopoverFooter: View {
             systemImage: "checkmark.circle.fill",
             text: L10n.dashboard("Copied to clipboard"),
             tint: Theme.positive,
-            trigger: popover.shareNotice.trigger + layout.shareConfirmationTrigger
+            trigger: layout.shareConfirmationTrigger
         )
     }
 

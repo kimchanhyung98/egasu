@@ -20,8 +20,19 @@ test('Settings preserves native section order with account management on its own
   const native = [...body.matchAll(/section\("([^"]+)"\)|\b(AccountsSettingsSection|ICloudSyncSettingsSection|SoftLimitSettingsSection|notificationsSection|TokscaleSettingsSection|commandLineSection|advancedSection)\b/g)]
     .map((match) => match[1] ?? sections[match[2]]);
   assert.ok(native.includes('General'), 'The native section extractor must find the General section');
-  // 계정 미리보기는 별도 계정 데이터 테스트에서 검증.
+  // 사이트 Accounts 교체 전까지 기존 설정 진입점 유지 — 아래 전환 조건으로 별도 검증.
   assert.deepEqual(settingGroups.filter((group) => group.id !== 'accounts').map((group) => group.title), native);
+});
+
+test('Web account entry stays available while native account management has its own screen', () => {
+  const accounts = settingGroups.filter((group) => group.id === 'accounts');
+  assert.equal(accounts.length, 1);
+  assert.equal(accounts[0].title, 'Accounts');
+  assert.equal(accounts[0].accessory, 'add');
+  assert.deepEqual(accounts[0].families, accountFamilies);
+  assert.doesNotMatch(source('Views/SettingsScreen.swift'), /\bAccountsSettingsSection\(/);
+  assert.match(source('Views/Accounts/AccountsView.swift'), /\bAccountListView\(/);
+  assert.match(englishSource('Views/PopoverFooter.swift'), /"Add New Account"/);
 });
 
 test('Settings includes normal native rows and notification triggers', () => {

@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class AccountCardMappingTests: XCTestCase {
-    func testCodexAccountCardsSurviveSharedIdentityChanges() throws {
+    func testCodexNamesSharingAnIdentityKeepDistinctCardsWithoutChangingDefaults() throws {
         let defaults = makeScratchDefaults()
         let store = AccountProfilesStore(defaults: defaults)
         let preferred = try store.add(family: "codex", label: "Account 1", identityKey: "identity-1")
@@ -52,13 +52,13 @@ final class AccountCardMappingTests: XCTestCase {
             ("cursor", target.id),
         ] {
             XCTAssertNil(AccountCardPresentationPlanner.switchProfile(
-                providerID: cardID, profileID: profileID, profiles: profiles.profiles
+                providerID: cardID, mode: .separateCards, profileID: profileID, profiles: profiles.profiles
             ))
         }
         var archived = target
         archived.isArchived = true
         XCTAssertNil(AccountCardPresentationPlanner.switchProfile(
-            providerID: "codex", profileID: target.id, profiles: [archived]
+            providerID: "codex", mode: .separateCards, profileID: target.id, profiles: [archived]
         ))
     }
 

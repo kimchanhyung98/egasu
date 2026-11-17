@@ -96,7 +96,7 @@ final class PanelHeightController {
 
     func saveBeforeClosing() {
         guard panel.isVisible else { return }
-        saveHeight(panel.frame.height, for: currentScreen(), tab: currentTab())
+        saveHeight(contentHeight ?? panel.frame.height, for: currentScreen(), tab: currentTab())
     }
 
     func finishClosing() {
@@ -136,7 +136,7 @@ final class PanelHeightController {
             guard !Task.isCancelled, let self, self.panel.isVisible else { return }
             self.isMorphing = false
             self.panel.invalidateShadow()
-            self.saveHeight(self.panel.frame.height, for: self.currentScreen(), tab: self.currentTab())
+            self.saveHeight(self.contentHeight ?? self.panel.frame.height, for: self.currentScreen(), tab: self.currentTab())
         }
     }
 

@@ -86,7 +86,6 @@ struct ReorderLiftPreview: View {
             .liftedRowSurface()
     }
 
-
 }
 
 /// 팝오버 내부 재정렬용 경량 in-view geometry.

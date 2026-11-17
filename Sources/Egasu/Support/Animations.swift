@@ -66,9 +66,9 @@ struct MotionAwareProgressView: View {
     var body: some View {
         if reduceAnimations {
             Image(systemName: "arrow.triangle.2.circlepath")
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: controlSize == .mini ? 8 : 10, weight: .medium))
                 .foregroundStyle(.secondary)
-                .frame(width: 12, height: 12)
+                .frame(width: controlSize == .mini ? 10 : 12, height: controlSize == .mini ? 10 : 12)
         } else {
             ProgressView()
                 .controlSize(controlSize)

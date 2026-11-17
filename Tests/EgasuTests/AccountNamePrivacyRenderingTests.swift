@@ -6,15 +6,13 @@ import XCTest
 @MainActor
 final class AccountNamePrivacyRenderingTests: XCTestCase {
 
-    func testAccountsEditorRemainsVisibleAndEditableWithPrivacyEnabled() async throws {
+    func testInlineEditorShowsAndCommitsTheUnmaskedAccountName() async throws {
         var savedName = "Private Alias"
-        let renaming = AccountRenameStore(label: { _ in savedName }, rename: { _, name in savedName = name })
+        let renaming = AccountRenameStore(
+            profileID: { $0 }, label: { _ in savedName }, rename: { _, name in savedName = name })
         renaming.begin("codex")
         let edit = try XCTUnwrap(renaming.edit)
         let view = InlineRenameField(renaming: renaming, edit: edit)
-            .environment(
-                \.concealsAccountNames, AccountNamePrivacy.concealsAccountNames(on: .accounts, isEnabled: true)
-            )
             .padding(16)
             .frame(width: 340, height: 80)
         let host = NSHostingView(rootView: view)

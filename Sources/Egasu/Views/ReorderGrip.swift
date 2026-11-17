@@ -8,5 +8,6 @@ struct ReorderGrip: View {
             .foregroundStyle(.tertiary)
             .frame(width: 16, height: 22)
             .contentShape(Rectangle())
+            .accessibilityHidden(true)
     }
 }

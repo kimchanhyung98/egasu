@@ -6,6 +6,13 @@ final class PanelOutsideClickPolicyTests: XCTestCase {
         XCTAssertFalse(PanelOutsideClickPolicy.shouldKeepOpen(.init()))
     }
 
+    func testBrowserInteractionKeepsReauthenticationOpenUntilItFinishes() {
+        var context = PanelOutsideClickContext(isSigningIn: true, eventWindowTypeName: "BrowserWindow")
+        XCTAssertTrue(PanelOutsideClickPolicy.shouldKeepOpen(context))
+        context.isSigningIn = false
+        XCTAssertFalse(PanelOutsideClickPolicy.shouldKeepOpen(context))
+    }
+
     func testEveryKeepOpenReasonKeepsPanelOpen() {
         let contexts: [PanelOutsideClickContext] = [
             .init(isMorphing: true),

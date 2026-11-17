@@ -64,12 +64,13 @@ struct ManagedAccountSignInStep: View {
 
     private var isBlocked: Bool {
         Self.blocksAdding(
-            isSwitching: container.accountSwitch.isSwitching, hasUnreadableRegistry: store.hasUnreadableRegistry)
+            isSwitching: container.accountSwitch.isSwitching, hasUnreadableRegistry: store.hasUnreadableRegistry,
+            activeProfileCount: store.profiles(family: family).count)
     }
 
     /// 계정 전환 중이거나 목록을 읽지 못하면 추가 차단 — 공유 홈 로그인 변경 후 등록 실패 방지.
-    static func blocksAdding(isSwitching: Bool, hasUnreadableRegistry: Bool) -> Bool {
-        isSwitching || hasUnreadableRegistry
+    static func blocksAdding(isSwitching: Bool, hasUnreadableRegistry: Bool, activeProfileCount: Int) -> Bool {
+        isSwitching || hasUnreadableRegistry || activeProfileCount >= AccountProfilesStore.maxProfilesPerFamily
     }
 
     private var primaryTitle: String {
@@ -86,6 +87,11 @@ struct ManagedAccountSignInStep: View {
         case .idle:
             if store.hasUnreadableRegistry {
                 SheetStatus(text: UserFacingErrors.message(AccountProfileError.registryUnreadable), isError: true)
+            } else if store.profiles(family: family).count >= AccountProfilesStore.maxProfilesPerFamily {
+                SheetStatus(
+                    text: UserFacingErrors.message(
+                        AccountProfileError.accountLimitReached(AccountProfilesStore.maxProfilesPerFamily)),
+                    isError: true)
             } else {
                 SheetStatus(text: nil)
             }

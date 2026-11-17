@@ -104,6 +104,34 @@ struct AccountMetricSettingsCard: View {
         )
         .opacity(activeMetricID == metric.id ? 0 : 1)
         .reorderFrame(id: metric.id, in: .named(reorderSpaceName))
+        .accessibilityElement(children: .contain)
+        .accessibilityActions {
+            if let position = metrics.firstIndex(where: { $0.id == metric.id }) {
+                if position > 0 {
+                    Button(L10n.accounts("Move Up")) { move(metric, onto: metrics[position - 1].id) }
+                }
+                if position < metrics.count - 1 {
+                    Button(L10n.accounts("Move Down")) { move(metric, onto: metrics[position + 1].id) }
+                }
+            }
+        }
+    }
+
+    private func move(_ metric: WidgetDescriptor, onto target: String) {
+        guard
+            layout.reorderMetric(
+                dragged: metric.id, target: target, in: metric.providerID, preservingExpandedMembership: true
+            )
+        else { return }
+        let reordered =
+            ProviderAccountID.isSharedMetric(metric.id)
+            ? layout.sharedSettingsMetrics(for: metric.providerID)
+            : layout.accountSettingsMetrics(for: metric.providerID)
+        guard let position = reordered.firstIndex(where: { $0.id == metric.id }) else { return }
+        AccessibilityNotification.Announcement(
+            L10n.accounts(
+                "Moved %@ to position %lld of %lld.", L10n.metrics(metric.title), position + 1, reordered.count)
+        ).post()
     }
 
     private func metricDragGesture(for metric: WidgetDescriptor) -> some Gesture {

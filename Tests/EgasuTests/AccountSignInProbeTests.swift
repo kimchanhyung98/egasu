@@ -189,7 +189,7 @@ final class AccountSignInProbeTests: XCTestCase {
         )
     }
 
-    func testSelectedClaudeSharedHomeReadFailureNeedsSignIn() throws {
+    func testSelectedClaudeSharedHomeReadFailureAllowsKeychainApproval() throws {
         let home = FileManager.default.temporaryDirectory
             .appendingPathComponent("AccountSignInProbeTests-\(UUID().uuidString)")
         let baseService = ClaudeAuthStore.baseKeychainServiceName(environment: FakeEnvironment([:]))
@@ -210,7 +210,7 @@ final class AccountSignInProbeTests: XCTestCase {
 
         let state = makeProbe(keychain: keychain, home: home).state(for: profile, isSelected: true)
 
-        XCTAssertEqual(state, .needsSignIn)
+        guard case .readFailed = state else { return XCTFail("Keychain 읽기 실패는 재로그인 필요와 구분: \(state)") }
     }
 
     // MARK: - Fixtures

@@ -88,7 +88,7 @@ private struct AccountTitle: View {
         if let edit = renaming.edit, edit.cardID == provider.id {
             InlineRenameField(renaming: renaming, edit: edit)
                 .multilineTextAlignment(.center)
-        } else if let name = container.accountProfileLabel(for: provider.id) {
+        } else if renaming.canRename(provider.id), let name = container.accountProfileLabel(for: provider.id) {
             Button {
                 renaming.begin(provider.id)
             } label: {
