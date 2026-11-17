@@ -103,6 +103,9 @@
 "Keychain write failed (exit %@)." = "キーチェーンへの書き込みに失敗しました（終了コード %@）。";
 "Keychain write failed (status %@)." = "キーチェーンへの書き込みに失敗しました（ステータス %@）。";
 "Keychain write failed." = "キーチェーンに保存できませんでした。";
+"Kimi API key is missing. Check the CLI provider settings." = "Kimi API キーがありません。CLI のプロバイダー設定を確認してください。";
+"Kimi API key was rejected. Check the CLI provider settings." = "Kimi API キーが拒否されました。CLI のプロバイダー設定を確認してください。";
+"Kimi configuration is invalid. Check config.toml." = "Kimi の設定が無効です。config.toml を確認してください。";
 "Kimi credential lock changed during refresh. Try again." = "更新中に Kimi の認証情報のロックが変更されました。もう一度お試しください。";
 "Kimi credentials are busy. Try again shortly." = "Kimi の認証情報は使用中です。しばらくしてから、もう一度お試しください。";
 "Kimi credentials are invalid. Run `kimi` to log in again." = "Kimi の認証情報が無効です。`kimi` を実行してログインし直してください。";

@@ -12,11 +12,26 @@ final class KimiProviderTests: XCTestCase {
         XCTAssertEqual(provider.provider.id, "kimi")
         XCTAssertEqual(provider.provider.displayName, "Kimi")
         XCTAssertTrue(provider.provider.links.isEmpty)
-        XCTAssertEqual(provider.widgetDescriptors.map(\.id), ["kimi.session", "kimi.weekly"])
-        XCTAssertEqual(provider.widgetDescriptors.map(\.metricLabel), ["Session", "Weekly"])
+        XCTAssertEqual(
+            provider.widgetDescriptors.map(\.id),
+            [
+                "kimi.session", "kimi.weekly", "kimi.total", "kimi.extra", "kimi.extraBalance"
+        ])
+        XCTAssertEqual(
+            provider.widgetDescriptors.map(\.metricLabel),
+            [
+                "Session", "Weekly", "Total Usage", "Extra Usage", "Extra Balance"
+        ])
         XCTAssertEqual(provider.widgetDescriptors[0].sample.sessionStartSignal, .zeroUsage)
         XCTAssertEqual(provider.widgetDescriptors[0].limitResources.first?.key, "session")
         XCTAssertEqual(provider.widgetDescriptors[1].limitResources.first?.key, "weekly")
+        let resources = provider.widgetDescriptors.flatMap(\.limitResources)
+        XCTAssertEqual(resources.map(\.key), ["session", "weekly", "totalUsage", "extraUsage", "extraUsageBalance"])
+        XCTAssertEqual(resources.map(\.unit), ["percent", "percent", "percent", "usd", "usd"])
+        XCTAssertEqual(resources.first { $0.key == "totalUsage" }?.source, .progress)
+        XCTAssertEqual(resources.first { $0.key == "extraUsage" }?.source, .progressOrValue(kind: .dollars))
+        XCTAssertEqual(resources.first { $0.key == "extraUsageBalance" }?.source, .value(kind: .dollars))
+        XCTAssertEqual(resources.first { $0.key == "extraUsageBalance" }?.kind, .balance)
     }
 
     func testHasLocalCredentialsUsesLoaderWithoutNetwork() async throws {
@@ -491,6 +506,7 @@ private final class KimiSequencedCredentialFiles: TextFileAccessing, @unchecked 
     let documents: [String]
     var readCount = 0
     var writeCount = 0
+    private var persisted: String?
 
     init(credentialPath: String, documents: [String]) {
         self.credentialPath = credentialPath
@@ -501,6 +517,7 @@ private final class KimiSequencedCredentialFiles: TextFileAccessing, @unchecked 
 
     func readTextIfPresent(_ path: String) throws -> String? {
         guard path == credentialPath else { return nil }
+        if let persisted { return persisted }
         let index = min(readCount, documents.count - 1)
         readCount += 1
         return documents[index]
@@ -512,6 +529,7 @@ private final class KimiSequencedCredentialFiles: TextFileAccessing, @unchecked 
 
     func writeText(_ path: String, _ text: String) throws {
         writeCount += 1
+        persisted = text
     }
 
     func remove(_ path: String) throws {}

@@ -16,7 +16,8 @@ let package = Package(
         // 앱 내 자동 업데이트(appcast + EdDSA 서명). 2.9.4부터 dockless 앱의 업데이트 창 가림 수정.
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.4"),
         .package(url: "https://github.com/PostHog/posthog-ios.git", exact: "3.93.6"),
-        .package(url: "https://github.com/facebook/zstd.git", exact: "1.5.7")
+        .package(url: "https://github.com/facebook/zstd.git", exact: "1.5.7"),
+        .package(url: "https://github.com/dduan/TOMLDecoder", exact: "0.4.5")
     ],
     targets: [
         .target(
@@ -25,11 +26,13 @@ let package = Package(
                 .product(name: "KeyboardShortcuts", package: "KeyboardShortcuts"),
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "PostHog", package: "posthog-ios"),
-                .product(name: "libzstd", package: "zstd")
+                .product(name: "libzstd", package: "zstd"),
+                .product(name: "TOMLDecoder", package: "TOMLDecoder")
             ],
             path: "Sources/Egasu",
             resources: [
                 .process("Resources/Localization"),
+                .copy("Resources/TOMLDecoder-LICENSE.txt"),
                 .copy("Resources/ProviderIcons"),
                 .copy("Resources/pricing_supplement.json"),
                 .copy("Resources/pricing_litellm_snapshot.json"),

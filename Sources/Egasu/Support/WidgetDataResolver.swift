@@ -63,6 +63,13 @@ enum WidgetDataResolver {
                 limitNoun: descriptor.sample.limitNoun,
                 infoNote: descriptor.sample.infoNote
             )
+            // 기본 금액 행의 0 상한은 API 수치 유지, 화면은 금액·상한 문구 표시.
+            if descriptor.sample.limit == nil, format == .dollars, limit == 0 {
+                result.limit = nil
+                result.valueTextOverride =
+                    MetricFormatter.number(used, kind: .dollars, style: .row)
+                    + " / " + MetricFormatter.number(limit, kind: .dollars, style: .row)
+            }
             // progress 결과는 새로 생성하므로 프로바이더별 미시작 판정 신호 별도 전달.
             result.sessionStartSignal = descriptor.sample.sessionStartSignal
             return result

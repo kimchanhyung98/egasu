@@ -13,7 +13,7 @@ final class KimiUsageMapperTests: XCTestCase {
         """#.utf8))
 
         XCTAssertNil(mapped.plan)
-        XCTAssertEqual(mapped.lines.map(\.label), ["Session", "Weekly"])
+        XCTAssertEqual(mapped.lines.map(\.label), ["Session", "Weekly", "Total Usage"])
         let session = try XCTUnwrap(kimiProgress(mapped.lines, "Session"))
         XCTAssertEqual(session.used, 30, accuracy: 0.001)
         XCTAssertEqual(session.limit, 100)
@@ -23,6 +23,9 @@ final class KimiUsageMapperTests: XCTestCase {
         XCTAssertEqual(weekly.used, 20, accuracy: 0.001)
         XCTAssertEqual(weekly.periodDurationMs, 604_800_000)
         XCTAssertEqual(weekly.resetsAt, EgasuISO8601.date(from: "2026-08-09T00:00:00.123Z"))
+        let total = try XCTUnwrap(kimiProgress(mapped.lines, "Total Usage"))
+        XCTAssertEqual(total.used, 90)
+        XCTAssertNil(total.periodDurationMs)
     }
 
     func testCurrentZeroAndOverageRatiosRemainValidAndTakePrecedenceOverLegacyQuota() throws {
@@ -52,12 +55,68 @@ final class KimiUsageMapperTests: XCTestCase {
         }
     }
 
-    func testMonthlyOnlyQuotaDoesNotInventExistingSessionOrWeeklyMetrics() {
-        XCTAssertThrowsError(try KimiUsageMapper.map([
+    func testMonthlyOnlyQuotaPreservesResetWithoutInventingSessionWeeklyOrDuration() throws {
+        let mapped = try KimiUsageMapper.map([
             "goods_version": 2,
-            "usages": ["limit_month_total": ["used_ratio": 0.25], "limit_month_code": ["used_ratio": 0.5]]
+            "usages": [
+                "limit_month_total": ["used_ratio": 0.25, "reset_time": "2026-12-14T00:00:00Z"],
+                "limit_month_code": ["used_ratio": 0.15, "reset_time": "2026-12-14T00:00:00Z"]
+            ]
+        ])
+
+        XCTAssertEqual(mapped.lines.map(\.label), ["Total Usage"])
+        let total = try XCTUnwrap(kimiProgress(mapped.lines, "Total Usage"))
+        XCTAssertEqual(total.used, 25)
+        XCTAssertEqual(total.limit, 100)
+        XCTAssertEqual(total.resetsAt, EgasuISO8601.date(from: "2026-12-14T00:00:00Z"))
+        XCTAssertNil(total.periodDurationMs)
+        XCTAssertNil(mapped.plan)
+    }
+
+    func testCodeContributionAloneDoesNotReplaceMonthlyTotal() {
+        XCTAssertThrowsError(try KimiUsageMapper.map([
+            "usages": ["limit_month_code": ["used_ratio": 1.25]]
         ])) { error in
             XCTAssertEqual(error as? KimiUsageError, .quotaUnavailable)
+        }
+    }
+
+    func testIdenticalTotalAndCodeRatiosProduceOneMonthlyMetric() throws {
+        let mapped = try KimiUsageMapper.map([
+            "usages": ["limit_month_total": ["used_ratio": 0.0139], "limit_month_code": ["used_ratio": 0.0139]]
+        ])
+
+        XCTAssertEqual(mapped.lines.map(\.label), ["Total Usage"])
+        XCTAssertEqual(try XCTUnwrap(kimiProgress(mapped.lines, "Total Usage")).used, 1.39, accuracy: 0.0001)
+    }
+
+    func testUnusedCodeContributionDoesNotInvalidateReportedTotal() throws {
+        for value: Any in ["invalid", ["used_ratio": true], ["used_ratio": "NaN"], NSNull()] {
+            let mapped = try KimiUsageMapper.map([
+                "usages": ["limit_month_total": ["used_ratio": 0.25], "limit_month_code": value]
+            ])
+
+            XCTAssertEqual(mapped.lines.map(\.label), ["Total Usage"])
+            XCTAssertEqual(kimiProgress(mapped.lines, "Total Usage")?.used, 25)
+        }
+    }
+
+    func testMissingOrNullMonthlyFieldsDoNotInventUsage() throws {
+        let mapped = try KimiUsageMapper.map([
+            "usages": ["limit_5h": ["used_ratio": 0], "limit_month_total": NSNull(), "limit_month_code": NSNull()]
+        ])
+
+        XCTAssertEqual(mapped.lines.map(\.label), ["Session"])
+        XCTAssertEqual(kimiProgress(mapped.lines, "Session")?.used, 0)
+    }
+
+    func testMalformedMonthlyRatiosAreNotReportedAsZero() {
+        for value: Any in [true, -1, "NaN", Double.infinity, Double.greatestFiniteMagnitude, NSNull()] {
+            XCTAssertThrowsError(try KimiUsageMapper.map([
+                    "usages": ["limit_5h": ["used_ratio": 0], "limit_month_total": ["used_ratio": value]]
+            ])) { error in
+                XCTAssertEqual(error as? KimiUsageError, .invalidResponse)
+            }
         }
     }
 
@@ -203,9 +262,9 @@ final class KimiUsageMapperTests: XCTestCase {
         XCTAssertNil(mapped.plan)
     }
 
-    func testBoosterWalletIsIgnoredWithoutChangingQuota() throws {
+    func testNonBoosterWalletIsIgnoredWithoutChangingQuota() throws {
         let root: [String: Any] = [
-            "boosterWallet": ["balance": 9_999, "currency": "USD"],
+            "boosterWallet": ["balance": ["type": "SUBSCRIPTION", "amountLeft": 9_999]],
             "usage": ["limit": 100, "used": 20]
         ]
 

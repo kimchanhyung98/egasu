@@ -23,7 +23,7 @@ The app updates itself in place via signed, notarized [Sparkle](docs/updates.md)
 - **[Cursor](docs/providers/cursor.md)** — credits, total/auto/API usage, requests, on-demand, per-day spend
 - **[Devin](docs/providers/devin.md)** — weekly and daily quota, extra usage balance
 - **[Grok](docs/providers/grok.md)** — weekly shared pool, pay-as-you-go, local daily spend
-- **[Kimi](docs/providers/kimi.md)** — 5-hour session and weekly coding quotas
+- **[Kimi](/docs/providers/kimi.md)** — 5시간·주간·월간 총한도, 추가 지출·잔액.
 - **[Kiro](docs/providers/kiro.md)** — coding credits and subscription plan
 - **[OpenCode](docs/providers/opencode.md)** — Go session/weekly/monthly caps, Zen spend, local daily spend
 - **[OpenRouter](docs/providers/openrouter.md)** — credit balance, daily/weekly/monthly spend (API key)

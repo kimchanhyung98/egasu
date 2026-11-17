@@ -24,25 +24,30 @@ enum KimiUsageMapper {
     }
 
     static func map(_ root: [String: Any]) throws -> KimiMappedUsage {
+        let lines = try quotaLines(root) + extraUsageLines(root)
+        guard !lines.isEmpty else { throw KimiUsageError.quotaUnavailable }
+        return KimiMappedUsage(plan: plan(root), lines: lines)
+    }
+
+    private static func quotaLines(_ root: [String: Any]) throws -> [MetricLine] {
         if let value = root["usages"] {
             guard let usages = value as? [String: Any] else { throw KimiUsageError.invalidResponse }
             var lines: [MetricLine] = []
-            for (key, label, duration) in [
+            let windows: [(String, String, Int?)] = [
                 ("limit_5h", "Session", sessionPeriodMs),
-                ("limit_7d", "Weekly", weeklyPeriodMs)
-            ] {
-                guard let value = usages[key] else { continue }
-                guard let quota = value as? [String: Any],
-                      let ratio = ProviderParse.number(quota["used_ratio"]), ratio >= 0,
-                      (ratio * 100).isFinite else { throw KimiUsageError.invalidResponse }
+                ("limit_7d", "Weekly", weeklyPeriodMs),
+                ("limit_month_total", "Total Usage", nil)
+            ]
+            for (key, label, duration) in windows {
+                guard let value = usages[key], !(value is NSNull) else { continue }
+                let quota = try currentQuota(value)
                 lines.append(.progress(
-                    label: label, used: ratio * 100, limit: 100, format: .percent,
-                    resetsAt: (quota["reset_time"] as? String).flatMap(EgasuISO8601.date(from:)),
+                    label: label, used: quota.used, limit: 100, format: .percent,
+                    resetsAt: quota.reset,
                     periodDurationMs: duration
                 ))
             }
-            guard !lines.isEmpty else { throw KimiUsageError.quotaUnavailable }
-            return KimiMappedUsage(plan: plan(root), lines: lines)
+            return lines
         }
         var lines: [MetricLine] = []
 
@@ -78,8 +83,92 @@ enum KimiUsageMapper {
             lines.append(try quotaLine(usage, label: "Weekly", periodDurationMs: weeklyPeriodMs))
         }
 
-        guard !lines.isEmpty else { throw KimiUsageError.quotaUnavailable }
-        return KimiMappedUsage(plan: plan(root), lines: lines)
+        return lines
+    }
+
+    private static func currentQuota(_ value: Any) throws -> (used: Double, reset: Date?) {
+        guard let quota = value as? [String: Any],
+              let ratio = ProviderParse.number(quota["used_ratio"]), ratio >= 0,
+              (ratio * 100).isFinite else { throw KimiUsageError.invalidResponse }
+        return (ratio * 100, (quota["reset_time"] as? String).flatMap(EgasuISO8601.date(from:)))
+    }
+
+    private static func extraUsageLines(_ root: [String: Any]) throws -> [MetricLine] {
+        guard let value = root["booster_wallet"] ?? root["boosterWallet"], !(value is NSNull) else { return [] }
+        guard let wallet = value as? [String: Any] else { throw KimiUsageError.invalidResponse }
+        guard let rawBalance = wallet["balance"], !(rawBalance is NSNull) else { return [] }
+        guard let balance = rawBalance as? [String: Any], let type = balance["type"] as? String else {
+            throw KimiUsageError.invalidResponse
+        }
+        guard type == "BOOSTER" else { return [] }
+
+        // 미충전 BOOSTER 지갑은 amountLeft를 생략. 지갑 자체가 없는 응답과 구분해 0 잔액 유지.
+        let available = try walletInteger(balance["amountLeft"], allowsNegative: true) / 100_000_000
+        let used = try walletMoney(wallet["monthlyUsed"])
+        let cap = try walletMoney(wallet["monthlyChargeLimit"])
+        if let usedCurrency = used.currency, let capCurrency = cap.currency, usedCurrency != capCurrency {
+            throw KimiUsageError.invalidResponse
+        }
+        let currency = cap.currency ?? used.currency ?? "USD"
+        let capped: Bool
+        if let value = wallet["monthlyChargeLimitEnabled"] {
+            guard let flag = value as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID() else {
+                throw KimiUsageError.invalidResponse
+            }
+            capped = flag.boolValue
+        } else {
+            capped = false
+        }
+
+        let spending: MetricLine
+        if currency == "USD", capped {
+            spending = .progress(label: "Extra Usage", used: used.amount, limit: cap.amount, format: .dollars)
+        } else if currency == "USD", !capped {
+            spending = .values(label: "Extra Usage", values: [MetricValue(number: used.amount, kind: .dollars)])
+        } else {
+            // 비USD 금액은 통화·상한을 그대로 표시. USD 수치로 오인하지 않음.
+            let text =
+                walletAmount(used.amount, currency: currency)
+                + (capped ? " / " + walletAmount(cap.amount, currency: currency) : "")
+            spending = .badge(label: "Extra Usage", text: text)
+        }
+        let remaining: MetricLine =
+            currency == "USD"
+            ? .values(label: "Extra Balance", values: [MetricValue(number: available, kind: .dollars)])
+            : .badge(label: "Extra Balance", text: walletAmount(available, currency: currency))
+        return [spending, remaining]
+    }
+
+    private static func walletInteger(_ value: Any?, allowsNegative: Bool = false) throws -> Double {
+        guard let value else { return 0 }
+        guard let number = ProviderParse.number(value), number.rounded(.towardZero) == number,
+            allowsNegative || number >= 0
+        else { throw KimiUsageError.invalidResponse }
+        return number
+    }
+
+    private static func walletMoney(_ value: Any?) throws -> (amount: Double, currency: String?) {
+        guard let value else { return (0, nil) }
+        guard let money = value as? [String: Any] else { throw KimiUsageError.invalidResponse }
+        let amount = try walletInteger(money["priceInCents"]) / 100
+        var currency: String?
+        if let value = money["currency"] {
+            guard let code = value as? String else { throw KimiUsageError.invalidResponse }
+            let normalized = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            if !normalized.isEmpty {
+                guard normalized.utf8.count == 3, normalized.utf8.allSatisfy({ (65...90).contains($0) }) else {
+                    throw KimiUsageError.invalidResponse
+                }
+                currency = normalized
+            }
+        }
+        return (amount, currency)
+    }
+
+    private static func walletAmount(_ amount: Double, currency: String) -> String {
+        if currency == "USD" { return MetricFormatter.number(amount, kind: .dollars, style: .row) }
+        return currency + " "
+            + amount.formatted(.number.precision(.fractionLength(2)).locale(Locale(identifier: "en_US")))
     }
 
     private static func quotaLine(

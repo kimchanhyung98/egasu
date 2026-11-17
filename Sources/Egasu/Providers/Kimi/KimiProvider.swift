@@ -44,7 +44,16 @@ final class KimiProvider: ProviderRuntime {
                 .exportingLimit("session", unit: "percent"),
             .percent(id: "kimi.weekly", provider: provider, title: "Weekly")
                 .supportingSoftLimit(.weekly)
-                .exportingLimit("weekly", unit: "percent")
+                .exportingLimit("weekly", unit: "percent"),
+            .percent(id: "kimi.total", provider: provider, title: "Total Usage")
+                .exportingLimit("totalUsage", unit: "percent"),
+            .values(
+                id: "kimi.extra", provider: provider, title: "Extra Usage", selection: .kind(.dollars),
+                valueWord: "spent"
+            )
+            .exportingLimit("extraUsage", unit: "usd", source: .progressOrValue(kind: .dollars)),
+            .dollarBalance(id: "kimi.extraBalance", provider: provider, title: "Extra Balance", valueWord: "left")
+                .exportingLimit("extraUsageBalance", kind: .balance, unit: "usd", source: .value(kind: .dollars))
         ]
     }
 
@@ -125,9 +134,13 @@ final class KimiProvider: ProviderRuntime {
             guard var accessToken = document.credentials.accessToken?.nilIfEmpty else {
                 throw KimiAuthError.authExpired
             }
+            let usesAPIKey = if case .apiKey = document.credentials.source { true } else { false }
 
-            var response = try await fetch(accessToken)
+            var response = try await fetch(accessToken, service: document.service)
             if ProviderAuthRetry.isAuthFailure(response) {
+                if usesAPIKey {
+                    throw KimiAuthError.apiKeyRejected
+                }
                 guard case .current = document.credentials.source,
                       authStore.oauthLockEnabled
                 else {
@@ -138,7 +151,7 @@ final class KimiProvider: ProviderRuntime {
                     throw KimiAuthError.authExpired
                 }
                 accessToken = refreshedAccessToken
-                response = try await fetch(accessToken)
+                response = try await fetch(accessToken, service: document.service)
                 guard !ProviderAuthRetry.isAuthFailure(response) else {
                     throw KimiAuthError.authExpired
                 }
@@ -174,7 +187,7 @@ final class KimiProvider: ProviderRuntime {
         let handle = try await credentialLock.acquire(target: lockTarget)
         do {
             let live = try await loadOffMainActor { [authStore] in
-                try authStore.reloadCurrentDocument(original.credentials.source)
+                try authStore.reloadCurrentDocument(original)
             }
             let tokenChanged = live.credentials.accessToken != original.credentials.accessToken
             if tokenChanged, authStore.hasUsableAccess(live, now: now()) {
@@ -196,7 +209,7 @@ final class KimiProvider: ProviderRuntime {
 
             let rotated: KimiTokenRefresh
             do {
-                rotated = try await usageClient.refreshToken(refreshToken: refreshToken)
+                rotated = try await usageClient.refreshToken(refreshToken: refreshToken, service: live.service)
             } catch let error as KimiAuthError {
                 throw error
             } catch let error as KimiUsageError {
@@ -210,11 +223,9 @@ final class KimiProvider: ProviderRuntime {
                 }
             }
 
-            var updated = live
-            updated.credentials.accessToken = rotated.accessToken
-            updated.credentials.refreshToken = rotated.refreshToken
-            updated.credentials.expiresAt = rotated.expiresAt
-            updated.credentials.expiresIn = rotated.expiresIn
+            let updated = try await loadOffMainActor { [authStore] in
+                try authStore.reloadCurrentDocument(live)
+            }
             guard await handle.release() else {
                 throw KimiAuthError.credentialLockCompromised
             }
@@ -227,9 +238,9 @@ final class KimiProvider: ProviderRuntime {
         }
     }
 
-    private func fetch(_ accessToken: String) async throws -> HTTPResponse {
+    private func fetch(_ accessToken: String, service: KimiService) async throws -> HTTPResponse {
         do {
-            return try await usageClient.fetchUsage(accessToken: accessToken)
+            return try await usageClient.fetchUsage(accessToken: accessToken, service: service)
         } catch {
             throw KimiUsageError.connectionFailed
         }

@@ -5,6 +5,9 @@ enum KimiAuthError: Error, LocalizedError, Equatable {
     case credentialsUnreadable
     case credentialsInvalid
     case unsupportedConfiguration
+    case configurationInvalid
+    case apiKeyMissing
+    case apiKeyRejected
     case authExpired
     case refreshRejected
     case refreshResponseInvalid
@@ -22,6 +25,12 @@ enum KimiAuthError: Error, LocalizedError, Equatable {
             "Kimi credentials are invalid. Run `kimi` to log in again."
         case .unsupportedConfiguration:
             "Custom Kimi API or OAuth hosts are not supported."
+        case .configurationInvalid:
+            "Kimi configuration is invalid. Check config.toml."
+        case .apiKeyMissing:
+            "Kimi API key is missing. Check the CLI provider settings."
+        case .apiKeyRejected:
+            "Kimi API key was rejected. Check the CLI provider settings."
         case .authExpired, .refreshRejected:
             "Kimi session expired. Run `kimi` to log in again."
         case .refreshResponseInvalid:
