@@ -20,8 +20,9 @@ final class ICloudUsageObservationTests: XCTestCase {
 
         let currentPeer = document(name: "New Mac")
         try save(currentPeer, under: root.appendingPathComponent("egasu/History"))
-        NotificationCenter.default.post(name: .NSMetadataQueryDidUpdate, object: query)
+        NotificationCenter.default.post(name: .NSMetadataQueryDidFinishGathering, object: query)
         try await waitUntil { sync.documents.contains { $0.deviceID == currentPeer.deviceID } }
+        XCTAssertEqual(query.enableUpdatesCount, 1)
 
         let legacyPeer = document(name: "Older Mac")
         try save(legacyPeer, under: root.appendingPathComponent("OpenUsage/History/v1"))
@@ -120,9 +121,11 @@ final class ICloudUsageObservationTests: XCTestCase {
 private final class RecordingMetadataQuery: NSMetadataQuery {
     var startCount = 0
     var stopCount = 0
+    var enableUpdatesCount = 0
 
     override func start() -> Bool { startCount += 1; return true }
     override func stop() { stopCount += 1 }
+    override func enableUpdates() { enableUpdatesCount += 1 }
 }
 
 private struct FixedDeviceIDStore: ICloudDeviceIDStoring {

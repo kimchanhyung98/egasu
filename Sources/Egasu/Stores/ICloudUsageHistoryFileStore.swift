@@ -26,7 +26,6 @@ actor ICloudUsageHistoryFileStore: UsageHistoryFileStoring {
         var result = UsageHistoryLoadResult(documents: [])
         // 같은 기기·시각이면 먼저 읽은 새 경로의 기록 유지.
         for directory in [directories.current, directories.legacy] {
-            guard FileManager.default.fileExists(atPath: directory.path) else { continue }
             let urls: [URL]
             do {
                 urls = try FileManager.default.contentsOfDirectory(
@@ -35,6 +34,7 @@ actor ICloudUsageHistoryFileStore: UsageHistoryFileStoring {
                     options: [.skipsHiddenFiles]
                 ).filter { $0.pathExtension == "json" }
             } catch {
+                if isMissingFile(error) { continue }
                 result.appendFailure(error, fileName: directory.lastPathComponent)
                 let issue = error as NSError
                 AppLog.warn(
@@ -115,14 +115,18 @@ actor ICloudUsageHistoryFileStore: UsageHistoryFileStoring {
     }
 
     private func coordinatedDelete(_ url: URL) throws {
-        guard FileManager.default.fileExists(atPath: url.path) else { return }
         var coordinationError: NSError?
         var operationError: Error?
         NSFileCoordinator().coordinate(writingItemAt: url, options: .forDeleting, error: &coordinationError) { coordinatedURL in
             do { try FileManager.default.removeItem(at: coordinatedURL) }
             catch { operationError = error }
         }
-        if let coordinationError { throw coordinationError }
-        if let operationError { throw operationError }
+        if let coordinationError, !isMissingFile(coordinationError) { throw coordinationError }
+        if let operationError, !isMissingFile(operationError) { throw operationError }
+    }
+
+    private func isMissingFile(_ error: Error) -> Bool {
+        guard let error = error as? CocoaError else { return false }
+        return error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile
     }
 }
