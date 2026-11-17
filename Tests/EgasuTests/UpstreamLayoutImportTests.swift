@@ -5,6 +5,37 @@ import XCTest
 final class UpstreamLayoutImportTests: XCTestCase {
     private let layoutKey = "openusage.layout.v1"
 
+    func testCanonicalV2PinsWorkWithoutBareCardAndDoNotProjectUnknownAccountPins() throws {
+        let fixture = makeDefaults()
+        let cardID = "claude@known"
+        let provider = Provider(id: cardID, displayName: "Work", icon: .providerMark("claude"))
+        let registry = WidgetRegistry(
+            providers: [provider],
+            descriptors: [
+                ("session", true), ("weekly", true), ("trend", false)
+            ].map { suffix, pinnable in
+                WidgetDescriptor(
+                    id: "\(cardID).\(suffix)", providerID: cardID, metricLabel: suffix,
+                    sample: WidgetData(title: suffix, icon: provider.icon, kind: .percent, used: 0, limit: 100),
+                    pinnable: pinnable)
+            })
+        let pins = ["claude.weekly", "claude@unknown.session", "claude.trend"]
+        fixture.defaults.setPersistentDomain(
+            [
+                "openusage.layout.v2": try v2Data(hidden: [], pins: pins, providers: [cardID], order: [:])
+            ], forName: fixture.source)
+
+        XCTAssertTrue(importLayout(fixture))
+        for _ in 0..<2 {
+            let store = LayoutStore(registry: registry, defaults: fixture.defaults)
+            XCTAssertEqual(store.pinnedMetricIDs, ["claude.weekly"])
+            XCTAssertTrue(store.isPinned("\(cardID).weekly"))
+            XCTAssertFalse(store.isPinned("\(cardID).session"))
+            XCTAssertEqual(store.pinnedGroups.flatMap { $0.metrics.map(\.id) }, ["\(cardID).weekly"])
+            XCTAssertEqual(storedPriorityPins(fixture), Set(pins))
+        }
+    }
+
     func testV1ImportAppliesResetWatchPlacementAfterFreshSchemaStamp() throws {
         let fixture = makeDefaults()
         SettingsMigrator.migrate(

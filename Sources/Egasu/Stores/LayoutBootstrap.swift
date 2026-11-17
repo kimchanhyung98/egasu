@@ -131,7 +131,14 @@ enum LayoutBootstrap {
         } else if let importedPins = persistence.loadPriorityPins() {
             // 현재 등록된 항목만 기존 메뉴 막대에 표시하고 원본 계정 ID는 Priority 저장값에 유지.
             pinnedMetricIDs = LayoutOrdering.foldingPins(
-                importedPins.filter { registry.descriptor(id: $0)?.pinnable == true },
+                importedPins.filter { id in
+                    if ProviderAccountID.isAccountCard(ProviderAccountID.providerID(ofMetric: id)) {
+                        return registry.descriptor(id: id)?.pinnable == true
+                    }
+                    return registry.descriptors.contains {
+                        $0.pinnable && ProviderAccountID.canonicalMetricID($0.id) == id
+                    }
+                },
                 order: metricOrderByProvider,
                 limit: LayoutStore.maxPinsPerProvider
             )
