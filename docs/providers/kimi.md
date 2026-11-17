@@ -181,7 +181,7 @@ Kimi Code 파서가 집계한 행만 보충 집계에서 제외하며 같은 파
 - OAuth: `oauth.storage`·`oauth.key`·`oauth.oauth_host`와 `base_url` 확인.
   선택한 서버 슬롯의 인증 파일을 읽으며 키체인 항목은 조회하지 않음.
 - API 키: `api_key`의 키 원문 또는 `api_key_env`가 가리키는 환경 변수 사용.
-  두 선언이 없을 때만 해당 프로바이더의 `env`에 지정된 키 사용.
+  두 선언값이 없거나 공백뿐일 때만 해당 프로바이더의 `env`에 지정된 키 사용.
   종류별 키는 `kimi`의 `KIMI_API_KEY`, `anthropic`의 `ANTHROPIC_API_KEY`, `openai`·`openai_responses`의 `OPENAI_API_KEY`.
   OAuth와 API 키가 함께 선언된 설정은 오류로 처리.
   지정한 환경 변수가 없거나 인증 선언이 충돌하면 오류 표시.
