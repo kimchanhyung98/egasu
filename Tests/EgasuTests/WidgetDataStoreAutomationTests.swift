@@ -53,12 +53,38 @@ final class WidgetDataStoreAutomationTests: XCTestCase {
         await fixture.store.refresh(providerID: "codex", force: true)
         let snapshot = fixture.store.snapshots["codex"]
 
-        fixture.store.setAutomationWarning("Weekly timer could not be confirmed.", for: "codex")
+        fixture.store.setAutomationWarning(["Weekly timer could not be confirmed."], for: "codex")
 
         XCTAssertEqual(fixture.store.headerNotice(for: "codex"), "Weekly timer could not be confirmed.")
         XCTAssertEqual(fixture.store.snapshots["codex"], snapshot)
         XCTAssertNil(fixture.store.warningMessage(for: "codex"))
         XCTAssertNil(fixture.store.providerErrors["codex"])
+        fixture.store.setAutomationWarning(nil, for: "codex")
+        XCTAssertNil(fixture.store.headerNotice(for: "codex"))
+    }
+
+    func testMultipleAutomationWarningsTranslateAfterLanguageChangesWithoutReplacingWarnings() async {
+        let fixture = Fixture()
+        await fixture.store.refresh(providerID: "codex", force: true)
+        let snapshot = fixture.store.snapshots["codex"]
+        let warnings = [
+            "Usage timer message could not be prepared. Refresh to try again.",
+            "Usage timer automation could not update its saved state."
+        ]
+        fixture.store.setAutomationWarning(warnings, for: "codex")
+
+        let expected: [(LanguageSetting, String)] = [
+            (.korean, "사용량 타이머 메시지를 준비하지 못했습니다. 새로고침하여 다시 시도하세요. 사용량 타이머 자동화의 저장된 상태를 갱신하지 못했습니다."),
+            (.japanese, "使用量タイマーのメッセージを準備できませんでした。更新して、もう一度試してください。 使用量タイマーの自動処理で保存済みの状態を更新できませんでした。"),
+            (.english, warnings.joined(separator: " "))
+        ]
+        for (language, message) in expected {
+            L10n.withLanguage(language) {
+                XCTAssertEqual(fixture.store.headerNotice(for: "codex"), message)
+            }
+        }
+        XCTAssertEqual(fixture.store.snapshots["codex"], snapshot)
+        XCTAssertEqual(fixture.runtime.refreshCount, 1)
         fixture.store.setAutomationWarning(nil, for: "codex")
         XCTAssertNil(fixture.store.headerNotice(for: "codex"))
     }

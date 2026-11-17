@@ -214,7 +214,7 @@ final class WidgetDataStore {
     func invalidateAuthentication(for providerID: String) {
         refreshCoordinator.invalidateAuthentication(for: providerID)
     }
-    func setAutomationWarning(_ message: String?, for providerID: String) {
+    func setAutomationWarning(_ message: [String]?, for providerID: String) {
         refreshCoordinator.setAutomationWarning(message, for: providerID)
     }
 
@@ -345,7 +345,7 @@ final class WidgetDataStore {
     /// 프로바이더 제목 옆 경고 — 현재 조회 오류, 자동 제어 경고, 마지막 정상 결과의 경고 순서.
     /// 이전 경고가 현재 실패를 가리지 않도록 우선순위 적용.
     func headerNotice(for providerID: String) -> String? {
-        errorMessage(for: providerID) ?? refreshCoordinator.automationWarnings[providerID].map { L10n.errors($0) }
+        errorMessage(for: providerID) ?? refreshCoordinator.automationWarnings[providerID].map { $0.map { L10n.errors($0) }.joined(separator: " ") }
             ?? warningMessage(for: providerID)
     }
 

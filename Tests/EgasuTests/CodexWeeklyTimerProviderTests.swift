@@ -6,6 +6,53 @@ final class CodexWeeklyTimerProviderTests: XCTestCase {
     private nonisolated static let instant = Date(timeIntervalSince1970: 1_800_000_000)
     private nonisolated static let path = "/timer-test/auth.json"
 
+    func testUsageTimerSelectsModelAndVerifiesTheRequestedCodexPool() async throws {
+        for timerID in ["codex.default.weekly", "codex.default.session", "codex.spark.weekly", "codex.spark.session"] {
+            let fixture = try fixture()
+            fixture.http.response = try Self.allTimerQuotaResponse()
+            _ = await fixture.provider.refresh()
+            let observation = try XCTUnwrap(fixture.provider.usageTimerObservations.first { $0.timerID == timerID })
+            let executor = ModelRecordingExecutor()
+            let prepared = try await fixture.provider.prepareUsageTimer(observation, executors: .init(codex: executor))
+            let session = try XCTUnwrap(prepared)
+            XCTAssertEqual(session.observation.timerID, timerID)
+
+            let result = await session.send { true }
+            XCTAssertTrue(result.launched)
+            XCTAssertTrue(result.completed)
+            XCTAssertEqual(executor.models.count, 1)
+            XCTAssertEqual(executor.models[0], timerID.hasPrefix("codex.spark.") ? "gpt-5.3-codex-spark" : nil)
+            let verified = try await session.verify()
+            XCTAssertEqual(verified?.timerID, timerID)
+            XCTAssertEqual(verified?.accountKey, observation.accountKey)
+        }
+    }
+
+    func testExhaustedWeeklyQuotaBlocksOnlyItsOwnCodexPool() async throws {
+        for exhaustedPool in ["default", "spark"] {
+            let fixture = try fixture()
+            fixture.http.response = try Self.allTimerQuotaResponse(exhaustedPool: exhaustedPool)
+            _ = await fixture.provider.refresh()
+            let observations = fixture.provider.usageTimerObservations
+            let executor = ModelRecordingExecutor()
+            var expectedModels: [String?] = []
+            for pool in ["default", "spark"] {
+                let timerID = "codex.\(pool).session"
+                let observation = try XCTUnwrap(observations.first { $0.timerID == timerID })
+                let session = try await fixture.provider.prepareUsageTimer(observation, executors: .init(codex: executor))
+                XCTAssertEqual(session == nil, pool == exhaustedPool, timerID)
+                if let session {
+                    let result = await session.send { true }
+                    XCTAssertTrue(result.launched)
+                    XCTAssertTrue(result.completed)
+                    expectedModels.append(pool == "spark" ? "gpt-5.3-codex-spark" : nil)
+                }
+                XCTAssertEqual(executor.models, expectedModels, timerID)
+            }
+            XCTAssertEqual(executor.models.count, 1)
+        }
+    }
+
     func testCancelledWaiterReturnsTransferredPermitWithoutStartingOperation() async {
         let gate = CodexProviderOperationGate()
         let first = await gate.acquire()
@@ -138,7 +185,7 @@ final class CodexWeeklyTimerProviderTests: XCTestCase {
             usageClient: CodexUsageClient(http: http), now: { Self.instant.addingTimeInterval(61) }
         )
         let session = CodexWeeklyTimerSession(
-            observation: CodexWeeklyTimerObservation(accountKey: try XCTUnwrap(CodexWeeklyTimerIdentity.accountKey(for: auth)),
+            observation: UsageTimerObservation(accountKey: try XCTUnwrap(CodexWeeklyTimerIdentity.accountKey(for: auth)),
                                                       usedPercent: 0, resetsAt: nil, observedAt: Self.instant),
             authState: try XCTUnwrap(provider.authStore.loadAuth(at: Self.path)), authStore: provider.authStore
         )
@@ -361,6 +408,35 @@ final class CodexWeeklyTimerProviderTests: XCTestCase {
 
     private nonisolated static var quotaResponse: HTTPResponse {
         HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"rate_limit":{"secondary_window":{"used_percent":0,"limit_window_seconds":604800,"reset_at":1800604800}}}"#.utf8))
+    }
+
+    private nonisolated static func allTimerQuotaResponse(exhaustedPool: String? = nil) throws -> HTTPResponse {
+        func rate(_ pool: String) -> [String: Any] {
+            [
+                "primary_window": ["limit_window_seconds": 18_000, "used_percent": 0, "reset_at": 1_800_018_000],
+                "secondary_window": ["limit_window_seconds": 604_800, "used_percent": pool == exhaustedPool ? 100 : 0,
+                                     "reset_at": 1_800_604_800]
+            ]
+        }
+        let body: [String: Any] = ["rate_limit": rate("default"), "additional_rate_limits": [
+            ["limit_name": "GPT-5.3-Codex-Spark", "rate_limit": rate("spark")]
+        ]]
+        return HTTPResponse(statusCode: 200, headers: [:], body: try JSONSerialization.data(withJSONObject: body))
+    }
+
+    @MainActor
+    private final class ModelRecordingExecutor: CodexWeeklyTimerExecuting {
+        var models: [String?] = []
+
+        func execute(auth: CodexAuth, canLaunch: @escaping @MainActor () async -> Bool) async -> CodexWeeklyTimerExecutionResult {
+            await execute(auth: auth, model: nil, canLaunch: canLaunch)
+        }
+
+        func execute(auth: CodexAuth, model: String?, canLaunch: @escaping @MainActor () async -> Bool) async -> CodexWeeklyTimerExecutionResult {
+            guard await canLaunch() else { return .init(launched: false, completed: false, updatedAuth: nil, failureDescription: nil) }
+            models.append(model)
+            return .init(launched: true, completed: true, updatedAuth: nil, failureDescription: nil)
+        }
     }
 
     private nonisolated static func auth(subject: String = "subject", expiresIn: TimeInterval = 3_600, refresh: String? = "refresh") throws -> CodexAuth {

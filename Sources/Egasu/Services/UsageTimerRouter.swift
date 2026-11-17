@@ -2,101 +2,74 @@ import Foundation
 
 /// 활성 계정의 최신 조회만 자동 전송에 연결하고 계정 교체 뒤의 결과 게시 차단.
 @MainActor
-final class CodexWeeklyTimerRouter {
-    private static let stateReadWarning = "Weekly timer automation could not read its saved state. No message was sent."
+final class UsageTimerRouter {
+    private static let stateReadWarning = "Usage timer automation could not read its saved state. No message was sent."
 
     private struct Binding {
         let id = UUID()
-        var provider: CodexProvider
+        var provider: any UsageTimerProviding
         var accountKey: String?
     }
 
     private var bindings: [String: Binding]
     private var identityKeys: [String: String]
-    private var warningsByAccount: [String: String] = [:]
+    private var warningsByAccount: [String: [String: String]] = [:]
     private var scheduledCheckRequests: Set<String> = []
     private var followUpRefreshes: [UUID: (providerID: String, task: Task<Void, Never>)] = [:]
     private let isProviderEnabled: (String) -> Bool
-    private let executor: any CodexWeeklyTimerExecuting
-    private let store: CodexWeeklyTimerAttemptStore
+    private let executors: UsageTimerExecutors
+    private let store: UsageTimerAttemptStore
     private var isShuttingDown = false
-    private let report: (String, String?) -> Void
+    private let publishWarning: (String, [String]?) -> Void
     private let refresh: @MainActor (String, @escaping @MainActor () -> Bool) async -> Void
     private let now: @MainActor () -> Date
     private let wait: @MainActor (Duration) async throws -> Void
     private let workQueue: BackgroundWorkQueue
     private nonisolated(unsafe) var clockObserver: NSObjectProtocol?
-    private lazy var coordinator = CodexWeeklyTimerCoordinator(
+    private lazy var coordinator = UsageTimerCoordinator<UsageTimerSession>(
         store: store,
         isCurrent: { [weak self] in self?.isCurrent($0, bindingID: $1, accountKey: $2) == true },
-        prepare: { [weak self] providerID, accountKey in
+        prepare: { [weak self] providerID, observation in
             guard let self, let ticket = await self.workQueue.acquire("weekly-timer:prepare") else { return nil }
             defer { self.workQueue.finish(ticket) }
             try Task.checkCancellation()
             guard let provider = self.bindings[providerID]?.provider else { return nil }
-            return try await provider.prepareWeeklyTimerSession(expectedAccountKey: accountKey)
+            return try await provider.prepareUsageTimer(observation, executors: self.executors)
         },
         execute: { [weak self] providerID, bindingID, session, observationIsCurrent in
             guard let self, let ticket = await self.workQueue.acquire("weekly-timer:execute") else {
-                return CodexWeeklyTimerExecutionResult(launched: false, completed: false, updatedAuth: nil)
+                return UsageTimerExecutionResult(launched: false, completed: false)
             }
             defer { self.workQueue.finish(ticket) }
-            guard !Task.isCancelled, let binding = self.bindings[providerID], binding.id == bindingID else {
-                return CodexWeeklyTimerExecutionResult(
-                    launched: false, completed: false, updatedAuth: nil,
-                    failureDescription: "Weekly timer account changed before the message was sent."
-                )
+            guard self.isCurrent(providerID, bindingID: bindingID, accountKey: session.observation.accountKey),
+                  observationIsCurrent() else {
+                return UsageTimerExecutionResult(launched: false, completed: false)
             }
-            let hadStartupFailure = self.executor.startupFailureDescription != nil
-            var result = await self.executor.execute(auth: session.authState.auth) { [weak self] in
-                guard observationIsCurrent(),
-                      self?.isCurrent(providerID, bindingID: bindingID, accountKey: session.observation.accountKey) == true else {
-                    return false
-                }
-                do {
-                    try await binding.provider.validateWeeklyTimerSession(session)
-                } catch {
-                    AppDiagnostics.record(.weeklyTimer, result: .failure, providerID: providerID, error: error,
-                                          localContext: "Timer authentication changed before launch")
-                    return false
-                }
-                return observationIsCurrent()
-                    && self?.isCurrent(providerID, bindingID: bindingID, accountKey: session.observation.accountKey) == true
+            let hadStartupFailure = self.executors.codex.startupFailureDescription != nil
+            let result = await session.send { [weak self] in
+                observationIsCurrent()
+                    && self?.isCurrent(providerID, bindingID: bindingID,
+                                       accountKey: session.observation.accountKey) == true
             }
-            if !self.isShuttingDown, hadStartupFailure, self.executor.startupFailureDescription == nil {
-                for (id, current) in self.bindings where self.isProviderEnabled(id) {
-                    self.report(id, current.accountKey.flatMap { self.warningsByAccount[$0] })
-                }
-            }
-            if let updatedAuth = result.updatedAuth {
-                do {
-                    // 종료 취소 뒤에도 CLI가 회전한 토큰 반영 완료까지 대기.
-                    let save = Task {
-                        try await binding.provider.persistUpdatedWeeklyTimerAuth(updatedAuth, original: session.authState)
-                    }
-                    try await save.value
-                } catch {
-                    AppDiagnostics.record(.weeklyTimer, result: .failure, providerID: providerID, error: error,
-                                          localContext: "Could not persist timer credentials")
-                    result.failureDescription = "Weekly timer credentials changed. Refresh this account before trying again."
-                    result.verificationCanClearFailure = false
+            if !self.isShuttingDown, hadStartupFailure, self.executors.codex.startupFailureDescription == nil {
+                for (id, binding) in self.bindings where binding.provider is CodexProvider && self.isProviderEnabled(id) {
+                    self.report(id, binding.accountKey.flatMap { self.warning(for: $0) })
                 }
             }
             return result
         },
-        verify: { [weak self] providerID, session in
+        verify: { [weak self] _, session in
             guard let self, let ticket = await self.workQueue.acquire("weekly-timer:verify") else { return nil }
             defer { self.workQueue.finish(ticket) }
             try Task.checkCancellation()
-            guard let provider = self.bindings[providerID]?.provider else { return nil }
-            return try await provider.verifyWeeklyTimer(expectedAccountKey: session.observation.accountKey)
+            return try await session.verify()
         },
-        report: { [weak self] providerID, bindingID, message in
+        report: { [weak self] providerID, bindingID, timerID, message in
             guard let self, let binding = self.bindings[providerID], binding.id == bindingID,
                   let accountKey = binding.accountKey else { return }
-            self.warningsByAccount[accountKey] = message
+            self.warningsByAccount[accountKey, default: [:]][timerID] = message
             for (id, current) in self.bindings where current.accountKey == accountKey && self.isProviderEnabled(id) {
-                self.report(id, message)
+                self.report(id, self.warning(for: accountKey))
             }
             AppDiagnostics.record(.weeklyTimer, result: message == nil ? .success : .failure,
                                   providerID: providerID)
@@ -119,25 +92,23 @@ final class CodexWeeklyTimerRouter {
     )
 
     init(
-        providers: [CodexProvider],
+        providers: [any ProviderRuntime],
         identityKeys: [String: String] = [:],
         isProviderEnabled: @escaping (String) -> Bool,
         executor: any CodexWeeklyTimerExecuting = CodexWeeklyTimerExecutor(),
-        store: CodexWeeklyTimerAttemptStore = CodexWeeklyTimerAttemptStore(),
-        report: @escaping (String, String?) -> Void,
+        store: UsageTimerAttemptStore = UsageTimerAttemptStore(),
+        report: @escaping (String, [String]?) -> Void,
         refresh: @escaping @MainActor (String, @escaping @MainActor () -> Bool) async -> Void,
         now: @escaping @MainActor () -> Date = Date.init,
         wait: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
         workQueue: BackgroundWorkQueue = BackgroundWorkQueue()
     ) {
-        self.bindings = Dictionary(uniqueKeysWithValues: providers.map { ($0.provider.id, Binding(provider: $0)) })
+        self.bindings = Dictionary(uniqueKeysWithValues: providers.compactMap { $0 as? any UsageTimerProviding }.map { ($0.provider.id, Binding(provider: $0)) })
         self.identityKeys = identityKeys
         self.isProviderEnabled = isProviderEnabled
-        self.executor = executor
+        self.executors = UsageTimerExecutors(codex: executor)
         self.store = store
-        self.report = { providerID, message in
-            report(providerID, executor.startupFailureDescription ?? message)
-        }
+        self.publishWarning = report
         self.refresh = refresh
         self.now = now
         self.wait = wait
@@ -159,10 +130,11 @@ final class CodexWeeklyTimerRouter {
               var binding = bindings[snapshot.providerID],
               let observedAt = snapshot.liveQuotaObservedAt else { return }
         guard observedAt <= now() else {
-            AppLog.debug(.refresh, "Ignored Codex quota observation from before a backward clock change")
+            AppLog.debug(.refresh, "Ignored quota observation from before a backward clock change")
             return
         }
-        guard let observation = binding.provider.weeklyTimerObservation else {
+        let observations = binding.provider.usageTimerObservations
+        guard let observation = observations.first else {
             invalidate(providerIDs: [snapshot.providerID])
             return
         }
@@ -176,7 +148,7 @@ final class CodexWeeklyTimerRouter {
         binding.accountKey = observation.accountKey
         bindings[snapshot.providerID] = binding
         if accountChanged { removeUnboundWarnings() }
-        if accountChanged, isProviderEnabled(snapshot.providerID), let warning = warningsByAccount[observation.accountKey] {
+        if accountChanged, isProviderEnabled(snapshot.providerID), let warning = warning(for: observation.accountKey) {
             report(snapshot.providerID, warning)
         }
         do {
@@ -184,10 +156,10 @@ final class CodexWeeklyTimerRouter {
                 coordinator.invalidateObservations()
                 scheduledCheckRequests.formUnion(bindings.keys.filter { isProviderEnabled($0) })
             }
-            if warningsByAccount[observation.accountKey] == Self.stateReadWarning {
-                warningsByAccount[observation.accountKey] = nil
+            if warningsByAccount[observation.accountKey]?["state"] == Self.stateReadWarning {
+                warningsByAccount[observation.accountKey]?["state"] = nil
                 for (id, current) in bindings where current.accountKey == observation.accountKey && isProviderEnabled(id) {
-                    report(id, nil)
+                    report(id, warning(for: observation.accountKey))
                 }
             }
         } catch {
@@ -195,18 +167,20 @@ final class CodexWeeklyTimerRouter {
                                   localContext: "Could not check timer observation state")
             coordinator.clearReportedSendLimit(for: observation.accountKey)
             let message = Self.stateReadWarning
-            warningsByAccount[observation.accountKey] = message
+            warningsByAccount[observation.accountKey, default: [:]]["state"] = message
             for (id, current) in bindings where current.accountKey == observation.accountKey && isProviderEnabled(id) {
-                report(id, message)
+                report(id, warning(for: observation.accountKey))
             }
             return
         }
         let scheduledRequested = scheduledCheckRequests.remove(snapshot.providerID) != nil
         let checkTimer = scheduledRequested || trigger == .weeklyTimerCheck
-        coordinator.receive(
-            providerID: snapshot.providerID, bindingID: binding.id, observation: observation,
-            checkUnconfirmedReset: checkTimer
-        )
+        for observation in observations {
+            coordinator.receive(
+                providerID: snapshot.providerID, bindingID: binding.id, observation: observation,
+                checkUnconfirmedReset: checkTimer
+            )
+        }
     }
 
     /// 15분 경계 조회가 진행 중인 요청과 겹치면 다음 정상 응답에서 재검증.
@@ -264,11 +238,11 @@ final class CodexWeeklyTimerRouter {
         if providerIDs == nil { reportStartupFailure() }
     }
 
-    func reconfigure(providers: [CodexProvider], identityKeys: [String: String] = [:]) {
+    func reconfigure(providers: [any ProviderRuntime], identityKeys: [String: String] = [:]) {
         let removed = Set(bindings.keys).subtracting(providers.map { $0.provider.id })
         invalidate(providerIDs: removed)
         for providerID in removed { bindings[providerID] = nil }
-        for provider in providers {
+        for provider in providers.compactMap({ $0 as? any UsageTimerProviding }) {
             let providerID = provider.provider.id
             if var binding = bindings[providerID],
                binding.provider === provider || (identityKeys[providerID] != nil && self.identityKeys[providerID] == identityKeys[providerID]) {
@@ -284,10 +258,16 @@ final class CodexWeeklyTimerRouter {
     }
 
     private func reportStartupFailure() {
-        guard !isShuttingDown, let warning = executor.startupFailureDescription else { return }
-        for providerID in bindings.keys where isProviderEnabled(providerID) {
-            report(providerID, warning)
+        guard !isShuttingDown, let warning = executors.codex.startupFailureDescription else { return }
+        for (providerID, binding) in bindings where binding.provider is CodexProvider && isProviderEnabled(providerID) {
+            report(providerID, [warning])
         }
+    }
+
+    private func report(_ providerID: String, _ message: [String]?) {
+        let startupWarning = bindings[providerID]?.provider is CodexProvider
+            ? executors.codex.startupFailureDescription.map { [$0] } : nil
+        publishWarning(providerID, startupWarning ?? message)
     }
 
     /// 새 응답을 기다리지 않고 이전 시각 기준의 검증·실행 준비를 무효화.
@@ -295,6 +275,11 @@ final class CodexWeeklyTimerRouter {
         guard !isShuttingDown else { return }
         coordinator.invalidateObservations()
         scheduledCheckRequests.formUnion(bindings.keys.filter { isProviderEnabled($0) })
+    }
+
+    private func warning(for accountKey: String) -> [String]? {
+        let messages = Set(warningsByAccount[accountKey]?.values.map { $0 } ?? []).sorted()
+        return messages.isEmpty ? nil : messages
     }
 
     private func removeUnboundWarnings() {

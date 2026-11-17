@@ -2,7 +2,7 @@ import XCTest
 @testable import Egasu
 
 @MainActor
-extension CodexWeeklyTimerRouterTests {
+extension UsageTimerRouterTests {
     func testUsageRefreshesRecheckMovingTimers() async throws {
         for trigger: RefreshTrigger in [.scheduled, .manual, .accountChange, .credentialChange, .resetClaim] {
             let fixture = try Fixture()
@@ -10,7 +10,7 @@ extension CodexWeeklyTimerRouterTests {
             let account = try fixture.account("first", cardID: "codex")
             let executor = fixture.executor()
             let completed = expectation(description: "Timer checked after \(trigger.rawValue)")
-            let router = CodexWeeklyTimerRouter(
+            let router = UsageTimerRouter(
                 providers: [account.provider], isProviderEnabled: { _ in true },
                 executor: executor, store: fixture.store, report: { _, warning in XCTAssertNil(warning) },
                 refresh: { _, _ in completed.fulfill() },
@@ -34,7 +34,7 @@ extension CodexWeeklyTimerRouterTests {
         account.http.startTimer()
         let completed = expectation(description: "Reset after a fixed timer detected")
         var resetExpected = false
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: [account.provider], isProviderEnabled: { _ in true },
             executor: executor, store: fixture.store, report: { _, warning in XCTAssertNil(warning) },
             refresh: { _, _ in
@@ -70,9 +70,9 @@ extension CodexWeeklyTimerRouterTests {
         let executor = fixture.executor()
         let failed = expectation(description: "Preparation failed")
         var warning: String?
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: [account.provider], isProviderEnabled: { _ in true },
-            executor: executor, store: fixture.store, report: { _, message in warning = message },
+            executor: executor, store: fixture.store, report: { _, message in warning = message?.joined(separator: " ") },
             refresh: { _, _ in failed.fulfill() },
             now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
         )
@@ -102,7 +102,7 @@ extension CodexWeeklyTimerRouterTests {
             let account = try fixture.account("first", cardID: "codex")
             let executor = fixture.executor()
             let completed = expectation(description: "Early reset checked after \(trigger.rawValue)")
-            let router = CodexWeeklyTimerRouter(
+            let router = UsageTimerRouter(
                 providers: [account.provider], isProviderEnabled: { _ in true },
                 executor: executor, store: fixture.store, report: { _, warning in XCTAssertNil(warning) },
                 refresh: { _, _ in completed.fulfill() },
@@ -132,9 +132,9 @@ extension CodexWeeklyTimerRouterTests {
             let retried = expectation(description: "Preparation retried on \(trigger.rawValue)")
             var completions = 0
             var warning: String?
-            let router = CodexWeeklyTimerRouter(
+            let router = UsageTimerRouter(
                 providers: [account.provider], isProviderEnabled: { _ in true },
-                executor: executor, store: fixture.store, report: { _, message in warning = message },
+                executor: executor, store: fixture.store, report: { _, message in warning = message?.joined(separator: " ") },
                 refresh: { _, _ in
                     completions += 1
                     if completions == 1 { failed.fulfill() } else { retried.fulfill() }
@@ -167,7 +167,7 @@ extension CodexWeeklyTimerRouterTests {
         let disabled = try fixture.account("disabled", cardID: "codex@disabled")
         let executor = fixture.executor()
         let completed = expectation(description: "Scheduled revalidation finished")
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: [account.provider, disabled.provider], isProviderEnabled: { $0 == "codex" },
             executor: executor, store: fixture.store, report: { _, warning in XCTAssertNil(warning) },
             refresh: { _, _ in completed.fulfill() },
@@ -197,7 +197,7 @@ extension CodexWeeklyTimerRouterTests {
         let account = try fixture.account("first", cardID: "codex")
         let executor = fixture.executor()
         let completed = expectation(description: "Timer checked after backward clock change")
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: [account.provider], isProviderEnabled: { _ in true },
             executor: executor, store: fixture.store, report: { _, _ in },
             refresh: { _, _ in completed.fulfill() },
@@ -230,7 +230,7 @@ extension CodexWeeklyTimerRouterTests {
         let lateAccount = try fixture.account("first", cardID: "codex@late")
         let executor = fixture.executor()
         let completed = expectation(description: "Fresh timer check completed")
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: [account.provider, lateAccount.provider], isProviderEnabled: { _ in true },
             executor: executor, store: fixture.store, report: { _, _ in },
             refresh: { _, _ in completed.fulfill() },
@@ -270,9 +270,9 @@ extension CodexWeeklyTimerRouterTests {
             account.http.response = .init(statusCode: 200, headers: [:], body: quota)
             account.http.startTimer()
             var warning: String?
-            let router = CodexWeeklyTimerRouter(
+            let router = UsageTimerRouter(
                 providers: [account.provider], isProviderEnabled: { _ in true },
-                executor: executor, store: fixture.store, report: { _, message in warning = message },
+                executor: executor, store: fixture.store, report: { _, message in warning = message?.joined(separator: " ") },
                 refresh: { _, _ in XCTFail("A recovered fixed timer must not send") },
                 now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
             )
@@ -301,7 +301,7 @@ extension CodexWeeklyTimerRouterTests {
         let executor = fixture.executor()
         let completed = expectation(description: "Interrupted verification finishes")
         var waitCount = 0
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: [account.provider], isProviderEnabled: { _ in true },
             executor: executor, store: fixture.store, report: { _, _ in },
             refresh: { _, _ in completed.fulfill() }, now: { fixture.clock.current() },
@@ -332,7 +332,7 @@ extension CodexWeeklyTimerRouterTests {
         let account = try fixture.account("first", cardID: "codex")
         let executor = fixture.executor()
         let completed = expectation(description: "Invalidated launch finishes")
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: [account.provider], isProviderEnabled: { _ in true },
             executor: executor, store: fixture.store, report: { _, _ in },
             refresh: { _, _ in completed.fulfill() },
@@ -361,9 +361,9 @@ extension CodexWeeklyTimerRouterTests {
             let executor = fixture.executor()
             let completed = expectation(description: "Launch check finishes at \(usedPercent)% after \(elapsed)s")
             var warning: String?
-            let router = CodexWeeklyTimerRouter(
+            let router = UsageTimerRouter(
                 providers: [account.provider], isProviderEnabled: { _ in true },
-                executor: executor, store: fixture.store, report: { _, message in warning = message },
+                executor: executor, store: fixture.store, report: { _, message in warning = message?.joined(separator: " ") },
                 refresh: { _, _ in completed.fulfill() },
                 now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
             )
@@ -396,43 +396,75 @@ extension CodexWeeklyTimerRouterTests {
     }
 
     func testSendLimitWarningReturnsAfterBindingOrStateRecovery() async throws {
-        for stateReadFailure in [false, true] {
+        let timerIDs = ["codex.default.weekly", "codex.default.session", "codex.spark.weekly", "codex.spark.session"]
+        for (timerID, recovery) in timerIDs.flatMap({ timerID in
+            ["disable", "reconnect", "state"].map { (timerID, $0) }
+        }) {
             let fixture = try Fixture()
             defer { fixture.remove() }
             let account = try fixture.account("first", cardID: "codex")
             let executor = fixture.executor()
+            var enabled = true
             var warning: String?
-            let router = CodexWeeklyTimerRouter(
-                providers: [account.provider], isProviderEnabled: { _ in true },
-                executor: executor, store: fixture.store, report: { _, message in warning = message },
+            let router = UsageTimerRouter(
+                providers: [account.provider], isProviderEnabled: { _ in enabled },
+                executor: executor, store: fixture.store, report: { _, message in warning = message?.joined(separator: " ") },
                 refresh: { _, _ in XCTFail("The send limit must prevent execution") },
                 now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
             )
-            let snapshot = try await fixture.changedRefresh(account, router: router)
-            let accountKey = try XCTUnwrap(account.provider.weeklyTimerObservation?.accountKey)
-            for offset: TimeInterval in [-700, -350] {
-                XCTAssertNotNil(try fixture.store.begin(accountKey: accountKey, resetBefore: nil,
-                                                       now: fixture.now.addingTimeInterval(offset)))
+            func setQuota(resetOffset: TimeInterval) throws {
+                let duration: TimeInterval = timerID.hasSuffix(".weekly") ? 604_800 : 18_000
+                let rate: [String: Any] = ["secondary_window": [
+                    "used_percent": 0, "limit_window_seconds": duration,
+                    "reset_at": fixture.now.addingTimeInterval(duration + resetOffset).timeIntervalSince1970
+                ]]
+                let body: [String: Any] = timerID.hasPrefix("codex.spark.")
+                    ? ["additional_rate_limits": [["limit_name": "GPT-5.3-Codex-Spark", "rate_limit": rate]]]
+                    : ["rate_limit": rate]
+                account.http.response = .init(statusCode: 200, headers: [:],
+                                              body: try JSONSerialization.data(withJSONObject: body))
             }
-            let limitExpires = try fixture.store.sendLimitResetsAt(accountKey: accountKey, now: fixture.clock.current())
-            router.receive(snapshot, trigger: .weeklyTimerCheck)
-            XCTAssertTrue(warning?.contains("24 hours") == true)
+            try setQuota(resetOffset: 0)
+            router.receive(await account.provider.refresh(), trigger: .scheduled)
+            let observation = try XCTUnwrap(account.provider.usageTimerObservations.first)
+            XCTAssertEqual(observation.timerID, timerID)
+            for offset: TimeInterval in [-700, -350] {
+                XCTAssertNotNil(try fixture.store.begin(accountKey: observation.storageKey, resetBefore: nil,
+                                                       now: fixture.now.addingTimeInterval(offset),
+                                                       budgetWindow: observation.budgetWindow))
+            }
+            let limitExpires = try XCTUnwrap(fixture.store.sendLimitResetsAt(
+                accountKey: observation.storageKey, now: fixture.clock.current(), budgetWindow: observation.budgetWindow
+            ))
+            try setQuota(resetOffset: 300)
+            router.receive(await account.provider.refresh(), trigger: .weeklyTimerCheck)
+            XCTAssertTrue(warning?.contains("usage window") == true, "\(timerID), \(recovery)")
 
-            if stateReadFailure {
+            switch recovery {
+            case "state":
                 let saved = try Data(contentsOf: fixture.store.fileURL)
                 try Data("invalid-state".utf8).write(to: fixture.store.fileURL)
                 router.receive(await account.provider.refresh(), trigger: .manual)
                 XCTAssertTrue(warning?.contains("could not read its saved state") == true)
                 try saved.write(to: fixture.store.fileURL)
-            } else {
-                router.invalidate(providerIDs: ["codex"])
+            case "reconnect":
+                router.reconfigure(providers: [])
+                router.reconfigure(providers: [account.provider])
                 XCTAssertNil(warning)
+            default:
+                enabled = false
+                router.invalidate()
+                XCTAssertNil(warning)
+                enabled = true
             }
             fixture.clock.advance(.seconds(65))
+            try setQuota(resetOffset: 600)
             router.receive(await account.provider.refresh(), trigger: .scheduled)
 
-            XCTAssertTrue(warning?.contains("24 hours") == true, "stateReadFailure=\(stateReadFailure)")
-            XCTAssertEqual(try fixture.store.sendLimitResetsAt(accountKey: accountKey, now: fixture.clock.current()), limitExpires)
+            XCTAssertTrue(warning?.contains("usage window") == true, "\(timerID), \(recovery)")
+            XCTAssertEqual(try fixture.store.sendLimitResetsAt(
+                accountKey: observation.storageKey, now: fixture.clock.current(), budgetWindow: observation.budgetWindow
+            ), limitExpires)
             XCTAssertFalse(router.hasPendingWork)
             XCTAssertTrue(executor.auths.isEmpty)
             await router.shutdown()

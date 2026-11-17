@@ -2,7 +2,7 @@ import AppKit
 
 /// 시작 시 한 번 확인하고 현지 00·15·30·45분마다 재확인. 잠자기 중 놓친 조회는 한 번으로 병합.
 @MainActor
-enum CodexWeeklyTimerCheckSchedule {
+enum UsageTimerCheckSchedule {
     enum Event: Equatable, Sendable {
         case deadline
         case wake
@@ -13,7 +13,7 @@ enum CodexWeeklyTimerCheckSchedule {
         scheduleChanged: @escaping @MainActor (Date) -> Void = { _ in },
         check: @escaping @MainActor () async -> Void
     ) -> Task<Void, Never> {
-        let signal = CodexWeeklyTimerCheckSignal()
+        let signal = UsageTimerCheckSignal()
         return Task {
             await run(
                 now: Date.init,
@@ -63,7 +63,7 @@ enum CodexWeeklyTimerCheckSchedule {
                 }
                 continue
             }
-            // 조회 전에 다음 경계를 예약하여 같은 15분 경계의 timeout과 wake 중복 처리 차단.
+            // 조회 전에 다음 경계를 예약하여 같은 15분 경계의 시간 제한·깨우기 신호 중복 처리 차단.
             nextCheckAt = nextQuarterHour(after: current, calendar: calendar())
             scheduleChanged(nextCheckAt)
             await check()
@@ -79,9 +79,9 @@ enum CodexWeeklyTimerCheckSchedule {
 
 /// 시스템 깨우기와 시각 변경을 15분 경계 대기 작업 한 곳으로 전달.
 @MainActor
-private final class CodexWeeklyTimerCheckSignal {
-    private let stream: AsyncStream<CodexWeeklyTimerCheckSchedule.Event>
-    private let continuation: AsyncStream<CodexWeeklyTimerCheckSchedule.Event>.Continuation
+private final class UsageTimerCheckSignal {
+    private let stream: AsyncStream<UsageTimerCheckSchedule.Event>
+    private let continuation: AsyncStream<UsageTimerCheckSchedule.Event>.Continuation
     private let workspaceCenter: NotificationCenter
     private let systemCenter: NotificationCenter
     private nonisolated(unsafe) let wakeObserver: NSObjectProtocol
@@ -91,7 +91,7 @@ private final class CodexWeeklyTimerCheckSignal {
     init() {
         // 시각 변경 뒤 깨우기가 도착해도 재예약 신호를 버리지 않도록 순서 보존.
         let (stream, continuation) = AsyncStream.makeStream(
-            of: CodexWeeklyTimerCheckSchedule.Event.self,
+            of: UsageTimerCheckSchedule.Event.self,
             bufferingPolicy: .unbounded
         )
         let workspaceCenter = NSWorkspace.shared.notificationCenter
@@ -118,7 +118,7 @@ private final class CodexWeeklyTimerCheckSignal {
         continuation.finish()
     }
 
-    func wait(until deadline: Date) async -> CodexWeeklyTimerCheckSchedule.Event? {
+    func wait(until deadline: Date) async -> UsageTimerCheckSchedule.Event? {
         let delay = max(0, deadline.timeIntervalSinceNow)
         let timer = Task { [continuation] in
             do { try await Task.sleep(for: .seconds(delay)) } catch { return }

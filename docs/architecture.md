@@ -285,7 +285,7 @@ Customize는 레이아웃의 표준 프로바이더 계열 순서, Settings는 �
 이미 부모와 분리된 자손의 강제 종료까지 보장하지 않음.
 
 `StreamingProcessRunner`는 비동기 명령의 실시간 출력·출력 상한·취소·소유 프로세스 그룹 정리 담당.
-Codex 주간 타이머는 이 실행기 사용.
+Codex 세션·주간 타이머는 이 실행기 사용.
 두 실행기는 반환 방식과 출력·취소 계약이 달라 별도 인터페이스 유지.
 
 `CodexControlConnection`은 직접 소켓·심볼릭 링크 검증과 WebSocket·RPC 연결 수명 관리.
@@ -294,7 +294,10 @@ Codex 주간 타이머는 이 실행기 사용.
 계정·quota pool 범위를 검증하지 못하는 현재 앱에서는 `SoftLimitCoordinator`가 자동 취소 차단.
 사용자 설정과 지원 범위는 [설정](/docs/settings.md) 참조.
 
-`CodexWeeklyTimerRouter`는 사용 설정된 계정과 조회 결과 연결, `CodexWeeklyTimerCoordinator`는 계정별 전송·검증 조정.
+`UsageTimerRouter`는 사용 설정된 계정과 조회 결과 연결, `UsageTimerCoordinator`는 계정·한도 풀·기간별 전송·검증 조정.
+현재 연결 대상은 Codex의 기본·Spark 풀에 있는 세션·주간 한도.
+`UsageTimerProviding`은 최신 관측·실행 준비·서버 재확인 연결.
+`UsageTimerAttemptStore`는 계정·풀·기간별 전송 예약·상한을 저장하며 기존 Codex 주간 기록 유지.
 `CodexWeeklyTimerExecutor`는 CLI 설정 검증·임시 인증 작성·메시지 실행·갱신 인증 회수·정리 담당.
 설정 검증 전에 인증 정보를 쓰지 않으며, 검증한 설정 배열을 실제 메시지 실행에도 전달.
 임시 홈의 파일·환경 격리는 `CodexWeeklyTimerWorkspace` 담당.

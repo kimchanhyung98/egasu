@@ -16,23 +16,35 @@ enum CodexUsageMapper {
         response: HTTPResponse,
         accountKey: String,
         observedAt: Date
-    ) -> CodexWeeklyTimerObservation? {
+    ) -> UsageTimerObservation? {
+        timerObservations(response: response, accountKey: accountKey, observedAt: observedAt)
+            .first { $0.timerID == "codex.default.weekly" }
+    }
+
+    static func timerObservations(
+        response: HTTPResponse, accountKey: String, observedAt: Date
+    ) -> [UsageTimerObservation] {
         guard (200..<300).contains(response.statusCode),
-              let body = ProviderParse.jsonObject(response.body),
-              let rateLimit = body["rate_limit"] as? [String: Any]
-        else { return nil }
-        let weeklyWindows = ["primary_window", "secondary_window"].compactMap { rateLimit[$0] as? [String: Any] }
-            .filter { ProviderParse.number($0["limit_window_seconds"]) == 604_800 }
-        guard weeklyWindows.count == 1, let window = weeklyWindows.first,
-              let used = ProviderParse.number(window["used_percent"]), used.isFinite, (0...100).contains(used)
-        else { return nil }
-        return CodexWeeklyTimerObservation(
-            accountKey: accountKey,
-            usedPercent: used,
-            resetsAt: resetDate(window, now: observedAt),
-            observedAt: observedAt,
-            rawResetAt: ProviderParse.number(window["reset_at"]).map { Date(timeIntervalSince1970: $0) }
-        )
+              let body = ProviderParse.jsonObject(response.body) else { return [] }
+        var pools: [(String, [String: Any])] = []
+        if let rate = body["rate_limit"] as? [String: Any] { pools.append(("default", rate)) }
+        let additional = (body["additional_rate_limits"] as? [Any] ?? []).compactMap { $0 as? [String: Any] }
+        if let spark = additional.first(where: isSparkEntry), let rate = spark["rate_limit"] as? [String: Any] {
+            pools.append(("spark", rate))
+        }
+        return pools.flatMap { pool, rate in
+            [("weekly", 604_800.0), ("session", 18_000.0)].compactMap { period, seconds in
+                let windows = ["primary_window", "secondary_window"].compactMap { rate[$0] as? [String: Any] }
+                    .filter { ProviderParse.number($0["limit_window_seconds"]) == seconds }
+                guard windows.count == 1, let window = windows.first,
+                      let used = ProviderParse.number(window["used_percent"]), (0...100).contains(used) else { return nil }
+                return UsageTimerObservation(
+                    accountKey: accountKey, usedPercent: used, resetsAt: resetDate(window, now: observedAt),
+                    observedAt: observedAt, rawResetAt: ProviderParse.number(window["reset_at"]).map { Date(timeIntervalSince1970: $0) },
+                    timerID: "codex.\(pool).\(period)", duration: seconds
+                )
+            }
+        }
     }
 
     static func mapUsageResponse(

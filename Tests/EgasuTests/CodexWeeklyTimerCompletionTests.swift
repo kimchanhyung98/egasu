@@ -4,7 +4,7 @@ import XCTest
 @MainActor
 final class CodexWeeklyTimerCompletionTests: XCTestCase {
     func testAccountChangeWaitIncludesFollowUpRefresh() async throws {
-        let fixture = try CodexWeeklyTimerRouterTests.Fixture()
+        let fixture = try UsageTimerRouterTests.Fixture()
         defer { fixture.remove() }
         let account = try fixture.account("first", cardID: "codex")
         let executor = fixture.executor()
@@ -13,7 +13,7 @@ final class CodexWeeklyTimerCompletionTests: XCTestCase {
         var releaseRefresh: CheckedContinuation<Void, Never>?
         var refreshFinished = false
         var waitFinished = false
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: [account.provider], isProviderEnabled: { _ in true },
             executor: executor, store: fixture.store, report: { _, warning in XCTAssertNil(warning) },
             refresh: { providerID, isCurrent in
@@ -53,7 +53,7 @@ final class CodexWeeklyTimerCompletionTests: XCTestCase {
     }
 
     func testFollowUpRefreshDoesNotBlockNextAccountOrUnrelatedCompletion() async throws {
-        let fixture = try CodexWeeklyTimerRouterTests.Fixture()
+        let fixture = try UsageTimerRouterTests.Fixture()
         defer { fixture.remove() }
         let first = try fixture.account("first", cardID: "codex")
         let second = try fixture.account("second", cardID: "codex@second")
@@ -66,7 +66,7 @@ final class CodexWeeklyTimerCompletionTests: XCTestCase {
         var releases: [String: CheckedContinuation<Void, Never>] = [:]
         var finished: Set<String> = []
         var waitFinished = false
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: [first.provider, second.provider], isProviderEnabled: { _ in true },
             executor: executor, store: fixture.store, report: { _, warning in XCTAssertNil(warning) },
             refresh: { providerID, _ in

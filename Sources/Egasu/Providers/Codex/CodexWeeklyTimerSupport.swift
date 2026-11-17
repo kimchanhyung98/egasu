@@ -1,24 +1,8 @@
 import CryptoKit
 import Foundation
 
-struct CodexWeeklyTimerObservation: Equatable, Sendable {
-    static let resetTimeTolerance: TimeInterval = 60
-    static let verificationInterval = resetTimeTolerance + 5
-
-    var accountKey: String
-    var usedPercent: Double
-    var resetsAt: Date?
-    var observedAt: Date
-    var rawResetAt: Date? = nil
-
-    static func resetTimesMatch(_ first: Date?, _ second: Date?) -> Bool {
-        guard let first, let second else { return false }
-        return abs(first.timeIntervalSince(second)) <= resetTimeTolerance
-    }
-}
-
-struct CodexWeeklyTimerSession: Sendable {
-    var observation: CodexWeeklyTimerObservation
+struct CodexWeeklyTimerSession: UsageTimerPreparedSession {
+    var observation: UsageTimerObservation
     var authState: CodexAuthState
     var authStore: CodexAuthStore
 }
@@ -42,11 +26,11 @@ enum CodexWeeklyTimerProviderError: Error, LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .accountChanged:
-            "Weekly timer account changed. Refresh this account and try again."
+            "Usage timer account changed. Refresh this account and try again."
         case .weeklyQuotaUnavailable:
-            "Weekly timer could not verify this account's weekly usage."
+            "Usage timer could not verify this account's quota."
         case .credentialsChanged:
-            "Weekly timer credentials changed. Refresh this account and try again."
+            "Usage timer credentials changed. Refresh this account and try again."
         }
     }
 }

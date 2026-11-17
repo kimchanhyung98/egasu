@@ -46,7 +46,7 @@ final class CodexWeeklyTimerRevalidationStoreTests: XCTestCase {
             XCTAssertNil(attempt.resetAfter)
             XCTAssertNil(attempt.lastVerifiedAt)
 
-            let restarted = CodexWeeklyTimerAttemptStore(fileURL: store.fileURL)
+            let restarted = UsageTimerAttemptStore(fileURL: store.fileURL)
             XCTAssertEqual(try restarted.attempt(for: "a"), attempt)
             XCTAssertTrue(try restarted.isLatest(second))
             XCTAssertFalse(try restarted.canAttempt(accountKey: "a", now: attempt.notBefore))
@@ -100,7 +100,7 @@ final class CodexWeeklyTimerRevalidationStoreTests: XCTestCase {
             let (first, second) = observations()
             try observe(first, in: store)
             let state = try XCTUnwrap(store.revalidationState(accountKey: "a", now: first.observedAt))
-            let other = CodexWeeklyTimerAttemptStore(fileURL: store.fileURL)
+            let other = UsageTimerAttemptStore(fileURL: store.fileURL)
             let attempt = try XCTUnwrap(other.beginAfterRevalidation(
                 first: first, second: second, expectedState: state, now: second.observedAt
             ))
@@ -151,7 +151,7 @@ final class CodexWeeklyTimerRevalidationStoreTests: XCTestCase {
     }
 
     func testInvalidScheduledEvidenceDoesNotClearTheHoldOrReplaceTheAttempt() throws {
-        let cases: [(String, (inout CodexWeeklyTimerObservation, inout CodexWeeklyTimerObservation) -> Void)] = [
+        let cases: [(String, (inout UsageTimerObservation, inout UsageTimerObservation) -> Void)] = [
             ("fixed reset", { first, second in second.rawResetAt = first.rawResetAt }),
             ("positive tolerance boundary", { first, second in second.rawResetAt = first.rawResetAt?.addingTimeInterval(60) }),
             ("negative tolerance boundary", { first, second in second.rawResetAt = first.rawResetAt?.addingTimeInterval(-60) }),
@@ -311,7 +311,7 @@ final class CodexWeeklyTimerRevalidationStoreTests: XCTestCase {
         }
     }
 
-    private func observations(accountKey: String = "a") -> (CodexWeeklyTimerObservation, CodexWeeklyTimerObservation) {
+    private func observations(accountKey: String = "a") -> (UsageTimerObservation, UsageTimerObservation) {
         let observedAt = start.addingTimeInterval(3_600)
         let reset = start.addingTimeInterval(604_800)
         return (
@@ -321,21 +321,21 @@ final class CodexWeeklyTimerRevalidationStoreTests: XCTestCase {
         )
     }
 
-    private func seedConfirmedWindow(_ store: CodexWeeklyTimerAttemptStore) throws -> Date {
+    private func seedConfirmedWindow(_ store: UsageTimerAttemptStore) throws -> Date {
         let reset = start.addingTimeInterval(3 * 24 * 60 * 60)
         _ = try store.begin(accountKey: "a", resetBefore: reset, now: start)
         _ = try store.observe(accountKey: "a", rawResetAt: reset, observedAt: start, usedPercent: 3)
         return reset
     }
 
-    private func observe(_ observation: CodexWeeklyTimerObservation, in store: CodexWeeklyTimerAttemptStore) throws {
+    private func observe(_ observation: UsageTimerObservation, in store: UsageTimerAttemptStore) throws {
         _ = try store.observe(accountKey: observation.accountKey, rawResetAt: observation.rawResetAt,
                               observedAt: observation.observedAt, usedPercent: observation.usedPercent)
     }
 
     private func assertRejected(
-        _ store: CodexWeeklyTimerAttemptStore, first: CodexWeeklyTimerObservation, second: CodexWeeklyTimerObservation,
-        state: CodexWeeklyTimerAttemptStore.RevalidationState, message: String = "",
+        _ store: UsageTimerAttemptStore, first: UsageTimerObservation, second: UsageTimerObservation,
+        state: UsageTimerAttemptStore.RevalidationState, message: String = "",
         file: StaticString = #filePath, line: UInt = #line
     ) throws {
         let before = try Data(contentsOf: store.fileURL)
@@ -345,10 +345,10 @@ final class CodexWeeklyTimerRevalidationStoreTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: store.fileURL), before, message, file: file, line: line)
     }
 
-    private func withStore(_ body: (CodexWeeklyTimerAttemptStore) throws -> Void) throws {
+    private func withStore(_ body: (UsageTimerAttemptStore) throws -> Void) throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        try body(CodexWeeklyTimerAttemptStore(fileURL: directory.appendingPathComponent("attempts.json")))
+        try body(UsageTimerAttemptStore(fileURL: directory.appendingPathComponent("attempts.json")))
     }
 }

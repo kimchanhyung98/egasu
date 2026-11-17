@@ -2,7 +2,7 @@ import XCTest
 @testable import Egasu
 
 @MainActor
-final class CodexWeeklyTimerRouterTests: XCTestCase {
+final class UsageTimerRouterTests: XCTestCase {
     func testRoutesEveryEnabledAccountAndKeepsCredentialsSeparate() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
@@ -12,7 +12,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         let completed = expectation(description: "Both enabled accounts finished")
         completed.expectedFulfillmentCount = 2
         let executor = fixture.executor()
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: [first.provider, second.provider, disabled.provider],
             isProviderEnabled: { $0 != "codex@disabled" }, executor: executor, store: fixture.store,
             report: { _, warning in XCTAssertNil(warning) },
@@ -40,7 +40,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         let unexpected = expectation(description: "Read-only paths must not execute")
         unexpected.isInverted = true
         executor.onLaunch = { unexpected.fulfill() }
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: [account.provider], isProviderEnabled: { _ in true },
             executor: executor, store: fixture.store, report: { _, _ in }, refresh: { _, _ in },
             now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
@@ -64,7 +64,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         let unexpected = expectation(description: "A fixed timer must not trigger a message")
         unexpected.isInverted = true
         executor.onLaunch = { unexpected.fulfill() }
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: [account.provider], isProviderEnabled: { _ in true },
             executor: executor, store: fixture.store, report: { _, _ in }, refresh: { _, _ in },
             now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
@@ -86,10 +86,10 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         executor.beforeLaunch = { account.files.files[account.path] = replacement }
         let completed = expectation(description: "Changed authentication handled")
         var warning: String?
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: [account.provider], isProviderEnabled: { _ in true },
             executor: executor, store: fixture.store,
-            report: { _, message in warning = message },
+            report: { _, message in warning = message?.joined(separator: " ") },
             refresh: { _, _ in completed.fulfill() },
             now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
         )
@@ -109,10 +109,10 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         let completed = expectation(description: "Preparation failure reported")
         let executor = fixture.executor()
         var warning: String?
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: [account.provider], isProviderEnabled: { _ in true },
             executor: executor, store: fixture.store,
-            report: { _, message in warning = message },
+            report: { _, message in warning = message?.joined(separator: " ") },
             refresh: { _, _ in completed.fulfill() },
             now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
         )
@@ -143,10 +143,10 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
             do { try await Task.sleep(for: .seconds(30)) } catch { }
             return .init(launched: true, completed: false, updatedAuth: rotated, failureDescription: "Cancelled.")
         }
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: [account.provider], isProviderEnabled: { _ in true },
             executor: executor, store: fixture.store,
-            report: { _, message in reports.append(message) },
+            report: { _, message in reports.append(message?.joined(separator: " ")) },
             refresh: { _, _ in XCTFail("Shutdown must not start a refresh") },
             now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
         )
@@ -169,9 +169,9 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         let executor = fixture.executor()
         let completed = expectation(description: "Timer survives unrelated settings event")
         var reports: [String?] = []
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: [account.provider], isProviderEnabled: { _ in true },
-            executor: executor, store: fixture.store, report: { _, message in reports.append(message) },
+            executor: executor, store: fixture.store, report: { _, message in reports.append(message?.joined(separator: " ")) },
             refresh: { _, _ in completed.fulfill() },
             now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
         )
@@ -194,10 +194,10 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         let account = try fixture.account("first", cardID: "codex")
         let completed = expectation(description: "Preparation failure handled")
         var warning: String?
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: [account.provider], isProviderEnabled: { _ in true },
             executor: fixture.executor(), store: fixture.store,
-            report: { _, message in warning = message }, refresh: { _, _ in completed.fulfill() },
+            report: { _, message in warning = message?.joined(separator: " ") }, refresh: { _, _ in completed.fulfill() },
             now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
         )
         let snapshot = try await fixture.changedRefresh(account, router: router)
@@ -222,7 +222,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         let executor = fixture.executor()
         let completed = expectation(description: "Unchanged account finishes across catalog rebuild")
         let identityKeys = ["codex": "workspace-first"]
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: [original.provider], identityKeys: identityKeys, isProviderEnabled: { _ in true },
             executor: executor, store: fixture.store, report: { _, warning in XCTAssertNil(warning) },
             refresh: { _, isCurrent in XCTAssertTrue(isCurrent()); completed.fulfill() },
@@ -248,10 +248,10 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         let executor = fixture.executor()
         let completed = expectation(description: "Another card verifies the same account")
         var warnings: [String: String] = [:]
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: [first, duplicate, late, disabled, other].map(\.provider),
             isProviderEnabled: { $0 != "codex@disabled" }, executor: executor, store: fixture.store,
-            report: { warnings[$0] = $1 },
+            report: { warnings[$0] = $1?.joined(separator: " ") },
             refresh: { providerID, _ in
                 XCTAssertEqual(providerID, "codex@duplicate")
                 completed.fulfill()
@@ -294,9 +294,9 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
             let account = try fixture.account("first", cardID: "codex")
             let executor = fixture.executor()
             var warning: String?
-            let router = CodexWeeklyTimerRouter(
+            let router = UsageTimerRouter(
                 providers: [account.provider], isProviderEnabled: { _ in true },
-                executor: executor, store: fixture.store, report: { _, message in warning = message },
+                executor: executor, store: fixture.store, report: { _, message in warning = message?.joined(separator: " ") },
                 refresh: { _, _ in XCTFail("Rebinding must not send a timer message") },
                 now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
             )
@@ -355,9 +355,9 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         executor.beforeLaunch = { [weak executor] in executor?.startupFailureDescription = nil }
         let completed = expectation(description: "Cleanup and message finish")
         var warnings: [String: String] = [:]
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: [first.provider, second.provider], isProviderEnabled: { _ in true },
-            executor: executor, store: fixture.store, report: { warnings[$0] = $1 },
+            executor: executor, store: fixture.store, report: { warnings[$0] = $1?.joined(separator: " ") },
             refresh: { _, _ in completed.fulfill() },
             now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
         )
@@ -378,9 +378,9 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         let finished = expectation(description: "Obsolete candidate finishes")
         var resume: CheckedContinuation<Void, Never>?
         var warning: String?
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: [account.provider], isProviderEnabled: { _ in true },
-            executor: executor, store: fixture.store, report: { _, message in warning = message },
+            executor: executor, store: fixture.store, report: { _, message in warning = message?.joined(separator: " ") },
             refresh: { _, _ in finished.fulfill() }, now: { fixture.clock.current() },
             wait: { _ in
                 preparing.fulfill()
@@ -411,9 +411,9 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         executor.startupFailureDescription = "Temporary credentials could not be removed."
         var enabled: Set<String> = []
         var warnings: [String: String] = [:]
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: [first.provider], isProviderEnabled: { enabled.contains($0) },
-            executor: executor, store: fixture.store, report: { warnings[$0] = $1 },
+            executor: executor, store: fixture.store, report: { warnings[$0] = $1?.joined(separator: " ") },
             refresh: { _, _ in XCTFail("Publishing cleanup warnings must not refresh usage") }
         )
         XCTAssertTrue(warnings.isEmpty)
@@ -443,9 +443,9 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
                 first.http.response = .init(statusCode: 503, headers: [:], body: Data())
                 return .init(launched: true, completed: false, updatedAuth: nil, failureDescription: "Message timed out.")
             }
-            let router = CodexWeeklyTimerRouter(
+            let router = UsageTimerRouter(
                 providers: [first.provider, duplicate.provider], isProviderEnabled: { enabled.contains($0) },
-                executor: executor, store: fixture.store, report: { warnings[$0] = $1 },
+                executor: executor, store: fixture.store, report: { warnings[$0] = $1?.joined(separator: " ") },
                 refresh: { _, _ in completed.fulfill() },
                 now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
             )

@@ -64,14 +64,14 @@ final class StorageMigrationTests: XCTestCase {
 
     func testWeeklyTimerReservationsRemainEffectiveAfterMigration() throws {
         let legacyURL = root.appendingPathComponent("Application Support/OpenUsage/codex-weekly-timer-attempts.json")
-        let legacyStore = CodexWeeklyTimerAttemptStore(fileURL: legacyURL)
+        let legacyStore = UsageTimerAttemptStore(fileURL: legacyURL)
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         _ = try XCTUnwrap(legacyStore.begin(accountKey: "fixture", resetBefore: nil, now: now))
         _ = try XCTUnwrap(legacyStore.begin(accountKey: "fixture", resetBefore: nil, now: now.addingTimeInterval(301)))
 
         XCTAssertTrue(try StorageMigration.runIfNeeded(makeEnvironment(namespace: "com.kimchanhyung98.openusage")))
 
-        let migratedStore = CodexWeeklyTimerAttemptStore(
+        let migratedStore = UsageTimerAttemptStore(
             fileURL: root.appendingPathComponent("Application Support/egasu/codex-weekly-timer-attempts.json")
         )
         XCTAssertEqual(try migratedStore.attempt(for: "fixture")?.attemptedAt, now.addingTimeInterval(301))
@@ -81,7 +81,7 @@ final class StorageMigrationTests: XCTestCase {
             now.addingTimeInterval(24 * 60 * 60)
         )
         XCTAssertEqual(
-            CodexWeeklyTimerAttemptStore().fileURL,
+            UsageTimerAttemptStore().fileURL,
             StorageNamespace.current.applicationSupportDirectory()
                 .appendingPathComponent("codex-weekly-timer-attempts.json")
         )

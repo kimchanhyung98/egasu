@@ -71,7 +71,7 @@ final class RefreshSettingTests: XCTestCase {
     func testTimerRefreshDoesNotSkipTheNextFiveMinuteUsageRefresh() async {
         for trigger: RefreshTrigger in [.weeklyTimerCheck, .weeklyTimer] {
             let suite = makeDefaults("timer-\(trigger.rawValue)")
-            let clock = CodexWeeklyTimerRouterTests.ObservationClock(Date(timeIntervalSince1970: 1_800_000_000))
+            let clock = UsageTimerRouterTests.ObservationClock(Date(timeIntervalSince1970: 1_800_000_000))
             let runtime = TimerRefreshRuntime(now: { clock.current() })
             let cache = ProviderSnapshotCache(userDefaults: suite, storageKey: "snapshots", now: { clock.current() })
             let store = WidgetDataStore(
@@ -99,7 +99,7 @@ final class RefreshSettingTests: XCTestCase {
     func testFreshNonTimerRefreshRestoresScheduledCacheReuse() async {
         for trigger: RefreshTrigger in [.manual, .accountChange, .credentialChange, .resetClaim, .cli] {
             let suite = makeDefaults("timer-then-\(trigger.rawValue)")
-            let clock = CodexWeeklyTimerRouterTests.ObservationClock(Date(timeIntervalSince1970: 1_800_000_000))
+            let clock = UsageTimerRouterTests.ObservationClock(Date(timeIntervalSince1970: 1_800_000_000))
             let runtime = TimerRefreshRuntime(now: { clock.current() })
             let cache = ProviderSnapshotCache(userDefaults: suite, storageKey: "snapshots", now: { clock.current() })
             let store = WidgetDataStore(

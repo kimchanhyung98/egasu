@@ -290,3 +290,18 @@
 
 "Saved app data could not be moved. Check the app log and try again." = "저장된 앱 데이터를 옮기지 못했습니다. 앱 로그를 확인하고 다시 시도하세요.";
 "Cursor usage history could not be refreshed. Try again later." = "Cursor 사용 기록을 갱신하지 못했습니다. 잠시 후 다시 시도하세요.";
+
+"Usage timer account changed. Refresh this account and try again." = "사용량 타이머의 계정이 변경되었습니다. 이 계정을 새로고침한 뒤 다시 시도하세요.";
+"Usage timer credentials changed. Refresh this account before trying again." = "사용량 타이머의 인증 정보가 변경되었습니다. 이 계정을 새로고침한 뒤 다시 시도하세요.";
+"Usage timer could not verify this account's quota." = "사용량 타이머에서 이 계정의 한도 정보를 확인할 수 없습니다.";
+"Usage timer credentials changed. Refresh this account and try again." = "사용량 타이머의 인증 정보가 변경되었습니다. 이 계정을 새로고침한 뒤 다시 시도하세요.";
+"Usage timer could not select the requested model." = "사용량 타이머가 요청한 모델을 선택하지 못했습니다.";
+"Usage timer automation could not read its saved state. No message was sent." = "사용량 타이머 자동화의 저장된 상태를 읽지 못했습니다. 메시지를 보내지 않았습니다.";
+"Usage timer message could not be prepared. Refresh to try again." = "사용량 타이머 메시지를 준비하지 못했습니다. 새로고침하여 다시 시도하세요.";
+"Usage timer automation could not save its state. No message was sent." = "사용량 타이머 자동화의 상태를 저장하지 못했습니다. 메시지를 보내지 않았습니다.";
+"Usage timer automation could not update its saved state." = "사용량 타이머 자동화의 저장된 상태를 갱신하지 못했습니다.";
+"Usage timer message could not be started. Refresh after five minutes to try again." = "사용량 타이머 메시지 전송을 시작하지 못했습니다. 5분 뒤 새로고침하여 다시 시도하세요.";
+"Usage timer credentials could not be updated." = "사용량 타이머의 인증 정보를 갱신하지 못했습니다.";
+"Usage timer message completed, but the server reset time could not be confirmed." = "사용량 타이머 메시지 처리는 완료되었지만 서버의 초기화 시각을 확인하지 못했습니다.";
+"Usage timer message completion could not be confirmed. Retries wait at least five minutes and are limited to 2 attempts per usage window." = "사용량 타이머 메시지 처리 완료 여부를 확인하지 못했습니다. 재시도 간격은 최소 5분이며, 시도 횟수는 한도 기간 동안 2회로 제한됩니다.";
+"Usage timer messages paused: this quota reached the limit of 2 attempts in its usage window. Usage checks will continue." = "사용량 타이머 메시지 전송이 일시 중지되었습니다. 이 한도의 대상 기간에서 시도 상한인 2회에 도달했습니다. 사용량 조회는 계속됩니다.";
