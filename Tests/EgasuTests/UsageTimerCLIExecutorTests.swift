@@ -388,7 +388,19 @@ final class UsageTimerCLIExecutorTests: XCTestCase {
             XCTAssertEqual(result.completed, expected)
             let requests = await runner.requests
             XCTAssertEqual(requests.map(\.arguments).prefix(2), [["--help"], ["--version"]])
-            XCTAssertFalse(try XCTUnwrap(requests.last).arguments.contains("--print"))
+            let launches = requests.filter { $0.arguments.contains("--prompt") }
+            XCTAssertEqual(launches.count, 1)
+            let launch = try XCTUnwrap(launches.first)
+            let workspace = try XCTUnwrap(launch.currentDirectoryURL)
+            for (flag, value) in [
+                ("--prompt", UsageTimerCLIExecutor.prompt),
+                ("--agent-file", workspace.appendingPathComponent("timer.md").path),
+                ("--output-format", "stream-json"), ("--skills-dir", workspace.path)
+            ] {
+                let index = try XCTUnwrap(launch.arguments.firstIndex(of: flag))
+                XCTAssertEqual(launch.arguments.dropFirst(index + 1).first, value)
+            }
+            XCTAssertFalse(launch.arguments.contains("--print"))
             XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), [])
         }
     }
