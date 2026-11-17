@@ -2,6 +2,43 @@
 
 This changelog starts with v0.8.0, the first release of this fork.
 
+## v1.0.0-beta.2
+
+### New Features
+
+- Kimi CLI 설정의 공식 서버와 OAuth·API 키 인증을 지원하고 Total Usage·Extra Usage·Extra Balance 지표 추가. 요청 상세가 없는 로컬 기록의 토큰·모델별 추정 비용도 집계. ([#178](https://github.com/kimchanhyung98/egasu/pull/178)) by @kimchanhyung98
+- Cursor 사용 이력을 사용 이벤트 API로 수집하고 서버가 보고한 추가 과금액 표시. 무료·포함 사용의 토큰을 유지하며 이력 조회 실패 시 동일 계정의 기존 이력 보존. ([#180](https://github.com/kimchanhyung98/egasu/pull/180)) by @kimchanhyung98
+- 웹사이트 로고에 마우스를 올리거나 키보드로 선택하면 egasu가 usage로 바뀌는 애니메이션 추가. ([90a9bea](https://github.com/kimchanhyung98/egasu/commit/90a9bea377b75120a90cb3ee6f9e55db091e5a6b)) by @kimchanhyung98
+
+### Bug Fixes
+
+- Codex Rosalind 장문 요율과 Grok 모델 별칭의 가격 누락 수정. Z.ai 무료 캐시 사용이 섞인 비용 합계와 Copilot Free 플랜·한도 표시 보정. ([#163](https://github.com/kimchanhyung98/egasu/pull/163)) by @kimchanhyung98
+- 기존 OpenUsage 데이터·인증 정보를 egasu 저장 위치로 이전하고 개발 앱·CLI 저장 공간 분리. 이전 실패 시 기존 데이터를 보존하고 다음 실행에서 재시도. ([#172](https://github.com/kimchanhyung98/egasu/pull/172)) by @kimchanhyung98
+- HTTP 응답 본문을 로그에서 제외하고 네트워크 오류 구분 개선. 테스트 진단 로그 격리와 로컬 HTTP 서버 참조 수명 수정. ([#173](https://github.com/kimchanhyung98/egasu/pull/173)) by @kimchanhyung98
+- 별도 셸 설정 없이 기본 Claude CLI 로그인과 등록 계정 선택을 반영하고 첫 계정 등록 실패의 재로그인 복구 개선. 계정 전환·사용량 조회 중 계정과 조직을 검증해 기존 인증 정보 보호. ([#174](https://github.com/kimchanhyung98/egasu/pull/174)) by @kimchanhyung98
+- iCloud 사용 이력의 기존·새 저장 위치를 함께 읽고 기기별 최신 기록만 반영. 앱 전용 영역의 변경 감지와 파일 정리 재시도 개선. 계속 동기화할 모든 Mac에 새 버전 설치 필요. ([#176](https://github.com/kimchanhyung98/egasu/pull/176)) by @kimchanhyung98
+- Claude Fable·Mythos 5.2와 Gemini 신규 모델 별칭 지원 및 GPT-5.6 Sol·Gemini의 일반 정가 추정 보정. Fast·캐시·장문 요율을 유지하고 번들 가격표와 Cursor 모델명 표시 갱신. 정가 환산액은 한시 할인 청구액과 다를 수 있음. ([#177](https://github.com/kimchanhyung98/egasu/pull/177)) by @kimchanhyung98
+
+- Antigravity 한도 조회의 서버 우선순위와 클라이언트 식별을 보정하고 Argon Weekly 지표 추가. 비활성·잘못된 한도를 제외하고 소량 사용 시 재설정 카운트다운 유지. 원본 DB 변경 없이 종료된 대화 이력 수집 개선. ([#179](https://github.com/kimchanhyung98/egasu/pull/179)) by @kimchanhyung98
+
+### Refactor
+
+- 프로바이더 갱신 조정·작업·스냅샷 처리를 분리하고 계정별 갱신 상태 관리 정리. 부분 실패 시 마지막 정상 한도를 보존하고 로컬 이력과 동기화 표시 결과 분리. ([#175](https://github.com/kimchanhyung98/egasu/pull/175)) by @kimchanhyung98
+
+### Chores
+
+- 앱·사이트·가격표 게시 기준을 버전 태그로 통일하고 수동 게시·Pages 재배포를 검증된 소스와 산출물에 연결. ([#170](https://github.com/kimchanhyung98/egasu/pull/170)) by @kimchanhyung98
+- 개발 빌드의 서명·버전 설정과 실행 전 검사를 보강하고 수동 Swift 포맷 워크플로 추가. ([#171](https://github.com/kimchanhyung98/egasu/pull/171)) by @kimchanhyung98
+- 웹사이트의 Astro를 7.4.4에서 7.4.5로 업데이트. ([#164](https://github.com/kimchanhyung98/egasu/pull/164)) by @dependabot[bot]
+- PostHog SDK를 3.92.7에서 3.93.6으로 업데이트. ([#165](https://github.com/kimchanhyung98/egasu/pull/165)) by @dependabot[bot]
+- 기존 변경 이력의 v1.0.0 표기를 v1.0.0-beta.1로 정정. ([b8313cf](https://github.com/kimchanhyung98/egasu/commit/b8313cf0ba7abec12e868130054c37f9bffba1c9)) by @kimchanhyung98
+
+---
+
+### Changelog
+
+**Full Changelog**: [v1.0.0-beta.1...v1.0.0-beta.2](https://github.com/kimchanhyung98/egasu/compare/9402b49bc1dbcdef5c6eec4c53b25a84a17c7c78...3c51519e95ed37477deaf59d213081f324505af8)
+
 ## v1.0.0-beta.1
 
 ### 새 기능
