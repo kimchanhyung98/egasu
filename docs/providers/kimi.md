@@ -58,6 +58,9 @@ USD 지출은 양수 상한이 켜진 경우 금액·상한 게이지로 표시.
 ## 구독 타이머
 
 적용 한도·실행 조건·CLI 로그인 요건은 [구독 타이머 자동 시작](/docs/refreshing.md#구독-타이머-자동-시작) 참조.
+자동 전송은 환경 변수 인증을 지원하는 Node.js Kimi Code CLI 2.0.1 이상 지원.
+[공식 명령 규약](https://moonshotai.github.io/kimi-code/en/reference/kimi-command.html)의 `--prompt`와 [Markdown agent 형식](https://moonshotai.github.io/kimi-code/en/customization/agents)의 빈 도구 목록 사용.
+Python CLI 1.x는 실행 전에 호환 오류로 차단.
 월간 총한도가 소진된 계정은 자동 메시지 전송 대상에서 제외.
 추가 사용량의 지출 상한은 구독 한도 소진으로 취급하지 않음.
 확인된 OAuth 계정과 같은 Code 서버 사용.

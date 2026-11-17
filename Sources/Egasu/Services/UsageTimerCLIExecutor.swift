@@ -72,10 +72,21 @@ final class UsageTimerCLIExecutor: UsageTimerCLIExecuting {
             let helpText = help.output + "\n" + help.standardError
             let required =
                 configuration.executable == "kimi"
-                ? ["--prompt", "--agent-file", "--output-format"]
+                ? ["--prompt", "--agent-file", "--output-format", "--skills-dir"]
                 : ["--print", "--output-format", "--model"]
             guard help.exitCode == 0, required.allSatisfy({ helpText.contains($0) }) else {
                 throw ExecutorError.unsupportedCLI
+            }
+            if case .kimi = configuration {
+                var versionRequest = helpRequest
+                versionRequest.arguments = ["--version"]
+                let version = try await runner.run(versionRequest)
+                let components = version.output.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ".")
+                let numbers = components.compactMap { Int($0) }
+                // 환경 변수 인증과 Markdown agent를 지원하는 Node.js 2.0.1 이상만 전송.
+                guard version.exitCode == 0, components.count == 3, numbers.count == 3,
+                    !numbers.lexicographicallyPrecedes([2, 0, 1])
+                else { throw ExecutorError.unsupportedCLI }
             }
             if case .antigravity(let prefix) = configuration {
                 let prefixes = prefix == "claude-" ? ["claude-", "gpt-oss-"] : [prefix]
@@ -182,6 +193,7 @@ final class UsageTimerCLIExecutor: UsageTimerCLIExecuting {
             let config = """
                 default_model = "timer"
                 auto_session_title = false
+                telemetry = false
                 builtin_product_skills = false
                 merge_all_available_skills = false
                 [providers.timer]

@@ -150,9 +150,14 @@ final class UsageTimerCLIExecutorTests: XCTestCase {
         XCTAssertEqual(request.environment["KIMI_CODE_HOME"], directory.path)
         let config = try String(contentsOf: directory.appendingPathComponent("config.toml"), encoding: .utf8)
         XCTAssertFalse(config.contains("test-private-token"))
+        XCTAssertTrue(config.contains("api_key_env = \"EGASU_KIMI_TOKEN\""))
+        XCTAssertTrue(config.contains("telemetry = false"))
         XCTAssertTrue(config.contains("https://api.kimi.com/coding/v1"))
         let agent = try String(contentsOf: directory.appendingPathComponent("timer.md"), encoding: .utf8)
         XCTAssertTrue(agent.contains("tools: []"))
+        XCTAssertTrue(agent.hasPrefix("---\nname: timer\n"))
+        XCTAssertTrue(request.arguments.contains("--prompt"))
+        XCTAssertFalse(request.arguments.contains("--print"))
     }
 
     func testZAIUsesCodingPlanThroughBareClaudeCLI() throws {
@@ -365,6 +370,50 @@ final class UsageTimerCLIExecutorTests: XCTestCase {
         XCTAssertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: directory.path)), ["node", "claude"])
     }
 
+    func testKimiTwoXUsesPromptModeAndRequiresSuccessfulAssistantOutput() async throws {
+        for (version, body, expected) in [
+            ("2.0.1", #"{"role":"assistant","content":"OK"}"#, true),
+            ("2.6.0", #"{"role":"assistant","content":"OK"}"#, true),
+            ("2.6.0", #"{"role":"tool","content":"OK"}"#, false), ("2.6.0", "OK", false)
+        ] {
+            let directory = try temporaryDirectory()
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let runner = Runner(outputs: [Self.help, version, body])
+            let executor = UsageTimerCLIExecutor(
+                runner: runner, resolve: { _ in URL(fileURLWithPath: "/test/kimi") }, baseDirectory: directory)
+
+            let result = await executor.execute(.kimi(accessToken: "fixture-token"), canLaunch: { true })
+
+            XCTAssertTrue(result.launched)
+            XCTAssertEqual(result.completed, expected)
+            let requests = await runner.requests
+            XCTAssertEqual(requests.map(\.arguments).prefix(2), [["--help"], ["--version"]])
+            XCTAssertFalse(try XCTUnwrap(requests.last).arguments.contains("--print"))
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), [])
+        }
+    }
+
+    func testPythonKimiOrUnknownVersionCannotLaunchOrConsumeMessageAttempt() async throws {
+        for version in ["1.46.0", "kimi, version 1.46.0", "2.0.0", "2.bad.6.1", "unknown"] {
+            let directory = try temporaryDirectory()
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let runner = Runner(outputs: [Self.help, version])
+            let executor = UsageTimerCLIExecutor(
+                runner: runner, resolve: { _ in URL(fileURLWithPath: "/test/kimi") }, baseDirectory: directory)
+
+            let result = await executor.execute(.kimi(accessToken: "fixture-token"), canLaunch: { true })
+
+            XCTAssertFalse(result.launched)
+            XCTAssertFalse(result.completed)
+            XCTAssertEqual(
+                result.failureDescription,
+                "Usage timer requires the provider's current CLI. Install or update it and refresh.")
+            let requests = await runner.requests
+            XCTAssertEqual(requests.map(\.arguments), [["--help"], ["--version"]])
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), [])
+        }
+    }
+
     private struct UnavailableShellRunner: ProcessRunning {
         func run(executable: String, arguments: [String], environment: [String: String], timeout: TimeInterval) throws
             -> ProcessResult
@@ -400,7 +449,7 @@ final class UsageTimerCLIExecutorTests: XCTestCase {
         }
     }
 
-    private static let help = "--print --prompt --output-format --model --agent-file"
+    private static let help = "--print --prompt --output-format --model --agent-file --skills-dir"
     private func temporaryDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

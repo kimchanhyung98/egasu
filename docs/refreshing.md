@@ -116,7 +116,8 @@ Antigravity의 Argon 한도는 자동 메시지 대상에서 제외.
   실행 직전 해당 계정 인증을 다시 확인하고, 토큰 변경·삭제 시 전송 중단.
   공통 Session·Weekly 한도 소진 시 전송 중단.
   Haiku에 적용되지 않는 Fable·Sonnet 한도는 시작 조건에서 제외.
-- Kimi: 공식 `kimi --prompt` 사용.
+- Kimi: Node.js Kimi Code CLI 2.0.1 이상의 공식 `kimi --prompt` 사용.
+  Python CLI 1.x는 메시지 실행 전에 호환 오류로 차단.
   인증 스토어에서 읽은 유효한 OAuth access token을 임시 프로세스 환경에만 전달.
   주체 식별자와 충분한 토큰 유효 기간이 있는 응답만 자동 실행에 사용.
   API 키만 있는 계정은 자동 메시지 대상에서 제외하고, OAuth 조회와 같은 Code 서버 사용.
