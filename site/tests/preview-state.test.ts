@@ -78,7 +78,7 @@ test('Soft Limit windows match every native provider declaration', () => {
       }
     }
   }
-  assert.equal(Object.keys(native).length, 19, 'Every native Soft Limit declaration must be checked');
+  assert.equal(Object.keys(native).length, 20, 'Every native Soft Limit declaration must be checked');
   assert.deepEqual(softLimitWindows, native);
 });
 

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Antigravity(Google의 Codeium/Windsurf 계열 AI IDE)의 pool quota 추적. quota는 fraction 기반, 최대 4개 percent meter — 공유 Gemini pool과 공유 비Gemini pool(Claude, GPT-OSS), 각각 rolling 5시간 + weekly window.
+/// Antigravity의 공유 Gemini·비Gemini 5시간·주간 한도와 별도 Argon 주간 한도 추적.
 /// probe 순서(좋은 source 우선): 1) Antigravity language server(실행 중 앱) — authoritative plan 제공, 2) `agy` language server(실행 중 CLI), 3) Keychain token → Google Cloud Code(앱 종료 시에도 동작, Google OAuth로 refresh).
 /// 각 source에서 `RetrieveUserQuotaSummary` 우선(병합 pool·weekly window를 보고하는 유일한 endpoint) — 미지원 빌드는 legacy per-model endpoint로 fallback, 5h 전용이라 weekly meter는 "No data".
 @MainActor
@@ -64,7 +64,10 @@ final class AntigravityProvider: ProviderRuntime {
                 .exportingLimit("nonGeminiSession", unit: "percent"),
             .percent(id: AntigravityMetric.claudeWeeklyID, provider: provider, title: AntigravityMetric.claudeWeeklyLabel)
                 .supportingSoftLimit(.weekly)
-                .exportingLimit("nonGeminiWeekly", unit: "percent")
+                .exportingLimit("nonGeminiWeekly", unit: "percent"),
+            .percent(id: AntigravityMetric.argonWeeklyID, provider: provider, title: AntigravityMetric.argonWeeklyLabel)
+                .supportingSoftLimit(.weekly)
+                .exportingLimit("argonWeekly", unit: "percent")
         ]
     }
 

@@ -6,6 +6,7 @@ import Foundation
 enum DefaultLayout {
     static let metricIDs: [String] = [
         "antigravity.geminiPro", "antigravity.geminiWeekly", "antigravity.claude", "antigravity.claudeWeekly",
+        "antigravity.argonWeekly",
 
         "claude.session", "claude.weekly", "claude.fable", "claude.trend",
         "claude.today", "claude.yesterday",
@@ -72,8 +73,8 @@ enum DefaultLayout {
     /// 활성화가 아닌 소속 목록 — 비활성 optional row도 나중에 켜면 caret 아래 등장
     /// registry 필터링 적용, 순수 신규 설치에서만 시드
     static let expandedMetricIDs: [String] = [
-        // Antigravity: Gemini pool 쌍은 fold 위, Claude pool 쌍은 caret 아래
-        "antigravity.claude", "antigravity.claudeWeekly",
+        // Antigravity: Gemini pool 쌍은 fold 위, Claude pool 쌍·Argon 주간은 caret 아래
+        "antigravity.claude", "antigravity.claudeWeekly", "antigravity.argonWeekly",
         // Claude: Session·Weekly·Fable은 fold 위, Trend·optional limit·Extra Usage·spend history는 caret 아래
         "claude.trend", "claude.extra", "claude.sonnet",
         "claude.today", "claude.yesterday", "claude.last30",

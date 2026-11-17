@@ -16,7 +16,7 @@ The app updates itself in place via signed, notarized [Sparkle](docs/updates.md)
 
 ## Supported Providers
 
-- **[Antigravity](docs/providers/antigravity.md)** — shared Gemini and Claude pool quotas, 5-hour and weekly windows
+- **[Antigravity](docs/providers/antigravity.md)** — 공유 Gemini·Claude의 5시간·주간 한도, 계정별 Argon 주간 한도와 로컬 사용 이력
 - **[Claude](docs/providers/claude.md)** — session, weekly, model-specific limits, extra usage, local daily spend
 - **[Codex](docs/providers/codex.md)** — session, weekly, credits, local daily spend
 - **[Copilot](docs/providers/copilot.md)** — AI credits, extra usage, organization billing, chat and completions

@@ -10,6 +10,17 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
         return used
     }
 
+    /// 사용률은 반올림하지 않은 원값 — 부동소수점 오차를 허용해 비교.
+    private func assertUsed(
+        _ lines: [MetricLine], _ expected: [Double], file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let actual = lines.map { used($0) }
+        XCTAssertEqual(actual.count, expected.count, "\(actual)", file: file, line: line)
+        for (value, want) in zip(actual, expected) {
+            XCTAssertEqual(value ?? .nan, want, accuracy: 0.0001, "\(actual)", file: file, line: line)
+        }
+    }
+
     private func resetsAt(_ line: MetricLine?) -> Date? {
         guard case .progress(_, _, _, _, let resetsAt, _, _)? = line else { return nil }
         return resetsAt
@@ -36,6 +47,59 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
 
     // MARK: - Parser
 
+    func testSeparateArgonWeeklyBucketKeepsItsOwnQuotaAndReset() throws {
+        let extra =
+            #"{"bucketId":"gemini-argon-wtu-weekly","window":"weekly","remainingFraction":0.3,"resetTime":"2026-11-20T09:00:00Z","disabled":false}"#
+        let json =
+            #"{"groups":[{"displayName":"Gemini 4 Argon","buckets":[\#(extra)]},{"buckets":[{"bucketId":"gemini-weekly","remainingFraction":0.9}]}]}"#
+        for body in [json, #"{"response":\#(json)}"#] {
+            let lines = try XCTUnwrap(AntigravityUsageMapper.parseQuotaSummary(Data(body.utf8)))
+            XCTAssertEqual(lines.map(\.label), ["Weekly", "Argon Weekly"])
+            assertUsed(lines, [10, 70])
+            XCTAssertEqual(periodMs(lines.last), MetricPeriod.weekMs)
+            XCTAssertEqual(resetsAt(lines.last), EgasuISO8601.date(from: "2026-11-20T09:00:00Z"))
+        }
+    }
+
+    func testArgonRequiresKnownUsableEnabledBucket() {
+        let bodies = [
+            #"{"displayName":"Gemini 4 Argon","buckets":[{"bucketId":"unknown-weekly","window":"weekly","remainingFraction":0.3}]}"#,
+            #"{"buckets":[{"bucketId":"gemini-argon-wtu-weekly","disabled":true,"remainingFraction":0}]}"#,
+            #"{"buckets":[{"bucketId":"gemini-argon-wtu-weekly","disabled":"false","remainingFraction":0}]}"#,
+            #"{"buckets":[{"bucketId":"gemini-argon-wtu-weekly"}]}"#
+        ]
+        for group in bodies {
+            let data = Data(#"{"groups":[\#(group)]}"#.utf8)
+            XCTAssertEqual(AntigravityUsageMapper.parseQuotaSummary(data), [], group)
+        }
+        XCTAssertTrue(
+            AntigravityUsageMapper.isCompleteSummary(Data("{\(fullGroupsJSON)}".utf8)),
+            "별도 Argon 한도가 없는 계정도 공유 한도 네 개로 완전한 요약")
+    }
+
+    @MainActor
+    func testArgonRowRequiresReportedQuotaAndExportsItsWeeklyResource() throws {
+        let provider = AntigravityProvider(usageScan: { _, _ in nil }, pricing: { .empty })
+        let registry = WidgetRegistry(providers: [provider.provider], descriptors: provider.widgetDescriptors)
+        let suite = "EgasuTests.ArgonQuota.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = WidgetDataStore(
+            registry: registry, providers: [], cache: ProviderSnapshotCache(userDefaults: defaults), defaults: defaults
+        )
+        let descriptor = try XCTUnwrap(registry.descriptor(id: AntigravityMetric.argonWeeklyID))
+        store.snapshots["antigravity"] = .init(providerID: "antigravity", displayName: "Antigravity", lines: [])
+        XCTAssertFalse(store.data(for: descriptor).hasData, "별도 quota 없는 계정에 0%를 만들지 않음")
+        let json =
+            #"{"groups":[{"buckets":[{"bucketId":"gemini-argon-wtu-weekly","remainingFraction":0.3,"resetTime":"2026-11-20T09:00:00Z"}]}]}"#
+        store.snapshots["antigravity"]?.lines = try XCTUnwrap(AntigravityUsageMapper.parseQuotaSummary(Data(json.utf8)))
+        let data = store.data(for: descriptor)
+        XCTAssertTrue(data.hasData)
+        XCTAssertEqual(data.used, 70)
+        XCTAssertEqual(data.periodDurationMs, MetricPeriod.weekMs)
+        XCTAssertEqual(descriptor.limitResources.map(\.key), ["argonWeekly"])
+    }
+
     func testWrappedAndBarePayloadsProduceIdenticalFourLines() {
         let bare = AntigravityUsageMapper.parseQuotaSummary(Data("{\(fullGroupsJSON)}".utf8))
         let wrapped = AntigravityUsageMapper.parseQuotaSummary(Data("{\"response\":{\(fullGroupsJSON)}}".utf8))
@@ -43,7 +107,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
 
         guard let lines = bare else { return XCTFail("full summary did not parse") }
         XCTAssertEqual(lines.map(\.label), ["Session", "Weekly", "Claude", "Claude Weekly"])
-        XCTAssertEqual(lines.map { used($0) }, [25, 10, 60, 0])
+        assertUsed(lines, [25, 10, 60, 0])
         XCTAssertEqual(resetsAt(lines[0]), EgasuISO8601.date(from: "2026-07-02T16:00:00Z"))
         XCTAssertEqual(resetsAt(lines[2]), EgasuISO8601.date(from: "2026-07-02T15:30:00Z"))
         XCTAssertEqual(lines.map { periodMs($0) }, [
@@ -143,7 +207,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
         XCTAssertEqual(Set(AntigravityUsageMapper.summaryBuckets.map(\.label)), descriptorLabels)
 
         let summaryLines = AntigravityUsageMapper.parseQuotaSummary(Data("{\(fullGroupsJSON)}".utf8)) ?? []
-        XCTAssertEqual(Set(summaryLines.map(\.label)), descriptorLabels)
+        XCTAssertEqual(Set(summaryLines.map(\.label)), descriptorLabels.subtracting(["Argon Weekly"]))
 
         // legacy 경로는 5h pool 라벨 2개만 방출 — descriptor의 진부분집합
         let legacyLabels = Set(AntigravityUsageMapper.buildLines([
@@ -188,7 +252,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
         let snapshot = await provider.refresh()
         XCTAssertEqual(snapshot.plan, "Pro")
         XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Weekly", "Claude", "Claude Weekly"])
-        XCTAssertEqual(snapshot.lines.map { used($0) }, [25, 10, 60, 0])
+        assertUsed(snapshot.lines, [25, 10, 60, 0])
         XCTAssertFalse(routing.requests.contains { $0.url.path.contains("fetchAvailableModels") },
                        "a parsed summary must not touch the legacy model endpoints")
     }
@@ -293,7 +357,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
         let snapshot = await provider.refresh()
         // summary 값이 승 — legacy GetUserStatus config가 pool할 1%-used 단일 라인 아님
         XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Weekly", "Claude", "Claude Weekly"])
-        XCTAssertEqual(snapshot.lines.map { used($0) }, [25, 10, 60, 0])
+        assertUsed(snapshot.lines, [25, 10, 60, 0])
         XCTAssertEqual(snapshot.plan, "Pro")
         XCTAssertFalse(routing.requests.contains { $0.url.path.hasSuffix("/GetCommandModelConfigs") })
     }
@@ -341,7 +405,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
 
         let snapshot = await provider.refresh()
         XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Claude"])
-        XCTAssertEqual(snapshot.lines.map { used($0) }, [50, 20])
+        assertUsed(snapshot.lines, [50, 20])
         XCTAssertEqual(snapshot.plan, "Pro")
     }
 }

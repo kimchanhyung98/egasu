@@ -33,7 +33,8 @@ final class SoftLimitDescriptorTests: XCTestCase {
             "antigravity.geminiPro": .fiveHours,
             "antigravity.geminiWeekly": .weekly,
             "antigravity.claude": .fiveHours,
-            "antigravity.claudeWeekly": .weekly
+            "antigravity.claudeWeekly": .weekly,
+            "antigravity.argonWeekly": .weekly
         ])
         XCTAssertEqual(windows(KimiProvider().widgetDescriptors), [
             "kimi.session": .fiveHours,

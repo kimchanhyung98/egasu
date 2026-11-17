@@ -211,6 +211,7 @@ export const softLimitWindows: Partial<Record<string, '5 Hours' | 'Weekly'>> = {
   'antigravity.geminiWeekly': 'Weekly',
   'antigravity.claude': '5 Hours',
   'antigravity.claudeWeekly': 'Weekly',
+  'antigravity.argonWeekly': 'Weekly',
   'grok.weekly': 'Weekly',
   'kimi.session': '5 Hours',
   'kimi.weekly': 'Weekly',

@@ -343,8 +343,8 @@ final class AntigravityProviderTests: XCTestCase {
         XCTAssertEqual(snapshot.plan, "Pro")
         // legacy per-model 데이터가 두 pool 미터로 병합 (pool별 최악 fraction)
         XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Claude"])
-        XCTAssertEqual(used(snapshot.lines[0]), 60)
-        XCTAssertEqual(used(snapshot.lines[1]), 30)
+        XCTAssertEqual(used(snapshot.lines[0]) ?? .nan, 60, accuracy: 0.0001)
+        XCTAssertEqual(used(snapshot.lines[1]) ?? .nan, 30, accuracy: 0.0001)
     }
 
     @MainActor
