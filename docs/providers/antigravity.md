@@ -42,6 +42,9 @@ Argon 주간 한도는 공유 Gemini 주간 한도와 합치지 않음.
 앱·CLI·독립 실행형 Antigravity IDE의 `~/.gemini/antigravity/conversations/*.db`, `~/.gemini/antigravity-cli/conversations/*.db`, `~/.gemini/antigravity-ide/conversations/*.db`를 읽기 전용으로 조회.
 DB 헤더로 형식을 먼저 확인하고, 일반 DB는 전체 파일을 메모리에 복사하지 않고 SQLite로 조회.
 WAL(미반영 변경을 보관하는 SQLite 보조 파일)이 없는 WAL 형식 DB는 변경 여부를 확인한 메모리 복사본에서 조회.
+이 경로는 복사 중 DB 크기의 약 두 배를 임시 버퍼로 사용하므로, 큰 DB는 메모리 사용량 증가.
+SQLite 조회와 추출 이력의 메모리는 별도.
+파일이 바뀌지 않고 필요한 조회 범위가 캐시에 포함되면 파싱 결과 재사용.
 원본 DB 수정이나 보조 파일 생성 없이 종료된 대화 기록도 수집.
 WAL 파일이 있으면 SQLite 트랜잭션으로 현재 기록을 읽으며, 복사 중 원본이 바뀌면 해당 조회는 실패로 처리.
 공식 VS Code 확장의 기본 백엔드는 앱 데이터 경로를 사용하므로 같은 원장을 별도 수집하지 않음.

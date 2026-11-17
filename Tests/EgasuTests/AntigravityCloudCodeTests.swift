@@ -53,9 +53,13 @@ final class AntigravityCloudCodeTests: XCTestCase {
         let complete = response(completeSummary)
         let claudeOnly = response(claudeSummary)
         let plan = response(#"{"paidTier":{"name":"Google AI Pro"}}"#)
+        let supportedUserAgents = [
+            "antigravity/hub/2.24.0 (aidev_client; os_type=darwin; arch=arm64)",
+            "antigravity/hub/2.24.0 (aidev_client; os_type=darwin; arch=amd64)"
+        ]
         let routing = RoutingHTTPClient { request in
             if request.url.path == AntigravityUsageClient.quotaSummaryPath {
-                let supported = request.headers["User-Agent"]?.contains("(aidev_client; os_type=darwin; arch=") == true
+                let supported = supportedUserAgents.contains(request.headers["User-Agent"] ?? "")
                 return supported ? complete : claudeOnly
             }
             if request.url.path == AntigravityUsageClient.loadCodeAssistPath { return plan }

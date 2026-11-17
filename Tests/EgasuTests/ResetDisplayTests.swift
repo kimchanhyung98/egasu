@@ -133,16 +133,32 @@ final class ResetDisplayTests: XCTestCase {
         XCTAssertEqual(suffixed.first?.sample.traySuffix, "resets")
     }
 
-    func testAntigravityWeeklyRowsNeverReadNotStarted() {
+    func testAntigravityWeeklyRowsNeverReadNotStarted() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let period: TimeInterval = 7 * 24 * 3600
-        for id in ["antigravity.geminiWeekly", "antigravity.claudeWeekly", "antigravity.argonWeekly"] {
-            var data = WidgetData(title: "Weekly", icon: .providerMark("codex"), kind: .percent, used: 0, limit: 100)
-            data.periodDurationMs = Int(period * 1000)
-            data.resetsAt = now.addingTimeInterval(period / 2)
-            XCTAssertFalse(data.isFreshSessionWindow(now: now), id)
-            XCTAssertNotEqual(data.boundedTrailingText(now: now), "Not started", id)
-            XCTAssertEqual(data.boundedTrailingText(now: now)?.hasPrefix("Resets"), true, id)
+        let provider = AntigravityProvider(usageScan: { _, _ in nil }, pricing: { .empty })
+        let registry = WidgetRegistry(providers: [provider.provider], descriptors: provider.widgetDescriptors)
+        let reset = EgasuISO8601.string(from: now.addingTimeInterval(period / 2))
+        let buckets = ["gemini-weekly", "3p-weekly", "gemini-argon-wtu-weekly"].map {
+            ["bucketId": $0, "remainingFraction": 1, "resetTime": reset] as [String: Any]
+        }
+        let payload = try JSONSerialization.data(withJSONObject: ["groups": [["buckets": buckets]]])
+        let snapshot = ProviderSnapshot(
+            providerID: provider.provider.id, displayName: provider.provider.displayName,
+            lines: try XCTUnwrap(AntigravityUsageMapper.parseQuotaSummary(payload)), refreshedAt: now
+        )
+        try L10n.withLanguage(.english) {
+            for id in ["antigravity.geminiWeekly", "antigravity.claudeWeekly", "antigravity.argonWeekly"] {
+                let descriptor = try XCTUnwrap(registry.descriptor(id: id))
+                var data = WidgetDataResolver.resolve(descriptor, snapshot: snapshot, codexResetWatch: .init())
+                data.resetDisplayMode = .relative
+                XCTAssertTrue(data.hasData, id)
+                XCTAssertEqual(data.used, 0, id)
+                XCTAssertEqual(data.periodDurationMs, Int(period * 1000), id)
+                XCTAssertFalse(data.isFreshSessionWindow(now: now), id)
+                XCTAssertNotEqual(data.boundedTrailingText(now: now), "Not started", id)
+                XCTAssertEqual(data.boundedTrailingText(now: now)?.hasPrefix("Resets"), true, id)
+            }
         }
     }
 
