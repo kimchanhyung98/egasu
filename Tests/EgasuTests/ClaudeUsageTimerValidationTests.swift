@@ -60,6 +60,33 @@ final class ClaudeUsageTimerValidationTests: XCTestCase {
         XCTAssertNil(fixture.cli.token)
     }
 
+    func testMalformedWeeklyQuotaCannotPrepareOrLaunchAnAutomaticMessage() async throws {
+        for weekly in ["unavailable", ["utilization": "unavailable"], ["utilization": -1]] as [Any] {
+            let fixture = try Fixture()
+            defer { fixture.remove() }
+            _ = await fixture.provider.refresh()
+            let expected = try XCTUnwrap(fixture.provider.usageTimerObservations.first)
+            fixture.files.quotaBody = try JSONSerialization.data(withJSONObject: [
+                "five_hour": ["utilization": 0], "seven_day": weekly
+            ])
+
+            do {
+                let prepared = try await fixture.provider.prepareUsageTimer(expected, executors: fixture.executors)
+                if let prepared {
+                    let result = await prepared.send { true }
+                    XCTAssertFalse(result.launched)
+                }
+                XCTFail("Malformed Weekly quota must fail preparation")
+            } catch {
+                XCTAssertEqual(error.localizedDescription, UsageTimerError.usageUnavailable.localizedDescription)
+            }
+
+            XCTAssertTrue(fixture.provider.usageTimerObservations.isEmpty)
+            XCTAssertNil(fixture.provider.usageTimerCredentialState)
+            XCTAssertNil(fixture.cli.token)
+        }
+    }
+
     func testVerificationCannotConfirmQuotaWhenStateSaveFails() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
@@ -123,8 +150,9 @@ final class ClaudeUsageTimerValidationTests: XCTestCase {
                 }
                 return .init(
                     statusCode: 200, headers: [:],
-                    body: Data(
-                        #"{"five_hour":{"utilization":0},"seven_day":{"utilization":20}}"#.utf8))
+                    body: files.quotaBody
+                        ?? Data(
+                            #"{"five_hour":{"utilization":0},"seven_day":{"utilization":20}}"#.utf8))
             }
             provider = ClaudeProvider(
                 authStore: auth, usageClient: ClaudeUsageClient(httpClient: http),
@@ -146,6 +174,7 @@ final class ClaudeUsageTimerValidationTests: XCTestCase {
         ])
         var rotateAfterSaved = false
         var blockNextStateSave = false
+        var quotaBody: Data?
         init(directory: URL) { self.directory = directory }
         func exists(_ path: String) -> Bool { base.exists(path) }
         func readText(_ path: String) throws -> String {
