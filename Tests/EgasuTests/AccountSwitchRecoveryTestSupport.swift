@@ -198,6 +198,10 @@ final class SwitchRecoveryKeychain: KeychainAccessing, @unchecked Sendable {
         }
     }
 
+    func readGenericPassword(service: String, allowInteraction: Bool) throws -> String? {
+        try readAppOwnedPassword(service: service, forCurrentUser: false, allowInteraction: allowInteraction)
+    }
+
     func readGenericPasswordForCurrentUser(service: String) throws -> String? {
         try beforeRead?(service)
         return try lock.withLock {
