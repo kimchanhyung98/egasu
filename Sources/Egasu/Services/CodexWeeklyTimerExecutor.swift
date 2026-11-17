@@ -16,13 +16,17 @@ protocol CodexWeeklyTimerExecuting {
         auth: CodexAuth,
         canLaunch: @escaping @MainActor () async -> Bool
     ) async -> CodexWeeklyTimerExecutionResult
-    func execute(auth: CodexAuth, model: String?, canLaunch: @escaping @MainActor () async -> Bool) async -> CodexWeeklyTimerExecutionResult
+    func execute(
+        auth: CodexAuth, model: String?, canLaunch: @escaping @MainActor () async -> Bool
+    ) async -> CodexWeeklyTimerExecutionResult
 }
 
 extension CodexWeeklyTimerExecuting {
     var startupFailureDescription: String? { nil }
 
-    func execute(auth: CodexAuth, model: String?, canLaunch: @escaping @MainActor () async -> Bool) async -> CodexWeeklyTimerExecutionResult {
+    func execute(
+        auth: CodexAuth, model: String?, canLaunch: @escaping @MainActor () async -> Bool
+    ) async -> CodexWeeklyTimerExecutionResult {
         guard model == nil else {
             return .init(launched: false, completed: false, updatedAuth: nil,
                          failureDescription: "Usage timer could not select the requested model.")
@@ -99,7 +103,9 @@ final class CodexWeeklyTimerExecutor: CodexWeeklyTimerExecuting {
         await execute(auth: auth, model: nil, canLaunch: canLaunch)
     }
 
-    func execute(auth: CodexAuth, model: String?, canLaunch: @escaping @MainActor () async -> Bool) async -> CodexWeeklyTimerExecutionResult {
+    func execute(
+        auth: CodexAuth, model: String?, canLaunch: @escaping @MainActor () async -> Bool
+    ) async -> CodexWeeklyTimerExecutionResult {
         guard !Task.isCancelled else { return failure("Codex weekly timer message was cancelled.") }
         guard auth.tokens?.accessToken?.isEmpty == false,
               auth.tokens?.refreshToken?.isEmpty == false,

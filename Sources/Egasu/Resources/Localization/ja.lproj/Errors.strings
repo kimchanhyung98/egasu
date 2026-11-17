@@ -292,8 +292,6 @@
 "Cursor usage history could not be refreshed. Try again later." = "Cursor の使用履歴を更新できませんでした。しばらくしてから再試行してください。";
 
 "Usage timer account changed. Refresh this account and try again." = "使用量タイマーのアカウントが変更されました。このアカウントを更新して、もう一度お試しください。";
-"Usage timer could not verify current quota data. No message was sent." = "使用量タイマーが最新の使用上限を確認できませんでした。メッセージは送信していません。";
-"Usage timer requires this account to be signed in to the provider's CLI." = "使用量タイマーを開始するには、プロバイダーのCLIにこのアカウントでログインしてください。";
 "Usage timer credentials changed. Refresh this account before trying again." = "使用量タイマーの認証情報が変更されました。このアカウントを更新してから、もう一度試してください。";
 "Usage timer could not verify this account's quota." = "使用量タイマーでこのアカウントの使用上限を確認できませんでした。";
 "Usage timer credentials changed. Refresh this account and try again." = "使用量タイマーの認証情報が変更されました。このアカウントを更新して、もう一度お試しください。";

@@ -35,13 +35,21 @@ final class CodexWeeklyTimerProviderTests: XCTestCase {
             _ = await fixture.provider.refresh()
             let observations = fixture.provider.usageTimerObservations
             let executor = ModelRecordingExecutor()
+            var expectedModels: [String?] = []
             for pool in ["default", "spark"] {
                 let timerID = "codex.\(pool).session"
                 let observation = try XCTUnwrap(observations.first { $0.timerID == timerID })
                 let session = try await fixture.provider.prepareUsageTimer(observation, executors: .init(codex: executor))
                 XCTAssertEqual(session == nil, pool == exhaustedPool, timerID)
+                if let session {
+                    let result = await session.send { true }
+                    XCTAssertTrue(result.launched)
+                    XCTAssertTrue(result.completed)
+                    expectedModels.append(pool == "spark" ? "gpt-5.3-codex-spark" : nil)
+                }
+                XCTAssertEqual(executor.models, expectedModels, timerID)
             }
-            XCTAssertTrue(executor.models.isEmpty)
+            XCTAssertEqual(executor.models.count, 1)
         }
     }
 

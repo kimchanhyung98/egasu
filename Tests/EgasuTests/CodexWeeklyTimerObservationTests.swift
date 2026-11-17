@@ -19,11 +19,15 @@ final class UsageTimerObservationTests: XCTestCase {
                 response: .init(statusCode: 200, headers: [:], body: try JSONSerialization.data(withJSONObject: body)),
                 accountKey: "account", observedAt: observedAt
             )
+            XCTAssertEqual(observations.count, 4)
             XCTAssertEqual(Set(observations.map(\.timerID)), [
                 "codex.default.weekly", "codex.default.session", "codex.spark.weekly", "codex.spark.session"
             ])
             XCTAssertEqual(Set(observations.map(\.storageKey)).count, 4)
-            XCTAssertEqual(observations.first?.storageKey, "account", "Existing weekly record must stay readable")
+            XCTAssertEqual(
+                observations.first(where: { $0.timerID == "codex.default.weekly" })?.storageKey,
+                "account", "Existing weekly record must stay readable"
+            )
             for observation in observations {
                 let isSession = observation.timerID.hasSuffix(".session")
                 XCTAssertEqual(observation.duration, isSession ? 18_000 : 604_800)

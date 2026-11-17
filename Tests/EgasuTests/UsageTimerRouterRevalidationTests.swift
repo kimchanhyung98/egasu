@@ -1,0 +1,133 @@
+import XCTest
+@testable import Egasu
+
+@MainActor
+final class UsageTimerRouterRevalidationTests: XCTestCase {
+    func testInvalidatedBindingNeverEntersSessionSendAfterWaitingForExecutionQueue() async throws {
+        let fixture = try UsageTimerRouterTests.Fixture()
+        defer { fixture.remove() }
+        let provider = ProviderStub(observedAt: fixture.clock.current())
+        let queue = BackgroundWorkQueue()
+        let blocked = expectation(description: "Execution queue blocked after preparation")
+        var ticket: BackgroundWorkQueue.Ticket?
+        provider.onPrepare = {
+            Task {
+                ticket = await queue.acquire("unrelated-work")
+                blocked.fulfill()
+            }
+            while queue.pendingCount == 0 { await Task.yield() }
+        }
+        let router = UsageTimerRouter(
+            providers: [provider], isProviderEnabled: { _ in true },
+            executor: fixture.executor(), store: fixture.store,
+            report: { _, _ in }, refresh: { _, _ in },
+            now: { fixture.clock.current() }, workQueue: queue
+        )
+        router.receive(await provider.refresh(), trigger: .manual)
+        await fulfillment(of: [blocked], timeout: 3)
+        while queue.pendingCount == 0 { await Task.yield() }
+
+        router.reconfigure(providers: [])
+        queue.finish(try XCTUnwrap(ticket))
+        await router.waitForPendingWork(providerIDs: [provider.provider.id])
+
+        XCTAssertEqual(provider.sendCount, 0)
+        XCTAssertFalse(router.hasPendingWork)
+        await router.shutdown()
+    }
+
+    func testStateReadFailurePreservesExistingTimerWarningAndRecoveryClearsOnlyStateWarning() async throws {
+        let fixture = try UsageTimerRouterTests.Fixture()
+        defer { fixture.remove() }
+        let provider = ProviderStub(observedAt: fixture.clock.current())
+        let finished = expectation(description: "Timer failure reported")
+        var warnings: [String]?
+        let router = UsageTimerRouter(
+            providers: [provider], isProviderEnabled: { _ in true },
+            executor: fixture.executor(), store: fixture.store,
+            report: { _, messages in warnings = messages }, refresh: { _, _ in finished.fulfill() },
+            now: { fixture.clock.current() }
+        )
+        router.receive(await provider.refresh(), trigger: .manual)
+        await fulfillment(of: [finished], timeout: 3)
+        XCTAssertEqual(warnings, [ProviderStub.sendFailure])
+        let saved = try Data(contentsOf: fixture.store.fileURL)
+
+        try Data("invalid-state".utf8).write(to: fixture.store.fileURL)
+        fixture.clock.advance(.seconds(1))
+        provider.observation.observedAt = fixture.clock.current()
+        router.receive(await provider.refresh(), trigger: .manual)
+        XCTAssertEqual(
+            Set(warnings ?? []),
+            [
+                ProviderStub.sendFailure,
+                "Usage timer automation could not read its saved state. No message was sent."
+            ])
+
+        try saved.write(to: fixture.store.fileURL)
+        fixture.clock.advance(.seconds(1))
+        provider.observation.observedAt = fixture.clock.current()
+        router.receive(await provider.refresh(), trigger: .manual)
+        XCTAssertEqual(warnings, [ProviderStub.sendFailure])
+        XCTAssertEqual(provider.sendCount, 1)
+        await router.shutdown()
+    }
+
+    func testCodexStartupWarningUsesProviderTypeAfterBindingInvalidation() throws {
+        let fixture = try UsageTimerRouterTests.Fixture()
+        defer { fixture.remove() }
+        let account = try fixture.account("first", cardID: "custom-codex-card")
+        let executor = fixture.executor()
+        executor.startupFailureDescription = "Temporary credentials could not be removed."
+        var warning: [String]?
+        let router = UsageTimerRouter(
+            providers: [account.provider], isProviderEnabled: { _ in true },
+            executor: executor, store: fixture.store,
+            report: { _, messages in warning = messages }, refresh: { _, _ in }
+        )
+
+        router.invalidate(providerIDs: [account.provider.provider.id])
+
+        XCTAssertEqual(warning, [try XCTUnwrap(executor.startupFailureDescription)])
+        XCTAssertTrue(executor.auths.isEmpty)
+    }
+
+    private final class ProviderStub: UsageTimerProviding {
+        static let sendFailure = "Usage timer message could not be prepared. Refresh to try again."
+        let provider = CodexProvider.makeProvider()
+        let widgetDescriptors: [WidgetDescriptor] = []
+        var observation: UsageTimerObservation
+        var onPrepare: (() async -> Void)?
+        private(set) var sendCount = 0
+        var usageTimerObservations: [UsageTimerObservation] { [observation] }
+
+        init(observedAt: Date) {
+            observation = .init(
+                accountKey: "account", usedPercent: 0, resetsAt: nil, observedAt: observedAt,
+                timerID: "test.session", duration: 18_000, startRule: .missingReset
+            )
+        }
+
+        func refresh() async -> ProviderSnapshot {
+            .init(
+                providerID: provider.id, displayName: provider.displayName, lines: [],
+                liveQuotaObservedAt: observation.observedAt)
+        }
+
+        func hasLocalCredentials() async -> Bool { false }
+
+        func prepareUsageTimer(
+            _ observation: UsageTimerObservation, executors: UsageTimerExecutors
+        ) async throws -> UsageTimerSession? {
+            await onPrepare?()
+            return UsageTimerSession(
+                observation: observation,
+                send: { [self] _ in
+                    sendCount += 1
+                    return .init(launched: false, completed: false, failureDescription: Self.sendFailure)
+                },
+                verify: { nil }
+            )
+        }
+    }
+}

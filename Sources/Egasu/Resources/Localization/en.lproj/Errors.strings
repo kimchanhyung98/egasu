@@ -292,8 +292,6 @@
 "Cursor usage history could not be refreshed. Try again later." = "Cursor usage history could not be refreshed. Try again later.";
 
 "Usage timer account changed. Refresh this account and try again." = "Usage timer account changed. Refresh this account and try again.";
-"Usage timer could not verify current quota data. No message was sent." = "Usage timer could not verify current quota data. No message was sent.";
-"Usage timer requires this account to be signed in to the provider's CLI." = "Usage timer requires this account to be signed in to the provider's CLI.";
 "Usage timer credentials changed. Refresh this account before trying again." = "Usage timer credentials changed. Refresh this account before trying again.";
 "Usage timer could not verify this account's quota." = "Usage timer could not verify this account's quota.";
 "Usage timer credentials changed. Refresh this account and try again." = "Usage timer credentials changed. Refresh this account and try again.";

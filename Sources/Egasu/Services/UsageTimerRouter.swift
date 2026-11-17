@@ -20,7 +20,7 @@ final class UsageTimerRouter {
     private let executors: UsageTimerExecutors
     private let store: UsageTimerAttemptStore
     private var isShuttingDown = false
-    private let report: (String, [String]?) -> Void
+    private let publishWarning: (String, [String]?) -> Void
     private let refresh: @MainActor (String, @escaping @MainActor () -> Bool) async -> Void
     private let now: @MainActor () -> Date
     private let wait: @MainActor (Duration) async throws -> Void
@@ -41,6 +41,10 @@ final class UsageTimerRouter {
                 return UsageTimerExecutionResult(launched: false, completed: false)
             }
             defer { self.workQueue.finish(ticket) }
+            guard self.isCurrent(providerID, bindingID: bindingID, accountKey: session.observation.accountKey),
+                  observationIsCurrent() else {
+                return UsageTimerExecutionResult(launched: false, completed: false)
+            }
             let hadStartupFailure = self.executors.codex.startupFailureDescription != nil
             let result = await session.send { [weak self] in
                 observationIsCurrent()
@@ -104,10 +108,7 @@ final class UsageTimerRouter {
         self.isProviderEnabled = isProviderEnabled
         self.executors = UsageTimerExecutors(codex: executor)
         self.store = store
-        self.report = { providerID, message in
-            report(providerID, providerID == "codex" || providerID.hasPrefix("codex@")
-                ? executor.startupFailureDescription.map { [$0] } ?? message : message)
-        }
+        self.publishWarning = report
         self.refresh = refresh
         self.now = now
         self.wait = wait
@@ -168,7 +169,7 @@ final class UsageTimerRouter {
             let message = Self.stateReadWarning
             warningsByAccount[observation.accountKey, default: [:]]["state"] = message
             for (id, current) in bindings where current.accountKey == observation.accountKey && isProviderEnabled(id) {
-                report(id, [message])
+                report(id, warning(for: observation.accountKey))
             }
             return
         }
@@ -261,6 +262,12 @@ final class UsageTimerRouter {
         for (providerID, binding) in bindings where binding.provider is CodexProvider && isProviderEnabled(providerID) {
             report(providerID, [warning])
         }
+    }
+
+    private func report(_ providerID: String, _ message: [String]?) {
+        let startupWarning = bindings[providerID]?.provider is CodexProvider
+            ? executors.codex.startupFailureDescription.map { [$0] } : nil
+        publishWarning(providerID, startupWarning ?? message)
     }
 
     /// 새 응답을 기다리지 않고 이전 시각 기준의 검증·실행 준비를 무효화.
