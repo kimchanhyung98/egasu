@@ -39,8 +39,8 @@ final class PricingBundledResourceTests: XCTestCase {
         XCTAssertEqual(pricing.resolve(model: "claude-4.6-opus-max-thinking", source: .cursor)?.inputPerMillion, 5)
         XCTAssertEqual(pricing.resolve(model: "claude-4.6-opus-max-thinking-fast", source: .cursor)?.inputPerMillion, 30)
         XCTAssertEqual(pricing.resolve(model: "gpt-5.5-xhigh-fast", source: .cursor)?.inputPerMillion, 12.5)
-        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-sol-ultra", source: .cursor)?.inputPerMillion, 4)
-        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-sol-ultra-fast", source: .cursor)?.inputPerMillion, 8)
+        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-sol-ultra", source: .cursor)?.inputPerMillion, 5)
+        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-sol-ultra-fast", source: .cursor)?.inputPerMillion, 10)
         XCTAssertEqual(pricing.resolve(model: "gpt-5.6-terra-high", source: .cursor)?.inputPerMillion, 2)
         XCTAssertEqual(pricing.resolve(model: "gpt-5.6-terra-high-fast", source: .cursor)?.inputPerMillion, 4)
         XCTAssertEqual(pricing.resolve(model: "gpt-5.6-luna", source: .cursor)?.inputPerMillion, 0.2)
@@ -211,15 +211,15 @@ final class PricingBundledResourceTests: XCTestCase {
     func testGPT56PricingAndAliases() throws {
         let pricing = Self.pricing
         let sol = try XCTUnwrap(pricing.resolve(model: "gpt-5.6-sol-ultra"))
-        XCTAssertEqual(sol.inputPerMillion, 4.0)
-        XCTAssertEqual(sol.cacheWritePerMillion, 5.0)
-        XCTAssertEqual(sol.cacheReadPerMillion, 0.4)
-        XCTAssertEqual(sol.outputPerMillion, 20.0)
+        XCTAssertEqual(sol.inputPerMillion, 5.0)
+        XCTAssertEqual(sol.cacheWritePerMillion, 6.25)
+        XCTAssertEqual(sol.cacheReadPerMillion, 0.5)
+        XCTAssertEqual(sol.outputPerMillion, 30.0)
         let solFast = try XCTUnwrap(pricing.resolve(model: "gpt-5.6-sol-ultra-fast"))
-        XCTAssertEqual(solFast.inputPerMillion, 8.0)
-        XCTAssertEqual(solFast.cacheWritePerMillion, 10.0)
-        XCTAssertEqual(solFast.cacheReadPerMillion, 0.8)
-        XCTAssertEqual(solFast.outputPerMillion, 40.0)
+        XCTAssertEqual(solFast.inputPerMillion, 10.0)
+        XCTAssertEqual(solFast.cacheWritePerMillion, 12.5)
+        XCTAssertEqual(solFast.cacheReadPerMillion, 1.0)
+        XCTAssertEqual(solFast.outputPerMillion, 60.0)
 
         let terra = try XCTUnwrap(pricing.resolve(model: "gpt-5.6-terra-high"))
         XCTAssertEqual(terra.inputPerMillion, 2.0)
@@ -407,7 +407,7 @@ final class PricingBundledResourceTests: XCTestCase {
             ("kimi-k3-fast", "kimi-k3", 4.5, 22.5, 0.45),
             ("muse-spark-1.3-contributor", "muse-spark-1.3", 0.1, 0.2, 0.002)
         ] {
-            XCTAssertNil(Self.pricing.supplement.canonicalName(for: model), model)
+            XCTAssertNotEqual(Self.pricing.supplement.canonicalName(for: model), base, model)
             let rates = try XCTUnwrap(Self.pricing.resolve(model: model), model)
             XCTAssertEqual(rates.inputPerMillion, input, accuracy: 1e-9, model)
             XCTAssertEqual(rates.outputPerMillion, output, accuracy: 1e-9, model)

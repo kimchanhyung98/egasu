@@ -141,8 +141,8 @@ final class CursorPricingContextTests: XCTestCase {
         """
         let expected = [
             (model: "grok-4.5", cursor: 1.05, api: 1.03),
-            (model: "gemini-3.5-flash-high", cursor: 1.215, api: 0.5325),
-            (model: "gemini-3.6-flash", cursor: 1.065, api: 0.5325),
+            (model: "gemini-3.5-flash-high", cursor: 1.215, api: 1.065),
+            (model: "gemini-3.6-flash", cursor: 1.065, api: 1.065),
             (model: "glm-5.3-flash-high", cursor: 0.0829, api: 0.083)
         ]
 
@@ -192,13 +192,13 @@ final class CursorPricingContextTests: XCTestCase {
         let gemini36 = try XCTUnwrap(models.first { $0.model == "gemini-3.6-flash" })
         XCTAssertEqual(try XCTUnwrap(gemini36.costUSD), 0.75, accuracy: 0.000_001)
         XCTAssertEqual(gemini36.variants?.map(\.model), ["gemini-3.6-flash-low"])
-        for (family, variant) in [
-            ("gemini-3.7-flash", "gemini-3.7-flash-high"),
-            ("gemini-3.8-flash", "gemini-3.8-flash-low")
+        for (family, variant, cost) in [
+            ("gemini-3.7-flash", "gemini-3.7-flash-high", 0.375),
+            ("gemini-3.8-flash", "gemini-3.8-flash-low", 0.75)
         ] {
             let entry = try XCTUnwrap(models.first { $0.model == family })
             XCTAssertEqual(entry.totalTokens, 100_000)
-            XCTAssertEqual(try XCTUnwrap(entry.costUSD), 0.375, accuracy: 0.000_001)
+            XCTAssertEqual(try XCTUnwrap(entry.costUSD), cost, accuracy: 0.000_001)
             XCTAssertEqual(entry.variants?.map(\.model), [variant])
         }
         let grok = try XCTUnwrap(models.first { $0.model == "grok-4.7" })
