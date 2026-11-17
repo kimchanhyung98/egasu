@@ -94,7 +94,10 @@ final class CodexProvider: ProviderRuntime {
     private var sharedCredentialWarning: String?
     private var sharedCredentialWarningPresentation: LocalizedMessage?
     private let operationGate = CodexProviderOperationGate()
-    private(set) var weeklyTimerObservation: CodexWeeklyTimerObservation?
+    private(set) var usageTimerObservations: [UsageTimerObservation] = []
+    var weeklyTimerObservation: UsageTimerObservation? {
+        usageTimerObservations.first { $0.timerID == "codex.default.weekly" }
+    }
     private var weeklyTimerCredentialSelection: CodexWeeklyTimerCredentialSelection?
 
     func refresh() async -> ProviderSnapshot {
@@ -105,20 +108,20 @@ final class CodexProvider: ProviderRuntime {
         refreshIsDegraded = false
         sharedCredentialWarning = nil
         sharedCredentialWarningPresentation = nil
-        weeklyTimerObservation = nil
+        usageTimerObservations = []
         weeklyTimerCredentialSelection = nil
         do {
             return try await withAuthCandidates { try await self.probe(authState: $0) }
         } catch {
-            weeklyTimerObservation = nil
+            usageTimerObservations = []
             return ProviderSnapshot.error(provider: provider, error: error)
         }
     }
 
-    func prepareWeeklyTimerSession(expectedAccountKey: String) async throws -> CodexWeeklyTimerSession {
+    func prepareWeeklyTimerSession(expectedAccountKey: String, timerID: String = "codex.default.weekly") async throws -> CodexWeeklyTimerSession {
         guard await operationGate.acquire() else { throw CancellationError() }
         defer { operationGate.release() }
-        weeklyTimerObservation = nil
+        usageTimerObservations = []
         do {
             if let selection = weeklyTimerCredentialSelection {
                 guard selection.accountKey == expectedAccountKey else { throw CodexWeeklyTimerProviderError.accountChanged }
@@ -126,18 +129,18 @@ final class CodexProvider: ProviderRuntime {
                 guard let state = try await reloadLiveAuth(source: selection.source) else {
                     throw CodexWeeklyTimerProviderError.credentialsChanged
                 }
-                return try await prepareWeeklyTimerSession(state: state, expectedAccountKey: expectedAccountKey)
+                return try await prepareWeeklyTimerSession(state: state, expectedAccountKey: expectedAccountKey, timerID: timerID)
             }
             return try await withAuthCandidates {
-                try await self.prepareWeeklyTimerSession(state: $0, expectedAccountKey: expectedAccountKey)
+                try await self.prepareWeeklyTimerSession(state: $0, expectedAccountKey: expectedAccountKey, timerID: timerID)
             }
         } catch {
-            weeklyTimerObservation = nil
+            usageTimerObservations = []
             throw error
         }
     }
 
-    func verifyWeeklyTimer(expectedAccountKey: String) async throws -> CodexWeeklyTimerObservation {
+    func verifyWeeklyTimer(expectedAccountKey: String) async throws -> UsageTimerObservation {
         try await prepareWeeklyTimerSession(expectedAccountKey: expectedAccountKey).observation
     }
 
@@ -197,9 +200,9 @@ final class CodexProvider: ProviderRuntime {
         throw lastFallbackError ?? CodexAuthError.notLoggedIn
     }
 
-    private func prepareWeeklyTimerSession(state: CodexAuthState, expectedAccountKey: String) async throws -> CodexWeeklyTimerSession {
+    private func prepareWeeklyTimerSession(state: CodexAuthState, expectedAccountKey: String, timerID: String) async throws -> CodexWeeklyTimerSession {
         let quota = try await fetchQuota(authState: state, expectedAccountKey: expectedAccountKey)
-        guard let observation = weeklyTimerObservation else { throw CodexWeeklyTimerProviderError.weeklyQuotaUnavailable }
+        guard let observation = usageTimerObservations.first(where: { $0.timerID == timerID }) else { throw CodexWeeklyTimerProviderError.weeklyQuotaUnavailable }
         guard let token = quota.authState.auth.tokens?.accessToken,
               let expiresAt = authStore.accessTokenExpiresAt(token),
               expiresAt.timeIntervalSince(now()) > 60 else { throw CodexAuthError.tokenExpired }
@@ -207,7 +210,7 @@ final class CodexProvider: ProviderRuntime {
     }
 
     private func rememberWeeklyTimerSelection(source: CodexAuthState.Source, fileCandidates: [CodexAuthState]) {
-        guard let observation = weeklyTimerObservation else { return }
+        guard let observation = usageTimerObservations.first else { return }
         let preceding = authStore.authPaths().map { CodexAuthState.Source.file(path: $0) }.prefix { $0 != source }
         weeklyTimerCredentialSelection = CodexWeeklyTimerCredentialSelection(
             accountKey: observation.accountKey,
@@ -270,7 +273,7 @@ final class CodexProvider: ProviderRuntime {
             throw CodexWeeklyTimerProviderError.credentialsChanged
         }
         if let accountKey = CodexWeeklyTimerIdentity.accountKey(for: authState.auth) {
-            weeklyTimerObservation = CodexUsageMapper.weeklyTimerObservation(
+            usageTimerObservations = CodexUsageMapper.timerObservations(
                 response: response, accountKey: accountKey, observedAt: quotaObservedAt
             )
         }

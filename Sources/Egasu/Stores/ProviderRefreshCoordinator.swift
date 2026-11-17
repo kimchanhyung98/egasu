@@ -31,7 +31,7 @@ final class ProviderRefreshCoordinator {
     var refreshingProviderIDs: Set<String> { refreshWork.refreshingProviderIDs }
     var scheduledRefreshDates: [String: Date] { refreshSchedule.dates }
     private(set) var refreshResults: [String: ProviderRefreshResult] = [:]
-    private(set) var automationWarnings: [String: String] = [:]
+    private(set) var automationWarnings: [String: [String]] = [:]
     var lastRefreshAt: Date?
     nonisolated static let refreshScheduleDidChange = ProviderRefreshSchedule.didChange
 
@@ -398,7 +398,7 @@ final class ProviderRefreshCoordinator {
         if snapshotStore.invalidateAuthentication(for: providerID) { rebuildRenderedSnapshots() }
     }
 
-    func setAutomationWarning(_ message: String?, for providerID: String) {
+    func setAutomationWarning(_ message: [String]?, for providerID: String) {
         guard providersByID[providerID] != nil else { return }
         automationWarnings[providerID] = message
     }

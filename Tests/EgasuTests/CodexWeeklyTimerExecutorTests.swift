@@ -71,6 +71,27 @@ final class CodexWeeklyTimerExecutorTests: XCTestCase {
         }
     }
 
+    func testExplicitSparkModelReachesTheIsolatedMessageWithoutChangingDefaultSelection() async throws {
+        for model: String? in [nil, "gpt-5.3-codex-spark"] {
+            let fixture = try Fixture()
+            defer { fixture.remove() }
+            let runner = RecordingTimerRunner { _, output in
+                output("{\"type\":\"turn.completed\"}\n")
+                return StreamingProcessResult(exitCode: 0, output: "")
+            }
+            let result = await fixture.executor(runner: runner).execute(auth: Self.auth, model: model, canLaunch: { true })
+            XCTAssertTrue(result.launched)
+            XCTAssertTrue(result.completed)
+            let request = try XCTUnwrap(runner.requests.last)
+            let modelArguments = request.arguments.filter { $0.hasPrefix("model=") }
+            XCTAssertEqual(modelArguments, model.map { ["model=\"\($0)\""] } ?? [])
+            XCTAssertTrue(request.arguments.contains("--ignore-user-config"))
+            XCTAssertTrue(request.arguments.contains("model_provider=\"openai\""))
+            XCTAssertEqual(String(data: request.standardInput, encoding: .utf8), Self.prompt + "\n")
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: fixture.workspaceRoot.path), [])
+        }
+    }
+
     func testCompletedMessageRemainsCompletedWhenReadingRotatedAuthFails() async throws {
         let diagnostics = DiagnosticEventRecorder()
         let fixture = try Fixture()
@@ -333,10 +354,10 @@ final class CodexWeeklyTimerExecutorTests: XCTestCase {
             CodexProvider(provider: CodexProvider.makeProvider(id: $0))
         }
         var warnings: [String: String] = [:]
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: providers, isProviderEnabled: { $0 != "codex@disabled" }, executor: executor,
-            store: CodexWeeklyTimerAttemptStore(fileURL: fixture.root.appendingPathComponent("attempts.json")),
-            report: { warnings[$0] = $1 }, refresh: { _, _ in XCTFail("Cleanup must not refresh usage") }
+            store: UsageTimerAttemptStore(fileURL: fixture.root.appendingPathComponent("attempts.json")),
+            report: { warnings[$0] = $1?.joined(separator: " ") }, refresh: { _, _ in XCTFail("Cleanup must not refresh usage") }
         )
 
         XCTAssertEqual(Set(warnings.keys), ["codex", "codex@second"])
@@ -473,7 +494,7 @@ final class CodexWeeklyTimerExecutorTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: authURL), Data("fixture".utf8))
     }
 
-    nonisolated private static let prompt = "When does my weekly Codex usage limit reset? Answer briefly without using tools."
+    nonisolated private static let prompt = "Reply with OK. Do not use tools."
     private static let auth = CodexAuth(tokens: CodexTokens(
         accessToken: "original-access", refreshToken: "original-refresh",
         idToken: "original-id", accountID: "account"

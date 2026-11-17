@@ -42,7 +42,7 @@ final class AppContainer {
     /// Codex reset credit claim 라우터. 카드별 자체 auth store·usage client 경유 —
     /// 되돌릴 수 없는 claim이 항상 카드가 표시하는 계정의 credential을 사용하도록 보장.
     let codexResetClaim: CodexResetClaimRouter
-    private let codexWeeklyTimer: CodexWeeklyTimerRouter
+    private let usageTimer: UsageTimerRouter
     /// 런치 패스가 reconcile한 account registry. 계정 이름은 여기서 render 시점에 해석.
     let accounts: ProviderAccountsStore
     /// 관리형 launch-profile registry. 런치 account 패스와 Settings 계정 UI가 공유하는 단일 인스턴스.
@@ -60,11 +60,11 @@ final class AppContainer {
     private let localAPI: LocalUsageServer
     /// 주기 refresh와 shared-home 재인증 reconciliation task 수명.
     private let refreshTask = AccountRefreshTaskHolder()
-    private let weeklyTimerCheckTask = AccountRefreshTaskHolder()
+    private let usageTimerCheckTask = AccountRefreshTaskHolder()
     private let workQueue: BackgroundWorkQueue
     /// Codex 인증·usage refresh와 분리된 공개 Reset Watch 조회 주기.
     let resetWatchCoordinator: CodexResetWatchCoordinator
-    private(set) var nextCodexTimerCheckAt: Date?
+    private(set) var nextUsageTimerCheckAt: Date?
     /// Settings·주기·수동 refresh가 같은 외부 Claude 로그인을 동시에 귀속하지 않도록 직렬화.
     private var isReconcilingExternalClaudeAuthentication = false
     @ObservationIgnored private var authenticationReconciliationWaiters: [CheckedContinuation<Void, Never>] = []
@@ -223,7 +223,7 @@ final class AppContainer {
             workQueue: workQueue
         )
         self.softLimitCoordinator = softLimitCoordinator
-        let codexWeeklyTimer = CodexWeeklyTimerRouter(
+        let usageTimer = UsageTimerRouter(
             providers: providers.compactMap { $0 as? CodexProvider },
             identityKeys: accountAssembly.identityKeysByCard,
             isProviderEnabled: { [enablement] in enablement.isEnabled($0) },
@@ -233,21 +233,21 @@ final class AppContainer {
             },
             workQueue: workQueue
         )
-        self.codexWeeklyTimer = codexWeeklyTimer
-        dataStore.isRefreshSuspended = { [weak codexWeeklyTimer] in codexWeeklyTimer?.isRunning(providerID: $0) == true }
+        self.usageTimer = usageTimer
+        dataStore.isRefreshSuspended = { [weak usageTimer] in usageTimer?.isRunning(providerID: $0) == true }
         dataStore.onRefreshOutcome = { [weak telemetry, weak softLimitCoordinator] providerID, outcome, category, trigger, degraded in
             telemetry?.record(providerID: providerID, outcome: outcome, category: category, trigger: trigger, degraded: degraded)
             if outcome == .failed { softLimitCoordinator?.invalidate(providerID: providerID) }
         }
         softLimitSettings.onChange = { [weak softLimitCoordinator] in softLimitCoordinator?.settingsDidChange() }
-        dataStore.onQuotaInvalidated = { [weak softLimitCoordinator, weak codexWeeklyTimer] providerIDs in
+        dataStore.onQuotaInvalidated = { [weak softLimitCoordinator, weak usageTimer] providerIDs in
             softLimitCoordinator?.settingsDidChange()
-            codexWeeklyTimer?.invalidate(providerIDs: providerIDs)
+            usageTimer?.invalidate(providerIDs: providerIDs)
         }
-        dataStore.onFreshSnapshot = { [weak softLimitCoordinator, weak codexWeeklyTimer] snapshot, descriptors, trigger in
+        dataStore.onFreshSnapshot = { [weak softLimitCoordinator, weak usageTimer] snapshot, descriptors, trigger in
             softLimitCoordinator?.receive(snapshot, descriptors: descriptors)
             Task { [weak softLimitCoordinator] in await softLimitCoordinator?.check(providerID: snapshot.providerID) }
-            codexWeeklyTimer?.receive(snapshot, trigger: trigger)
+            usageTimer?.receive(snapshot, trigger: trigger)
         }
         self.layout = layout
         self.dataStore = dataStore
@@ -301,12 +301,12 @@ final class AppContainer {
                 _ = await self?.reconcileExternalClaudeAuthenticationAndRefreshCatalog()
             }
         )
-        self.weeklyTimerCheckTask.task = CodexWeeklyTimerCheckSchedule.start(
-            scheduleChanged: { [weak self] in self?.nextCodexTimerCheckAt = $0 }
-        ) { [weak codexWeeklyTimer, weak dataStore] in
-            guard let codexWeeklyTimer, let dataStore else { return }
-            AppLog.info(.refresh, "Checking Codex weekly reset times (every 15 minutes)")
-            await CodexWeeklyTimerCheckSchedule.refreshAccounts(codexWeeklyTimer.requestScheduledCheck()) { providerID in
+        self.usageTimerCheckTask.task = UsageTimerCheckSchedule.start(
+            scheduleChanged: { [weak self] in self?.nextUsageTimerCheckAt = $0 }
+        ) { [weak usageTimer, weak dataStore] in
+            guard let usageTimer, let dataStore else { return }
+            AppLog.info(.refresh, "Checking usage timer reset times (every 15 minutes)")
+            await UsageTimerCheckSchedule.refreshAccounts(usageTimer.requestScheduledCheck()) { providerID in
                 await dataStore.refresh(providerID: providerID, force: true, trigger: .weeklyTimerCheck)
             }
         }
@@ -323,14 +323,14 @@ final class AppContainer {
     }
 
     var hasRunningBackgroundProcesses: Bool {
-        tokscaleSync.isRunning || codexWeeklyTimer.hasPendingWork
+        tokscaleSync.isRunning || usageTimer.hasPendingWork
     }
 
     func shutdownBackgroundProcesses() async {
         refreshTask.task?.cancel()
-        weeklyTimerCheckTask.task?.cancel()
+        usageTimerCheckTask.task?.cancel()
         softLimitCoordinator.stop()
-        async let timer: Void = codexWeeklyTimer.shutdown()
+        async let timer: Void = usageTimer.shutdown()
         async let tokscale: Void = tokscaleSync.shutdown()
         _ = await (timer, tokscale)
     }
@@ -421,10 +421,10 @@ final class AppContainer {
         repeat {
             await accountSwitch.waitForRefreshes(providerIDs: providerIDs)
             await dataStore.waitForAccountRefreshes(providerIDs: providerIDs)
-            await codexWeeklyTimer.waitForPendingWork(providerIDs: providerIDs)
+            await usageTimer.waitForPendingWork(providerIDs: providerIDs)
             await dataStore.waitForAccountRefreshes(providerIDs: providerIDs)
         } while accountSwitch.hasPendingRefreshes(providerIDs: providerIDs)
-            || codexWeeklyTimer.hasPendingWork(providerIDs: providerIDs)
+            || usageTimer.hasPendingWork(providerIDs: providerIDs)
     }
 
     /// Settings 계정 전환 성공 시 dashboard selector를 1회 갱신.
@@ -492,7 +492,7 @@ final class AppContainer {
             providers: nextProviders.compactMap { $0 as? CodexProvider },
             identityKeys: assembly.identityKeysByCard
         )
-        codexWeeklyTimer.reconfigure(
+        usageTimer.reconfigure(
             providers: nextProviders.compactMap { $0 as? CodexProvider }, identityKeys: assembly.identityKeysByCard
         )
         var refreshes: [String: Task<Void, Never>] = [:]

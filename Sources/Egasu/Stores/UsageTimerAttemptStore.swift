@@ -2,7 +2,7 @@ import CryptoKit
 import Darwin
 import Foundation
 
-struct CodexWeeklyTimerAttempt: Codable, Equatable, Sendable {
+struct UsageTimerAttempt: Codable, Equatable, Sendable {
     enum Execution: String, Codable, Sendable {
         case pending, completed, failed
     }
@@ -14,15 +14,16 @@ struct CodexWeeklyTimerAttempt: Codable, Equatable, Sendable {
     var execution: Execution
     var notBefore: Date
     var lastVerifiedAt: Date?
+    var messageLaunched: Bool? = nil
 }
 
-enum CodexWeeklyTimerObservationChange: Equatable {
+enum UsageTimerObservationChange: Equatable {
     case stale, baseline, incomparable, unchanged, changed
 }
 
 /// 전송 전 기록을 원자적으로 저장 — 손상·읽기 실패 시 기존 중복 방지 기록을 버리지 않음.
 @MainActor
-final class CodexWeeklyTimerAttemptStore {
+final class UsageTimerAttemptStore {
     static let retryCooldown: TimeInterval = 5 * 60
     static let sendLimit = 2
     static let sendLimitWindow: TimeInterval = 24 * 60 * 60
@@ -41,12 +42,12 @@ final class CodexWeeklyTimerAttemptStore {
         let confirmedReset: Date?
         fileprivate let key: String
         fileprivate let observation: FreshObservation?
-        fileprivate let attempt: CodexWeeklyTimerAttempt?
+        fileprivate let attempt: UsageTimerAttempt?
     }
 
     private struct Document: Codable {
         var version = 3
-        var attempts: [String: CodexWeeklyTimerAttempt] = [:]
+        var attempts: [String: UsageTimerAttempt] = [:]
         var observations: [String: FreshObservation] = [:]
         var sendHistory: [String: [Date]] = [:]
 
@@ -57,7 +58,7 @@ final class CodexWeeklyTimerAttemptStore {
         init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             version = try container.decode(Int.self, forKey: .version)
-            attempts = try container.decode([String: CodexWeeklyTimerAttempt].self, forKey: .attempts)
+            attempts = try container.decode([String: UsageTimerAttempt].self, forKey: .attempts)
             observations = try container.decodeIfPresent([String: FreshObservation].self, forKey: .observations) ?? [:]
             sendHistory = version >= 3
                 ? try container.decode([String: [Date]].self, forKey: .sendHistory) : [:]
@@ -70,37 +71,35 @@ final class CodexWeeklyTimerAttemptStore {
 
     let fileURL: URL
 
-    init(
-        fileURL: URL = StorageNamespace.current.applicationSupportDirectory()
-            .appendingPathComponent("codex-weekly-timer-attempts.json")
-    ) {
+    init(fileURL: URL = StorageNamespace.current.applicationSupportDirectory()
+        .appendingPathComponent("codex-weekly-timer-attempts.json")) {
         self.fileURL = fileURL
     }
 
-    func attempt(for accountKey: String) throws -> CodexWeeklyTimerAttempt? {
+    func attempt(for accountKey: String) throws -> UsageTimerAttempt? {
         try withLock { try read().attempts[Self.key(accountKey)] }
     }
 
-    func canAttempt(accountKey: String, now: Date) throws -> Bool {
+    func canAttempt(accountKey: String, now: Date, budgetWindow: TimeInterval = sendLimitWindow) throws -> Bool {
         try withLock {
             let document = try read()
             let key = Self.key(accountKey)
-            return Self.limitResetsAt(document, key: key, now: now) == nil
+            return Self.limitResetsAt(document, key: key, now: now, budgetWindow: budgetWindow) == nil
                 && (document.attempts[key].map({ $0.notBefore <= now }) ?? true)
                 && (Self.confirmedReset(in: document.observations[key]).map({ $0 <= now }) ?? true)
         }
     }
 
-    func sendLimitResetsAt(accountKey: String, now: Date) throws -> Date? {
-        try withLock { Self.limitResetsAt(try read(), key: Self.key(accountKey), now: now) }
+    func sendLimitResetsAt(accountKey: String, now: Date, budgetWindow: TimeInterval = sendLimitWindow) throws -> Date? {
+        try withLock { Self.limitResetsAt(try read(), key: Self.key(accountKey), now: now, budgetWindow: budgetWindow) }
     }
 
     /// 정기 재확인의 비교 기준 캡처 — 기존 주간 보류를 유지하고 재시도 간격·전송 상한 확인.
-    func revalidationState(accountKey: String, now: Date) throws -> RevalidationState? {
+    func revalidationState(accountKey: String, now: Date, budgetWindow: TimeInterval = sendLimitWindow) throws -> RevalidationState? {
         try withLock {
             let document = try read()
             let key = Self.key(accountKey)
-            guard Self.limitResetsAt(document, key: key, now: now) == nil,
+            guard Self.limitResetsAt(document, key: key, now: now, budgetWindow: budgetWindow) == nil,
                   document.attempts[key].map({ $0.notBefore <= now }) ?? true else { return nil }
             return RevalidationState(
                 confirmedReset: Self.confirmedReset(in: document.observations[key]), key: key,
@@ -111,28 +110,29 @@ final class CodexWeeklyTimerAttemptStore {
 
     /// 첫 조회 이후 변경이 없고 두 조회가 미시작 상태를 증명할 때만 기존 보류 해제와 전송 예약을 함께 저장.
     func beginAfterRevalidation(
-        first: CodexWeeklyTimerObservation, second: CodexWeeklyTimerObservation,
+        first: UsageTimerObservation, second: UsageTimerObservation,
         expectedState: RevalidationState, now: Date
-    ) throws -> CodexWeeklyTimerAttempt? {
+    ) throws -> UsageTimerAttempt? {
         try withLock {
             var document = try read()
-            let key = Self.key(first.accountKey)
-            guard first.accountKey == second.accountKey, expectedState.key == key,
+            let key = Self.key(first.storageKey)
+            let budgetWindow = first.budgetWindow
+            guard first.storageKey == second.storageKey, expectedState.key == key,
                   document.observations[key] == expectedState.observation,
                   document.attempts[key] == expectedState.attempt,
                   let latest = document.observations[key],
                   (latest.lastObservedAt ?? latest.observedAt) == first.observedAt,
                   (latest.usedPercent ?? 0) == 0,
-                  Self.limitResetsAt(document, key: key, now: now) == nil,
+                  Self.limitResetsAt(document, key: key, now: now, budgetWindow: budgetWindow) == nil,
                   document.attempts[key].map({ $0.notBefore <= now }) ?? true,
                   first.usedPercent == 0, second.usedPercent == 0,
                   let firstReset = first.rawResetAt, let secondReset = second.rawResetAt,
                   firstReset > first.observedAt, secondReset > second.observedAt, secondReset > now,
                   second.observedAt.timeIntervalSince(first.observedAt)
-                    >= CodexWeeklyTimerObservation.verificationInterval,
-                  !CodexWeeklyTimerObservation.resetTimesMatch(firstReset, secondReset)
+                    >= UsageTimerObservation.verificationInterval,
+                  !UsageTimerObservation.resetTimesMatch(firstReset, secondReset)
             else { return nil }
-            let attempt = CodexWeeklyTimerAttempt(
+            let attempt = UsageTimerAttempt(
                 id: UUID(), attemptedAt: now, resetBefore: secondReset, resetAfter: nil,
                 execution: .pending, notBefore: now.addingTimeInterval(Self.retryCooldown),
                 lastVerifiedAt: nil
@@ -143,7 +143,7 @@ final class CodexWeeklyTimerAttemptStore {
                 lastObservedAt: second.observedAt, usedPercent: 0, confirmedResetAt: nil
             )
             document.attempts[key] = attempt
-            Self.reserveSend(in: &document, key: key, now: now)
+            Self.reserveSend(in: &document, key: key, now: now, budgetWindow: budgetWindow)
             try write(document)
             return attempt
         }
@@ -151,43 +151,48 @@ final class CodexWeeklyTimerAttemptStore {
 
     /// 계정·기본 주간 버킷의 예약과 기존 보류 확인을 같은 파일 잠금 안에서 수행.
     func begin(
-        accountKey: String, resetBefore: Date?, now: Date, expectedObservedAt: Date? = nil
-    ) throws -> CodexWeeklyTimerAttempt? {
+        accountKey: String, resetBefore: Date?, now: Date, expectedObservedAt: Date? = nil,
+        budgetWindow: TimeInterval = sendLimitWindow
+    ) throws -> UsageTimerAttempt? {
         try withLock {
             var document = try read()
             let key = Self.key(accountKey)
-            guard Self.limitResetsAt(document, key: key, now: now) == nil,
+            guard Self.limitResetsAt(document, key: key, now: now, budgetWindow: budgetWindow) == nil,
                   document.attempts[key].map({ $0.notBefore <= now }) ?? true else { return nil }
             guard Self.confirmedReset(in: document.observations[key]).map({ $0 <= now }) ?? true else { return nil }
             if let expectedObservedAt,
                document.observations[key]?.observedAt != expectedObservedAt { return nil }
-            let attempt = CodexWeeklyTimerAttempt(
+            let attempt = UsageTimerAttempt(
                 id: UUID(), attemptedAt: now, resetBefore: resetBefore, resetAfter: nil,
                 execution: .pending,
                 notBefore: now.addingTimeInterval(Self.retryCooldown),
                 lastVerifiedAt: nil
             )
             document.attempts[key] = attempt
-            Self.reserveSend(in: &document, key: key, now: now)
+            Self.reserveSend(in: &document, key: key, now: now, budgetWindow: budgetWindow)
             try write(document)
             return attempt
         }
     }
 
-    func update(accountKey: String, attempt: CodexWeeklyTimerAttempt) throws {
+    func update(accountKey: String, attempt: UsageTimerAttempt) throws {
         try withLock {
             var document = try read()
             let key = Self.key(accountKey)
             guard document.attempts[key]?.id == attempt.id else { return }
             document.attempts[key] = attempt
+            if attempt.messageLaunched == false {
+                document.sendHistory[key]?.removeAll { $0 == attempt.attemptedAt }
+            }
             try write(document)
         }
     }
 
     /// 절대 reset_at만 비교하고 이전 정상 조회를 교체 — 실행 보류 시각은 변경하지 않음.
     func observe(
-        accountKey: String, rawResetAt: Date?, observedAt: Date, usedPercent: Double = 0
-    ) throws -> CodexWeeklyTimerObservationChange {
+        accountKey: String, rawResetAt: Date?, observedAt: Date, usedPercent: Double = 0,
+        confirmsReset: Bool = false
+    ) throws -> UsageTimerObservationChange {
         try withLock {
             var document = try read()
             let key = Self.key(accountKey)
@@ -195,16 +200,16 @@ final class CodexWeeklyTimerAttemptStore {
             if let previous, observedAt <= (previous.lastObservedAt ?? previous.observedAt) { return .stale }
             // 허용 범위 안에서는 최초 기준 유지 — 조금씩 이동하는 리셋을 고정으로 오판하지 않음.
             let previousReset = previous?.stableResetAt ?? previous?.rawResetAt
-            let sameReset = CodexWeeklyTimerObservation.resetTimesMatch(previousReset, rawResetAt)
+            let sameReset = UsageTimerObservation.resetTimesMatch(previousReset, rawResetAt)
             let stableSince = sameReset ? (previous?.stableSince ?? previous?.observedAt) : observedAt
             var confirmedReset = Self.confirmedReset(in: previous).flatMap { $0 > observedAt ? $0 : nil }
             if confirmedReset == nil, let reset = rawResetAt, reset > observedAt,
-               usedPercent > 0 || (sameReset && observedAt.timeIntervalSince(stableSince ?? observedAt)
-                   >= CodexWeeklyTimerObservation.verificationInterval) {
+               confirmsReset || usedPercent > 0 || (sameReset && observedAt.timeIntervalSince(stableSince ?? observedAt)
+                   >= UsageTimerObservation.verificationInterval) {
                 confirmedReset = reset
             }
             if var previous, sameReset, usedPercent == 0, (previous.usedPercent ?? 0) == 0,
-               observedAt.timeIntervalSince(stableSince ?? observedAt) <= CodexWeeklyTimerObservation.resetTimeTolerance {
+               observedAt.timeIntervalSince(stableSince ?? observedAt) <= UsageTimerObservation.resetTimeTolerance {
                 previous.lastObservedAt = observedAt
                 previous.confirmedResetAt = confirmedReset
                 document.observations[key] = previous
@@ -220,21 +225,21 @@ final class CodexWeeklyTimerAttemptStore {
             guard let previous else { return .baseline }
             guard previous.rawResetAt != nil, rawResetAt != nil else { return .incomparable }
             guard sameReset else { return .changed }
-            return observedAt.timeIntervalSince(stableSince ?? observedAt) > CodexWeeklyTimerObservation.resetTimeTolerance
+            return observedAt.timeIntervalSince(stableSince ?? observedAt) > UsageTimerObservation.resetTimeTolerance
                 ? .unchanged : .incomparable
         }
     }
 
-    func isLatest(_ observation: CodexWeeklyTimerObservation) throws -> Bool {
+    func isLatest(_ observation: UsageTimerObservation) throws -> Bool {
         try withLock {
-            let latest = try read().observations[Self.key(observation.accountKey)]
+            let latest = try read().observations[Self.key(observation.storageKey)]
             return latest?.rawResetAt == observation.rawResetAt && latest?.observedAt == observation.observedAt
         }
     }
 
-    func isLatestReceived(_ observation: CodexWeeklyTimerObservation) throws -> Bool {
+    func isLatestReceived(_ observation: UsageTimerObservation) throws -> Bool {
         try withLock {
-            guard let latest = try read().observations[Self.key(observation.accountKey)] else { return false }
+            guard let latest = try read().observations[Self.key(observation.storageKey)] else { return false }
             return (latest.lastObservedAt ?? latest.observedAt) == observation.observedAt
         }
     }
@@ -269,7 +274,7 @@ final class CodexWeeklyTimerAttemptStore {
         guard let reset = observation.stableResetAt ?? observation.rawResetAt, reset > observedAt,
               (observation.usedPercent ?? 0) > 0
                 || observedAt.timeIntervalSince(observation.stableSince ?? observedAt)
-                    >= CodexWeeklyTimerObservation.verificationInterval else { return nil }
+                    >= UsageTimerObservation.verificationInterval else { return nil }
         return reset
     }
 
@@ -278,16 +283,16 @@ final class CodexWeeklyTimerAttemptStore {
             .map { String(format: "%02x", $0) }.joined()
     }
 
-    private static func limitResetsAt(_ document: Document, key: String, now: Date) -> Date? {
-        let recent = (document.sendHistory[key] ?? []).filter { now.timeIntervalSince($0) < sendLimitWindow }
+    private static func limitResetsAt(_ document: Document, key: String, now: Date, budgetWindow: TimeInterval) -> Date? {
+        let recent = (document.sendHistory[key] ?? []).filter { now.timeIntervalSince($0) < budgetWindow }
         guard recent.count >= sendLimit, let first = recent.first else { return nil }
-        return first.addingTimeInterval(sendLimitWindow)
+        return first.addingTimeInterval(budgetWindow)
     }
 
-    /// 실행 전에 횟수 차감. 실패·시간 초과·종료 불명확 상태도 환급하지 않음.
-    private static func reserveSend(in document: inout Document, key: String, now: Date) {
+    /// 실행 전에 횟수 예약. 메시지 실행 전 실패가 확인된 경우만 반환.
+    private static func reserveSend(in document: inout Document, key: String, now: Date, budgetWindow: TimeInterval) {
         document.sendHistory[key] = (document.sendHistory[key] ?? [])
-            .filter { now.timeIntervalSince($0) < sendLimitWindow } + [now]
+            .filter { now.timeIntervalSince($0) < budgetWindow } + [now]
     }
 
     private func read() throws -> Document {
@@ -321,7 +326,10 @@ final class CodexWeeklyTimerAttemptStore {
             Self.isValidKey(key) && dates.count <= Self.sendLimit && dates == dates.sorted()
                 && dates.allSatisfy { $0.timeIntervalSince1970.isFinite }
         }), document.attempts.allSatisfy({ key, attempt in
-            document.sendHistory[key]?.last == attempt.attemptedAt
+            guard let dates = document.sendHistory[key] else { return false }
+            return attempt.messageLaunched == false
+                ? !dates.contains(attempt.attemptedAt)
+                : dates.last == attempt.attemptedAt
         }) else { throw StoreError.invalidDocument }
         return document
     }

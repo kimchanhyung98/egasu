@@ -4,7 +4,7 @@ import Foundation
 @MainActor
 final class WeeklyTimerProbe {
     let directory: URL
-    let store: CodexWeeklyTimerAttemptStore
+    let store: UsageTimerAttemptStore
     let start = Date(timeIntervalSince1970: 1_800_000_000)
     var now = Date(timeIntervalSince1970: 1_800_000_000)
     var bindings: [String: UUID] = ["codex": UUID()]
@@ -17,8 +17,8 @@ final class WeeklyTimerProbe {
     var beforeLaunch: (() async -> Void)?
     var executionHook: ((String) async -> Void)?
     var verificationHook: (() async -> Void)?
-    var result = CodexWeeklyTimerExecutionResult(launched: true, completed: true, updatedAuth: nil, failureDescription: nil)
-    var verification: [CodexWeeklyTimerObservation?] = []
+    var result = UsageTimerExecutionResult(launched: true, completed: true, failureDescription: nil)
+    var verification: [UsageTimerObservation?] = []
     var stampVerification = true
     var prepared: [String] = []
     var executed: [String] = []
@@ -33,7 +33,7 @@ final class WeeklyTimerProbe {
     init(seedBaseline: Bool = true) throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        store = CodexWeeklyTimerAttemptStore(fileURL: directory.appendingPathComponent("attempts.json"))
+        store = UsageTimerAttemptStore(fileURL: directory.appendingPathComponent("attempts.json"))
         if seedBaseline { try seed(accountKey: "a") }
     }
 
@@ -52,11 +52,11 @@ final class WeeklyTimerProbe {
         )
     }
 
-    func observation(accountKey: String = "a", used: Double = 0, reset: Date? = nil) -> CodexWeeklyTimerObservation {
+    func observation(accountKey: String = "a", used: Double = 0, reset: Date? = nil) -> UsageTimerObservation {
         .init(accountKey: accountKey, usedPercent: used, resetsAt: reset, observedAt: nextObservedAt(), rawResetAt: reset)
     }
 
-    func receive(_ coordinator: CodexWeeklyTimerCoordinator, providerID: String = "codex", used: Double = 0, reset: Date? = nil) {
+    func receive(_ coordinator: UsageTimerCoordinator<CodexWeeklyTimerSession>, providerID: String = "codex", used: Double = 0, reset: Date? = nil) {
         normalReadCounter += 1
         coordinator.receive(
             providerID: providerID, bindingID: bindings[providerID]!,
@@ -67,11 +67,12 @@ final class WeeklyTimerProbe {
         )
     }
 
-    func coordinator() -> CodexWeeklyTimerCoordinator {
-        CodexWeeklyTimerCoordinator(
+    func coordinator() -> UsageTimerCoordinator<CodexWeeklyTimerSession> {
+        UsageTimerCoordinator<CodexWeeklyTimerSession>(
             store: store,
             isCurrent: { self.enabled && self.bindings[$0] == $1 && self.accounts[$0] == $2 },
-            prepare: { _, key in
+            prepare: { _, observation in
+                let key = observation.accountKey
                 self.prepared.append(key)
                 await self.preparationHook?()
                 return .init(
@@ -86,7 +87,7 @@ final class WeeklyTimerProbe {
             execute: { _, _, session, canLaunch in
                 await self.beforeLaunch?()
                 guard canLaunch() else {
-                    return .init(launched: false, completed: false, updatedAuth: nil,
+                    return .init(launched: false, completed: false,
                                  failureDescription: "Timer observation changed before launch.")
                 }
                 self.executed.append(session.observation.accountKey)
@@ -102,7 +103,7 @@ final class WeeklyTimerProbe {
                 if self.stampVerification { observation?.observedAt = self.nextObservedAt() }
                 return observation
             },
-            report: { _, _, message in self.reports.append(message) },
+            report: { _, _, _, message in self.reports.append(message) },
             finished: { providerID, _ in self.finished.append(providerID) },
             now: { self.now },
             wait: { duration in
@@ -119,7 +120,7 @@ final class WeeklyTimerProbe {
 }
 
 @MainActor
-extension CodexWeeklyTimerRouterTests {
+extension UsageTimerRouterTests {
     @MainActor
     final class Executor: CodexWeeklyTimerExecuting {
         var startupFailureDescription: String?
@@ -138,7 +139,7 @@ extension CodexWeeklyTimerRouterTests {
             didAuthenticate?(auth)
             onLaunch?()
             if let afterLaunch { return await afterLaunch() }
-            return .init(launched: true, completed: true, updatedAuth: nil, failureDescription: nil)
+            return .init(launched: true, completed: true, failureDescription: nil)
         }
     }
 
@@ -216,7 +217,7 @@ extension CodexWeeklyTimerRouterTests {
     @MainActor
     final class Fixture {
         let root: URL
-        let store: CodexWeeklyTimerAttemptStore
+        let store: UsageTimerAttemptStore
         let now = Date()
         let clock: ObservationClock
         private var clients: [String: TimerHTTPClient] = [:]
@@ -224,7 +225,7 @@ extension CodexWeeklyTimerRouterTests {
         init() throws {
             root = FileManager.default.temporaryDirectory.appendingPathComponent("egasu.RouterTests.\(UUID().uuidString)")
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-            store = CodexWeeklyTimerAttemptStore(fileURL: root.appendingPathComponent("attempts.json"))
+            store = UsageTimerAttemptStore(fileURL: root.appendingPathComponent("attempts.json"))
             clock = ObservationClock(now)
         }
 
@@ -255,7 +256,7 @@ extension CodexWeeklyTimerRouterTests {
             return Account(provider: provider, files: files, http: http, path: path, original: original)
         }
 
-        func changedRefresh(_ account: Account, router: CodexWeeklyTimerRouter) async throws -> ProviderSnapshot {
+        func changedRefresh(_ account: Account, router: UsageTimerRouter) async throws -> ProviderSnapshot {
             let current = account.http.response
             let previous = try JSONSerialization.data(withJSONObject: [
                 "rate_limit": ["secondary_window": [

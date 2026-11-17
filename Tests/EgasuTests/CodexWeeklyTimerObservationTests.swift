@@ -2,8 +2,65 @@ import Foundation
 import XCTest
 @testable import Egasu
 
-final class CodexWeeklyTimerObservationTests: XCTestCase {
+final class UsageTimerObservationTests: XCTestCase {
     private let observedAt = Date(timeIntervalSince1970: 1_800_000_000)
+
+    func testCodexEmitsBothPeriodsForEachIndependentPool() throws {
+        for sessionSlot in ["primary_window", "secondary_window"] {
+            let weeklySlot = sessionSlot == "primary_window" ? "secondary_window" : "primary_window"
+            let rate: [String: Any] = [
+                sessionSlot: ["limit_window_seconds": 18_000, "used_percent": 0.1, "reset_at": 1_800_018_000],
+                weeklySlot: ["limit_window_seconds": 604_800, "used_percent": 0, "reset_at": 1_800_604_800]
+            ]
+            let body: [String: Any] = ["rate_limit": rate, "additional_rate_limits": [
+                ["limit_name": "GPT-5.3-Codex-Spark", "rate_limit": rate]
+            ]]
+            let observations = CodexUsageMapper.timerObservations(
+                response: .init(statusCode: 200, headers: [:], body: try JSONSerialization.data(withJSONObject: body)),
+                accountKey: "account", observedAt: observedAt
+            )
+            XCTAssertEqual(Set(observations.map(\.timerID)), [
+                "codex.default.weekly", "codex.default.session", "codex.spark.weekly", "codex.spark.session"
+            ])
+            XCTAssertEqual(Set(observations.map(\.storageKey)).count, 4)
+            XCTAssertEqual(observations.first?.storageKey, "account", "Existing weekly record must stay readable")
+            for observation in observations {
+                let isSession = observation.timerID.hasSuffix(".session")
+                XCTAssertEqual(observation.duration, isSession ? 18_000 : 604_800)
+                XCTAssertEqual(observation.budgetWindow, isSession ? 18_000 : 86_400)
+                XCTAssertEqual(observation.usedPercent, isSession ? 0.1 : 0)
+                XCTAssertEqual(observation.rawResetAt, observedAt.addingTimeInterval(observation.duration))
+            }
+        }
+    }
+
+    @MainActor
+    func testSessionBudgetExpiresIndependentlyOfOtherCodexTimers() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = UsageTimerAttemptStore(fileURL: directory.appendingPathComponent("attempts.json"))
+        var observation = UsageTimerObservation(
+            accountKey: "account", usedPercent: 0, resetsAt: nil, observedAt: observedAt,
+            timerID: "codex.default.session", duration: 18_000
+        )
+        XCTAssertNotNil(try store.begin(accountKey: observation.storageKey, resetBefore: nil,
+                                       now: observedAt, budgetWindow: observation.budgetWindow))
+        XCTAssertNil(try store.begin(accountKey: observation.storageKey, resetBefore: nil,
+                                    now: observedAt.addingTimeInterval(299), budgetWindow: observation.budgetWindow))
+        XCTAssertNotNil(try store.begin(accountKey: observation.storageKey, resetBefore: nil,
+                                       now: observedAt.addingTimeInterval(300), budgetWindow: observation.budgetWindow))
+        let restarted = UsageTimerAttemptStore(fileURL: store.fileURL)
+        XCTAssertFalse(try restarted.canAttempt(accountKey: observation.storageKey,
+                                                now: observedAt.addingTimeInterval(17_999), budgetWindow: observation.budgetWindow))
+        XCTAssertTrue(try restarted.canAttempt(accountKey: observation.storageKey,
+                                               now: observedAt.addingTimeInterval(18_000), budgetWindow: observation.budgetWindow))
+        for timerID in ["codex.default.weekly", "codex.spark.session", "codex.spark.weekly"] {
+            observation.timerID = timerID
+            observation.duration = timerID.hasSuffix(".weekly") ? 604_800 : 18_000
+            XCTAssertTrue(try restarted.canAttempt(accountKey: observation.storageKey, now: observedAt,
+                                                   budgetWindow: observation.budgetWindow), timerID)
+        }
+    }
 
     func testWeeklyWindowUsesExplicitDurationInEitherSlot() throws {
         for slot in ["primary_window", "secondary_window"] {
@@ -212,7 +269,7 @@ final class CodexWeeklyTimerObservationTests: XCTestCase {
         }
     }
 
-    private func observation(_ response: HTTPResponse) -> CodexWeeklyTimerObservation? {
+    private func observation(_ response: HTTPResponse) -> UsageTimerObservation? {
         CodexUsageMapper.weeklyTimerObservation(response: response, accountKey: "account-key", observedAt: observedAt)
     }
 

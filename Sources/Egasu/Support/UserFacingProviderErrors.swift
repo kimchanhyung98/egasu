@@ -353,11 +353,11 @@ extension CodexWeeklyTimerProviderError: UserPresentableError {
     var presentationMessage: LocalizedMessage {
         switch self {
         case .accountChanged:
-            .init("Weekly timer account changed. Refresh this account and try again.")
+            .init("Usage timer account changed. Refresh this account and try again.")
         case .weeklyQuotaUnavailable:
-            .init("Weekly timer could not verify this account's weekly usage.")
+            .init("Usage timer could not verify this account's quota.")
         case .credentialsChanged:
-            .init("Weekly timer credentials changed. Refresh this account and try again.")
+            .init("Usage timer credentials changed. Refresh this account and try again.")
         }
     }
 }

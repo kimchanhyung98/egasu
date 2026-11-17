@@ -39,6 +39,8 @@ Most providers read the credentials already on your machine (keychain, auth file
 - **[계정 전환](/docs/cli.md#계정).** Claude·Codex의 기본 인증 저장소를 쓰는 새 CLI 세션에 선택한 로그인 적용.
   셸 설정 파일·터미널 환경을 유지하며, Claude 첫 등록·외부 로그인과 전환 중 보존할 변경된 인증은 토큰의 계정·조직을 검증한 뒤 저장본에 반영.
   선택된 Claude 공유 로그인은 사용량 조회에서도 계정·조직 일치 검증.
+- **[Codex 타이머 자동 시작](/docs/providers/codex.md#세션주간-타이머-자동-시작).** 기본·Spark 풀의 세션·주간 한도를 서버에서 재확인한 뒤 짧은 구독 메시지로 시작 유도.
+  계정·풀·기간별 전송 상한과 기록은 앱 재시작 뒤에도 유지.
 - **Global shortcut.** Toggle the popover from anywhere — record any combo in Settings.
 - **Customize.** Turn providers and metrics on or off, choose which rows stay Always Visible or On Demand, and drag-reorder both.
 - **Stale-while-revalidate.** Cached values display instantly at launch; refresh runs every 5 minutes (15 minutes for Claude).
