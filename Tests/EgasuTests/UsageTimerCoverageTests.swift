@@ -73,7 +73,23 @@ final class UsageTimerCoverageTests: XCTestCase {
                 observedAt: fixture.now, startRule: .missingReset))
     }
 
-    func testPreparationFailuresKeepCooldownWithoutConsumingMessageBudgetAcrossRestart() async throws {
+    func testPreparationErrorNeverReservesOrExecutesAndFreshObservationCanRecover() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        fixture.preparationFails = true
+        let coordinator = fixture.coordinator()
+        fixture.receive(coordinator)
+        await coordinator.waitForPendingWork(providerIDs: ["claude"])
+        XCTAssertEqual(fixture.executions, 0)
+        XCTAssertEqual(fixture.sends, 0)
+        XCTAssertNil(try fixture.store.attempt(for: fixture.observation().storageKey))
+        fixture.preparationFails = false
+        fixture.receive(coordinator)
+        await coordinator.waitForPendingWork(providerIDs: ["claude"])
+        XCTAssertEqual(fixture.sends, 1)
+    }
+
+    func testPrelaunchFailuresKeepCooldownWithoutConsumingMessageBudgetAcrossRestart() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
         fixture.cannotLaunch = true
@@ -82,7 +98,8 @@ final class UsageTimerCoverageTests: XCTestCase {
             fixture.receive(coordinator)
             await coordinator.waitForPendingWork(providerIDs: ["claude"])
             let key = fixture.observation().storageKey
-            XCTAssertNotNil(try fixture.store.attempt(for: key), "Keep the cooldown after a preparation failure")
+            XCTAssertNotNil(
+                try fixture.store.attempt(for: key), "Keep the cooldown after a confirmed prelaunch failure")
             XCTAssertNil(try fixture.store.sendLimitResetsAt(accountKey: key, now: fixture.now))
             XCTAssertFalse(try fixture.store.canAttempt(accountKey: key, now: fixture.now))
             fixture.now.addTimeInterval(301)
@@ -153,6 +170,8 @@ final class UsageTimerCoverageTests: XCTestCase {
         var current = true
         var changeBeforeLaunch = false
         var cannotLaunch = false
+        var preparationFails = false
+        var executions = 0
 
         init() throws { store = UsageTimerAttemptStore(fileURL: directory.appendingPathComponent("state.json")) }
         func remove() { try? FileManager.default.removeItem(at: directory) }
@@ -170,9 +189,11 @@ final class UsageTimerCoverageTests: XCTestCase {
                 store: store,
                 isCurrent: { _, binding, account in self.current && binding == self.binding && account == "account" },
                 prepare: { _, _ in
+                    if self.preparationFails { throw UsageTimerError.usageUnavailable }
                     self.now.addTimeInterval(1); return Session(observation: self.observation())
                 },
                 execute: { _, _, _, canLaunch in
+                    self.executions += 1
                     if self.cannotLaunch { return .init(launched: false, completed: false) }
                     if self.changeBeforeLaunch { self.current = false }
                     guard canLaunch() else { return .init(launched: false, completed: false) }

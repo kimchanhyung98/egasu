@@ -9,11 +9,11 @@ extension KimiProvider: UsageTimerProviding {
             observation.accountKey == expected.accountKey,
             let document = usageTimerCredential,
             let token = document.credentials.accessToken,
-            document.credentials.expiresAt.map({ $0.timeIntervalSince(now()) > 120 }) ?? false
+            Self.hasTimerLifetime(document, at: now())
         else { throw UsageTimerError.usageUnavailable }
         return UsageTimerSession(
             observation: observation,
-            send: { [authStore] canLaunch in
+            send: { [authStore, now] canLaunch in
                 await executors.cli.execute(
                     .kimi(
                         accessToken: token,
@@ -23,7 +23,9 @@ extension KimiProvider: UsageTimerProviding {
                     guard await canLaunch() else { return false }
                     do {
                         let current = try await loadOffMainActor { try authStore.loadCredentialDocument() }
-                        guard current == document else { return false }
+                        guard let current, current == document, Self.hasTimerLifetime(current, at: now()) else {
+                            return false
+                        }
                     } catch { return false }
                     return await canLaunch()
                 }
@@ -33,5 +35,10 @@ extension KimiProvider: UsageTimerProviding {
                 return usageTimerObservations.first { $0.accountKey == expected.accountKey }
             }
         )
+    }
+
+    private static func hasTimerLifetime(_ document: KimiCredentialDocument, at now: Date) -> Bool {
+        guard let expiry = document.credentials.expiresAt, expiry.timeIntervalSince1970 != 0 else { return true }
+        return expiry.timeIntervalSince(now) > 120
     }
 }

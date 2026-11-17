@@ -246,7 +246,9 @@ final class UsageTimerRouter {
         for provider in providers.compactMap({ $0 as? any UsageTimerProviding }) {
             let providerID = provider.provider.id
             if var binding = bindings[providerID],
-               binding.provider === provider || (identityKeys[providerID] != nil && self.identityKeys[providerID] == identityKeys[providerID]) {
+               binding.provider === provider
+                || (identityKeys[providerID] != nil && self.identityKeys[providerID] == identityKeys[providerID])
+                || !ProviderAccountID.families.contains(ProviderAccountID.family(of: providerID)) {
                 binding.provider = provider
                 bindings[providerID] = binding
             } else {

@@ -31,15 +31,21 @@ final class UsageTimerCLIExecutor: UsageTimerCLIExecuting {
     private let runner: any StreamingProcessRunning
     private let resolve: @MainActor (String) -> URL?
     private let baseDirectory: URL
+    private let shellEnvironment: LoginShellEnvironment
+    private let environment: any EnvironmentReading
 
     init(
         runner: any StreamingProcessRunning = StreamingProcessRunner(),
         resolve: @escaping @MainActor (String) -> URL? = UsageTimerCLIExecutor.resolveExecutable,
-        baseDirectory: URL = FileManager.default.temporaryDirectory
+        baseDirectory: URL = FileManager.default.temporaryDirectory,
+        shellEnvironment: LoginShellEnvironment = .shared,
+        environment: any EnvironmentReading = ProcessEnvironmentReader()
     ) {
         self.runner = runner
         self.resolve = resolve
         self.baseDirectory = baseDirectory
+        self.shellEnvironment = shellEnvironment
+        self.environment = environment
     }
 
     func execute(
@@ -72,6 +78,7 @@ final class UsageTimerCLIExecutor: UsageTimerCLIExecuting {
                 throw ExecutorError.unsupportedCLI
             }
             if case .antigravity(let prefix) = configuration {
+                let prefixes = prefix == "claude-" ? ["claude-", "gpt-oss-"] : [prefix]
                 var modelRequest = helpRequest
                 modelRequest.arguments = ["models"]
                 let listing = try await runner.run(modelRequest)
@@ -80,7 +87,8 @@ final class UsageTimerCLIExecutor: UsageTimerCLIExecuting {
                     let model = listing.output.split(whereSeparator: \.isNewline)
                         .compactMap({ $0.split(whereSeparator: \.isWhitespace).first.map(String.init) })
                         .first(where: { model in
-                            model.hasPrefix(prefix) && !model.split(separator: "-").contains("argon")
+                            prefixes.contains(where: { model.hasPrefix($0) })
+                                && !model.split(separator: "-").contains("argon")
                                 && model.allSatisfy {
                                     $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == ".")
                                 }
@@ -133,7 +141,8 @@ final class UsageTimerCLIExecutor: UsageTimerCLIExecuting {
         _ configuration: UsageTimerCLIConfiguration, executable: URL, directory: URL
     ) throws -> StreamingProcessRequest {
         let path =
-            LoginShellEnvironment.shared.value(for: "PATH")
+            shellEnvironment.value(for: "PATH")
+            ?? self.environment.value(for: "PATH")
             ?? "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
         var environment = ["PATH": path, "LANG": "en_US.UTF-8", "TERM": "dumb", "NO_COLOR": "1"]
         var arguments: [String]
@@ -146,7 +155,7 @@ final class UsageTimerCLIExecutor: UsageTimerCLIExecuting {
             arguments = Self.claudeArguments + ["--model", "haiku"]
         case .zai(let apiKey):
             environment["HOME"] = directory.path
-            environment["ANTHROPIC_API_KEY"] = apiKey
+            environment["ANTHROPIC_AUTH_TOKEN"] = apiKey
             environment["ANTHROPIC_BASE_URL"] = "https://api.z.ai/api/anthropic"
             arguments = Self.claudeArguments + ["--bare", "--model", "glm-4.7"]
         case .antigravity(let model):

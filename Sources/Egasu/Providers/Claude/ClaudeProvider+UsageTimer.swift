@@ -4,8 +4,9 @@ extension ClaudeProvider: UsageTimerProviding {
     func prepareUsageTimer(
         _ expected: UsageTimerObservation, executors: UsageTimerExecutors
     ) async throws -> UsageTimerSession? {
-        _ = await refresh()
+        let snapshot = await refresh()
         guard let observation = usageTimerObservations.first,
+            snapshot.liveQuotaObservedAt == observation.observedAt,
             observation.accountKey == expected.accountKey,
             let credentials = usageTimerCredentialState
         else { throw UsageTimerError.usageUnavailable }
@@ -32,8 +33,10 @@ extension ClaudeProvider: UsageTimerProviding {
                 }
             },
             verify: { [self] in
-                _ = await refresh()
-                return usageTimerObservations.first { $0.accountKey == expected.accountKey }
+                let snapshot = await refresh()
+                return usageTimerObservations.first {
+                    $0.accountKey == expected.accountKey && snapshot.liveQuotaObservedAt == $0.observedAt
+                }
             }
         )
     }
@@ -46,9 +49,8 @@ extension ClaudeProvider: UsageTimerProviding {
         guard
             let current = load.candidates.first(where: {
                 $0.hasUsableAccessToken && $0.source != .desktop && $0.source != .environment
-            }),
-            current.oauth.accessToken == credentials.oauth.accessToken
-                || (current.accountIdentityKey != nil && current.accountIdentityKey == credentials.accountIdentityKey)
+                    && $0.source == credentials.source && $0.oauth.accessToken == credentials.oauth.accessToken
+            })
         else { throw UsageTimerError.currentLoginRequired }
         return current
     }

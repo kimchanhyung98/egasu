@@ -36,6 +36,34 @@ final class UsageTimerRouterRevalidationTests: XCTestCase {
         await router.shutdown()
     }
 
+    func testUnrelatedAccountCatalogRebuildKeepsPendingNonAccountTimerBinding() async throws {
+        let fixture = try UsageTimerRouterTests.Fixture()
+        defer { fixture.remove() }
+        let provider = ProviderStub(observedAt: fixture.clock.current(), providerID: "zai")
+        let replacement = ProviderStub(observedAt: fixture.clock.current(), providerID: "zai")
+        let queue = BackgroundWorkQueue()
+        let blocked = expectation(description: "Prepared timer is queued")
+        var ticket: BackgroundWorkQueue.Ticket?
+        provider.onPrepare = {
+            Task { ticket = await queue.acquire("unrelated-work"); blocked.fulfill() }
+            while queue.pendingCount == 0 { await Task.yield() }
+        }
+        let router = UsageTimerRouter(
+            providers: [provider], isProviderEnabled: { _ in true }, executor: fixture.executor(), store: fixture.store,
+            report: { _, _ in }, refresh: { _, _ in }, now: { fixture.clock.current() }, workQueue: queue)
+        router.receive(await provider.refresh(), trigger: .manual)
+        await fulfillment(of: [blocked], timeout: 3)
+        while queue.pendingCount == 0 { await Task.yield() }
+
+        router.reconfigure(providers: [replacement])
+        queue.finish(try XCTUnwrap(ticket))
+        await router.waitForPendingWork(providerIDs: ["zai"])
+
+        XCTAssertEqual(provider.sendCount, 1)
+        XCTAssertEqual(replacement.sendCount, 0)
+        await router.shutdown()
+    }
+
     func testStateReadFailurePreservesExistingTimerWarningAndRecoveryClearsOnlyStateWarning() async throws {
         let fixture = try UsageTimerRouterTests.Fixture()
         defer { fixture.remove() }
@@ -94,14 +122,15 @@ final class UsageTimerRouterRevalidationTests: XCTestCase {
 
     private final class ProviderStub: UsageTimerProviding {
         static let sendFailure = "Usage timer message could not be prepared. Refresh to try again."
-        let provider = CodexProvider.makeProvider()
+        let provider: Provider
         let widgetDescriptors: [WidgetDescriptor] = []
         var observation: UsageTimerObservation
         var onPrepare: (() async -> Void)?
         private(set) var sendCount = 0
         var usageTimerObservations: [UsageTimerObservation] { [observation] }
 
-        init(observedAt: Date) {
+        init(observedAt: Date, providerID: String = "codex") {
+            provider = CodexProvider.makeProvider(id: providerID)
             observation = .init(
                 accountKey: "account", usedPercent: 0, resetsAt: nil, observedAt: observedAt,
                 timerID: "test.session", duration: 18_000, startRule: .missingReset

@@ -96,12 +96,18 @@ final class AntigravityProvider: ProviderRuntime {
         usageTimerCredential = nil
         let refreshedAt = now()
         var quota: StrategyResult?
+        var quotaObservedAt: Date?
         var quotaError: Error?
         do {
             try Task.checkCancellation()
             quota = try await probe()
+            quotaObservedAt = usageTimerObservations.first?.observedAt ?? now()
             if usageTimerCredential == nil, let quota,
                quota.lines.contains(where: {
+                   guard [
+                       AntigravityMetric.sessionLabel, AntigravityMetric.weeklyLabel,
+                       AntigravityMetric.claudeLabel, AntigravityMetric.claudeWeeklyLabel
+                   ].contains($0.label) else { return false }
                    if case .progress(_, let used, _, .percent, _, _, _) = $0 { return used == 0 }
                    return false
                }), let credentials = try await loadOffMainActor({ [authStore] in try authStore.loadKeychainToken() }),
@@ -181,7 +187,7 @@ final class AntigravityProvider: ProviderRuntime {
             warningPresentation: warningPresentations.isEmpty ? nil : warningPresentations,
             authenticationIssue: quotaError.flatMap { ProviderAuthenticationIssue(error: $0) },
             isDegraded: warnings.isEmpty ? nil : true,
-            liveQuotaObservedAt: usageTimerObservations.first?.observedAt
+            liveQuotaObservedAt: usageTimerObservations.first?.observedAt ?? quotaObservedAt
         )
     }
 

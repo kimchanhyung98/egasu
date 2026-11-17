@@ -163,6 +163,8 @@ final class UsageTimerCLIExecutorTests: XCTestCase {
         )
         XCTAssertEqual(request.environment["ANTHROPIC_BASE_URL"], "https://api.z.ai/api/anthropic")
         XCTAssertEqual(request.environment["HOME"], directory.path)
+        XCTAssertEqual(request.environment["ANTHROPIC_AUTH_TOKEN"], "test-key")
+        XCTAssertNil(request.environment["ANTHROPIC_API_KEY"])
         XCTAssertTrue(request.arguments.contains("--bare"))
         XCTAssertFalse(request.arguments.joined().contains("test-key"))
     }
@@ -318,6 +320,56 @@ final class UsageTimerCLIExecutorTests: XCTestCase {
                 XCTAssertEqual(result.failureDescription, "Usage timer could not select the requested model.")
             }
             XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), [])
+        }
+    }
+
+    func testOtherAntigravityPoolCanUseGPTOSSWithoutClaudeModel() async throws {
+        let runner = Runner(outputs: [Self.help, "gpt-oss-120b GPT OSS", #"{"status":"SUCCESS"}"#])
+        let executor = UsageTimerCLIExecutor(runner: runner, resolve: { _ in URL(fileURLWithPath: "/test/agy") })
+
+        let result = await executor.execute(.antigravity(model: "claude-"), canLaunch: { true })
+
+        XCTAssertTrue(result.completed)
+        let requests = await runner.requests
+        XCTAssertTrue(try XCTUnwrap(requests.last).arguments.contains("gpt-oss-120b"))
+    }
+
+    func testProcessPATHKeepsInterpreterAvailableWhenLoginShellCaptureIsUnavailable() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let interpreter = directory.appendingPathComponent("node")
+        let executable = directory.appendingPathComponent("claude")
+        try Data("#!/usr/bin/env node\n".utf8).write(to: executable)
+        let script = """
+            #!/bin/sh
+            if [ "$2" = "--help" ]; then
+              printf '%s\\n' '--print --output-format --model'
+            else
+              printf '%s\\n' '{"type":"result","is_error":false}'
+            fi
+            """
+        try Data(script.utf8).write(to: interpreter)
+        for url in [interpreter, executable] {
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+        }
+        let executor = UsageTimerCLIExecutor(
+            resolve: { _ in executable }, baseDirectory: directory,
+            shellEnvironment: LoginShellEnvironment(runner: UnavailableShellRunner()),
+            environment: FakeEnvironment(["PATH": directory.path])
+        )
+
+        let result = await executor.execute(.claude(accessToken: "fixture-token"), canLaunch: { true })
+
+        XCTAssertTrue(result.launched)
+        XCTAssertTrue(result.completed)
+        XCTAssertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: directory.path)), ["node", "claude"])
+    }
+
+    private struct UnavailableShellRunner: ProcessRunning {
+        func run(executable: String, arguments: [String], environment: [String: String], timeout: TimeInterval) throws
+            -> ProcessResult
+        {
+            .init(exitCode: 1, stdout: "", stderr: "")
         }
     }
 

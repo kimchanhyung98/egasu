@@ -1,3 +1,4 @@
+import os
 import XCTest
 @testable import Egasu
 
@@ -100,7 +101,7 @@ final class UsageTimerProviderCredentialTests: XCTestCase {
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertTrue(snapshot.isDegraded == true)
         XCTAssertNotNil(snapshot.warning)
-        XCTAssertNil(snapshot.liveQuotaObservedAt)
+        XCTAssertEqual(snapshot.liveQuotaObservedAt, Self.now)
         XCTAssertTrue(provider.usageTimerObservations.isEmpty)
         XCTAssertTrue(routing.requests.contains { $0.url.host != "127.0.0.1" })
     }
@@ -144,6 +145,81 @@ final class UsageTimerProviderCredentialTests: XCTestCase {
         }
     }
 
+    func testUnknownZAIQuotaProducesNoTimerCandidateOrCLIEntry() async throws {
+        let provider = ZAIProvider(
+            authStore: ZAIAuthStore(files: FakeFiles(), environment: FakeEnvironment(["ZAI_API_KEY": "fixture-key"])),
+            usageClient: ZAIUsageClient(
+                http: RoutingHTTPClient { _ in
+                    .init(statusCode: 200, headers: [:], body: Data(#"{"data":{"limits":[]}}"#.utf8))
+                }), now: { Self.now }, pricing: { .empty })
+        let fixture = try UsageTimerRouterTests.Fixture()
+        defer { fixture.remove() }
+        let cli = LaunchProbe()
+        let router = UsageTimerRouter(
+            providers: [provider], isProviderEnabled: { _ in true }, executor: fixture.executor(),
+            cliExecutor: cli, store: fixture.store, report: { _, _ in }, refresh: { _, _ in }, now: { Self.now })
+
+        let snapshot = await provider.refresh()
+        router.receive(snapshot, trigger: .manual)
+        await router.waitForPendingWork(providerIDs: ["zai"])
+
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertEqual(snapshot.liveQuotaObservedAt, Self.now)
+        XCTAssertTrue(provider.usageTimerObservations.isEmpty)
+        XCTAssertFalse(router.hasPendingWork)
+        XCTAssertEqual(cli.executionCount, 0)
+        await router.shutdown()
+    }
+
+    func testZAIQuotaObservationTimeDoesNotIncludeSlowSubscriptionLookup() async throws {
+        let clock = OSAllocatedUnfairLock(initialState: Self.now)
+        let provider = ZAIProvider(
+            authStore: ZAIAuthStore(files: FakeFiles(), environment: FakeEnvironment(["ZAI_API_KEY": "fixture-key"])),
+            usageClient: ZAIUsageClient(
+                http: RoutingHTTPClient { request in
+                    if request.url == ZAIUsageClient.subscriptionURL { clock.withLock { $0.addTimeInterval(120) } }
+                    return .init(
+                        statusCode: 200, headers: [:],
+                        body: Data(
+                            #"{"data":{"limits":[{"type":"CREDIT_LIMIT","unit":3,"number":5,"percentage":0,"nextResetTime":1800018000000}]}}"#
+                                .utf8))
+                }), now: { clock.withLock { $0 } }, pricing: { .empty })
+
+        let snapshot = await provider.refresh()
+
+        XCTAssertEqual(snapshot.liveQuotaObservedAt, Self.now)
+        XCTAssertEqual(try XCTUnwrap(provider.usageTimerObservations.first).observedAt, Self.now)
+        XCTAssertEqual(clock.withLock { $0 }, Self.now.addingTimeInterval(120))
+    }
+
+    func testArgonOnlyUnusedQuotaDoesNotProbeCloudCodeOrDegradeLanguageServerResult() async {
+        let body = Data(
+            #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":0.8},{"bucketId":"3p-5h","remainingFraction":0.8},{"bucketId":"gemini-argon-wtu-weekly","remainingFraction":1}]}]}"#
+                .utf8)
+        let routing = RoutingHTTPClient { request in
+            if request.url.host == "127.0.0.1", request.url.path.hasSuffix("/RetrieveUserQuotaSummary") {
+                return .init(statusCode: 200, headers: [:], body: body)
+            }
+            return .init(statusCode: 503, headers: [:], body: Data())
+        }
+        let provider = AntigravityProvider(
+            authStore: AntigravityAuthStore(
+                keychain: FakeKeychain(Self.keychainValue(refreshToken: "original")), files: FakeFiles(),
+                now: { Self.now }),
+            usageClient: AntigravityUsageClient(lsHTTP: routing, http: routing),
+            discovery: LanguageServerDiscovery(processRunner: DiscoveryRunner(hasLS: true)),
+            usageScan: { _, _ in nil }, now: { Self.now }, pricing: { .empty })
+
+        let snapshot = await provider.refresh()
+
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertNil(snapshot.warning)
+        XCTAssertFalse(snapshot.isDegraded == true)
+        XCTAssertEqual(snapshot.liveQuotaObservedAt, Self.now)
+        XCTAssertTrue(provider.usageTimerObservations.isEmpty)
+        XCTAssertTrue(routing.requests.allSatisfy { $0.url.host == "127.0.0.1" })
+    }
+
     private nonisolated static func keychainValue(refreshToken: String) -> String {
         #"{"token":{"access_token":"test-access","refresh_token":"\#(refreshToken)","expiry":"2099-01-01T00:00:00Z"}}"#
     }
@@ -162,10 +238,12 @@ final class UsageTimerProviderCredentialTests: XCTestCase {
 
     private final class LaunchProbe: UsageTimerCLIExecuting {
         var launchCount = 0
+        var executionCount = 0
         func execute(
             _ configuration: UsageTimerCLIConfiguration,
             canLaunch: @escaping @MainActor () async -> Bool
         ) async -> UsageTimerExecutionResult {
+            executionCount += 1
             guard await canLaunch() else { return .init(launched: false, completed: false) }
             launchCount += 1
             return .init(launched: true, completed: true)
