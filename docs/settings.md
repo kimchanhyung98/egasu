@@ -163,7 +163,7 @@ Accounts 맨 위의 **Usage Cards** 설정 하나로 계정 기능을 지원하�
 
 `{name}`은 계정의 기존 **Account Name** 사용.
 제목 형식은 편집 불가이며, **Manage…**에서 계정명을 변경하면 카드 제목과 Share Screenshot 제목에 즉시 반영.
-계정 표시와 공유 레이아웃 동작은 [대시보드](/docs/dashboard.md) 참조.
+계정 표시, 계정별 한도와 프로바이더 공통 지표의 배치는 [대시보드](/docs/dashboard.md) 참조.
 
 표시 모드는 즉시 적용되고 재실행 후에도 유지.
 공통 선택을 저장하기 전에는 초기 개발 빌드의 프로바이더별 설정 중 **Separate Cards**가 하나라도 있으면 승계하며, 그렇지 않으면 **Single Card** 사용.

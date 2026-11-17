@@ -47,8 +47,8 @@ Conventions for the per-provider modules under `Sources/Egasu/Providers/<Name>/`
   설치된 앱은 앱 업데이트 없이 다음 가격표 갱신에서 반영.
   번들 LiteLLM/models.dev 스냅샷은 릴리스 시점에 `script/update_pricing_snapshots.sh`로 재생성.
 - **Default order:** Claude, Codex, Cursor first (the established providers, in that order), then every other provider alphabetically by display name (Antigravity, Devin, Grok, …). The order is the array order in `AppContainer`, which seeds `LayoutStore`'s default provider order (and `resetToDefault`). A new provider slots into the alphabetical tail.
-- **Metric placement defaults:** when adding or changing a metric, confirm its four defaults with the owner before choosing — never pick silently:
-  1. enabled on/off (`DefaultLayout.metricIDs`),
+- **Metric placement defaults:** 지표는 기본 켜짐이며 기존 숨김 설정 우선. 나머지 배치 기본값은 오너와 확인:
+  1. 지표는 기본 켜짐이며 숨긴 지표만 저장. 기존 egasu·OpenUsage에서 이전한 표시·숨김 설정 우선(`DefaultLayout.metricIDs(in:)`).
   2. Always Visible vs. On Demand — above the fold vs. behind the per-provider caret (`DefaultLayout.expandedMetricIDs`). Note: a provider always keeps at least one Always Visible row — the dashboard promotes all metrics when every one is marked On Demand, so a fully On Demand provider isn't possible; leave one metric Always Visible for the caret to appear,
   3. pinned to the menu bar (`DefaultLayout.pinnedMetricIDs`),
   4. order (within a provider, the `widgetDescriptors` declaration order).

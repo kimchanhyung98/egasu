@@ -24,7 +24,7 @@ struct ProviderListRow<Handle: View>: View {
                 ProviderIcon(source: provider.icon)
                     .frame(width: 18, height: 18)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(container.displayName(for: provider))
+                    Text(container.customizeDisplayName(for: provider))
                         .font(.system(size: density.headerPointSize, weight: .semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
@@ -38,8 +38,10 @@ struct ProviderListRow<Handle: View>: View {
             .contentShape(Rectangle())
             .onTapGesture { onOpen() }
 
-            Toggle("", isOn: Binding(get: { isEnabled }, set: { onToggle($0) }))
-                .settingsSwitchStyle()
+            if !ProviderAccountID.isAccountCard(provider.id) {
+                Toggle("", isOn: Binding(get: { isEnabled }, set: { onToggle($0) }))
+                    .settingsSwitchStyle()
+            }
 
             Button(action: onOpen) {
                 Image(systemName: "chevron.right")
@@ -49,7 +51,7 @@ struct ProviderListRow<Handle: View>: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(L10n.customize("Open %@", container.displayName(for: provider)))
+            .accessibilityLabel(L10n.customize("Open %@", container.customizeDisplayName(for: provider)))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, density.controlRowPadding)

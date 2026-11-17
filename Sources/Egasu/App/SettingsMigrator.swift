@@ -106,6 +106,59 @@ enum SettingsMigrator {
     /// 적용된 스키마 버전의 기록 key (정수). 부재 = 미마이그레이션 — fresh 또는 legacy, 런타임 판별.
     static let schemaVersionKey = "openusage.settings.schemaVersion"
 
+    /// 기존 egasu 레이아웃이 없을 때만 원본 앱의 지표 설정 복사. 계정 ID는 축약하거나 추정하지 않음.
+    @discardableResult
+    static func importUpstreamLayoutIfNeeded(
+        defaults: UserDefaults = .standard,
+        domainName: String = Bundle.main.bundleIdentifier ?? "",
+        sourceDomainName: String = "com.robinebers.openusage"
+    ) -> Bool {
+        guard !domainName.isEmpty, domainName != sourceDomainName else { return false }
+        let existing = defaults.persistentDomain(forName: domainName) ?? [:]
+        guard !existing.keys.contains(where: { $0.hasPrefix("openusage.layout.") }) else { return false }
+        let source = defaults.persistentDomain(forName: sourceDomainName) ?? [:]
+        let layoutKey = "openusage.layout.v1"
+        let values: [String: Any]
+        if let savedV2 = source["openusage.layout.v2"] {
+            guard let data = savedV2 as? Data else {
+                AppLog.warn(.config, "upstream layout v2 is not readable data; layout import skipped")
+                return false
+            }
+            do {
+                let layout = try JSONDecoder().decode(UpstreamLayoutV2.self, from: data)
+                values = [
+                    "\(layoutKey).disabledMetrics": layout.hiddenMetricIDs ?? [],
+                    "\(layoutKey).priorityPins": layout.priorityPinIDs ?? [],
+                    "\(layoutKey).providerOrder": try JSONEncoder().encode(layout.providerOrder),
+                    "\(layoutKey).metricOrderByProvider": try JSONEncoder().encode(layout.metricOrderByProvider)
+                ]
+            } catch {
+                AppLog.warn(.config, "upstream layout v2 import failed: \(error.localizedDescription)")
+                return false
+            }
+        } else {
+            let suffixes = [
+                "", ".providerOrder", ".metricOrderByProvider", ".seededDefaults", ".menuBarPins",
+                ".expandedMetrics", ".expandOnEnable", ".expandedProviders"
+            ]
+            values = Dictionary(uniqueKeysWithValues: suffixes.compactMap { suffix in
+                let key = layoutKey + suffix
+                return source[key].map { (key, $0) }
+            })
+        }
+        guard !values.isEmpty else { return false }
+        for (key, value) in values { defaults.set(value, forKey: key) }
+        AppLog.info(.config, "imported \(values.count) upstream layout values without changing account IDs")
+        return true
+    }
+
+    private struct UpstreamLayoutV2: Decodable {
+        let hiddenMetricIDs: [String]?
+        let priorityPinIDs: [String]?
+        let providerOrder: [String]
+        let metricOrderByProvider: [String: [String]]
+    }
+
     /// 도메인을 `current`까지 migration. 결과 스키마 버전 반환 (로깅·테스트용).
     @discardableResult
     static func migrate(

@@ -73,8 +73,10 @@ OpenCode처럼 로컬 기록만 수집하는 프로바이더는 사용량 조회
 3. **위젯 선언.**
    `WidgetDescriptor+Factories.swift`의 팩토리(`percent`, `boundedDollars`, `spend`, `tokenSpend`, `combined`, `values`, `badge` 등)로 프로바이더의 지표를 `WidgetDescriptor`로 노출.
 4. **기본 배치 확인.**
-   지표별 기본 활성화 여부, Always Visible/On Demand 위치, 메뉴 막대 고정 여부, 표시 순서를 소유자와 확인.
-   확인한 값을 `DefaultLayout.metricIDs`, `DefaultLayout.expandedMetricIDs`, `DefaultLayout.pinnedMetricIDs`와 `widgetDescriptors` 선언 순서에 반영.
+   모든 지표는 기본 켜짐이며 기존 숨김 설정 우선.
+   Always Visible/On Demand 위치, 메뉴 막대 고정 여부와 새 지표 순서를 소유자와 확인.
+   지표 활성화 목록은 등록된 지표에서 계산.
+   확인한 배치는 `DefaultLayout.expandedMetricIDs`, `DefaultLayout.pinnedMetricIDs`와 `widgetDescriptors` 선언 순서에 반영.
    접기 버튼이 필요하면 활성 지표 중 하나 이상을 Always Visible로 유지.
    활성 지표가 전부 On Demand이면 대시보드가 모든 지표를 항상 표시하는 방식으로 처리.
 5. **등록.**

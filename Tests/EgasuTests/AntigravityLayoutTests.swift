@@ -59,13 +59,21 @@ final class AntigravityLayoutTests: XCTestCase {
     }
 
     func testExistingUserLayoutAutoSeedsWeeklyMetricsBelowCaretForClaudePool() {
-        // weekly metric 출시 전 layout: 마이그레이션 baseline에 Antigravity 부재 → `seedNewDefaultMetrics`가 1회 자동 enable
+        // 주간 지표가 없던 등록 목록에서 새 지표가 추가되는 실행 재현.
         let defaults = makeDefaults("SeedWeeklies")
         saveStored([
             PlacedWidget(descriptorID: "antigravity.geminiPro"),
             PlacedWidget(descriptorID: "antigravity.claude")
         ], forKey: "layout", in: defaults)
 
+        let registry = WidgetRegistry.antigravityOnly
+        let oldRegistry = WidgetRegistry(
+            providers: registry.providers,
+            descriptors: registry.descriptors.filter {
+                !["antigravity.geminiWeekly", "antigravity.claudeWeekly"].contains($0.id)
+            }
+        )
+        _ = LayoutStore(registry: oldRegistry, defaults: defaults, storageKey: "layout")
         let store = LayoutStore(registry: .antigravityOnly, defaults: defaults, storageKey: "layout")
 
         XCTAssertTrue(store.isMetricEnabled("antigravity.geminiWeekly"))
@@ -86,6 +94,12 @@ final class AntigravityLayoutTests: XCTestCase {
         defaults.set(["antigravity.claude"], forKey: "layout.menuBarPins")
         defaults.set(["antigravity.claudeWeekly"], forKey: "layout.expandedMetrics")
 
+        let registry = WidgetRegistry.antigravityOnly
+        let oldRegistry = WidgetRegistry(
+            providers: registry.providers,
+            descriptors: registry.descriptors.filter { $0.id != "antigravity.argonWeekly" }
+        )
+        _ = LayoutStore(registry: oldRegistry, defaults: defaults, storageKey: "layout")
         let store = LayoutStore(registry: .antigravityOnly, defaults: defaults, storageKey: "layout")
 
         XCTAssertEqual(

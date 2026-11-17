@@ -18,6 +18,8 @@ struct LayoutInitialState {
     let expandedProviderIDs: Set<String>
     let defaultExpandedOnEnableIDs: Set<String>
     let menuBarStyle: MenuBarStyle
+    let disabledMetricIDs: Set<String>
+    let shouldPersistVisibility: Bool
 
     let shouldPersistPlaced: Bool
     let shouldPersistExpanded: Bool
@@ -35,29 +37,76 @@ enum LayoutBootstrap {
     static func load(
         registry: WidgetRegistry,
         persistence: LayoutPersistence,
-        defaults: LayoutDefaultSet
+        defaults: LayoutDefaultSet,
+        knownCardIDs: Set<String> = []
     ) -> LayoutInitialState {
-        let hasStoredLayout = persistence.hasStoredLayout
-        // registry에 없는 metric(부재 중 계정 card)도 tombstone으로 유지 — 계정 복귀 시 enabled 상태 복원
-        let savedPlaced = persistence.loadPlaced()
-        // 저장된 카드 scoped 항목은 family 설정으로 접음 — 한 provider의 카드는 layout 1벌을 공유
-        let foldedPlaced = savedPlaced.map(LayoutOrdering.foldingToCanonical)
-        let startingPlaced = foldedPlaced ?? defaults.metricIDs
-            .filter { registry.hasCanonicalMetric($0) }
-            .map { PlacedWidget(descriptorID: $0) }
-        let seededResult = seedNewDefaultMetrics(
-            into: startingPlaced,
-            persistence: persistence,
-            hasStoredLayout: hasStoredLayout,
-            registry: registry,
-            defaults: defaults
-        )
-
         let providerOrder = persistence.loadProviderOrder() ?? registry.providers.map(\.id)
-        let savedMetricOrder = persistence.loadMetricOrder()
-        let metricOrderByProvider = savedMetricOrder.map {
-            LayoutOrdering.normalizedMetricOrder($0, registry: registry)
-        } ?? LayoutOrdering.defaultMetricOrder(registry: registry)
+        let savedOrder = persistence.loadMetricOrder() ?? [:]
+        let legacyCards = persistence.loadSeededCards().map(Set.init)
+        let copiesFamily = !persistence.hasStoredDisabledMetrics && legacyCards == nil
+        let pinnedCards = (persistence.loadPriorityPins() ?? []).map(ProviderAccountID.providerID(ofMetric:))
+        let cards = Set(registry.providers.map(\.id) + providerOrder + pinnedCards + Array(savedOrder.keys))
+            .union(knownCardIDs).union(legacyCards ?? [])
+        var order = copiesFamily
+            ? LayoutOrdering.normalizedMetricOrder(savedOrder, registry: registry) : savedOrder
+        if copiesFamily {
+            order = LayoutOrdering.copyingOrderToCards(order, accountCards: cards.filter(ProviderAccountID.isAccountCard).sorted())
+        }
+
+        let currentIDs = Set(registry.descriptors.map(\.id).filter { !ProviderAccountID.isSharedMetricAlias($0) })
+        var disabled: Set<String>
+        var mayPersist = true
+        var legacyPlaced: [PlacedWidget] = []
+        if persistence.hasStoredDisabledMetrics {
+            if let saved = persistence.loadDisabledMetrics() {
+                disabled = Set(saved)
+            } else {
+                // 손상된 숨김 설정을 모두 켜짐으로 덮어쓰지 않고 원본 보존.
+                disabled = currentIDs
+                mayPersist = false
+            }
+        } else if persistence.hasStoredLayout {
+            if let saved = persistence.loadPlaced() {
+                legacyPlaced = copiesFamily
+                    ? LayoutOrdering.copyingToCards(LayoutOrdering.foldingToCanonical(saved),
+                                                    accountCards: cards.filter(ProviderAccountID.isAccountCard).sorted())
+                    : saved
+                let enabled = Set(legacyPlaced.map(\.descriptorID))
+                // 등록된 적 없는 새 카드는 기본 켜짐. 부재 중인 기존 카드의 숨김도 함께 보존.
+                let existingCards = legacyCards ?? cards
+                var existingIDs = Set(order.filter { existingCards.contains($0.key) }.values.flatMap { $0 })
+                for card in existingCards {
+                    let family = ProviderAccountID.family(of: card)
+                    for id in registry.canonicalMetricIDs(family: family) {
+                        if ProviderAccountID.isSharedMetric(id) && card != family { continue }
+                        existingIDs.insert(LayoutOrdering.cardMetricID(id, on: card))
+                    }
+                }
+                disabled = existingIDs.subtracting(enabled)
+            } else {
+                disabled = currentIDs
+                mayPersist = false
+            }
+        } else {
+            let defaults = Set(defaults.metricIDs.map(ProviderAccountID.canonicalMetricID))
+            disabled = Set(currentIDs.filter { !defaults.contains(ProviderAccountID.canonicalMetricID($0)) })
+        }
+        if !persistence.hasStoredDisabledMetrics {
+            disabled = disabled.filter { !ProviderAccountID.isSharedMetricAlias($0) }
+        }
+        let legacyByID = Dictionary(legacyPlaced.map { ($0.descriptorID, $0) }, uniquingKeysWith: { first, _ in first })
+        var placed = registry.descriptors.compactMap { descriptor -> PlacedWidget? in
+            guard currentIDs.contains(descriptor.id), !disabled.contains(descriptor.id) else { return nil }
+            return legacyByID[descriptor.id] ?? PlacedWidget(descriptorID: descriptor.id)
+        }
+        placed.append(contentsOf: legacyPlaced.filter { !currentIDs.contains($0.descriptorID) })
+        let hasStoredLayout = persistence.hasStoredLayout || persistence.hasStoredDisabledMetrics
+        let metricOrderByProvider = order
+        let seededResult = seedNewDefaultMetrics(
+            into: LayoutOrdering.foldingToCanonical(persistence.loadPlaced() ?? []),
+            persistence: persistence, hasStoredLayout: hasStoredLayout,
+            registry: registry, defaults: defaults
+        )
 
         // 저장값(모두 unpin한 빈 배열 포함) 우선, 미지의 저장 id는 부재 중 계정 card용 tombstone으로 보존
         let pinnedMetricIDs: Set<String>
@@ -122,7 +171,7 @@ enum LayoutBootstrap {
         }
 
         return LayoutInitialState(
-            placed: seededResult.placed,
+            placed: placed,
             providerOrder: providerOrder,
             metricOrderByProvider: metricOrderByProvider,
             pinnedMetricIDs: pinnedMetricIDs,
@@ -130,12 +179,13 @@ enum LayoutBootstrap {
             expandedProviderIDs: expandedProviderIDs,
             defaultExpandedOnEnableIDs: defaultExpandedOnEnableIDs,
             menuBarStyle: persistence.loadMenuBarStyle(),
-            shouldPersistPlaced: seededResult.shouldPersistPlaced
-                || foldedPlaced.map { $0 != savedPlaced } ?? false,
+            disabledMetricIDs: disabled,
+            shouldPersistVisibility: mayPersist,
+            shouldPersistPlaced: false,
             shouldPersistExpanded: shouldPersistExpanded,
             shouldPersistExpandOnEnable: shouldPersistExpandOnEnable,
             shouldPersistPins: shouldPersistPins,
-            shouldPersistMetricOrder: savedMetricOrder.map { $0 != metricOrderByProvider } ?? false,
+            shouldPersistMetricOrder: order != savedOrder,
             shouldPersistExpandedProviders: shouldPersistExpandedProviders,
             seededDefaultsToPersist: seededResult.shouldPersistSeededDefaults
                 ? seededResult.seededDefaults
@@ -196,6 +246,41 @@ enum LayoutBootstrap {
 
 /// startup과 라이브 layout 변경이 공유하는 순수 ordering·default helper
 enum LayoutOrdering {
+    /// 지표의 패밀리 — `claude@work.trend` → `claude`.
+    static func family(ofMetric metricID: String) -> String {
+        ProviderAccountID.family(of: ProviderAccountID.providerID(ofMetric: metricID))
+    }
+
+    /// 프로바이더 지표를 계정 카드 지표로 변환 — 기본 카드는 유지, claude.trend + claude@work → claude@work.trend.
+    static func cardMetricID(_ metricID: String, on cardID: String) -> String {
+        let canonicalID = ProviderAccountID.canonicalMetricID(metricID)
+        let family = family(ofMetric: canonicalID)
+        guard ProviderAccountID.family(of: cardID) == family, cardID != family else { return canonicalID }
+        return "\(cardID)\(canonicalID.dropFirst(family.count))"
+    }
+
+    /// 프로바이더 배치는 유지하고 개인 지표만 같은 프로바이더의 계정 카드마다 복사.
+    static func copyingToCards(_ placed: [PlacedWidget], accountCards: [String]) -> [PlacedWidget] {
+        placed + accountCards.flatMap { card in
+            placed.filter {
+                !ProviderAccountID.isSharedMetric($0.descriptorID)
+                    && family(ofMetric: $0.descriptorID) == ProviderAccountID.family(of: card)
+            }
+                .map { PlacedWidget(descriptorID: cardMetricID($0.descriptorID, on: card)) }
+        }
+    }
+
+    /// 개인 지표 순서만 같은 패밀리 계정 카드마다 복사.
+    static func copyingOrderToCards(_ order: [String: [String]], accountCards: [String]) -> [String: [String]] {
+        var result = order
+        for card in accountCards {
+            guard let familyOrder = order[ProviderAccountID.family(of: card)] else { continue }
+            result[card] = familyOrder.filter { !ProviderAccountID.isSharedMetric($0) }
+                .map { cardMetricID($0, on: card) }
+        }
+        return result
+    }
+
     static func knownMetricIDs(_ ids: [String], registry: WidgetRegistry) -> [String] {
         var seen = Set<String>()
         return ids.filter { id in
@@ -209,6 +294,7 @@ enum LayoutOrdering {
     static func foldingToCanonical(_ placed: [PlacedWidget]) -> [PlacedWidget] {
         var seen = Set<String>()
         return placed.compactMap { widget in
+            guard !ProviderAccountID.isSharedMetricAlias(widget.descriptorID) else { return nil }
             let canonicalID = ProviderAccountID.canonicalMetricID(widget.descriptorID)
             guard seen.insert(canonicalID).inserted else { return nil }
             return PlacedWidget(id: widget.id, descriptorID: canonicalID)
@@ -285,7 +371,8 @@ enum LayoutOrdering {
             let family = ProviderAccountID.family(of: providerID)
             // bare key가 곧 family 설정 — 카드 key는 family 항목이 없을 때만 승격
             if fallback[family] == nil || providerID == family {
-                fallback[family] = ids.map(ProviderAccountID.canonicalMetricID)
+                fallback[family] = ids.filter { !ProviderAccountID.isSharedMetricAlias($0) }
+                    .map(ProviderAccountID.canonicalMetricID)
             }
         }
         for provider in registry.providers {

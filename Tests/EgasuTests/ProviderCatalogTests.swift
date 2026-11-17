@@ -152,7 +152,7 @@ final class ProviderCatalogTests: XCTestCase {
         XCTAssertTrue(claudeRuntimes.allSatisfy { !$0.authStore.allowsDesktopFallback })
     }
 
-    func testCustomizeShowsOneRowForAProviderWithMultipleAccounts() {
+    func testCustomizeShowsEachAccountForRestoringItsHiddenQuota() {
         let card = AccountUsageSnapshotCard(id: "claude@profile-work", profileID: "work", family: "claude")
         let registry = WidgetRegistry.from(ProviderCatalog.make(snapshotCards: [card]))
         let layout = LayoutStore(registry: registry, defaults: makeScratchDefaults(), storageKey: "layout")
@@ -161,7 +161,7 @@ final class ProviderCatalogTests: XCTestCase {
             layout.customizeProviderRows
                 .filter { ProviderAccountID.family(of: $0.id) == "claude" }
                 .map(\.id),
-            ["claude"]
+            ["claude", card.id]
         )
     }
 
