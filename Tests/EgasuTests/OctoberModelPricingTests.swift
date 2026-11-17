@@ -140,6 +140,7 @@ final class OctoberModelPricingTests: XCTestCase {
         for (model, input, read, output) in cases {
             let rates = try XCTUnwrap(pricing.resolve(model: model), model)
             XCTAssertEqual(rates.inputPerMillion, input, model)
+            XCTAssertEqual(rates.cacheWritePerMillion, input, model)
             XCTAssertEqual(rates.cacheReadPerMillion, read, model)
             XCTAssertEqual(rates.outputPerMillion, output, model)
         }
