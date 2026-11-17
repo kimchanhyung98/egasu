@@ -1,4 +1,5 @@
 import SwiftUI
+import Vision
 import XCTest
 @testable import Egasu
 
@@ -6,7 +7,7 @@ import XCTest
 final class DashboardLiveRowTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
-    func testPopulatedTrendKeepsItsDetailAndSourceInBothLayouts() {
+    func testPopulatedTrendKeepsItsDetailAndSource() {
         var data = sample(title: "Usage Trend")
         data.isChart = true
         data.chartPoints = [.init(value: 120, label: "2026-11-18")]
@@ -69,6 +70,62 @@ final class DashboardLiveRowTests: XCTestCase {
                 XCTAssertLessThanOrEqual(image.size.width, DashboardGrid.resetWidth)
             }
         }
+    }
+
+    func testBothLayoutsRenderTheTrendAndCachedRefreshFailure() throws {
+        try L10n.withLanguage(.english) {
+            var trend = sample(title: "Usage Trend")
+            trend.isChart = true
+            trend.chartPoints = [.init(value: 20, label: "Day 1"), .init(value: 120, label: "Day 2")]
+            var forecast = sample(title: "Reset Watch")
+            forecast.forecast = .init(deadline: now.addingTimeInterval(3600), refreshFailed: true)
+            var chartHeights: [DashboardLayoutStyle: Int] = [:]
+
+            for style in DashboardLayoutStyle.allCases {
+                let chart = try render(trend, style: style)
+                chartHeights[style] = chart.height
+                let pixels = try XCTUnwrap(chart.dataProvider?.data) as Data
+                let bytes = [UInt8](pixels)
+                XCTAssertTrue(
+                    stride(from: 0, to: bytes.count - 3, by: 4).contains {
+                        Int(bytes[$0 + 2]) > Int(bytes[$0]) + 30 && Int(bytes[$0 + 2]) > Int(bytes[$0 + 1]) + 10
+                    }, "\(style): Usage Trend 막대 표시")
+
+                let failure = try render(forecast, style: style)
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["en-US"]
+                request.usesLanguageCorrection = false
+                try VNImageRequestHandler(cgImage: failure).perform([request])
+                let text =
+                    request.results?.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ") ?? ""
+                XCTAssertTrue(text.lowercased().contains("failed"), "\(style): \(text)")
+            }
+            XCTAssertGreaterThan(try XCTUnwrap(chartHeights[.cards]), try XCTUnwrap(chartHeights[.minimal]))
+        }
+    }
+
+    private func render(_ data: WidgetData, style: DashboardLayoutStyle) throws -> CGImage {
+        let row = DashboardMetricRow(
+            model: data.dashboardRow(now: now), chartPoints: data.chartPoints, layoutStyle: style
+        )
+        .frame(width: PanelMetrics.width - PanelMetrics.margin * 2)
+        .padding(8)
+        .background(Color.white)
+        .environment(\.colorScheme, .light)
+        .environment(\.hoverTooltipsDisabled, true)
+        .environment(\.drawsLevelsAsShapes, true)
+        let renderer = ImageRenderer(content: row)
+        renderer.scale = 2
+        let rendered = try XCTUnwrap(renderer.cgImage)
+        let context = try XCTUnwrap(
+            CGContext(
+                data: nil, width: rendered.width, height: rendered.height, bitsPerComponent: 8,
+                bytesPerRow: rendered.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+        context.draw(rendered, in: CGRect(x: 0, y: 0, width: rendered.width, height: rendered.height))
+        return try XCTUnwrap(context.makeImage())
     }
 
     func testDashboardColorsUseTheSharedRemainingLimitsEvenWhenPacingDiffers() {

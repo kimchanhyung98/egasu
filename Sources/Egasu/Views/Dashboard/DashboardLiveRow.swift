@@ -22,7 +22,6 @@ struct DashboardLiveRow: View {
             }
         }
         .onChange(of: line.data.modelBreakdown) { _, _ in hover.dismiss() }
-        .onChange(of: line.data.chartPoints) { _, _ in hover.dismiss() }
         // 초기화권 사용이 강제 새로고침을 일으키므로 고정 중이면 결과 배너를 위해 유지.
         .onChange(of: line.data.expiriesAt) { _, _ in
             if !hover.isPinned { hover.dismiss() }

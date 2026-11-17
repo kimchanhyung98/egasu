@@ -190,7 +190,10 @@ struct WidgetGroupedListView: View {
         guard let group = AccountCardPresentationPlanner.presentedGroup(rawGroup, mode: .separateCards) else { return }
         _ = ShareCardRenderer.share(
             group: group, dataStore: dataStore, layout: layout, appearance: colorScheme,
-            displayName: container.accountCardTitle(for: group.provider)
+            displayName: AccountCardPresentationPlanner.cardTitle(
+                providerID: group.provider.id, fallback: container.displayName(for: group.provider),
+                mode: .separateCards, accountName: container.accountOptionTitle(for: group.provider.id)
+            )
         )
     }
 

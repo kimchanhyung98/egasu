@@ -199,4 +199,4 @@
 "%lldy %lldmo" = "%lld년 %lld개월";
 "Soft limit at %lld%%" = "소프트 한도 %lld%%";
 
-"Failed" = "갱신 실패";
+"Failed" = "실패";
