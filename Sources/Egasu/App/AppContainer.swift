@@ -119,6 +119,8 @@ final class AppContainer {
         let softLimitSettings = SoftLimitSettingsStore()
         let layout = LayoutStore(
             registry: registry,
+            knownCardIDs: enablement.knownIDs.union(enablement.enabledIDs ?? []),
+            profileIDsByCardID: initialProfileIDs,
             isProviderEnabled: { [enablement] in enablement.isEnabled($0) }
         )
         let dataStore = WidgetDataStore(
@@ -343,6 +345,16 @@ final class AppContainer {
         )
     }
 
+    /// Customize의 계정별 제목 — 기본 행은 프로바이더 이름.
+    func customizeDisplayName(for provider: Provider) -> String {
+        let name = displayName(for: provider)
+        guard ProviderAccountID.isAccountCard(provider.id) else { return name }
+        let account = accountProfileLabel(for: provider.id)
+            ?? accounts.resolvedDisplayName(cardID: provider.id)
+            ?? provider.displayName
+        return L10n.settings("%@: %@", name, account)
+    }
+
     /// 관리형 profile 기반 카드의 profile label; 아니면 `nil`.
     func accountProfileLabel(for cardID: String) -> String? {
         guard let profileID = accountProfileIDsByCardID[cardID] else { return nil }
@@ -473,7 +485,7 @@ final class AppContainer {
         registry = nextRegistry
         providers = nextProviders
         accountProfileIDsByCardID = nextProfileIDs
-        layout.replaceRegistry(nextRegistry)
+        layout.replaceRegistry(nextRegistry, profileIDsByCardID: nextProfileIDs)
         dataStore.replaceProviderCatalog(
             registry: nextRegistry,
             providers: nextProviders,

@@ -1,7 +1,7 @@
 import XCTest
 @testable import Egasu
 
-/// 계정 카드 layout은 provider(family) 설정 1벌을 공유 — 카드별 사본 없음
+/// 공통 이력·확장 영역·기존 별표 설정의 계정 카드 호환성.
 @MainActor
 final class AccountCardLayoutSharingTests: XCTestCase {
     private let cardID = "claude@profile-work"
@@ -32,8 +32,8 @@ final class AccountCardLayoutSharingTests: XCTestCase {
         XCTAssertFalse(store.isMetricEnabled("claude.trend"))
         XCTAssertFalse(store.isMetricEnabled("\(cardID).trend"))
         XCTAssertFalse(
-            store.placed.contains { ProviderAccountID.isAccountCard($0.descriptorID) },
-            "enabled metrics are stored once per provider"
+            store.placed.contains { ProviderAccountID.isSharedMetricAlias($0.descriptorID) },
+            "공통 이력 지표만 프로바이더별로 한 번 저장"
         )
     }
 
@@ -166,11 +166,11 @@ final class AccountCardLayoutSharingTests: XCTestCase {
         ))
         let accountOrder = presentation.orderedProfiles(profiles, family: "claude").map(\.id)
 
-        XCTAssertEqual(layout.customizeProviderRows.map(\.id), ["codex", "claude"])
+        XCTAssertEqual(layout.customizeProviderRows.map(\.id), [cardID, "codex", "claude"])
         XCTAssertTrue(layout.reorderProvider(dragged: "claude", target: "codex"))
 
-        XCTAssertEqual(layout.customizeProviderRows.map(\.id), ["claude", "codex"])
-        XCTAssertEqual(layout.providerOrder, [cardID, "claude", "codex"])
+        XCTAssertEqual(layout.customizeProviderRows.map(\.id), ["codex", cardID, "claude"])
+        XCTAssertEqual(layout.providerOrder, ["codex", cardID, "claude"])
         XCTAssertEqual(
             presentation.orderedProfiles(profiles, family: "claude").map(\.id),
             accountOrder,
@@ -300,7 +300,7 @@ final class AccountCardLayoutSharingTests: XCTestCase {
 
     // MARK: - Migration of layouts saved per account card
 
-    func testStoredAccountCardEntriesFoldIntoTheProviderLayout() {
+    func testLegacyAccountEntriesCopyPrivateQuotaWithoutOverridingSharedChoices() {
         let defaults = makeDefaults("FoldStoredEntries")
         saveStored(
             [
@@ -316,12 +316,13 @@ final class AccountCardLayoutSharingTests: XCTestCase {
 
         let store = makeStore(defaults: defaults)
 
-        XCTAssertEqual(store.placed.map(\.descriptorID), ["claude.session", "claude.trend"])
+        XCTAssertEqual(store.placed.map(\.descriptorID), ["claude.session", "\(cardID).session"])
+        XCTAssertFalse(store.isMetricEnabled("claude.trend"), "계정의 공통 복사본으로 기본 카드의 숨김을 덮지 않음")
         XCTAssertEqual(store.expandedMetricIDs, ["claude.trend"], "card entries lose to the provider's own setting")
         XCTAssertEqual(store.expandedProviderIDs, ["claude"])
 
         let persistence = LayoutPersistence(defaults: defaults, storageKey: "layout")
-        XCTAssertEqual(persistence.loadPlaced()?.map(\.descriptorID), ["claude.session", "claude.trend"])
+        XCTAssertEqual(persistence.loadPlaced()?.map(\.descriptorID), ["claude.session", "\(cardID).session"])
         XCTAssertEqual(persistence.loadExpandedMetrics().map(Set.init), ["claude.trend"])
         XCTAssertEqual(persistence.loadExpandedProviders().map(Set.init), ["claude"])
     }

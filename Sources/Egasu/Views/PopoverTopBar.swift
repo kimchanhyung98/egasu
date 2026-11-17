@@ -47,7 +47,7 @@ struct PopoverTopBar: View {
 
     private var customizeTitle: String {
         layout.customizeProviderID.flatMap { id in
-            layout.provider(id: id).map { container.displayName(for: $0) }
+            layout.provider(id: id).map { container.customizeDisplayName(for: $0) }
         } ?? L10n.dashboard("Customize")
     }
 

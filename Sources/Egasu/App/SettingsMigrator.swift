@@ -37,66 +37,69 @@ enum SettingsSchema {
             }
         },
         // v3: 신규 Reset Watch는 기존 layout에서도 On Demand 소속 + Rate Limit Resets 직전 순서로 시작.
-        SettingsMigration(version: 3) { defaults in
-            let layoutKey = "openusage.layout.v1"
-            let expandedKey = "openusage.layout.v1.expandedMetrics"
-            let expandOnEnableKey = "openusage.layout.v1.expandOnEnable"
-            let orderKey = "openusage.layout.v1.metricOrderByProvider"
-            let hasInitializedLayout = defaults.data(forKey: layoutKey) != nil
-                || defaults.stringArray(forKey: expandedKey) != nil
-                || defaults.stringArray(forKey: expandOnEnableKey) != nil
-                || defaults.data(forKey: orderKey) != nil
-            guard hasInitializedLayout else { return }
-
-            let resetWatchID = "codex.resetWatch"
-            let savedExpanded = defaults.stringArray(forKey: expandedKey) ?? []
-            let familiesWithBareEntry = Set(savedExpanded.compactMap { id -> String? in
-                let providerID = ProviderAccountID.providerID(ofMetric: id)
-                guard !ProviderAccountID.isAccountCard(providerID) else { return nil }
-                return ProviderAccountID.family(of: providerID)
-            })
-            var seenExpanded = Set<String>()
-            var expanded = savedExpanded.compactMap { id -> String? in
-                let providerID = ProviderAccountID.providerID(ofMetric: id)
-                let family = ProviderAccountID.family(of: providerID)
-                guard !ProviderAccountID.isAccountCard(providerID) || !familiesWithBareEntry.contains(family) else {
-                    return nil
-                }
-                let canonicalID = ProviderAccountID.canonicalMetricID(id)
-                return seenExpanded.insert(canonicalID).inserted ? canonicalID : nil
-            }
-            if !expanded.contains(resetWatchID) {
-                expanded.append(resetWatchID)
-            }
-            if expanded != savedExpanded {
-                defaults.set(expanded, forKey: expandedKey)
-            }
-
-            guard let encodedOrder = defaults.data(forKey: orderKey) else { return }
-            do {
-                var order = try JSONDecoder().decode([String: [String]].self, from: encodedOrder)
-                let codexKeys = order.keys.filter { ProviderAccountID.family(of: $0) == "codex" }
-                let sourceKey = order["codex"] == nil ? codexKeys.sorted().first : "codex"
-                guard let sourceKey, let savedCodex = order[sourceKey] else { return }
-                var seen = Set<String>()
-                var codex = savedCodex
-                    .map(ProviderAccountID.canonicalMetricID)
-                    .filter { seen.insert($0).inserted && $0 != resetWatchID }
-                if let anchor = codex.firstIndex(of: "codex.rateLimitResets") {
-                    codex.insert(resetWatchID, at: anchor)
-                } else {
-                    codex.append(contentsOf: [resetWatchID, "codex.rateLimitResets"])
-                }
-                for key in codexKeys where key != "codex" {
-                    order.removeValue(forKey: key)
-                }
-                order["codex"] = codex
-                defaults.set(try JSONEncoder().encode(order), forKey: orderKey)
-            } catch {
-                AppLog.warn(.config, "Reset Watch layout order migration skipped unreadable saved order: \(error.localizedDescription)")
-            }
-        }
+        SettingsMigration(version: 3, migrate: migrateResetWatchLayout)
     ]
+
+    /// 동결된 v3 레이아웃 변환 — 가져온 v1 설정에도 같은 배치 규칙 적용.
+    static func migrateResetWatchLayout(_ defaults: UserDefaults) {
+        let layoutKey = "openusage.layout.v1"
+        let expandedKey = "openusage.layout.v1.expandedMetrics"
+        let expandOnEnableKey = "openusage.layout.v1.expandOnEnable"
+        let orderKey = "openusage.layout.v1.metricOrderByProvider"
+        let hasInitializedLayout = defaults.data(forKey: layoutKey) != nil
+            || defaults.stringArray(forKey: expandedKey) != nil
+            || defaults.stringArray(forKey: expandOnEnableKey) != nil
+            || defaults.data(forKey: orderKey) != nil
+        guard hasInitializedLayout else { return }
+
+        let resetWatchID = "codex.resetWatch"
+        let savedExpanded = defaults.stringArray(forKey: expandedKey) ?? []
+        let familiesWithBareEntry = Set(savedExpanded.compactMap { id -> String? in
+            let providerID = ProviderAccountID.providerID(ofMetric: id)
+            guard !ProviderAccountID.isAccountCard(providerID) else { return nil }
+            return ProviderAccountID.family(of: providerID)
+        })
+        var seenExpanded = Set<String>()
+        var expanded = savedExpanded.compactMap { id -> String? in
+            let providerID = ProviderAccountID.providerID(ofMetric: id)
+            let family = ProviderAccountID.family(of: providerID)
+            guard !ProviderAccountID.isAccountCard(providerID) || !familiesWithBareEntry.contains(family) else {
+                return nil
+            }
+            let canonicalID = ProviderAccountID.canonicalMetricID(id)
+            return seenExpanded.insert(canonicalID).inserted ? canonicalID : nil
+        }
+        if !expanded.contains(resetWatchID) {
+            expanded.append(resetWatchID)
+        }
+        if expanded != savedExpanded {
+            defaults.set(expanded, forKey: expandedKey)
+        }
+
+        guard let encodedOrder = defaults.data(forKey: orderKey) else { return }
+        do {
+            var order = try JSONDecoder().decode([String: [String]].self, from: encodedOrder)
+            let codexKeys = order.keys.filter { ProviderAccountID.family(of: $0) == "codex" }
+            let sourceKey = order["codex"] == nil ? codexKeys.sorted().first : "codex"
+            guard let sourceKey, let savedCodex = order[sourceKey] else { return }
+            var seen = Set<String>()
+            var codex = savedCodex
+                .map(ProviderAccountID.canonicalMetricID)
+                .filter { seen.insert($0).inserted && $0 != resetWatchID }
+            if let anchor = codex.firstIndex(of: "codex.rateLimitResets") {
+                codex.insert(resetWatchID, at: anchor)
+            } else {
+                codex.append(contentsOf: [resetWatchID, "codex.rateLimitResets"])
+            }
+            for key in codexKeys where key != "codex" {
+                order.removeValue(forKey: key)
+            }
+            order["codex"] = codex
+            defaults.set(try JSONEncoder().encode(order), forKey: orderKey)
+        } catch {
+            AppLog.warn(.config, "Reset Watch layout order migration skipped unreadable saved order: \(error.localizedDescription)")
+        }
+    }
 }
 
 /// 버전드 cascading settings migration — 어떤 store보다 먼저 런치 시 1회 실행 필수 (fresh install 판별은 빈 도메인 기준).
@@ -105,6 +108,62 @@ enum SettingsSchema {
 enum SettingsMigrator {
     /// 적용된 스키마 버전의 기록 key (정수). 부재 = 미마이그레이션 — fresh 또는 legacy, 런타임 판별.
     static let schemaVersionKey = "openusage.settings.schemaVersion"
+
+    /// 기존 egasu 레이아웃이 없을 때만 원본 설정 복사. v1은 기존 배치 규칙, v2는 원본 계정 ID 사용.
+    @discardableResult
+    static func importUpstreamLayoutIfNeeded(
+        defaults: UserDefaults = .standard,
+        domainName: String = Bundle.main.bundleIdentifier ?? "",
+        sourceDomainName: String = "com.robinebers.openusage"
+    ) -> Bool {
+        guard !domainName.isEmpty, domainName != sourceDomainName else { return false }
+        let existing = defaults.persistentDomain(forName: domainName) ?? [:]
+        guard !existing.keys.contains(where: { $0.hasPrefix("openusage.layout.") }) else { return false }
+        let source = defaults.persistentDomain(forName: sourceDomainName) ?? [:]
+        let layoutKey = "openusage.layout.v1"
+        let values: [String: Any]
+        if let savedV2 = source["openusage.layout.v2"] {
+            guard let data = savedV2 as? Data else {
+                AppLog.warn(.config, "upstream layout v2 is not readable data; layout import skipped")
+                return false
+            }
+            do {
+                let layout = try JSONDecoder().decode(UpstreamLayoutV2.self, from: data)
+                values = [
+                    "\(layoutKey).disabledMetrics": layout.hiddenMetricIDs ?? [],
+                    "\(layoutKey).priorityPins": layout.priorityPinIDs ?? [],
+                    "\(layoutKey).providerOrder": try JSONEncoder().encode(layout.providerOrder),
+                    "\(layoutKey).metricOrderByProvider": try JSONEncoder().encode(layout.metricOrderByProvider)
+                ]
+            } catch {
+                AppLog.warn(.config, "upstream layout v2 import failed: \(error.localizedDescription)")
+                return false
+            }
+        } else {
+            let suffixes = [
+                "", ".providerOrder", ".metricOrderByProvider", ".seededDefaults", ".menuBarPins",
+                ".expandedMetrics", ".expandOnEnable", ".expandedProviders"
+            ]
+            values = Dictionary(uniqueKeysWithValues: suffixes.compactMap { suffix in
+                let key = layoutKey + suffix
+                return source[key].map { (key, $0) }
+            })
+        }
+        guard !values.isEmpty else { return false }
+        for (key, value) in values { defaults.set(value, forKey: key) }
+        if source["openusage.layout.v2"] == nil {
+            SettingsSchema.migrateResetWatchLayout(defaults)
+        }
+        AppLog.info(.config, "imported \(values.count) upstream layout values without changing account IDs")
+        return true
+    }
+
+    private struct UpstreamLayoutV2: Decodable {
+        let hiddenMetricIDs: [String]?
+        let priorityPinIDs: [String]?
+        let providerOrder: [String]
+        let metricOrderByProvider: [String: [String]]
+    }
 
     /// 도메인을 `current`까지 migration. 결과 스키마 버전 반환 (로깅·테스트용).
     @discardableResult

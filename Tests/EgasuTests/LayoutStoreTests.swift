@@ -5,8 +5,8 @@ import XCTest
 final class LayoutStoreTests: XCTestCase {
     func testRemoveClearsDragStateAndAllowsRepeatedRemoval() {
         let store = makeStore("RepeatedRemoval")
-        let first = PlacedWidget(id: UUID(), descriptorID: DefaultLayout.metricIDs[0])
-        let second = PlacedWidget(id: UUID(), descriptorID: DefaultLayout.metricIDs[1])
+        let first = PlacedWidget(id: UUID(), descriptorID: DefaultLayout.metricIDs(in: .mock)[0])
+        let second = PlacedWidget(id: UUID(), descriptorID: DefaultLayout.metricIDs(in: .mock)[1])
         store.placed = [first, second]
         store.draggingID = first.id
 
@@ -47,7 +47,7 @@ final class LayoutStoreTests: XCTestCase {
 
     func testUndoReversesEnable() {
         let store = makeStore("UndoEnable")
-        // cursor.credits는 DefaultLayout.metricIDs에 없어 mock에서 비활성 시작
+        store.setMetricEnabled("cursor.credits", false)
         XCTAssertFalse(store.isMetricEnabled("cursor.credits"))
 
         store.setMetricEnabled("cursor.credits", true)
@@ -117,7 +117,7 @@ final class LayoutStoreTests: XCTestCase {
 
     func testUndoDoesNotRestoreProviderCardCaretState() {
         // provider card 펼침은 transient view state — snapshot이 expandedProviderIDs를 잘못 담던 회귀 방지
-        let store = makeStore("UndoLeavesProviderCaret")
+        let store = makeStore("UndoLeavesProviderCaret", hiddenMetricIDs: ["cursor.credits"])
         XCTAssertFalse(store.isProviderExpanded("codex"))
 
         XCTAssertTrue(store.setProviderExpanded(true, for: "codex"))
@@ -135,7 +135,7 @@ final class LayoutStoreTests: XCTestCase {
     }
 
     func testUndoWalksBackMultipleMixedSteps() {
-        let store = makeStore("UndoMultiStep")
+        let store = makeStore("UndoMultiStep", hiddenMetricIDs: ["cursor.credits"])
         store.setMetricEnabled("cursor.credits", true)
         store.setPinned(true, for: "cursor.usage")
         store.setMetricEnabled("claude.session", false)
@@ -157,7 +157,7 @@ final class LayoutStoreTests: XCTestCase {
 
     func testUndoIsNotItselfRecorded() {
         // undo 자체가 step으로 기록되면 ⌘Z가 무한 왕복 — 미기록 보장
-        let store = makeStore("UndoNotRecorded")
+        let store = makeStore("UndoNotRecorded", hiddenMetricIDs: ["cursor.credits"])
         store.setMetricEnabled("cursor.credits", true)
         XCTAssertTrue(store.canUndo)
 
@@ -180,7 +180,7 @@ final class LayoutStoreTests: XCTestCase {
     }
 
     func testNoOpActionDoesNotRecordUndoStep() {
-        let store = makeStore("UndoNoOp")
+        let store = makeStore("UndoNoOp", hiddenMetricIDs: ["cursor.credits"])
         store.setMetricEnabled("cursor.credits", true)  // 실제 step 1건
         // 이미 켜진 metric 재활성화·self-target reorder는 no-op — step 미기록
         store.setMetricEnabled("cursor.credits", true)
@@ -212,7 +212,7 @@ final class LayoutStoreTests: XCTestCase {
     }
 
     func testResetProviderClearsUndoHistory() {
-        let store = makeStore("UndoResetProviderClears")
+        let store = makeStore("UndoResetProviderClears", hiddenMetricIDs: ["cursor.credits", "cursor.requests"])
         store.setMetricEnabled("cursor.credits", true)
         store.setMetricEnabled("cursor.requests", true)
         XCTAssertTrue(store.canUndo)
@@ -286,6 +286,15 @@ final class LayoutStoreTests: XCTestCase {
         let defaults = makeDefaults("SeedNewDefault")
         saveStored([PlacedWidget(descriptorID: "claude.session")], forKey: "layout", in: defaults)
 
+        let oldRegistry = WidgetRegistry(
+            providers: WidgetRegistry.mock.providers,
+            descriptors: WidgetRegistry.mock.descriptors.filter { $0.id != "claude.today" }
+        )
+        _ = LayoutStore(
+            registry: oldRegistry, defaults: defaults, storageKey: "layout",
+            defaultMetricIDs: ["claude.session", "claude.weekly"], migrationBaselineMetricIDs: ["claude.session", "claude.weekly"]
+        )
+
         let store = LayoutStore(
             registry: .mock,
             defaults: defaults,
@@ -301,6 +310,15 @@ final class LayoutStoreTests: XCTestCase {
     func testDisablingAutoSeededDefaultDoesNotReAddOnReload() {
         let defaults = makeDefaults("SeedOnce")
         saveStored([PlacedWidget(descriptorID: "claude.session")], forKey: "layout", in: defaults)
+        let oldRegistry = WidgetRegistry(
+            providers: WidgetRegistry.mock.providers,
+            descriptors: WidgetRegistry.mock.descriptors.filter { $0.id != "claude.today" }
+        )
+        _ = LayoutStore(
+            registry: oldRegistry, defaults: defaults, storageKey: "layout",
+            defaultMetricIDs: ["claude.session"], migrationBaselineMetricIDs: ["claude.session"]
+        )
+
         let store = LayoutStore(
             registry: .mock,
             defaults: defaults,
@@ -349,7 +367,7 @@ final class LayoutStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.placed.map(\.descriptorID), ["claude.session"])
     }
 
-    func testAutoSeedingIgnoresUnknownDefaultIDs() {
+    func testLegacyEmptyLayoutStaysEmptyWithUnknownDefaults() {
         let defaults = makeDefaults("UnknownSeed")
         saveStored([PlacedWidget](), forKey: "layout", in: defaults)
 
@@ -361,7 +379,8 @@ final class LayoutStoreTests: XCTestCase {
             migrationBaselineMetricIDs: []
         )
 
-        XCTAssertEqual(store.placed.map(\.descriptorID), ["claude.session"])
+        XCTAssertTrue(store.placed.isEmpty)
+        XCTAssertFalse(store.isMetricEnabled("missing.metric"))
     }
 
     func testExistingLayoutEnablesDefaultExpandedOptionalBelowCaret() {
@@ -390,6 +409,15 @@ final class LayoutStoreTests: XCTestCase {
         // 신규 metric 출시 이전의 기존 layout + 그 metric을 모르는 저장된 expanded set fixture
         saveStored([PlacedWidget(descriptorID: "claude.session")], forKey: "layout", in: defaults)
         defaults.set(["claude.weekly"], forKey: "layout.expandedMetrics")
+
+        let oldRegistry = WidgetRegistry(
+            providers: WidgetRegistry.mock.providers,
+            descriptors: WidgetRegistry.mock.descriptors.filter { $0.id != "claude.today" }
+        )
+        _ = LayoutStore(
+            registry: oldRegistry, defaults: defaults, storageKey: "layout",
+            defaultMetricIDs: ["claude.session"], migrationBaselineMetricIDs: ["claude.session"]
+        )
 
         let store = LayoutStore(
             registry: .mock,
@@ -579,7 +607,7 @@ final class LayoutStoreTests: XCTestCase {
     }
 
     func testAddAndRemoveTogglePlacement() {
-        let store = makeStore("Toggle")
+        let store = makeStore("Toggle", hiddenMetricIDs: ["cursor.credits"])
         XCTAssertFalse(store.isMetricEnabled("cursor.credits"))
 
         store.add("cursor.credits")
@@ -593,7 +621,7 @@ final class LayoutStoreTests: XCTestCase {
     }
 
     func testTogglingMetricDoesNotChangeCustomizeOrder() {
-        let store = makeStore("ToggleKeepsOrder")
+        let store = makeStore("ToggleKeepsOrder", hiddenMetricIDs: ["cursor.credits"])
         let before = store.orderedSupportedMetrics(for: "cursor").map(\.id)
         XCTAssertFalse(store.isMetricEnabled("cursor.credits"))
 
@@ -637,7 +665,7 @@ final class LayoutStoreTests: XCTestCase {
         ])
     }
 
-    func testFreshDefaultLayoutMatchesRecommendedMetricSections() {
+    func testFreshDefaultLayoutEnablesAllCurrentMetricsAndKeepsRecommendedSections() {
         let registry = WidgetRegistry.from([
             ClaudeProvider(),
             CodexProvider(),
@@ -647,29 +675,18 @@ final class LayoutStoreTests: XCTestCase {
         ])
         let store = LayoutStore(registry: registry, defaults: makeDefaults("RecommendedDefaults"), storageKey: "layout")
 
-        XCTAssertEqual(Set(store.placed.map(\.descriptorID)), Set([
-            "claude.session", "claude.weekly", "claude.fable", "claude.trend",
-            "claude.today", "claude.yesterday",
-            "codex.session", "codex.weekly", "codex.trend", "codex.rateLimitResets",
-            "codex.today", "codex.yesterday",
-            "devin.daily", "devin.weekly", "devin.extra",
-            "grok.weekly", "grok.trend",
-            "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30",
-            // Cursor spend tile + usage trend는 기본 layout에서 활성
-            "cursor.usage", "cursor.auto", "cursor.api", "cursor.trend",
-            "cursor.onDemand", "cursor.today", "cursor.yesterday", "cursor.last30"
-        ]))
-        XCTAssertFalse(store.isMetricEnabled("claude.extra"))
-        XCTAssertFalse(store.isMetricEnabled("claude.sonnet"))
-        XCTAssertFalse(store.isMetricEnabled("claude.last30"))
-        XCTAssertFalse(store.isMetricEnabled("codex.resetWatch"))
+        XCTAssertEqual(Set(store.placed.map(\.descriptorID)), Set(registry.descriptors.map(\.id)))
+        XCTAssertTrue(store.isMetricEnabled("claude.extra"))
+        XCTAssertTrue(store.isMetricEnabled("claude.sonnet"))
+        XCTAssertTrue(store.isMetricEnabled("claude.last30"))
+        XCTAssertTrue(store.isMetricEnabled("codex.resetWatch"))
         XCTAssertFalse(store.isPinned("codex.resetWatch"))
-        XCTAssertFalse(store.isMetricEnabled("codex.spark"))
-        XCTAssertFalse(store.isMetricEnabled("codex.sparkWeekly"))
-        XCTAssertFalse(store.isMetricEnabled("codex.credits"))
-        XCTAssertFalse(store.isMetricEnabled("codex.last30"))
-        XCTAssertFalse(store.isMetricEnabled("cursor.requests"))
-        XCTAssertFalse(store.isMetricEnabled("cursor.credits"))
+        XCTAssertTrue(store.isMetricEnabled("codex.spark"))
+        XCTAssertTrue(store.isMetricEnabled("codex.sparkWeekly"))
+        XCTAssertTrue(store.isMetricEnabled("codex.credits"))
+        XCTAssertTrue(store.isMetricEnabled("codex.last30"))
+        XCTAssertTrue(store.isMetricEnabled("cursor.requests"))
+        XCTAssertTrue(store.isMetricEnabled("cursor.credits"))
 
         let primaryByProvider = Dictionary(uniqueKeysWithValues: store.customizeGroups.map {
             ($0.provider.id, $0.alwaysShownMetrics.map(\.id))
@@ -710,7 +727,7 @@ final class LayoutStoreTests: XCTestCase {
             PlacedWidget(descriptorID: "claude.weekly")
         ])
         persistence.saveMetricOrder(["claude": ["claude.weekly", "claude.session"]])
-        persistence.saveSeededDefaults(Set(DefaultLayout.metricIDs))
+        persistence.saveSeededDefaults(Set(DefaultLayout.metricIDs(in: WidgetRegistry.from([ClaudeProvider()]))))
         persistence.savePins([])
         persistence.saveExpandedMetrics(["claude.weekly"])
 
@@ -1347,8 +1364,10 @@ final class LayoutStoreTests: XCTestCase {
         )
     }
 
-    private func makeStore(_ name: String) -> LayoutStore {
-        LayoutStore(registry: .mock, defaults: makeDefaults(name), storageKey: "layout")
+    private func makeStore(_ name: String, hiddenMetricIDs: [String] = []) -> LayoutStore {
+        let defaults = makeDefaults(name)
+        if !hiddenMetricIDs.isEmpty { defaults.set(hiddenMetricIDs, forKey: "layout.disabledMetrics") }
+        return LayoutStore(registry: .mock, defaults: defaults, storageKey: "layout")
     }
 
     private func makeDefaults(_ name: String) -> UserDefaults {

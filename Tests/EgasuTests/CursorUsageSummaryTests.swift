@@ -252,8 +252,9 @@ final class CursorEnterpriseProviderTests: XCTestCase {
             snapshot: snapshot
         )
         let defaults = isolatedDefaults("default-widget")
+        let registry = WidgetRegistry(providers: [provider.provider], descriptors: descriptors)
         let store = WidgetDataStore(
-            registry: WidgetRegistry(providers: [provider.provider], descriptors: descriptors),
+            registry: registry,
             providers: [runtime],
             cache: isolatedCache(defaults),
             defaults: defaults
@@ -262,8 +263,10 @@ final class CursorEnterpriseProviderTests: XCTestCase {
 
         let totalDescriptor = try XCTUnwrap(descriptors.first { $0.id == "cursor.usage" })
         let totalData = store.data(for: totalDescriptor)
-        XCTAssertTrue(DefaultLayout.metricIDs.contains("cursor.usage"))
-        XCTAssertFalse(DefaultLayout.metricIDs.contains("cursor.requests"))
+        let layout = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
+        XCTAssertTrue(layout.isMetricEnabled("cursor.usage"))
+        XCTAssertTrue(layout.isMetricEnabled("cursor.requests"))
+        XCTAssertTrue(layout.isExpandedMetric("cursor.requests"))
         XCTAssertTrue(totalData.hasData)
         XCTAssertEqual(totalData.kind, .count)
         XCTAssertEqual(totalData.used, 37)

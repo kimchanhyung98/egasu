@@ -111,6 +111,7 @@ final class MenuBarPinTests: XCTestCase {
             registry: makeRegistry(),
             defaults: makeDefaults("disabled"),
             storageKey: "layout",
+            defaultMetricIDs: [],
             isProviderEnabled: { $0 != "a" }
         )
         store.setPinned(true, for: "a.m1")
@@ -149,7 +150,7 @@ final class MenuBarPinTests: XCTestCase {
     // MARK: - Fixtures
 
     private func makeStore(_ name: String) -> LayoutStore {
-        LayoutStore(registry: makeRegistry(), defaults: makeDefaults(name), storageKey: "layout")
+        LayoutStore(registry: makeRegistry(), defaults: makeDefaults(name), storageKey: "layout", defaultMetricIDs: [])
     }
 
     /// provider 4개(a~d) × percent metric 3개(m1~m3), registry 순서 고정

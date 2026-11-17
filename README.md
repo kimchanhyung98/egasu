@@ -42,7 +42,9 @@ Most providers read the credentials already on your machine (keychain, auth file
 - **[구독 타이머](/docs/refreshing.md#구독-타이머-자동-시작).** Codex·Claude·Antigravity·Kimi·Z.ai의 지원 한도를 서버에서 재확인한 뒤 짧은 구독 메시지로 시작 유도.
   계정·풀·기간별 전송 상한과 기록은 앱 재시작 뒤에도 유지.
 - **Global shortcut.** Toggle the popover from anywhere — record any combo in Settings.
-- **Customize.** Turn providers and metrics on or off, choose which rows stay Always Visible or On Demand, and drag-reorder both.
+- **Customize.** 프로바이더·지표별 표시, Always Visible·On Demand 배치와 순서 관리.
+  새 지표는 기본 켜짐이며 기존 숨김 선택 유지.
+  Claude·Codex의 한도는 계정별로, 로컬 이력·Reset Watch는 프로바이더별로 설정 저장.
 - **Stale-while-revalidate.** Cached values display instantly at launch; refresh runs every 5 minutes (15 minutes for Claude).
 - **[iCloud 동기화](/docs/icloud-sync.md).** 여러 Mac의 사용 내역을 선택적으로 합산.
   현재·기존 저장 위치를 함께 읽고 기기별 최신 기록 사용.

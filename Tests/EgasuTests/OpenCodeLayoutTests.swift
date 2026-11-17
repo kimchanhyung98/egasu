@@ -5,9 +5,11 @@ final class OpenCodeLayoutTests: XCTestCase {
     private let aboveFold = ["opencode.session", "opencode.weekly", "opencode.monthly", "opencode.trend"]
     private let belowCaret = ["opencode.today", "opencode.yesterday", "opencode.last30"]
 
+    @MainActor
     func testAllMetricsEnabledByDefault() {
+        let defaults = DefaultLayout.metricIDs(in: WidgetRegistry.from([OpenCodeProvider()]))
         for id in aboveFold + belowCaret {
-            XCTAssertTrue(DefaultLayout.metricIDs.contains(id), "\(id) should be enabled by default")
+            XCTAssertTrue(defaults.contains(id), "\(id) should be enabled by default")
         }
     }
 

@@ -93,6 +93,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         SettingsMigrator.migrate(capturedFreshInstall: isFreshInstall)
+        // 운영 앱에 기존 레이아웃이 없을 때만 원본 앱의 지표 설정 복사.
+        if Bundle.main.bundleIdentifier == StorageNamespace.productionBundleIdentifier {
+            SettingsMigrator.importUpstreamLayoutIfNeeded()
+        }
         // 시작은 `SMAppService` login item 단독 담당 — AppKit reopen-on-login opt-out으로 재부팅 시 이중 런치 예방.
         NSApp.disableRelaunchOnLogin()
         // 레거시 Tauri autostart agent 정리 — 로그인 이중 실행 원인 (#607/#874). guard 이후 실행 필수 — 생존 copy만 파일 접근.

@@ -52,8 +52,10 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
 
     func testResetWatchOnlySnapshotsDoNotLeaveEmptyCards() throws {
         let layout = makeLayout()
-        for suffix in ["weekly", "trend", "rateLimitResets", "today", "yesterday"] {
-            layout.setMetricEnabled("codex.\(suffix)", false)
+        for cardID in layout.orderedProviderIDs() where ProviderAccountID.family(of: cardID) == "codex" {
+            for suffix in ["weekly", "trend", "rateLimitResets", "today", "yesterday"] {
+                layout.setMetricEnabled("\(cardID).\(suffix)", false)
+            }
         }
         layout.setMetricEnabled("codex.resetWatch", true)
 
@@ -174,7 +176,7 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
 
     func testHistoryOnlySnapshotDoesNotLeaveAnEmptyCard() throws {
         let layout = makeLayout()
-        layout.setMetricEnabled("claude.weekly", false)
+        layout.setMetricEnabled("claude@profile-work.weekly", false)
         let group = try XCTUnwrap(layout.displayGroups.first { $0.id == "claude@profile-work" })
         XCTAssertFalse(group.widgets.isEmpty)
         XCTAssertNil(AccountCardPresentationPlanner.presentedGroup(group, mode: .separateCards))
