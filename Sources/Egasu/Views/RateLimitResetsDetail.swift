@@ -10,6 +10,7 @@ struct RateLimitResetsDetail: View {
     var onHoverChange: (Bool) -> Void
     /// confirm/in-flight 동안 popover를 pin — cursor 이탈로 claim 도중 흐름이 무너지지 않게 유지. claim 흐름 없으면 `nil`.
     var onPinChange: ((Bool) -> Void)?
+    var onClaimResult: (() -> Void)?
     var claimBinding: CodexResetClaimBinding?
     /// 지정 만료 시각의 credit을 주어진 idempotency key로 claim — `nil`이면 timeline이 read-only.
     var claim: ((_ expiry: Date, _ redeemRequestID: String) async -> ResetClaimOutcome)?
@@ -334,7 +335,11 @@ struct RateLimitResetsDetail: View {
                 activeClaimID = nil
                 apply(outcome, for: date)
             }
-            onPinChange?(false)
+            if let onClaimResult {
+                onClaimResult()
+            } else {
+                onPinChange?(false)
+            }
         }
     }
 

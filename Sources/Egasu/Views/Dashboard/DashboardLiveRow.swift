@@ -7,6 +7,8 @@ struct DashboardLiveRow: View {
     var layoutStyle = DashboardLayoutStyle.minimal
     var onToggleMeterStyle: (() -> Void)?
     var onToggleResetDisplay: (() -> Void)?
+    var retainsResetClaimRow = false
+    var onRetainResetClaimRow: ((CodexResetClaimBinding?) -> Void)?
 
     @Environment(\.codexResetClaim) private var codexResetClaim
     @State private var hover = HoverPopoverState()
@@ -24,13 +26,24 @@ struct DashboardLiveRow: View {
         .onChange(of: line.data.modelBreakdown) { _, _ in hover.dismiss() }
         // 초기화권 사용이 강제 새로고침을 일으키므로 고정 중이면 결과 배너를 위해 유지.
         .onChange(of: line.data.expiriesAt) { _, _ in
-            if !hover.isPinned { hover.dismiss() }
+            if !hover.isPinned && !retainsResetClaimRow { hover.dismiss() }
         }
-        .onDisappear { hover.dismiss() }
+        .onChange(of: line.data.codexResetClaimBinding) { _, _ in
+            if retainsResetClaimRow { hover.dismiss() }
+        }
+        .onChange(of: hover.isPresented) { _, isPresented in
+            if !isPresented { onRetainResetClaimRow?(nil) }
+        }
+        .onDisappear {
+            hover.dismiss()
+            onRetainResetClaimRow?(nil)
+        }
     }
 
-    private var needsClock: Bool {
-        line.data.resetsAt != nil || !line.data.expiriesAt.isEmpty || line.data.forecastDeadline != nil
+    var needsClock: Bool {
+        // 마지막 초기화권 사용 후에도 같은 뷰에 상세 팝오버 유지.
+        line.data.showsResetExpiries || line.data.resetsAt != nil || !line.data.expiriesAt.isEmpty
+            || line.data.forecastDeadline != nil
     }
 
     private func row(now: Date) -> some View {
@@ -105,7 +118,11 @@ struct DashboardLiveRow: View {
             RateLimitResetsDetail(
                 count: data.resetCreditCount, expiries: data.expiriesAt,
                 onHoverChange: { inside in hover.detailHover(inside) },
-                onPinChange: { pinned in hover.setPinned(pinned) },
+                onPinChange: { pinned in
+                    hover.setPinned(pinned)
+                    if pinned { onRetainResetClaimRow?(data.codexResetClaimBinding) }
+                },
+                onClaimResult: { hover.releasePin(after: .seconds(2)) },
                 claimBinding: data.codexResetClaimBinding,
                 claim: resetClaimAction
             )

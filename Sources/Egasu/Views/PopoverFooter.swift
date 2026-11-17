@@ -109,15 +109,15 @@ struct PopoverFooter: View {
 
     @ViewBuilder
     private var shareScreenshotMenu: some View {
-        let groups = container.presentedAccountGroups()
+        let accounts = container.presentedShareAccounts()
         Menu {
-            if groups.isEmpty {
+            if accounts.isEmpty {
                 // 스크린샷 대상 없음 — 빈 서브메뉴 대신 비활성 항목 표시
                 Button(L10n.dashboard("No Enabled Providers")) {}
                     .disabled(true)
             } else {
-                ForEach(groups) { group in
-                    Button(container.accountCardTitle(for: group.provider)) { shareCard(group) }
+                ForEach(accounts) { account in
+                    Button(container.accountCardTitle(for: account.provider)) { shareCard(account.id) }
                 }
             }
         } label: {
@@ -125,13 +125,14 @@ struct PopoverFooter: View {
         }
     }
 
-    private func shareCard(_ group: ProviderGroup) {
+    private func shareCard(_ accountID: String) {
+        guard let account = container.dashboardAccounts().first(where: { $0.id == accountID }) else { return }
         ShareCardRenderer.share(
-            group: group,
-            dataStore: dataStore,
+            account: account,
+            plan: dataStore.plan(for: account.id),
             layout: layout,
             appearance: colorScheme,
-            displayName: container.accountCardTitle(for: group.provider)
+            displayName: container.accountCardTitle(for: account.provider)
         )
     }
 

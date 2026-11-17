@@ -11,8 +11,10 @@ struct WidgetGroupedListView: View {
     @Environment(AccountRenameStore.self) private var renaming
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.concealsAccountNames) private var concealsAccountNames
+    let families: [DashboardFamily]
     let reorderSpaceName: String
     @Binding var reorderLift: ReorderLift?
+    @Binding var retainedResetClaims: [String: CodexResetClaimBinding]
 
     @State private var rowFrames: [String: CGRect] = [:]
     @State private var activeMetricID: String?
@@ -24,7 +26,6 @@ struct WidgetGroupedListView: View {
     private var layoutStyle: DashboardLayoutStyle { dataStore.displaySettings.dashboardLayout }
 
     var body: some View {
-        let families = container.dashboardFamilies()
         VStack(alignment: .leading, spacing: DashboardGrid.sectionSpacing) {
             ForEach(families) { family in
                 section(family)
@@ -108,7 +109,11 @@ struct WidgetGroupedListView: View {
                 line: line,
                 layoutStyle: layoutStyle,
                 onToggleMeterStyle: { dataStore.meterStyle.toggle() },
-                onToggleResetDisplay: { dataStore.resetDisplayMode.toggle() }
+                onToggleResetDisplay: { dataStore.resetDisplayMode.toggle() },
+                retainsResetClaimRow: retainedResetClaims[line.id] != nil,
+                onRetainResetClaimRow: { binding in
+                    if retainedResetClaims[line.id] != binding { retainedResetClaims[line.id] = binding }
+                }
             )
             .opacity(activeMetricID == line.id ? 0 : 1)
             .highPriorityGesture(metricDragGesture(for: line, in: account))
@@ -186,13 +191,12 @@ struct WidgetGroupedListView: View {
     }
 
     private func shareScreenshot(_ accountID: String) {
-        guard let rawGroup = layout.displayGroups.first(where: { $0.provider.id == accountID }) else { return }
-        guard let group = AccountCardPresentationPlanner.presentedGroup(rawGroup, mode: .separateCards) else { return }
+        guard let account = container.dashboardAccounts().first(where: { $0.id == accountID }) else { return }
         _ = ShareCardRenderer.share(
-            group: group, dataStore: dataStore, layout: layout, appearance: colorScheme,
+            account: account, plan: dataStore.plan(for: account.id), layout: layout, appearance: colorScheme,
             displayName: AccountCardPresentationPlanner.cardTitle(
-                providerID: group.provider.id, fallback: container.displayName(for: group.provider),
-                mode: .separateCards, accountName: container.accountOptionTitle(for: group.provider.id)
+                providerID: account.id, fallback: container.displayName(for: account.provider),
+                mode: .separateCards, accountName: container.accountOptionTitle(for: account.id)
             )
         )
     }
@@ -269,11 +273,14 @@ struct WidgetGroupedListView: View {
                 }
                 return ReorderLift.make(id: frameID, payload: .view(AnyView(preview)), value: value, frames: rowFrames)
             },
-            orderedIDs: { container.dashboardFamilies().map { Self.familyFrameID($0.id) } },
+            orderedIDs: {
+                container.dashboardFamilies(retainingResetClaims: retainedResetClaims).map { Self.familyFrameID($0.id) }
+            },
             reorder: { target in
                 let targetFamilyID = String(target.dropFirst("family:".count))
                 guard let draggedID = family.accounts.first?.id,
-                      let targetID = container.dashboardFamilies().first(where: { $0.id == targetFamilyID })?.accounts.first?.id
+                      let targetID = container.dashboardFamilies(retainingResetClaims: retainedResetClaims)
+                          .first(where: { $0.id == targetFamilyID })?.accounts.first?.id
                 else { return false }
                 return layout.reorderProvider(dragged: draggedID, target: targetID)
             }

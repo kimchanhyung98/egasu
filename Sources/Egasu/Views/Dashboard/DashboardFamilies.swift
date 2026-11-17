@@ -35,14 +35,21 @@ struct DashboardAccount: Identifiable {
     /// 모든 표시 경로에서 데이터 없는 한도·값 행을 제외하고 나머지 순서 유지.
     init(
         provider: Provider, providerName: String, name: String?, email: String? = nil,
-        isInUse: Bool = false, lines: [DashboardLine], waitingMetricIDs: [String] = []
+        isInUse: Bool = false, lines: [DashboardLine], waitingMetricIDs: [String] = [],
+        retainingResetClaims: [String: CodexResetClaimBinding] = [:]
     ) {
         self.provider = provider
         self.providerName = providerName
         self.name = name
         self.email = email
         self.isInUse = isInUse
-        self.lines = lines.filter(\.isVisible)
+        self.lines = lines.filter { line in
+            if line.isVisible { return true }
+            guard line.data.showsResetExpiries, line.data.hasData,
+                let binding = retainingResetClaims[line.id]
+            else { return false }
+            return binding == line.data.codexResetClaimBinding
+        }
         self.waitingMetricIDs = waitingMetricIDs
     }
 

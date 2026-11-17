@@ -69,6 +69,78 @@ final class DashboardLineRulesTests: XCTestCase {
         XCTAssertFalse(line(hasData: false) { $0.showsResetExpiries = true }.isVisible)
     }
 
+    func testLastResetClaimKeepsTheSameRowAndDetailUntilItCloses() throws {
+        let provider = MockData.codex
+        let descriptor = WidgetDescriptor.values(
+            id: "codex.rateLimitResets", provider: provider, title: "Rate Limit Resets", showsResetExpiries: true
+        )
+        let binding = try XCTUnwrap(CodexResetClaimBinding(authState: .init(
+            auth: CodexAuth(tokens: CodexTokens(accessToken: "fixture-token")), source: .keychain
+        )))
+        var data = descriptor.sample
+        data.hasData = true
+        data.codexResetClaimBinding = binding
+        data.values = [.init(number: 1, kind: .count, label: "available")]
+        data.expiriesAt = [Date(timeIntervalSince1970: 1_800_000_000)]
+
+        func account(_ data: WidgetData, retaining: [String: CodexResetClaimBinding]) -> DashboardAccount {
+            DashboardAccount(
+                provider: provider, providerName: "Codex", name: "Work",
+                lines: [.init(descriptor: descriptor, data: data)], retainingResetClaims: retaining
+            )
+        }
+
+        let before = try XCTUnwrap(account(data, retaining: [:]).lines.first)
+        data.values = [.init(number: 0, kind: .count, label: "available")]
+        data.expiriesAt = []
+        let retained = [descriptor.id: binding]
+        let during = account(data, retaining: retained)
+        XCTAssertTrue(during.isVisible(headerNotice: { _ in nil }), "유일한 행이어도 계정 상세 앵커 유지")
+        let after = try XCTUnwrap(during.lines.first)
+        XCTAssertEqual(after.id, before.id)
+        XCTAssertEqual(after.data.resetCreditCount, 0)
+        for style in DashboardLayoutStyle.allCases {
+            let original = DashboardLiveRow(line: before, layoutStyle: style)
+            let updated = DashboardLiveRow(line: after, layoutStyle: style, retainsResetClaimRow: true)
+            XCTAssertTrue(original.needsClock)
+            XCTAssertTrue(updated.needsClock, "만료 목록이 비어도 팝오버를 소유한 뷰 유지")
+            XCTAssertTrue(updated.hasDetail)
+        }
+        XCTAssertTrue(account(data, retaining: [:]).lines.isEmpty, "상세를 닫으면 일반 0개 숨김 복귀")
+        data.codexResetClaimBinding = try XCTUnwrap(CodexResetClaimBinding(authState: .init(
+            auth: CodexAuth(tokens: CodexTokens(accessToken: "different-fixture-token")), source: .keychain
+        )))
+        XCTAssertTrue(account(data, retaining: retained).lines.isEmpty, "교체 계정에는 이전 요청의 행을 남기지 않음")
+    }
+
+    func testResetClaimResultOutlivesPointerExitAndDismissCancelsItsDelayedRelease() async throws {
+        let state = HoverPopoverState(hideGrace: .milliseconds(1))
+        state.isPresented = true
+        state.setPinned(true)
+        state.detailHover(false)
+        state.releasePin(after: .milliseconds(80))
+        try await Task.sleep(for: .milliseconds(15))
+        XCTAssertTrue(state.isPresented)
+        XCTAssertTrue(state.isPinned)
+
+        let deadline = ContinuousClock.now + .seconds(2)
+        while state.isPresented && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(state.isPresented, "결과를 읽을 시간 뒤에는 포인터 이탈 닫기 복귀")
+
+        state.isPresented = true
+        state.setPinned(true)
+        state.releasePin(after: .milliseconds(30))
+        state.dismiss()
+        XCTAssertFalse(state.isPresented)
+        state.isPresented = true
+        state.setPinned(true)
+        try await Task.sleep(for: .milliseconds(70))
+        XCTAssertTrue(state.isPinned, "이전 결과의 예약이 새 확인의 고정을 풀지 않음")
+        state.dismiss()
+    }
+
     func testSharedHomeOnlyRowsHideOnlyOnExtraAccountCards() {
         for suffix in ["trend", "today", "yesterday", "last30", "resetWatch"] {
             XCTAssertTrue(AppContainer.hidesMetric("codex@ab12cd34.\(suffix)", onCard: "codex@ab12cd34"))

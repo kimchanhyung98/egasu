@@ -2,13 +2,13 @@ import Foundation
 
 extension AppContainer {
     /// All Usage·Priority·메뉴 막대가 공유하는 계정 섹션 목록 — 모든 표시 계정 카드, 사용자 저장 순서.
-    func dashboardFamilies() -> [DashboardFamily] {
+    func dashboardFamilies(retainingResetClaims: [String: CodexResetClaimBinding] = [:]) -> [DashboardFamily] {
         let groups = layout.displayGroups
         let byID = Dictionary(uniqueKeysWithValues: groups.map { ($0.provider.id, $0) })
         var families: [DashboardFamily] = []
         for cardID in orderedAccountCardIDs(groups.map(\.provider.id)) {
             guard let group = byID[cardID] else { continue }
-            let account = dashboardAccount(for: group)
+            let account = dashboardAccount(for: group, retainingResetClaims: retainingResetClaims)
             guard account.isVisible(headerNotice: dataStore.headerNotice(for:)) else { continue }
             let familyID = Self.dashboardFamilyID(for: cardID)
             if let index = families.firstIndex(where: { $0.id == familyID }) {
@@ -141,9 +141,11 @@ extension AppContainer {
         )
     }
 
-    private func dashboardAccount(for group: ProviderGroup) -> DashboardAccount {
+    private func dashboardAccount(
+        for group: ProviderGroup, retainingResetClaims: [String: CodexResetClaimBinding]
+    ) -> DashboardAccount {
         let cardID = group.provider.id
-        // 기존 공유 이미지의 펼침 분할과 별개로 계정의 저장된 행 순서 사용.
+        // 대시보드와 공유 이미지에 계정의 저장된 행 순서 사용.
         let descriptors = layout.orderedSupportedMetrics(for: cardID)
             .filter { layout.isMetricEnabled($0.id) && !Self.hidesMetric($0.id, onCard: cardID) }
         let providerName = ProviderAccountID.cardTitle(providerID: cardID, fallback: group.provider.displayName)
@@ -167,7 +169,8 @@ extension AppContainer {
             name: dashboardAccountName(for: cardID),
             email: dashboardAccountEmail(for: cardID),
             isInUse: isAccountInUse(cardID),
-            lines: lines
+            lines: lines,
+            retainingResetClaims: retainingResetClaims
         )
     }
 }

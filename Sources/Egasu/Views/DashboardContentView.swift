@@ -13,6 +13,7 @@ struct DashboardContentView: View {
     @Binding var scrollPosition: ScrollPosition
 
     @AppStorage(TotalSpendSetting.key) private var showTotalSpend = true
+    @State private var retainedResetClaims: [String: CodexResetClaimBinding] = [:]
 
     /// 내용과 옆 바가 각각 가지는 간격 — 둘을 합친 값이 바와 내용 사이 간격.
     static let barGap: CGFloat = 7
@@ -53,12 +54,15 @@ struct DashboardContentView: View {
 
     @ViewBuilder
     private var allUsageContent: some View {
-        if container.dashboardFamilies().isEmpty {
+        let families = container.dashboardFamilies(retainingResetClaims: retainedResetClaims)
+        if families.isEmpty {
             hiddenMetricsNotice
         } else {
             WidgetGroupedListView(
+                families: families,
                 reorderSpaceName: reorderSpaceName,
-                reorderLift: $reorderLift
+                reorderLift: $reorderLift,
+                retainedResetClaims: $retainedResetClaims
             )
         }
     }
