@@ -108,3 +108,5 @@
 "egasu shows the AI tools you're signed in to on this Mac. Add an account to track more, even several of the same provider." = "egasu shows the AI tools you're signed in to on this Mac. Add an account to track more, even several of the same provider.";
 
 "No usage to show. Check visible metrics in Accounts." = "No usage to show. Check visible metrics in Accounts.";
+
+"%d days, %@ to %@, peak %@." = "%d days, %@ to %@, peak %@.";

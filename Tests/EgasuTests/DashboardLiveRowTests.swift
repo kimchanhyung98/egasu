@@ -105,6 +105,31 @@ final class DashboardLiveRowTests: XCTestCase {
         }
     }
 
+    func testTrendSummaryLocalizesDayCountRangeAndMiddlePeak() {
+        let points = [
+            MetricChartPoint(value: 120, label: "Day 1", valueLabel: "120"),
+            MetricChartPoint(value: 240, label: "Day 2", valueLabel: "240"),
+            MetricChartPoint(value: 10, label: "Day 3", valueLabel: "10")
+        ]
+        let summaries: [(LanguageSetting, String)] = [
+            (.english, "3 days, Day 1 to Day 3, peak 240 tokens."),
+            (.korean, "Day 1부터 Day 3까지 3일, 최대 240 토큰."),
+            (.japanese, "Day 1からDay 3までの3日間、最大240 トークン。")
+        ]
+        for (language, expected) in summaries {
+            L10n.withLanguage(language) {
+                for style in DashboardLayoutStyle.allCases {
+                    let row = DashboardMetricRow(
+                        model: .init(label: "Usage Trend", mark: .chart),
+                        chartPoints: points, layoutStyle: style)
+                    XCTAssertEqual(row.chartAccessibilitySummary, expected)
+                }
+                let empty = DashboardMetricRow(model: .init(label: "Usage Trend", mark: .chart))
+                XCTAssertEqual(empty.chartAccessibilitySummary, "")
+            }
+        }
+    }
+
     private func render(_ data: WidgetData, style: DashboardLayoutStyle) throws -> CGImage {
         let row = DashboardMetricRow(
             model: data.dashboardRow(now: now), chartPoints: data.chartPoints, layoutStyle: style

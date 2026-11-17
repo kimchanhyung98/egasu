@@ -78,7 +78,7 @@ struct DashboardMetricRow: View {
                 if layoutStyle == .cards {
                     VStack(alignment: .leading, spacing: 4) {
                         label
-                        figure(AnyView(TrendBars(points: chartPoints, height: 18).hoverTooltip(valueTooltip)))
+                        figure(AnyView(trend))
                     }
                     .padding(.vertical, 6)
                 } else {
@@ -87,9 +87,8 @@ struct DashboardMetricRow: View {
                             .frame(width: DashboardGrid.labelWidth, alignment: .leading)
                         figure(
                             AnyView(
-                                TrendBars(points: chartPoints)
+                                trend
                                     .frame(maxWidth: .infinity)
-                                    .hoverTooltip(valueTooltip)
                             ))
                     }
                 }
@@ -104,6 +103,23 @@ struct DashboardMetricRow: View {
         Text(model.label)
             .font(layoutStyle == .cards ? .system(size: 13, weight: .semibold) : Self.font)
             .lineLimit(1)
+    }
+
+    private var trend: some View {
+        TrendBars(points: chartPoints, height: layoutStyle == .cards ? 18 : DashboardGrid.chartHeight)
+            .hoverTooltip(valueTooltip)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(chartAccessibilitySummary)
+    }
+
+    var chartAccessibilitySummary: String {
+        guard let peak = chartPoints.max(by: { $0.value < $1.value }),
+            let first = chartPoints.first, let last = chartPoints.last
+        else { return "" }
+        return L10n.dashboard(
+            "%d days, %@ to %@, peak %@.",
+            chartPoints.count, first.localizedLabel, last.localizedLabel, peak.localizedReadout
+        )
     }
 
     private func level(fill: Double, severity: WidgetData.MeterSeverity) -> some View {
