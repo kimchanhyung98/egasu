@@ -66,7 +66,14 @@ final class SharedMetricSettingsRenderingTests: XCTestCase {
                     defer { window.close() }
                     window.setContentSize(host.fittingSize)
                     host.layoutSubtreeIfNeeded()
-                    let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                    let bitmap = try XCTUnwrap(
+                        NSBitmapImageRep(
+                            bitmapDataPlanes: nil,
+                            pixelsWide: Int(ceil(host.bounds.width * 2)),
+                            pixelsHigh: Int(ceil(host.bounds.height * 2)),
+                            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+                    bitmap.size = host.bounds.size
                     host.cacheDisplay(in: host.bounds, to: bitmap)
                     XCTAssertEqual(host.bounds.width, 340)
                     if let path = ProcessInfo.processInfo.environment["EGASU_SHARED_METRIC_SNAPSHOT_DIR"] {
@@ -94,15 +101,19 @@ final class SharedMetricSettingsRenderingTests: XCTestCase {
                         return request
                     }
                     try VNImageRequestHandler(cgImage: image).perform(requests)
-                    return requests.flatMap { $0.results ?? [] }.compactMap { observation in
-                        observation.topCandidates(1).first?.string.filter { !$0.isWhitespace }
+                    return requests.map { request in
+                        (request.results ?? []).compactMap { observation in
+                            observation.topCandidates(1).first?.string.filter { !$0.isWhitespace }
+                        }
                     }
                 }.value
 
                 XCTAssertLessThan(cards[0].maxY, cards[1].minY, context)
                 for (index, metrics) in [accountMetrics, sharedMetrics].enumerated() {
                     let title = titles[index].filter { !$0.isWhitespace }
-                    XCTAssertTrue(labels.contains(title), "\(context): \(titles[index])")
+                    XCTAssertTrue(
+                        labels[index].contains(title),
+                        "\(context): \(titles[index]); recognized in this card: \(labels[index])")
                     var previousBottom = cards[index].minY
                     for metric in metrics {
                         let row = try XCTUnwrap(frames.values[metric.id], "\(context): \(metric.id)")

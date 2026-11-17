@@ -353,7 +353,8 @@ final class AccountsScreenTests: XCTestCase {
         XCTAssertTrue(messages.contains(L10n.accounts("Couldn't Rename Account")))
         XCTAssertTrue(messages.contains(try XCTUnwrap(renaming.lastError)))
         let button = try XCTUnwrap(views.compactMap { $0 as? NSButton }.first { $0.title == L10n.dashboard("OK") })
-        button.performClick(nil)
+        // 화면 밖 창의 클릭 애니메이션 대신 실제 OK action 전달.
+        XCTAssertTrue(button.sendAction(try XCTUnwrap(button.action), to: button.target))
         for _ in 0..<50 where renaming.lastError != nil {
             try await Task.sleep(for: .milliseconds(20))
         }
