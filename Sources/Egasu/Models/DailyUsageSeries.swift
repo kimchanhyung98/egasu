@@ -60,15 +60,19 @@ struct ProviderUsageHistory: Hashable, Sendable, Codable {
     var series: DailyUsageSeries
     var modelUsage: ModelUsageSeries?
     var unknownModelsByDay: [String: Set<String>]
+    /// 비용 출처가 바뀌어도 마지막 정상 이력의 추정 여부 유지.
+    var estimatedCost: Bool?
 
     init(
         series: DailyUsageSeries,
         modelUsage: ModelUsageSeries? = nil,
-        unknownModelsByDay: [String: Set<String>] = [:]
+        unknownModelsByDay: [String: Set<String>] = [:],
+        estimatedCost: Bool? = nil
     ) {
         self.series = series
         self.modelUsage = modelUsage
         self.unknownModelsByDay = unknownModelsByDay
+        self.estimatedCost = estimatedCost
     }
 }
 

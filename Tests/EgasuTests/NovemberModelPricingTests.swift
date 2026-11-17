@@ -204,18 +204,17 @@ final class NovemberModelPricingTests: XCTestCase {
         XCTAssertNil(pricing.resolve(model: "claude-fable-5-2-ultrafast"))
     }
 
-    func testCursorNewModelsHaveReadableFamilies() throws {
+    func testCursorNewModelsKeepReportedCostAndReadableFamilies() throws {
         let now = Date(timeIntervalSince1970: 1_794_700_800)
-        let models = ["gemini-4-carbon-high", "gemini-4-hydrogen-xhigh", "claude-fable-5.2-high", "kimi-k3-fast"]
-        let csv =
-            "Date,Model,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens\n"
-            + models.map { "2026-11-15T00:00:00Z,\($0),0,100000,0,0" }.joined(separator: "\n")
-        let rows = try CursorUsageCSV.parse(csv: csv, pricing: pricing).rows
+        let rows = ["gemini-4-carbon-high", "gemini-4-hydrogen-xhigh", "claude-fable-5.2-high", "kimi-k3-fast"].map {
+            CursorUsageEvent(date: now, model: $0, tokens: TokenBreakdown(input: 100_000), costUSD: 0.17)
+        }
         var lines: [MetricLine] = []
         let history = CursorUsageMapper.appendSpendLines(rows: rows, now: now, pricing: pricing, to: &lines)
-        let families = try XCTUnwrap(history.modelUsage?.daily.first?.models)
+        let models = try XCTUnwrap(history.modelUsage?.daily.first?.models)
         XCTAssertEqual(
-            Set(families.map(\.model)), ["gemini-4-carbon", "gemini-4-hydrogen", "claude-fable-5-2", "kimi-k3"])
+            Set(models.map(\.model)), ["gemini-4-carbon", "gemini-4-hydrogen", "claude-fable-5-2", "kimi-k3"])
+        XCTAssertEqual(models.map(\.costUSD), Array(repeating: 0.17, count: 4))
     }
 
     func testAntigravityNewModelsRestoreDailyCostsWithBundledPricing() async throws {

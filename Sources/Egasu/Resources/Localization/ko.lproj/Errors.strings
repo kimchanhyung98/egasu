@@ -289,3 +289,4 @@
 "Some Kiro usage has no recorded credit cost. Affected periods show tokens only." = "일부 Kiro 사용 기록에 크레딧 비용이 없습니다. 해당 기간은 토큰만 표시합니다.";
 
 "Saved app data could not be moved. Check the app log and try again." = "저장된 앱 데이터를 옮기지 못했습니다. 앱 로그를 확인하고 다시 시도하세요.";
+"Cursor usage history could not be refreshed. Try again later." = "Cursor 사용 기록을 갱신하지 못했습니다. 잠시 후 다시 시도하세요.";

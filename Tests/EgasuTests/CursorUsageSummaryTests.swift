@@ -159,10 +159,9 @@ final class CursorEnterpriseProviderTests: XCTestCase {
     func testRefreshCombinesEnterpriseMetersAndStillAppendsUsageHistory() async throws {
         let now = try XCTUnwrap(EgasuISO8601.date(from: "2026-07-13T12:00:00.000Z"))
         let accessToken = makeSummaryCursorJWT(sub: "google-oauth2|enterprise-user")
-        let csv = """
-        Date,Model,Max Mode,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens,Cost
-        2026-07-13T10:00:00Z,composer-1,No,0,1000,0,100,Included
-        """
+        let body = try CursorEventFixture.page([
+            CursorEventFixture.event(date: now, tokens: 1_100, cents: 0, kind: "USAGE_EVENT_KIND_INCLUDED")
+        ])
         let http = RoutingHTTPClient { request in
             if request.url == CursorUsageClient.usageURL {
                 return HTTPResponse(
@@ -207,8 +206,8 @@ final class CursorEnterpriseProviderTests: XCTestCase {
                 }
                 """.utf8))
             }
-            if request.url.absoluteString.hasPrefix(CursorUsageClient.exportCSVURL.absoluteString) {
-                return HTTPResponse(statusCode: 200, headers: [:], body: Data(csv.utf8))
+            if request.url.absoluteString.hasPrefix(CursorUsageClient.usageEventsURL.absoluteString) {
+                return HTTPResponse(statusCode: 200, headers: [:], body: body)
             }
             return HTTPResponse(statusCode: 404, headers: [:], body: Data())
         }
@@ -244,7 +243,7 @@ final class CursorEnterpriseProviderTests: XCTestCase {
                 $0.name == "user" && $0.value == "enterprise-user"
             } == true
         })
-        XCTAssertTrue(http.requests.contains { $0.url.absoluteString.hasPrefix(CursorUsageClient.exportCSVURL.absoluteString) })
+        XCTAssertTrue(http.requests.contains { $0.url.absoluteString.hasPrefix(CursorUsageClient.usageEventsURL.absoluteString) })
 
         let descriptors = provider.widgetDescriptors
         let runtime = TestProviderRuntime(

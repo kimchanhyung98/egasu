@@ -180,7 +180,12 @@ final class ProviderSnapshotStore {
         // 한도 조회는 성공했지만 로컬 이력이 없으면 마지막 정상 이력만 보존 — 새 한도·플랜·경고·시각은 반영.
         // nil이 아닌 빈 이력은 수집 완료 결과로 취급하여 기존 이력 제거.
         var degraded = snapshot.warning != nil || snapshot.isDegraded == true
+        let historyMatchesAccount =
+            ProviderAccountID.family(of: providerID) != "cursor"
+            || (snapshot.producedByIdentityKey != nil
+                && snapshot.producedByIdentityKey == cache.producedByIdentityKey(providerID: providerID))
         if snapshot.usageHistory == nil,
+           historyMatchesAccount,
            let history = localSnapshots[providerID]?.usageHistory,
            let descriptor = registry.historyDescriptorsByProvider[providerID]
         {
@@ -206,7 +211,7 @@ final class ProviderSnapshotStore {
         }
         localSnapshots[providerID] = snapshot
         // 현재 계정 식별 정보로 저장 결과 귀속 — 비계정 프로바이더·계정 미확인 카드는 식별 키 생략.
-        cache.store(snapshot, producedByIdentityKey: identityKeys[providerID])
+        cache.store(snapshot, producedByIdentityKey: snapshot.producedByIdentityKey ?? identityKeys[providerID])
         if !unresolvedClaudeIdentity { unresolvedIdentityCacheRejections.remove(providerID) }
         return .succeeded(snapshot, degraded: degraded)
     }

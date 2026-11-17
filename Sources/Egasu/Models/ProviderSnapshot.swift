@@ -37,6 +37,8 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
     var freshnessDate: Date { quotaObservedAt ?? refreshedAt }
     /// 실제 성공 응답의 인증 연결. 디스크 캐시·공유 출력에서 제외하여 재실행 후 fresh 조회 전 소비 금지.
     var codexResetClaimBinding: CodexResetClaimBinding?
+    /// 조회에 사용한 계정 식별 키 — 캐시 귀속 정보에만 저장하고 공유 응답에서 제외.
+    var producedByIdentityKey: String? = nil
 
     private enum CodingKeys: String, CodingKey {
         case providerID, displayName, plan, lines, totalSpendLines, totalSpendRefreshedAt, refreshedAt, usageHistory, warning

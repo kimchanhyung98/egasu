@@ -153,7 +153,7 @@ enum UsageHistorySnapshotRenderer {
             history.series,
             to: &result.lines,
             now: now,
-            estimated: descriptor.estimatedCost,
+            estimated: history.estimatedCost ?? descriptor.estimatedCost,
             unknownModelsByDay: history.unknownModelsByDay,
             modelUsage: history.modelUsage,
             modelSourceNote: sourceNote

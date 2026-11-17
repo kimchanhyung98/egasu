@@ -289,3 +289,4 @@
 "Some Kiro usage has no recorded credit cost. Affected periods show tokens only." = "Some Kiro usage has no recorded credit cost. Affected periods show tokens only.";
 
 "Saved app data could not be moved. Check the app log and try again." = "Saved app data could not be moved. Check the app log and try again.";
+"Cursor usage history could not be refreshed. Try again later." = "Cursor usage history could not be refreshed. Try again later.";
