@@ -86,10 +86,17 @@ final class DashboardLiveRowTests: XCTestCase {
                 chartHeights[style] = chart.height
                 let pixels = try XCTUnwrap(chart.dataProvider?.data) as Data
                 let bytes = [UInt8](pixels)
-                XCTAssertTrue(
-                    stride(from: 0, to: bytes.count - 3, by: 4).contains {
-                        Int(bytes[$0 + 2]) > Int(bytes[$0]) + 30 && Int(bytes[$0 + 2]) > Int(bytes[$0 + 1]) + 10
-                    }, "\(style): Usage Trend 막대 표시")
+                var hasBluePixel = false
+                for offset in stride(from: 0, to: bytes.count - 3, by: 4) {
+                    let red = Int(bytes[offset])
+                    let green = Int(bytes[offset + 1])
+                    let blue = Int(bytes[offset + 2])
+                    if blue > red + 30 && blue > green + 10 {
+                        hasBluePixel = true
+                        break
+                    }
+                }
+                XCTAssertTrue(hasBluePixel, "\(style): Usage Trend 막대 표시")
 
                 let failure = try render(forecast, style: style)
                 let request = VNRecognizeTextRequest()
