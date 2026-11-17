@@ -85,3 +85,6 @@
 "You have no rate limit resets" = "사용 가능한 한도 초기화권이 없습니다";
 "Your usage doesn't need a reset yet" = "아직 사용량을 초기화할 필요가 없습니다";
 "peak %@" = "최대 %@";
+
+"Burning Fast" = "빠른 소진";
+"Current usage unavailable." = "현재 사용량을 확인할 수 없습니다.";

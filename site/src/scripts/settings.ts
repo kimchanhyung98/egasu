@@ -12,7 +12,7 @@ let notify = (_mock: HTMLElement, _message: string): void => {};
 const pending = new WeakMap<HTMLElement, { family: string; id: string; button: HTMLElement }>();
 
 const appOnlyPreferences = new Set([
-  'launchAtLogin', 'underTenPercent', 'healthyToClose', 'closeToRunningOut',
+  'launchAtLogin', 'underTenPercent', 'healthyToClose', 'closeToRunningOut', 'useItOrLoseIt',
   'hideFromScreenShare', 'shareAnonymousUsage', 'updateAutomatically', 'betaUpdates', 'logLevel', 'iconStyle',
   'codexResetWatch',
 ]);
@@ -182,7 +182,7 @@ export function applySettingsToMock(mock: HTMLElement): void {
   const iCloud = mock.querySelector<HTMLElement>('[data-icloud-preview]');
   if (iCloud) iCloud.hidden = !preferences.syncAcrossMacs;
   const permission = mock.querySelector<HTMLElement>('[data-notification-permission]');
-  if (permission) permission.hidden = !['underTenPercent', 'healthyToClose', 'closeToRunningOut', 'codexResetWatch'].some((id) => preferences[id]);
+  if (permission) permission.hidden = !['underTenPercent', 'healthyToClose', 'closeToRunningOut', 'useItOrLoseIt', 'codexResetWatch'].some((id) => preferences[id]);
   localizePreview(mock);
 }
 

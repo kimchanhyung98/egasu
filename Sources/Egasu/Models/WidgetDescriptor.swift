@@ -21,6 +21,17 @@ struct WidgetDescriptor: Identifiable, Hashable {
 
     var title: String { sample.title }
 
+    func balance(in data: WidgetData) -> Double? {
+        guard !sample.showsResetExpiries, data.hasData, data.limit == nil,
+              let resource = limitResources.first(where: { $0.kind == .balance }) else { return nil }
+        switch resource.source {
+        case .value(let kind, let label), .progressOrValue(let kind, let label):
+            return data.values.first { $0.kind == kind && (label == nil || $0.label == label) }?.number
+        case .progress:
+            return nil
+        }
+    }
+
     static func == (lhs: WidgetDescriptor, rhs: WidgetDescriptor) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }

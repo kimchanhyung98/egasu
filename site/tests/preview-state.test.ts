@@ -39,7 +39,7 @@ test('Settings includes normal native rows and notification triggers', () => {
   }
   const milestones = englishSource('Support/PaceNotificationLogic.swift').split('var settingLabel: String')[1].split('var notificationTitle')[0];
   const milestoneLabels = [...milestones.matchAll(/(?:return|case \.\w+:)\s*"([^"]+)"/g)].map((match) => match[1]);
-  assert.equal(milestoneLabels.length, 3, 'Every native notification trigger must be checked');
+  assert.equal(milestoneLabels.length, 4, 'Every native notification trigger must be checked');
   for (const label of milestoneLabels) assert.ok(labels.has(label), label);
   const resetWatch = englishSource('Stores/CodexResetWatchNotificationEvaluator.swift');
   const resetWatchLabel = resetWatch.match(/static var settingLabel: String \{ "([^"]+)" \}/)?.[1];

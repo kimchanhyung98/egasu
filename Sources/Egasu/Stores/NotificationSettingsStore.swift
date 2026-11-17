@@ -8,26 +8,28 @@ import Observation
 final class NotificationSettingsStore {
     private let defaults: UserDefaults
 
-    private static let underTenKey = "openusage.notifications.underTenPercent"
-    private static let healthyToCloseKey = "openusage.notifications.healthyToClose"
-    private static let closeToRunningOutKey = "openusage.notifications.closeToRunningOut"
     private static let codexResetWatchKey = "openusage.notifications.codexResetWatch"
 
     var onCodexResetWatchChange: (@MainActor () -> Void)?
 
-    /// 기간 내 잔여 10% 미만 최초 진입 시 알림
-    var underTenPercent: Bool {
-        didSet { defaults.set(underTenPercent, forKey: Self.underTenKey) }
+    /// 남은 양이 Priority Critical 기준 이하 — 저장 키는 옛 Almost Out 그대로.
+    var critical: Bool {
+        didSet { defaults.set(critical, forKey: PaceMilestone.critical.settingKey) }
     }
 
-    /// pace가 healthy(파랑)에서 close-to-limit(노랑)로 악화 시 알림
-    var healthyToClose: Bool {
-        didSet { defaults.set(healthyToClose, forKey: Self.healthyToCloseKey) }
+    /// 남은 양이 Priority Warning 기준 이하 — 저장 키는 옛 Cutting It Close 그대로.
+    var warning: Bool {
+        didSet { defaults.set(warning, forKey: PaceMilestone.warning.settingKey) }
     }
 
-    /// pace가 close-to-limit(노랑)에서 running-out(빨강)로 악화 시 알림
+    /// 지금 속도면 초기화 전 소진.
     var closeToRunningOut: Bool {
-        didSet { defaults.set(closeToRunningOut, forKey: Self.closeToRunningOutKey) }
+        didSet { defaults.set(closeToRunningOut, forKey: PaceMilestone.closeToRunningOut.settingKey) }
+    }
+
+    /// 하루 초과 주기에서 초기화 하루 전 50% 넘게 남음.
+    var useItOrLoseIt: Bool {
+        didSet { defaults.set(useItOrLoseIt, forKey: PaceMilestone.useItOrLoseIt.settingKey) }
     }
 
     var codexResetWatch: Bool {
@@ -40,21 +42,22 @@ final class NotificationSettingsStore {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        self.underTenPercent = defaults.bool(forKey: Self.underTenKey, default: false)
-        self.healthyToClose = defaults.bool(forKey: Self.healthyToCloseKey, default: false)
-        self.closeToRunningOut = defaults.bool(forKey: Self.closeToRunningOutKey, default: false)
+        self.critical = defaults.bool(forKey: PaceMilestone.critical.settingKey, default: false)
+        self.warning = defaults.bool(forKey: PaceMilestone.warning.settingKey, default: false)
+        self.closeToRunningOut = defaults.bool(forKey: PaceMilestone.closeToRunningOut.settingKey, default: false)
+        self.useItOrLoseIt = defaults.bool(forKey: PaceMilestone.useItOrLoseIt.settingKey, default: false)
         self.codexResetWatch = defaults.bool(forKey: Self.codexResetWatchKey, default: false)
     }
 
-    /// 순수 logic이 소비하는 형태의 milestone toggle 묶음
-    var toggles: PaceNotificationToggles {
-        PaceNotificationToggles(
-            underTenPercent: underTenPercent,
-            healthyToClose: healthyToClose,
-            closeToRunningOut: closeToRunningOut
-        )
+    func isOn(_ milestone: PaceMilestone) -> Bool {
+        switch milestone {
+        case .critical: critical
+        case .warning: warning
+        case .closeToRunningOut: closeToRunningOut
+        case .useItOrLoseIt: useItOrLoseIt
+        }
     }
 
     /// trigger 하나 이상 on 여부 — 권한 요청 시점과 Settings 권한 notice 표시 판단에 사용
-    var anyEnabled: Bool { underTenPercent || healthyToClose || closeToRunningOut || codexResetWatch }
+    var anyEnabled: Bool { PaceMilestone.allCases.contains(where: isOn) || codexResetWatch }
 }

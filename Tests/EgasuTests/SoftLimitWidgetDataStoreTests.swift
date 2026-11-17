@@ -214,7 +214,7 @@ final class SoftLimitWidgetDataStoreTests: XCTestCase {
         let defaults = makeDefaults()
         let settings = SoftLimitSettingsStore(defaults: defaults)
         let notifications = NotificationSettingsStore(defaults: defaults)
-        notifications.underTenPercent = true
+        notifications.critical = true
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         var posts: [String] = []
         let store = WidgetDataStore(

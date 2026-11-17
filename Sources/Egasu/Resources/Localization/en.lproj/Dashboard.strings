@@ -85,3 +85,6 @@
 "You have no rate limit resets" = "You have no rate limit resets";
 "Your usage doesn't need a reset yet" = "Your usage doesn't need a reset yet";
 "peak %@" = "peak %@";
+
+"Burning Fast" = "Burning Fast";
+"Current usage unavailable." = "Current usage unavailable.";

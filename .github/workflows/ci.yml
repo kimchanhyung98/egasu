@@ -19,7 +19,9 @@ jobs:
     # built here reports minos 15.0. We do NOT add a macos-15 runner leg — back-deployment compiles
     # against the newest SDK, and a stock macos-15 runner ships Swift 6.1 without the macOS 26 SDK, so
     # it cannot build this package. Runtime verification on Sequoia is a manual smoke pass.
-    runs-on: macos-26
+    # ARM 실행기 배정 장애 동안 Intel에서 테스트하고 ARM64 앱·테스트도 교차 빌드.
+    # ARM 실행기의 정상 배정이 확인되면 ARM64 네이티브 테스트로 복귀.
+    runs-on: macos-26-intel
     steps:
       - uses: actions/checkout@v7
         with:
@@ -27,6 +29,9 @@ jobs:
 
       - name: Build
         run: swift build
+
+      - name: Build ARM64 app and tests
+        run: swift build --arch arm64 --build-tests
 
       - name: Run tests
         run: swift test

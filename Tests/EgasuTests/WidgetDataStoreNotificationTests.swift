@@ -101,28 +101,30 @@ final class WidgetDataStoreNotificationTests: XCTestCase {
         return (store, runtime, descriptor)
     }
 
-    /// 세 trigger 전부 on — store 기본값이 off라 테스트에서 명시 opt-in
+    /// 알림 4종 전부 on — store 기본값이 off라 테스트에서 명시 opt-in
     private func allOn(_ settings: NotificationSettingsStore) {
-        settings.underTenPercent = true
-        settings.healthyToClose = true
+        settings.critical = true
+        settings.warning = true
         settings.closeToRunningOut = true
+        settings.useItOrLoseIt = true
     }
 
-    func testHealthyToCloseFiresOnceThroughTheStore() async {
+    func testWarningFiresOnceThroughTheStore() async {
         let settings = NotificationSettingsStore(defaults: makeUserDefaults("h2c-settings"))
         allOn(settings)
         let recorder = Recorder()
-        let (store, runtime, _) = makeStore(used: 80, settings: settings, recorder: recorder, defaultsName: "h2c")
+        let (store, runtime, _) = makeStore(used: 60, settings: settings, recorder: recorder, defaultsName: "h2c")
         await store.refreshAll(force: true)
         await store.evaluateNotifications(now: base)
-        XCTAssertTrue(recorder.posts.isEmpty, "healthy should not fire")
+        XCTAssertTrue(recorder.posts.isEmpty, "40% left is above the Warning level")
 
-        runtime.snapshot = snapshot(used: 87)
+        runtime.snapshot = snapshot(used: 75)
         await store.refreshAll(force: true)
         await store.evaluateNotifications(now: base)
         XCTAssertEqual(recorder.posts.count, 1)
-        XCTAssertEqual(recorder.posts.first?.0, "test.healthyToClose")
-        XCTAssertEqual(recorder.posts.first?.1, "Cutting It Close")
+        XCTAssertEqual(recorder.posts.first?.0, "test.healthyToClose", "저장 키와 같은 옛 ID 유지")
+        XCTAssertEqual(recorder.posts.first?.1, "Warning")
+        XCTAssertEqual(recorder.posts.first?.3, "30% or less left for this window.")
 
         await store.evaluateNotifications(now: base)
         XCTAssertEqual(recorder.posts.count, 1)
@@ -193,7 +195,7 @@ final class WidgetDataStoreNotificationTests: XCTestCase {
         let settings = NotificationSettingsStore(defaults: defaults)
         allOn(settings)
         let descriptor = Self.descriptor()
-        let runtime = MutableRuntime(provider: Self.provider, descriptors: [descriptor], snapshot: snapshot(used: 80))
+        let runtime = MutableRuntime(provider: Self.provider, descriptors: [descriptor], snapshot: snapshot(used: 60))
         let gate = DeliveryGate()
         let deliveryStarted = expectation(description: "first notification awaiting delivery")
         var posts: [String] = []
@@ -212,7 +214,7 @@ final class WidgetDataStoreNotificationTests: XCTestCase {
         )
         await store.refreshAll(force: true)
         await store.evaluateNotifications(now: base)
-        runtime.snapshot = snapshot(used: 87)
+        runtime.snapshot = snapshot(used: 75)
         await store.refreshAll(force: true)
         let first = Task { await store.evaluateNotifications(now: base) }
         await fulfillment(of: [deliveryStarted], timeout: 2)
@@ -224,7 +226,8 @@ final class WidgetDataStoreNotificationTests: XCTestCase {
         await first.value
 
         XCTAssertEqual(posts.filter { $0 == "test.healthyToClose" }.count, 1)
-        XCTAssertEqual(posts.filter { $0 == "test.closeToRunningOut" }.count, 1)
+        XCTAssertEqual(posts.filter { $0 == "test.closeToRunningOut" }.count, 1, "the queued pass ran at the newest time")
+        XCTAssertEqual(posts.filter { $0 == "test.underTenPercent" }.count, 1, "a new window's drop sends only the lowest level")
     }
 
     func testCatalogReplacementInvalidatesOnlyUnresolvedAccountFamilyDeliveries() async {
@@ -248,7 +251,7 @@ final class WidgetDataStoreNotificationTests: XCTestCase {
                         resetsAt: resetsAt, periodDurationMs: Int(week * 1000))])
             }
             let registry = WidgetRegistry(providers: [provider], descriptors: [descriptor])
-            let first = MutableRuntime(provider: provider, descriptors: [descriptor], snapshot: sample(80))
+            let first = MutableRuntime(provider: provider, descriptors: [descriptor], snapshot: sample(60))
             let identityKeys = testCase.identity.map { [testCase.id: $0] } ?? [:]
             let recorder = Recorder()
             let currentAtDelivery = EnabledFlag(true)
@@ -270,12 +273,12 @@ final class WidgetDataStoreNotificationTests: XCTestCase {
             )
             await store.refreshAll(force: true)
             await store.evaluateNotifications(now: base)
-            first.snapshot = sample(87)
+            first.snapshot = sample(75)
             await store.refreshAll(force: true)
             let evaluation = Task { await store.evaluateNotifications(now: base) }
             await fulfillment(of: [deliveryStarted], timeout: 2)
 
-            let second = MutableRuntime(provider: provider, descriptors: [descriptor], snapshot: sample(87))
+            let second = MutableRuntime(provider: provider, descriptors: [descriptor], snapshot: sample(75))
             store.replaceProviderCatalog(registry: registry, providers: [second], identityKeys: identityKeys)
             await gate.open()
             await evaluation.value
@@ -291,34 +294,32 @@ final class WidgetDataStoreNotificationTests: XCTestCase {
 
     func testInFlightNotificationCannotOverwriteTheNewAccountBaseline() async {
         let evaluator = QuotaNotificationEvaluator()
-        let toggles = PaceNotificationToggles(underTenPercent: true, healthyToClose: true, closeToRunningOut: true)
         func metrics(_ used: Double) -> [QuotaNotificationEvaluator.Metric] {
             [.init(key: "test.session", providerID: "test", data: WidgetData(
                 title: "Session", icon: Self.provider.icon, kind: .percent, used: used, limit: 100,
                 resetsAt: resetsAt, periodDurationMs: Int(week * 1000)
             ))]
         }
-        await evaluator.evaluate(metrics: metrics(80), toggles: toggles, now: base,
+        await evaluator.evaluate(metrics: metrics(80), isOn: { _ in true }, now: base,
                                  providerName: { $0 }, post: { _, _, _, _, _ in XCTFail("first sample"); return true })
         var oldPosts = 0
-        await evaluator.evaluate(metrics: metrics(95), toggles: toggles, now: base,
+        await evaluator.evaluate(metrics: metrics(95), isOn: { _ in true }, now: base,
                                  providerName: { $0 }, post: { _, _, _, _, _ in
             oldPosts += 1
             evaluator.reset(providerIDs: ["test"])
-            await evaluator.evaluate(metrics: metrics(80), toggles: toggles, now: self.base,
+            await evaluator.evaluate(metrics: metrics(80), isOn: { _ in true }, now: self.base,
                                      providerName: { $0 }, post: { _, _, _, _, _ in XCTFail("new account first sample"); return true })
             return true
         })
         XCTAssertEqual(oldPosts, 1, "remaining old-account notifications must stop after replacement")
         var newPosts = 0
-        await evaluator.evaluate(metrics: metrics(95), toggles: toggles, now: base,
+        await evaluator.evaluate(metrics: metrics(95), isOn: { _ in true }, now: base,
                                  providerName: { $0 }, post: { _, _, _, _, _ in newPosts += 1; return true })
         XCTAssertEqual(newPosts, 2, "new account baseline must survive the old delivery completion")
     }
 
     func testUnrelatedAccountResetPreservesDeliveredNotificationDeduplication() async {
         let evaluator = QuotaNotificationEvaluator()
-        let toggles = PaceNotificationToggles(underTenPercent: true, healthyToClose: true, closeToRunningOut: true)
         func metrics(_ used: Double) -> [QuotaNotificationEvaluator.Metric] {
             ["cursor", "claude"].map { providerID in
                 .init(key: "\(providerID).session", providerID: providerID, data: WidgetData(
@@ -328,17 +329,17 @@ final class WidgetDataStoreNotificationTests: XCTestCase {
                 ))
             }
         }
-        await evaluator.evaluate(metrics: metrics(80), toggles: toggles, now: base,
+        await evaluator.evaluate(metrics: metrics(80), isOn: { _ in true }, now: base,
                                  providerName: { $0 }, post: { _, _, _, _, _ in XCTFail("first sample"); return true })
         var delivered: [String] = []
-        await evaluator.evaluate(metrics: metrics(95), toggles: toggles, now: base,
+        await evaluator.evaluate(metrics: metrics(95), isOn: { _ in true }, now: base,
                                  providerName: { $0 }, post: { id, _, _, _, isCurrent in
             delivered.append(id)
             if delivered.count == 1 { evaluator.reset(providerIDs: ["claude"]) }
             XCTAssertTrue(isCurrent(), "an unrelated account change must keep this delivery valid")
             return true
         })
-        await evaluator.evaluate(metrics: metrics(95), toggles: toggles, now: base,
+        await evaluator.evaluate(metrics: metrics(95), isOn: { _ in true }, now: base,
                                  providerName: { $0 }, post: { id, _, _, _, _ in delivered.append(id); return true })
         XCTAssertEqual(delivered.count, 2, "unrelated account changes must not replay delivered milestones")
         XCTAssertEqual(Set(delivered).count, 2)
@@ -357,7 +358,7 @@ final class WidgetDataStoreNotificationTests: XCTestCase {
         await store.refreshAll(force: true)
         await store.evaluateNotifications(now: base)
         XCTAssertTrue(recorder.posts.contains { $0.0 == "test.closeToRunningOut" })
-        XCTAssertTrue(recorder.posts.contains { $0.3 == "Projected to finish before the limit resets." })
+        XCTAssertTrue(recorder.posts.contains { $0.3 == "May run out before the limit resets." })
         XCTAssertTrue(recorder.posts.contains { $0.2 == "Test Session" })
     }
 
@@ -383,9 +384,10 @@ final class WidgetDataStoreNotificationTests: XCTestCase {
 
     func testAllTogglesOffSuppressesAllPosts() async {
         let settings = NotificationSettingsStore(defaults: makeUserDefaults("all-off-settings"))
-        settings.underTenPercent = false
-        settings.healthyToClose = false
+        settings.critical = false
+        settings.warning = false
         settings.closeToRunningOut = false
+        settings.useItOrLoseIt = false
         let recorder = Recorder()
         let (store, runtime, _) = makeStore(used: 80, settings: settings, recorder: recorder, defaultsName: "all-off")
         await store.refreshAll(force: true)
@@ -396,22 +398,22 @@ final class WidgetDataStoreNotificationTests: XCTestCase {
         XCTAssertTrue(recorder.posts.isEmpty)
     }
 
-    func testPerTriggerOffSuppressesThatMilestoneOnly() async {
-        let settings = NotificationSettingsStore(defaults: makeUserDefaults("per-trigger-settings"))
-        allOn(settings)
-        settings.healthyToClose = false
-        let recorder = Recorder()
-        let (store, runtime, _) = makeStore(used: 80, settings: settings, recorder: recorder, defaultsName: "per-trigger")
-        await store.refreshAll(force: true)
-        await store.evaluateNotifications(now: base)
-        runtime.snapshot = snapshot(used: 87)
-        await store.refreshAll(force: true)
-        await store.evaluateNotifications(now: base)
-        XCTAssertFalse(recorder.posts.contains { $0.0 == "test.healthyToClose" })
-        runtime.snapshot = snapshot(used: 95)
-        await store.refreshAll(force: true)
-        await store.evaluateNotifications(now: base)
-        XCTAssertTrue(recorder.posts.contains { $0.0 == "test.closeToRunningOut" })
+    func testADropPastBothLevelsSendsTheLowestOneSwitchedOn() async {
+        for (criticalOn, expected) in [(true, "test.underTenPercent"), (false, "test.healthyToClose")] {
+            let settings = NotificationSettingsStore(defaults: makeUserDefaults("per-trigger-settings-\(criticalOn)"))
+            allOn(settings)
+            settings.critical = criticalOn
+            let recorder = Recorder()
+            let (store, runtime, _) = makeStore(used: 60, settings: settings, recorder: recorder, defaultsName: "per-trigger-\(criticalOn)")
+            await store.refreshAll(force: true)
+            await store.evaluateNotifications(now: base)
+            runtime.snapshot = snapshot(used: 95)
+            await store.refreshAll(force: true)
+            await store.evaluateNotifications(now: base)
+            let levels = recorder.posts.map(\.0).filter { $0 == "test.underTenPercent" || $0 == "test.healthyToClose" }
+            XCTAssertEqual(levels, [expected], "critical on: \(criticalOn)")
+            XCTAssertTrue(recorder.posts.contains { $0.0 == "test.closeToRunningOut" })
+        }
     }
 
     func testDisablingProviderDropsItsNotificationState() async {
@@ -448,7 +450,7 @@ final class WidgetDataStoreNotificationTests: XCTestCase {
         await store.evaluateNotifications(now: base)
         XCTAssertTrue(
             recorder.posts.contains { $0.0 == "test.underTenPercent" },
-            "Almost Out must fire on <10% remaining even when the meter displays 'used'"
+            "Critical must fire on ≤10% remaining even when the meter displays 'used'"
         )
     }
 
@@ -456,11 +458,11 @@ final class WidgetDataStoreNotificationTests: XCTestCase {
         let settings = NotificationSettingsStore(defaults: makeUserDefaults("retry-settings"))
         allOn(settings)
         let recorder = Recorder()
-        let (store, runtime, _) = makeStore(used: 80, settings: settings, recorder: recorder,
+        let (store, runtime, _) = makeStore(used: 60, settings: settings, recorder: recorder,
                                             defaultsName: "retry", delivered: { false })
         await store.refreshAll(force: true)
         await store.evaluateNotifications(now: base)
-        runtime.snapshot = snapshot(used: 87)
+        runtime.snapshot = snapshot(used: 75)
         await store.refreshAll(force: true)
         await store.evaluateNotifications(now: base)
         await store.refreshAll(force: true)
