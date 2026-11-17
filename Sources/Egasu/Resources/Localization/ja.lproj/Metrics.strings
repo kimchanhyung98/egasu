@@ -180,3 +180,14 @@
 "From your OpenCode logs and local tools" = "OpenCode のログとローカルツールから収集";
 "From your Grok usage files and logs (estimated)" = "Grok の使用量ファイルとログに基づく値（推定）";
 "From your Grok usage files, logs, and local tools (estimated)" = "Grok の使用量ファイル、ログ、ローカルツールに基づく値（推定）";
+
+"%lld%% or less left for this window." = "この期間の残りが%lld%%以下です。";
+"A limit may run out before its reset" = "リセット前に上限に達しそうなとき";
+"Alert when a limit drops critically low" = "上限が危険なほど少なくなったら通知";
+"Alert when a limit requires your attention" = "上限の確認が必要になったら通知";
+"Critical" = "危険";
+"May run out before the limit resets." = "上限がリセットされる前に使い切る可能性があります。";
+"Over 50% left a day before its reset" = "リセットの1日前に50%以上残っている";
+"Over 50% left, resets in under 24 hours." = "50%以上残っていて、24時間以内にリセットされます。";
+"Use It or Lose It" = "リセット前に使用";
+"Warning" = "警告";

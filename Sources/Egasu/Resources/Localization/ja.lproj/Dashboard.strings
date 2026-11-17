@@ -85,3 +85,6 @@
 "You have no rate limit resets" = "利用できる上限リセットはありません";
 "Your usage doesn't need a reset yet" = "使用量をリセットする必要はまだありません";
 "peak %@" = "最大 %@";
+
+"Burning Fast" = "急速な消費";
+"Current usage unavailable." = "現在の使用量を取得できません。";

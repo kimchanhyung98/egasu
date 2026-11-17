@@ -180,3 +180,14 @@
 "From your OpenCode logs and local tools" = "OpenCode 로그와 로컬 도구에서 수집";
 "From your Grok usage files and logs (estimated)" = "Grok 사용량 파일과 로그 기준 (추정)";
 "From your Grok usage files, logs, and local tools (estimated)" = "Grok 사용량 파일·로그·로컬 도구 기준 (추정)";
+
+"%lld%% or less left for this window." = "이번 기간에 %lld%% 이하 남았습니다.";
+"A limit may run out before its reset" = "초기화 전에 한도가 소진될 수 있을 때";
+"Alert when a limit drops critically low" = "한도가 위험할 만큼 줄어들면 알림";
+"Alert when a limit requires your attention" = "한도를 확인해야 할 때 알림";
+"Critical" = "위험";
+"May run out before the limit resets." = "한도가 초기화되기 전에 소진될 수 있습니다.";
+"Over 50% left a day before its reset" = "초기화 하루 전에 50% 넘게 남음";
+"Over 50% left, resets in under 24 hours." = "50% 넘게 남았고 24시간 안에 초기화됩니다.";
+"Use It or Lose It" = "초기화 전 사용";
+"Warning" = "경고";

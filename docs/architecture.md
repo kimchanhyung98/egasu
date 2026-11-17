@@ -235,7 +235,9 @@ Mac 로컬 소스는 기기별 파일을 합산할 수 있지만, Cursor처럼 �
 
 ## 알림
 
-`NotificationSettingsStore`는 기존 사용량 알림 3종과 Codex Reset Watch의 개별 설정 저장.
+`NotificationSettingsStore`는 사용량 알림 4종과 Codex Reset Watch의 개별 설정 저장.
+`DisplaySettingsStore`는 공통 임계값과 사용 속도 표시 설정 저장.
+`PriorityLimits`의 기본값은 Warning 30%·Critical 10%이며 Priority 데이터 모델과 할당량 알림에서 같은 값 사용.
 Settings의 권한 요청과 거부 안내는 이 스토어의 활성 설정을 함께 확인.
 
 ```mermaid
@@ -248,7 +250,8 @@ flowchart LR
     Watch --> Notifications
 ```
 
-`QuotaNotificationEvaluator`는 계정·지표별 잔량과 사용 속도의 상태 변화 판정.
+`QuotaNotificationEvaluator`는 계정·지표별 잔량, 사용 속도, 기간 종료 전 남은 할당량의 상태 변화 판정.
+권한 확인 대기 중에도 계정 연결·프로바이더 활성화·개별 알림 설정의 현재 상태 재확인.
 할당량 알림의 표시명은 카드에 연결된 등록 계정명을 매번 조회하며, 이름 변경·계정 전환 후에도 현재 매핑 사용.
 등록 계정 연결이 없는 카드는 기존 프로바이더 표시명 유지.
 `CodexResetWatchNotificationEvaluator`는 계정과 무관한 공개 예측·예정 이벤트 판정.
@@ -267,6 +270,7 @@ Reset Watch 평가기의 입력은 조회 결과인 `receive`와 설정 변경�
 
 `AppNotifications.shared.post`는 두 판정 모듈이 공유하는 macOS 알림 진입점.
 권한 요청·재허용 확인, 배너·사운드·그룹화, 오류 기록, 무효 요청 제거와 알림 클릭 처리 담당.
+권한 요청 결과를 재사용하더라도 매 전달 전 시스템의 현재 허용 상태 확인.
 실제 배너 표시와 권한 창은 별도의 앱 실행 검증 대상.
 사용자 설정과 알림 조건은 [알림 설정](/docs/settings.md#알림)과 [Reset Watch 알림](/docs/providers/codex.md#reset-watch-알림) 참조.
 

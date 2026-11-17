@@ -237,9 +237,10 @@ struct SettingsScreen: View {
             }
             .padding(.horizontal, 8)
             VStack(spacing: 0) {
-                notifToggleRow(.underTenPercent, isOn: $notifications.underTenPercent)
-                notifToggleRow(.healthyToClose, isOn: $notifications.healthyToClose)
+                notifToggleRow(.critical, isOn: $notifications.critical)
+                notifToggleRow(.warning, isOn: $notifications.warning)
                 notifToggleRow(.closeToRunningOut, isOn: $notifications.closeToRunningOut)
+                notifToggleRow(.useItOrLoseIt, isOn: $notifications.useItOrLoseIt)
                 HStack {
                     Text(CodexResetWatchNotificationEvaluator.settingLabel)
                     Spacer(minLength: 8)

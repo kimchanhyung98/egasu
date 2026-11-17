@@ -29,10 +29,11 @@ final class QuotaNotificationEvaluator {
         AppLog.info(.notifications, "notification baseline reset after account catalog change")
     }
 
-    /// 전체 metric의 pace milestone 평가 후 신규 도달분을 `post`로 전달 — `providerName`은 subtitle용 표시명 매핑
+    /// 전체 지표의 알림 조건 평가 후 켜진 조건만 전달 — 프로바이더 이름은 부제목에 사용.
     func evaluate(
         metrics: [Metric],
-        toggles: PaceNotificationToggles,
+        isOn: @escaping (PaceMilestone) -> Bool,
+        isProviderEnabled: @escaping (String) -> Bool = { _ in true },
         now: Date,
         providerName: @MainActor (String) -> String,
         post: Post
@@ -47,45 +48,63 @@ final class QuotaNotificationEvaluator {
             let data = metric.data
             let state = data.meterState(now: now)
             let previous = notificationState[key] ?? NotificationState()
-            let currentBucket = PaceNotificationLogic.bucket(for: state)
+            let hasPaceContext = data.paceContext != nil
+            let currentBucket = PaceNotificationLogic.bucket(for: state, used: data.used, hasPaceContext: hasPaceContext)
             let resetDelta = Self.resetDelta(current: data.resetsAt, previous: previous.resetsAt)
-            let resetAdvanced = PaceNotificationLogic.resetWindowAdvanced(
+            let resetAdvanced = data.hasData && PaceNotificationLogic.resetWindowAdvanced(
                 resetsAt: data.resetsAt,
-                previousReset: previous.resetsAt
+                previousReset: previous.resetsAt,
+                now: now,
+                usageReset: data.used == 0 && (previous.previousUsed ?? 0) > 0
             )
             let result = PaceNotificationLogic.transitions(
                 state: state,
-                fraction: data.remainingFraction,
+                severity: data.severity,
+                used: data.used,
                 resetsAt: data.resetsAt,
+                hasPaceContext: hasPaceContext,
+                unusedNearReset: PaceNotificationLogic.isUnusedNearReset(data, now: now),
                 previous: previous,
-                toggles: toggles
+                now: now
             )
             if !result.fire.isEmpty || resetAdvanced || Self.isPositiveResetMovement(resetDelta) {
-                AppLog.debug(.notifications, "decision \(key): metric=\(data.title) state=\(Self.notificationStateDescription(state)) bucket=\(Self.bucketDescription(currentBucket)) previousBucket=\(Self.bucketDescription(previous.previousBucket)) remaining=\(Self.percentDescription(data.remainingFraction)) reset=\(Self.dateDescription(data.resetsAt)) previousReset=\(Self.dateDescription(previous.resetsAt)) resetDelta=\(Self.resetDeltaDescription(resetDelta)) resetReason=\(Self.resetReasonDescription(delta: resetDelta, advanced: resetAdvanced)) primed=\(previous.primed) wasUnderTen=\(previous.wasUnderTenPercent) firedBefore=\(Self.milestoneDescription(previous.firedMilestones)) fire=\(Self.milestoneDescription(result.fire)) newBucket=\(Self.bucketDescription(result.newState.previousBucket)) newFired=\(Self.milestoneDescription(result.newState.firedMilestones)) toggles=\(Self.toggleDescription(toggles))")
+                AppLog.debug(.notifications, "decision \(key): metric=\(data.title) state=\(Self.notificationStateDescription(state)) bucket=\(Self.bucketDescription(currentBucket)) previousBucket=\(Self.bucketDescription(previous.previousBucket)) remaining=\(Self.percentDescription(data.remainingFraction)) reset=\(Self.dateDescription(data.resetsAt)) previousReset=\(Self.dateDescription(previous.resetsAt)) resetDelta=\(Self.resetDeltaDescription(resetDelta)) resetReason=\(Self.resetReasonDescription(delta: resetDelta, advanced: resetAdvanced)) primed=\(previous.primed) previousSeverity=\(Self.severityDescription(previous.previousSeverity)) severity=\(Self.severityDescription(data.severity)) firedBefore=\(Self.milestoneDescription(previous.firedMilestones)) fire=\(Self.milestoneDescription(result.fire)) newBucket=\(Self.bucketDescription(result.newState.previousBucket)) newFired=\(Self.milestoneDescription(result.newState.firedMilestones)) on=\(Self.milestoneDescription(PaceMilestone.allCases.filter(isOn)))")
             }
-            // dedup 상태는 실제 전달 성공분만 commit — 실패·미인가 전달은 상태를 되돌려 다음 pass에 재발화
+            // 중복 방지 기록은 실제로 보낸 것만 확정 — 꺼졌거나 못 보낸 알림은 상태를 되돌려 다음 평가에 다시 후보.
             var next = result.newState
             var paceDelivered = false
-            var underDelivered = false
+            var levelDelivered = false
             for milestone in result.fire {
-                let delivered = await deliver(milestone, data: data, providerID: metric.providerID,
-                                              providerName: providerName, generation: boundGeneration, post: post)
+                // 두 단계를 한 번에 지나면 켜진 것 중 더 낮은 단계 하나만 — 나머지는 보낸 것으로 침.
+                if levelDelivered, milestone.isLevel {
+                    next.firedMilestones.insert(milestone)
+                    continue
+                }
+                let delivered = isOn(milestone) && isProviderEnabled(metric.providerID)
+                    ? await deliver(milestone, data: data, providerID: metric.providerID,
+                                    providerName: providerName, isCurrent: {
+                                        self.generationsByProvider[metric.providerID, default: 0] == boundGeneration
+                                            && isOn(milestone) && isProviderEnabled(metric.providerID)
+                                    }, post: post)
+                    : false
                 guard generationsByProvider[metric.providerID, default: 0] == boundGeneration else {
                     continue metricLoop
                 }
                 if delivered {
-                    if milestone == .underTenPercent { underDelivered = true } else { paceDelivered = true }
+                    if milestone.isPace { paceDelivered = true }
+                    if milestone.isLevel { levelDelivered = true }
                     next.firedMilestones.insert(milestone)
                 }
             }
-            if result.fire.contains(where: { $0 != .underTenPercent }) && !paceDelivered {
-                next.previousBucket = previous.previousBucket
+            let held = PaceNotificationLogic.carriedOver(previous, used: data.used, resetsAt: data.resetsAt, now: now)
+            if result.fire.contains(where: \.isPace) && !paceDelivered {
+                next.previousBucket = held.previousBucket
             }
-            if result.fire.contains(.underTenPercent) && !underDelivered {
-                next.wasUnderTenPercent = previous.wasUnderTenPercent
+            if result.fire.contains(where: \.isLevel) && !levelDelivered {
+                next.previousSeverity = held.previousSeverity
             }
             if !result.fire.isEmpty {
-                AppLog.debug(.notifications, "commit \(key): paceDelivered=\(paceDelivered) underTenDelivered=\(underDelivered) persistedBucket=\(Self.bucketDescription(next.previousBucket)) persistedWasUnderTen=\(next.wasUnderTenPercent) persistedFired=\(Self.milestoneDescription(next.firedMilestones))")
+                AppLog.debug(.notifications, "commit \(key): paceDelivered=\(paceDelivered) levelDelivered=\(levelDelivered) persistedBucket=\(Self.bucketDescription(next.previousBucket)) persistedSeverity=\(Self.severityDescription(next.previousSeverity)) persistedFired=\(Self.milestoneDescription(next.firedMilestones))")
             }
             notificationState[key] = next
         }
@@ -97,12 +116,12 @@ final class QuotaNotificationEvaluator {
         data: WidgetData,
         providerID: String,
         providerName: @MainActor (String) -> String,
-        generation: Int,
+        isCurrent: @escaping @MainActor () -> Bool,
         post: Post
     ) async -> Bool {
         let subtitle = L10n.metrics("%@ %@", providerName(providerID), data.localizedTitle)
-        return await post("\(providerID).\(milestone.rawValue)", milestone.notificationTitle, subtitle, milestone.body) {
-            self.generationsByProvider[providerID, default: 0] == generation
+        return await post("\(providerID).\(milestone.rawValue)", milestone.notificationTitle, subtitle, milestone.body(data.priorityLimits)) {
+            isCurrent()
         }
     }
 
@@ -121,6 +140,7 @@ final class QuotaNotificationEvaluator {
     private static func resetReasonDescription(delta: TimeInterval?, advanced: Bool) -> String {
         guard let delta else { return "firstOrMissingReset" }
         if advanced { return "advanced" }
+        if delta > PaceNotificationLogic.resetWindowJitterTolerance { return "extendedBeforeReset" }
         if delta > 0 { return "ignoredJitter" }
         if delta < 0 { return "movedEarlier" }
         return "unchanged"
@@ -139,8 +159,13 @@ final class QuotaNotificationEvaluator {
         String(format: "%.1f%%", value * 100)
     }
 
-    private static func toggleDescription(_ toggles: PaceNotificationToggles) -> String {
-        "under10=\(toggles.underTenPercent),close=\(toggles.healthyToClose),runOut=\(toggles.closeToRunningOut)"
+    private static func severityDescription(_ severity: WidgetData.MeterSeverity) -> String {
+        switch severity {
+        case .neutral: return "neutral"
+        case .normal: return "normal"
+        case .warning: return "warning"
+        case .critical: return "critical"
+        }
     }
 
     private static func milestoneDescription(_ milestones: Set<PaceMilestone>) -> String {

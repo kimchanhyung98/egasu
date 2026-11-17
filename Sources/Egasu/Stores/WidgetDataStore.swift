@@ -30,12 +30,18 @@ final class WidgetDataStore {
 
     private static let meterStyleKey = "meterStyle"
     private static let resetDisplayModeKey = "resetDisplayMode"
-    private static let alwaysShowPacingKey = "alwaysShowPacing"
     static let defaultSlowProviderRefreshThreshold: TimeInterval = 10
     static let defaultProviderRefreshTimeout: TimeInterval = 120
 
     /// 화면·API용 조회 결과 — iCloud 동기화가 꺼져 있으면 로컬 원본, 켜져 있으면 다른 Mac의 이력 합산.
-    var snapshots: [String: ProviderSnapshot] = [:]
+    var snapshots: [String: ProviderSnapshot] = [:] {
+        didSet { latchBurningFast() }
+    }
+    let displaySettings: DisplaySettingsStore
+    private(set) var burningFastWindows: [String: Date] = [:]
+    var burningFast: BurningFast? {
+        displaySettings.showsBurningFast ? BurningFast(latched: burningFastWindows) : nil
+    }
     /// 현재 Mac의 마지막 정상 결과 — 캐시·iCloud에는 원본만 저장하여 다른 Mac의 이력 중복 전파 방지.
     var localSnapshots: [String: ProviderSnapshot] { refreshCoordinator.localSnapshots }
     /// 인증·사용량 조회와 독립된 공개 Reset Watch 값 — 모든 Codex 카드가 공유.
@@ -95,9 +101,10 @@ final class WidgetDataStore {
         didSet { defaults.set(resetDisplayMode.rawValue, forKey: Self.resetDisplayModeKey) }
     }
 
-    /// 전역 "always show pacing" opt-in — on이면 on-track 행에도 pace projection 노출. persist, 기본 true.
+    /// 기존 표시 설정의 진입점 — 공통 Pace Marks 저장값 사용.
     var alwaysShowPacing: Bool {
-        didSet { defaults.set(alwaysShowPacing, forKey: Self.alwaysShowPacingKey) }
+        get { displaySettings.showsPaceMarks }
+        set { displaySettings.showsPaceMarks = newValue }
     }
 
     init(
@@ -117,6 +124,7 @@ final class WidgetDataStore {
         providerIdentityKeys: [String: String] = [:],
         familyTotalHistoryCardIDs: Set<String> = [],
         resolveDisplayName: (@MainActor (String) -> String?)? = nil,
+        displaySettings: DisplaySettingsStore? = nil,
         workQueue: BackgroundWorkQueue = BackgroundWorkQueue()
     ) {
         precondition(slowProviderRefreshThreshold >= 0)
@@ -143,7 +151,7 @@ final class WidgetDataStore {
         self.resolveDisplayName = resolveDisplayName
         self.meterStyle = defaults.enumValue(forKey: Self.meterStyleKey, default: .used)
         self.resetDisplayMode = defaults.enumValue(forKey: Self.resetDisplayModeKey, default: .absolute)
-        self.alwaysShowPacing = defaults.bool(forKey: Self.alwaysShowPacingKey, default: true)
+        self.displaySettings = displaySettings ?? DisplaySettingsStore(defaults: defaults)
         self.snapshots = refreshCoordinator.localSnapshots
         refreshCoordinator.onSnapshotsChanged = { [weak self] rendered in
             self?.remoteOnlySpend = rendered.remoteOnlySpend
@@ -303,7 +311,7 @@ final class WidgetDataStore {
 
     private func evaluateNotificationPass(now: Date) async {
         guard let settingsProvider = notificationSettings else { return }
-        let toggles = settingsProvider().toggles
+        let settings = settingsProvider()
         // 한도 없는 행·차트는 제외하고 레이아웃 순서대로 평가 — 대상에서 빠진 지표의 기록 제거.
         // 첫 비동기 전달 전에 입력 확정 — 평가 도중 조회가 끝나도 나머지 지표의 입력 유지.
         let metrics = orderedDescriptors()
@@ -319,7 +327,8 @@ final class WidgetDataStore {
             }
         await notificationEvaluator.evaluate(
             metrics: metrics,
-            toggles: toggles,
+            isOn: { settings.isOn($0) },
+            isProviderEnabled: isProviderEnabled,
             now: now,
             providerName: { [providerNames = refreshCoordinator.providerNames, resolveDisplayName] id in
                 resolveDisplayName?(id) ?? providerNames[id] ?? id
@@ -363,7 +372,9 @@ final class WidgetDataStore {
         // 대시보드·공유 이미지·메뉴 막대의 공통 표시 설정 적용 지점.
         result.displayMode = meterStyle
         result.resetDisplayMode = resetDisplayMode
-        result.alwaysShowPacing = alwaysShowPacing
+        result.alwaysShowPacing = displaySettings.showsPaceMarks
+        result.priorityLimits = displaySettings.priorityLimits
+        result.showsPaceMarks = displaySettings.showsPaceMarks
         result.softLimitUsedFraction = softLimitSettings?().usedFraction(
             for: descriptor.softLimitWindow,
             periodDurationMs: result.periodDurationMs
@@ -376,6 +387,20 @@ final class WidgetDataStore {
     /// 현재 조회 결과의 플랜 이름 — 결과가 없거나 플랜을 제공하지 않으면 nil.
     func plan(for providerID: String) -> String? {
         snapshots[providerID]?.plan
+    }
+
+    /// 현재 조회 결과의 빠른 소진 상태 기록 — 같은 기간의 회복 기준까지 유지.
+    private func latchBurningFast() {
+        let at = now()
+        let previous = BurningFast(latched: burningFastWindows)
+        var burning: [String: Date] = [:]
+        for descriptor in registry.descriptors {
+            let data = data(for: descriptor)
+            guard let reset = data.resetsAt,
+                  BurningFast.isBurning(data, now: at, wasBurning: previous.wasBurning(descriptor.id, data, now: at)) else { continue }
+            burning[descriptor.id] = reset
+        }
+        if burning != burningFastWindows { burningFastWindows = burning }
     }
 
     /// 일반 프로바이더 조회 주기의 두 배에 해당하는 경과 기준.

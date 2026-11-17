@@ -18,6 +18,8 @@ struct WidgetData: Hashable {
     var countSuffix: String?   // 예: "credits"
     var valuePrefix: String?   // 예: forecast의 "~"
     var displayMode: WidgetDisplayMode = .used
+    var priorityLimits: PriorityLimits = .standard
+    var showsPaceMarks = false
     /// 전역 relative/absolute reset 표시 — `WidgetDataStore`가 stamp.
     var resetDisplayMode: ResetDisplayMode = .relative
     /// 전역 "always show pacing" opt-in — `WidgetDataStore`가 stamp.
@@ -422,7 +424,7 @@ struct WidgetData: Hashable {
 extension WidgetData {
     /// pacing 입력값 — reset window가 알려진 bounded metric에서만 존재.
     /// nil이면 live pace 판정 생략 — bar는 절대 level band로 fallback.
-    private var paceContext: (limit: Double, resetsAt: Date, period: TimeInterval)? {
+    var paceContext: (limit: Double, resetsAt: Date, period: TimeInterval)? {
         guard hasData, !isForecast, let limit, limit > 0, let resetsAt,
               let periodDurationMs, periodDurationMs > 0 else { return nil }
         return (limit, resetsAt, TimeInterval(periodDurationMs) / 1000)

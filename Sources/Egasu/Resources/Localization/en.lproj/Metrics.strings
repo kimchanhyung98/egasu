@@ -180,3 +180,14 @@
 "From your OpenCode logs and local tools" = "From your OpenCode logs and local tools";
 "From your Grok usage files and logs (estimated)" = "From your Grok usage files and logs (estimated)";
 "From your Grok usage files, logs, and local tools (estimated)" = "From your Grok usage files, logs, and local tools (estimated)";
+
+"%lld%% or less left for this window." = "%lld%% or less left for this window.";
+"A limit may run out before its reset" = "A limit may run out before its reset";
+"Alert when a limit drops critically low" = "Alert when a limit drops critically low";
+"Alert when a limit requires your attention" = "Alert when a limit requires your attention";
+"Critical" = "Critical";
+"May run out before the limit resets." = "May run out before the limit resets.";
+"Over 50% left a day before its reset" = "Over 50% left a day before its reset";
+"Over 50% left, resets in under 24 hours." = "Over 50% left, resets in under 24 hours.";
+"Use It or Lose It" = "Use It or Lose It";
+"Warning" = "Warning";

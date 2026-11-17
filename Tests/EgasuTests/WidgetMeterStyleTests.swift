@@ -172,7 +172,7 @@ final class WidgetMeterStyleTests: XCTestCase {
         let store = makeEmptyStore(makeUserDefaults("default"))
         XCTAssertEqual(store.meterStyle, .used)
         XCTAssertEqual(store.resetDisplayMode, .absolute)
-        XCTAssertTrue(store.alwaysShowPacing)
+        XCTAssertFalse(store.alwaysShowPacing)
     }
 
     func testMeterStylePersistsAcrossStoreInstances() {
@@ -201,6 +201,25 @@ final class WidgetMeterStyleTests: XCTestCase {
         XCTAssertEqual(store.meterStyle, .remaining)
         XCTAssertEqual(store.resetDisplayMode, .relative)
         XCTAssertFalse(store.alwaysShowPacing)
+    }
+
+    func testLegacyPacingChoiceUsesSharedSettingAcrossRelaunch() throws {
+        for previousChoice in [false, true] {
+            let suite = "EgasuTests.MeterStyle.pacing.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            defaults.set(previousChoice, forKey: "alwaysShowPacing")
+
+            let store = makeEmptyStore(defaults)
+            XCTAssertEqual(store.alwaysShowPacing, previousChoice)
+            XCTAssertEqual(store.displaySettings.showsPaceMarks, previousChoice)
+            store.alwaysShowPacing = !previousChoice
+
+            let restored = makeEmptyStore(defaults)
+            XCTAssertEqual(restored.alwaysShowPacing, !previousChoice)
+            XCTAssertEqual(restored.displaySettings.showsPaceMarks, !previousChoice)
+            XCTAssertEqual(defaults.bool(forKey: "alwaysShowPacing"), previousChoice)
+        }
     }
 
     // MARK: - Helpers
