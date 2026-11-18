@@ -161,12 +161,13 @@ egasu는 프로바이더 API 조회 외에 공개 [모델 가격 목록](/docs/p
 
 egasu는 로컬 CLI 로그로 Mac에서 지출 타일을 계산하고 일반 새로 고침이나 익명 분석으로 해당 로그를 전송하지 않음.
 
-Codex 프로바이더가 켜져 있고 **Reset Watch**의 대시보드 표시·Priority 고정·**Codex Reset Watch** 알림 중 하나라도 켜져 있으면, egasu가 공개 [codex-resets.com API](https://codex-resets.com/api/docs)를 인증 없이 별도 15분 주기로 조회.
+Codex 프로바이더가 켜져 있고 **Reset Watch** 지표 표시 또는 **Codex Reset Watch** 알림이 켜져 있으면, egasu가 공개 [codex-resets.com API](https://codex-resets.com/api/docs)를 인증 없이 별도 15분 주기로 조회.
 인식 가능한 출처 게시물의 활성 watch로 예측할 때는 커뮤니티 투표율 계산을 위해 같은 사이트의 `/api/watch/votes` 집계도 인증 없이 조회하며 투표는 제출하지 않음.
 유효한 리셋 예정 정보가 있으면 투표 요청 없이 상태 응답만으로 예측 표시.
 Reset Watch 활성 상태에서는 수동 Refresh(⌘R)도 같은 조회를 실행하되 재시도 대기와 이미 진행 중인 요청을 고려.
 이 조회는 Codex 로그인을 사용하지 않으며 일반 구독 사용량 5분 새로 고침과 독립적으로 실행.
-대시보드 표시·Priority 고정·알림이 모두 꺼져 있거나 Codex 프로바이더를 끄면 이후 조회 중단 — 이미 진행 중인 Reset Watch 요청은 완료될 수 있음.
+지표 표시와 알림을 모두 끄거나 Codex 프로바이더를 끄면 이후 조회 중단.
+이미 진행 중인 Reset Watch 요청은 완료될 수 있음.
 두 요청 모두 Codex 토큰, 계정 ID, 사용량 값, 로컬 로그, Cookie가 실리지 않음.
 독립 서비스에는 IP 주소와 egasu 사용자 에이전트 같은 일반 네트워크 메타데이터가 전달됨.
 이 조회는 익명 사용 데이터 공유와 별개이며 Share Anonymous Usage 설정의 제어 대상이 아님.

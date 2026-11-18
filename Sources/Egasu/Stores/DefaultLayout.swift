@@ -65,7 +65,7 @@ enum DefaultLayout {
         "cursor.onDemand", "cursor.today", "cursor.yesterday", "cursor.last30"
     ]
 
-    /// 최초 실행 시 메뉴바에 고정되는 metric — 아이콘만 남는 첫 화면 방지, `metricIDs`처럼 registry 필터링
+    /// 이전 기본 메뉴 막대 별표. 사용자 지정 별표를 Priority 고정으로 이전할 때만 비교.
     static let pinnedMetricIDs: [String] = [
         "antigravity.geminiPro", "antigravity.geminiWeekly",
         "claude.weekly",
