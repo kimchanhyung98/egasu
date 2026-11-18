@@ -21,6 +21,7 @@ struct PopoverFooter: View {
                 HStack(alignment: .center, spacing: 8) {
                     footerIdentity
                     Spacer(minLength: 8)
+                    if popover.dashboardTab == .priority, liveBoard.hasRows { copyPriorityButton }
                     optionsMenu
                 }
                 .padding(.horizontal, 4)
@@ -38,16 +39,43 @@ struct PopoverFooter: View {
         }
         .frame(minHeight: 26)
         .padding(.horizontal, PanelMetrics.margin)
-        .padding(.top, 7)
+        .padding(.top, DashboardContentView.barGap)
         .padding(.bottom, PanelMetrics.margin)
         .frame(maxWidth: .infinity)
         .overlay(alignment: .top) {
-            if screen == .dashboard, layout.shareConfirmation {
+            if screen == .dashboard, popover.shareNotice.value {
                 shareCopiedPill
                     .offset(y: -34)
             }
         }
-        .animation(Motion.spring, value: layout.shareConfirmation)
+        .animation(Motion.spring, value: popover.shareNotice.value)
+        .animation(Motion.spring, value: popover.shareNotice.trigger)
+    }
+
+    private var liveBoard: PriorityBoard {
+        dataStore.priorityBoard(
+            accounts: container.dashboardAccounts(), pinned: layout.priorityPinIDs, now: Date(),
+            hidingEmails: true
+        )
+    }
+
+    /// Priority 탭을 이미지로 복사 — 누른 순간의 보드를 읽음.
+    private var copyPriorityButton: some View {
+        Button {
+            guard ShareCardRenderer.copy(PriorityShareCard(
+                board: liveBoard, now: Date(), appearance: colorScheme,
+                blursAccountNames: container.privacy.hideUsageWhileScreenSharing
+            )) else { return }
+            popover.shareNotice.present(true)
+        } label: {
+            Image(systemName: "doc.on.doc")
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 26, height: 26)
+                .background(Theme.controlFill, in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L10n.dashboard("Copy Priority Screenshot"))
     }
 
     /// 원형 ⋯ 버튼 뒤 Options 메뉴. Check for Updates…는 항상 표시하고 Sparkle이 확인할 수 없으면 비활성.
@@ -66,8 +94,6 @@ struct PopoverFooter: View {
             .keyboardShortcut(",")
 
             Divider()
-
-            shareScreenshotMenu
 
             Button { updater.checkForUpdates() } label: {
                 Label(L10n.dashboard("Check for Updates…"), systemImage: "arrow.triangle.2.circlepath")
@@ -101,41 +127,12 @@ struct PopoverFooter: View {
         .accessibilityLabel(L10n.dashboard("Options"))
     }
 
-    @ViewBuilder
-    private var shareScreenshotMenu: some View {
-        let accounts = container.presentedShareAccounts()
-        Menu {
-            if accounts.isEmpty {
-                // 스크린샷 대상 없음 — 빈 서브메뉴 대신 비활성 항목 표시
-                Button(L10n.dashboard("No Enabled Providers")) {}
-                    .disabled(true)
-            } else {
-                ForEach(accounts) { account in
-                    Button(container.accountCardTitle(for: account.provider)) { shareCard(account.id) }
-                }
-            }
-        } label: {
-            Label(L10n.dashboard("Share Screenshot"), systemImage: "square.and.arrow.up")
-        }
-    }
-
-    private func shareCard(_ accountID: String) {
-        guard let account = container.dashboardAccounts().first(where: { $0.id == accountID }) else { return }
-        ShareCardRenderer.share(
-            account: account,
-            plan: dataStore.plan(for: account.id),
-            layout: layout,
-            appearance: colorScheme,
-            displayName: container.accountCardTitle(for: account.provider)
-        )
-    }
-
     private var shareCopiedPill: some View {
         TransientPill(
             systemImage: "checkmark.circle.fill",
             text: L10n.dashboard("Copied to clipboard"),
             tint: Theme.positive,
-            trigger: layout.shareConfirmationTrigger
+            trigger: popover.shareNotice.trigger
         )
     }
 

@@ -155,7 +155,7 @@ final class PriorityPinPersistenceTests: XCTestCase {
 
     func testLegacyCustomStarsExpandOnceAndNeverPinChartsOrLaterAccounts() {
         let defaults = makeDefaults()
-        LayoutPersistence(defaults: defaults, storageKey: "layout").savePins(["codex.weekly", "codex.trend"])
+        defaults.set(["codex.weekly", "codex.trend"], forKey: "layout.menuBarPins")
         let store = makeStore(defaults: defaults, catalog: catalog())
         XCTAssertEqual(store.migrateMenuBarStars(), 2)
         XCTAssertEqual(store.priorityPinIDs, ["codex.weekly", "\(card("work")).weekly"])
@@ -170,7 +170,7 @@ final class PriorityPinPersistenceTests: XCTestCase {
         for existing: Set<String> in [[], ["codex.session"]] {
             let defaults = makeDefaults()
             let persistence = LayoutPersistence(defaults: defaults, storageKey: "layout")
-            persistence.savePins(["codex.weekly"])
+            defaults.set(["codex.weekly"], forKey: "layout.menuBarPins")
             persistence.savePriorityPins(existing)
             let store = makeStore(defaults: defaults, catalog: catalog())
             XCTAssertNil(store.migrateMenuBarStars())
@@ -206,7 +206,7 @@ final class PriorityPinPersistenceTests: XCTestCase {
     {
         LayoutStore(
             registry: catalog.registry, defaults: defaults, storageKey: "layout",
-            defaultPinnedMetricIDs: [], defaultExpandedMetricIDs: [], profileIDsByCardID: catalog.mapping)
+            defaultPinnedMetricIDs: [], profileIDsByCardID: catalog.mapping)
     }
 
     private func makeDefaults() -> UserDefaults {

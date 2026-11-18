@@ -4,12 +4,15 @@ import SwiftUI
 struct DashboardProviderSection<Header: View, Account: View>: View {
     let family: DashboardFamily
     var layoutStyle = DashboardLayoutStyle.minimal
-    @ViewBuilder var header: () -> Header
+    @ViewBuilder var header: (_ isHovered: Bool) -> Header
     @ViewBuilder var account: (DashboardAccount) -> Account
+
+    @State private var isHovered = false
+    @Environment(PopoverState.self) private var popover: PopoverState?
 
     var body: some View {
         VStack(alignment: .leading, spacing: DashboardGrid.headerGap) {
-            header()
+            header(isHovered)
             if layoutStyle == .cards {
                 VStack(alignment: .leading, spacing: DashboardGrid.accountSpacing) {
                     ForEach(family.accounts) { entry in
@@ -25,7 +28,10 @@ struct DashboardProviderSection<Header: View, Account: View>: View {
             }
         }
         .contentShape(Rectangle())
-
+        .onHover { isHovered = $0 }
+        .onChange(of: popover?.popoverShown) { _, shown in
+            if shown == false { isHovered = false }
+        }
     }
 
     private func card<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -39,20 +45,17 @@ struct DashboardProviderSection<Header: View, Account: View>: View {
 }
 
 extension DashboardProviderSection where Header == DashboardProviderHeader {
-    init(
-        family: DashboardFamily, layoutStyle: DashboardLayoutStyle = .minimal,
-        @ViewBuilder account: @escaping (DashboardAccount) -> Account
-    ) {
-        self.init(
-            family: family, layoutStyle: layoutStyle, header: { DashboardProviderHeader(family: family) },
-            account: account)
+    init(family: DashboardFamily, layoutStyle: DashboardLayoutStyle = .minimal, @ViewBuilder account: @escaping (DashboardAccount) -> Account) {
+        self.init(family: family, layoutStyle: layoutStyle, header: { _ in DashboardProviderHeader(family: family) }, account: account)
     }
 }
 
-/// 카드 밖 머리글 — 프로바이더 이름·서버 장애 상태·오른쪽 로고.
+/// 카드 밖 머리글 — 프로바이더 이름·서버 장애 상태·오른쪽 로고와 호버 시 복사 버튼.
 struct DashboardProviderHeader: View {
     let family: DashboardFamily
     var serviceIssue: ProviderServiceIssue?
+    var isRevealed = false
+    var onCopyScreenshot: (() -> Bool)?
 
     var body: some View {
         HStack(spacing: Theme.Spacing.s) {
@@ -71,6 +74,13 @@ struct DashboardProviderHeader: View {
                 }
             }
             Spacer(minLength: DashboardGrid.columnGap)
+            if let onCopyScreenshot {
+                CopyFeedbackButton(
+                    accessibilityLabel: L10n.dashboard("Copy %@ Screenshot", family.displayName),
+                    isRevealed: isRevealed,
+                    action: onCopyScreenshot
+                )
+            }
             ProviderIcon(source: family.provider.icon, inset: 0.04)
                 .frame(width: DashboardGrid.iconSize, height: DashboardGrid.iconSize)
                 .accessibilityHidden(true)
@@ -176,9 +186,7 @@ struct DashboardAccountStatus {
             MotionAwareProgressView(controlSize: .mini)
                 .accessibilityLabel(L10n.dashboard("Refreshing"))
         } else if let notice {
-            Button {
-                onFix?()
-            } label: {
+            Button { onFix?() } label: {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.notice)
@@ -207,9 +215,7 @@ struct DashboardAccountRows: View {
         VStack(alignment: .leading, spacing: 0) {
             DashboardAccountCaption(account: account, plan: plan)
             DashboardLineStack(account: account, layoutStyle: layoutStyle) { line in
-                DashboardMetricRow(
-                    model: line.data.dashboardRow(), chartPoints: line.data.chartPoints, layoutStyle: layoutStyle,
-                    valueTooltip: line.data.isChart ? line.data.chartNote : nil)
+                DashboardMetricRow(model: line.data.dashboardRow(), chartPoints: line.data.chartPoints, layoutStyle: layoutStyle, valueTooltip: line.data.isChart ? line.data.chartNote : nil)
             }
         }
     }

@@ -141,13 +141,12 @@ final class LanguageSettingTests: XCTestCase {
         }
     }
 
-    func testDefaultAccountLabelDoesNotTranslateUserChosenNames() {
-        L10n.withLanguage(.korean) {
-            XCTAssertEqual(DashboardUsageAccountSelection.optionTitle(cardID: "claude", profileLabel: nil, accountName: nil), "기본 계정")
-            XCTAssertEqual(DashboardUsageAccountSelection.optionTitle(cardID: "claude", profileLabel: "Default", accountName: nil), "Default")
-        }
-        L10n.withLanguage(.japanese) {
-            XCTAssertEqual(DashboardUsageAccountSelection.optionTitle(cardID: "claude", profileLabel: nil, accountName: nil), "デフォルト")
+    func testAccountNamesRemainLiteralAcrossDisplayLanguages() {
+        for language in LanguageSetting.allCases {
+            L10n.withLanguage(language) {
+                XCTAssertEqual(AccountNamePrivacy.displayName("Default", email: nil, conceals: false), "Default")
+                XCTAssertEqual(AccountNamePrivacy.displayName("Private Work", email: nil, conceals: false), "Private Work")
+            }
         }
     }
 }

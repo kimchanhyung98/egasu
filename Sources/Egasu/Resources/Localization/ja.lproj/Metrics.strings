@@ -200,3 +200,12 @@
 "Soft limit at %lld%%" = "ソフト上限 %lld%%";
 
 "Failed" = "更新失敗";
+
+"%@ didn't report any data for this range." = "%@はこの期間のデータを報告していません。";
+"30 Days Ending %@" = "%@までの30日間";
+"Breakdown Unavailable" = "内訳を取得できません";
+"Copy %@ Usage" = "%@の使用量をコピー";
+"Loading Breakdown…" = "内訳を読み込み中…";
+"Refresh to load the details for this range." = "更新するとこの期間の内訳を読み込みます。";
+"Saved %@" = "%@時点";
+"Top Models" = "上位モデル";

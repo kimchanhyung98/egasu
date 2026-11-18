@@ -17,24 +17,6 @@ final class LayoutStore {
     /// Priority 고정 — 개인 지표는 계정 카드, 공통 지표는 프로바이더 기준으로 저장.
     private(set) var priorityPinIDs: Set<String>
 
-    /// per-provider "Shown on expand" divider 아래의 canonical metric id — membership만 저장, section 내 순서는
-    /// metric 순서를 따름. disabled 동안에도 membership 유지 — 재활성화 시 원래 section 복원.
-    var expandedMetricIDs: Set<String>
-
-    /// expanded metric을 펼쳐 둔 family — 사용자 preference라 popover 닫힘·앱 재시작에도 유지.
-    private(set) var expandedProviderIDs: Set<String>
-
-    private let shareNotice = TransientNotice<Bool>(clearedValue: false, timeout: .seconds(2.5))
-    private let customizeNotice = TransientNotice<CustomizationNoticeContent?>(clearedValue: nil, timeout: .seconds(2.5))
-
-    var shareConfirmation: Bool { shareNotice.value }
-    var shareConfirmationTrigger: Int { shareNotice.trigger }
-
-    var customizationNotice: String? { customizeNotice.value?.message }
-    /// notice tone(.positive/.notice) — clear 후 .positive 폴백(메시지·tone이 원자적으로 clear되어 snap-back 비관측).
-    var customizationNoticeTone: CustomizationNoticeTone { customizeNotice.value?.tone ?? .positive }
-    var customizationNoticeTrigger: Int { customizeNotice.trigger }
-
     /// 레이아웃 customization용 bounded 앱 전역 undo stack — 비persist(세션 내 affordance),
     /// entry는 변경 전 `LayoutSnapshot`, `undo()`가 pop·복원.
     private var undoHistory = LayoutUndoHistory()
@@ -47,8 +29,6 @@ final class LayoutStore {
     private let defaultMetricIDs: [String]?
     private let knownCardIDs: Set<String>
     private let defaultPinnedMetricIDs: [String]
-    private let defaultExpandedMetricIDs: [String]
-    var defaultExpandedOnEnableIDs: Set<String>
     let isProviderEnabled: @MainActor (String) -> Bool
 
     init(
@@ -58,7 +38,6 @@ final class LayoutStore {
         defaultMetricIDs: [String]? = nil,
         migrationBaselineMetricIDs: [String] = DefaultLayout.migrationBaselineMetricIDs,
         defaultPinnedMetricIDs: [String] = DefaultLayout.pinnedMetricIDs,
-        defaultExpandedMetricIDs: [String] = DefaultLayout.expandedMetricIDs,
         knownCardIDs: Set<String> = [],
         profileIDsByCardID: [String: String] = [:],
         isProviderEnabled: @escaping @MainActor (String) -> Bool = { _ in true }
@@ -71,7 +50,6 @@ final class LayoutStore {
         self.defaultMetricIDs = defaultMetricIDs
         self.knownCardIDs = knownCardIDs
         self.defaultPinnedMetricIDs = defaultPinnedMetricIDs
-        self.defaultExpandedMetricIDs = defaultExpandedMetricIDs
         self.isProviderEnabled = isProviderEnabled
         persistence.reconcileAccountProfiles(profileIDsByCardID, registry: registry)
 
@@ -80,8 +58,7 @@ final class LayoutStore {
             persistence: persistence,
             defaults: LayoutDefaultSet(
                 metricIDs: defaultMetricIDs ?? DefaultLayout.metricIDs(in: registry),
-                migrationBaselineMetricIDs: migrationBaselineMetricIDs,
-                expandedMetricIDs: defaultExpandedMetricIDs
+                migrationBaselineMetricIDs: migrationBaselineMetricIDs
             ),
             knownCardIDs: knownCardIDs
         )
@@ -89,17 +66,11 @@ final class LayoutStore {
         providerOrder = initial.providerOrder
         metricOrderByProvider = initial.metricOrderByProvider
         priorityPinIDs = Self.loadPriorityPins(from: persistence, registry: registry)
-        expandedMetricIDs = initial.expandedMetricIDs
-        expandedProviderIDs = initial.expandedProviderIDs
-        defaultExpandedOnEnableIDs = initial.defaultExpandedOnEnableIDs
 
-        if initial.shouldPersistExpandOnEnable { persistExpandOnEnable() }
-        if initial.shouldPersistExpanded { persistExpanded() }
         if initial.shouldPersistMetricOrder { persistMetricOrder() }
-        if initial.shouldPersistExpandedProviders { persistExpandedProviders() }
-        if let seededDefaults = initial.seededDefaultsToPersist { persistSeededDefaults(seededDefaults) }
         if initial.shouldPersistVisibility { persistence.saveDisabledMetrics(initial.disabledMetricIDs) }
-        syncPlacedOrder(persistChanges: initial.shouldPersistPlaced)
+        if initial.shouldClearOnDemandState { persistence.clearOnDemandState() }
+        syncPlacedOrder(persistChanges: false)
     }
 
     /// 새 카드·프로필 연결에 맞춰 저장된 숨김·순서를 다시 읽고 화면 연결 유지.
@@ -116,8 +87,7 @@ final class LayoutStore {
             persistence: persistence,
             defaults: LayoutDefaultSet(
                 metricIDs: defaultMetricIDs ?? DefaultLayout.metricIDs(in: registry),
-                migrationBaselineMetricIDs: migrationBaselineMetricIDs,
-                expandedMetricIDs: defaultExpandedMetricIDs
+                migrationBaselineMetricIDs: migrationBaselineMetricIDs
             ),
             knownCardIDs: knownCardIDs
         )
@@ -125,44 +95,21 @@ final class LayoutStore {
         providerOrder = reloaded.providerOrder
         metricOrderByProvider = reloaded.metricOrderByProvider
         priorityPinIDs = Self.loadPriorityPins(from: persistence, registry: registry)
-        expandedMetricIDs = reloaded.expandedMetricIDs
-        expandedProviderIDs = reloaded.expandedProviderIDs
-        defaultExpandedOnEnableIDs = reloaded.defaultExpandedOnEnableIDs
         undoHistory.clear()
         cancelDrag()
 
-        if reloaded.shouldPersistExpandOnEnable { persistExpandOnEnable() }
-        if reloaded.shouldPersistExpanded { persistExpanded() }
         if reloaded.shouldPersistMetricOrder { persistMetricOrder() }
-        if reloaded.shouldPersistExpandedProviders { persistExpandedProviders() }
-        if let seededDefaults = reloaded.seededDefaultsToPersist { persistSeededDefaults(seededDefaults) }
         if reloaded.shouldPersistVisibility { persistence.saveDisabledMetrics(reloaded.disabledMetricIDs) }
-        syncPlacedOrder(persistChanges: reloaded.shouldPersistPlaced)
+        if reloaded.shouldClearOnDemandState { persistence.clearOnDemandState() }
+        syncPlacedOrder(persistChanges: false)
     }
 
-    /// 기본 프로바이더 지표 ID — 공통 지표·기존 별표·확장 영역 비교용.
+    /// 기본 프로바이더 지표 ID — 공통 지표와 기존 별표 비교용.
     static func canonical(_ metricID: String) -> String {
         ProviderAccountID.canonicalMetricID(metricID)
     }
 
-    func isProviderExpanded(_ providerID: String) -> Bool {
-        registry.provider(id: providerID) != nil
-            && expandedProviderIDs.contains(ProviderAccountID.family(of: providerID))
-    }
 
-    @discardableResult
-    func setProviderExpanded(_ expanded: Bool, for providerID: String) -> Bool {
-        guard registry.provider(id: providerID) != nil else { return false }
-        let family = ProviderAccountID.family(of: providerID)
-        guard expandedProviderIDs.contains(family) != expanded else { return false }
-        if expanded {
-            expandedProviderIDs.insert(family)
-        } else {
-            expandedProviderIDs.remove(family)
-        }
-        persistExpandedProviders()
-        return true
-    }
 
     // MARK: - Customize mutations
 
@@ -173,11 +120,6 @@ final class LayoutStore {
         let settingsID = ProviderAccountID.isSharedMetric(descriptorID) ? canonicalID : descriptorID
         recordingUndoStep {
             if enabled {
-                if defaultExpandedOnEnableIDs.remove(canonicalID) != nil {
-                    expandedMetricIDs.insert(canonicalID)
-                    persistExpanded()
-                    persistExpandOnEnable()
-                }
                 add(settingsID)
             } else if let widget = placed.first(where: { $0.descriptorID == settingsID }) {
                 remove(widget.id)
@@ -196,9 +138,7 @@ final class LayoutStore {
             placed: placed,
             providerOrder: providerOrder,
             metricOrderByProvider: metricOrderByProvider,
-            priorityPinIDs: priorityPinIDs,
-            expandedMetricIDs: expandedMetricIDs,
-            defaultExpandedOnEnableIDs: defaultExpandedOnEnableIDs
+            priorityPinIDs: priorityPinIDs
         )
     }
 
@@ -227,22 +167,17 @@ final class LayoutStore {
         return true
     }
 
-    /// snapshot의 undoable 필드 전체 복원·persist — `undo()`가 호출. `expandedProviderIDs`는 transient
-    /// view 상태라 의도적으로 제외(step 사이의 caret toggle은 rewind하지 않음).
+    /// 실행 취소 대상 필드를 복원하고 같은 저장 경로에 반영.
     private func restore(_ snapshot: LayoutSnapshot) {
         cancelDrag()
         placed = snapshot.placed
         providerOrder = snapshot.providerOrder
         metricOrderByProvider = snapshot.metricOrderByProvider
         priorityPinIDs = snapshot.priorityPinIDs
-        expandedMetricIDs = snapshot.expandedMetricIDs
-        defaultExpandedOnEnableIDs = snapshot.defaultExpandedOnEnableIDs
         persist()
         persistProviderOrder()
         persistMetricOrder()
         persistence.savePriorityPins(priorityPinIDs)
-        persistExpanded()
-        persistExpandOnEnable()
     }
 
     // MARK: - Priority pins
@@ -299,40 +234,12 @@ final class LayoutStore {
         }
     }
 
-    /// "Share Screenshot" copy 성공 기록 — floating "Copied to clipboard" pill 표시.
-    /// `notePinDenied`의 성공측 대응, 동일 lifecycle.
-    func presentShareConfirmation() {
-        shareNotice.present(true)
-    }
 
-    /// 표시 중인 확인 pill 해제·auto-clear task 취소 — popover 닫힘 시 호출, layout store가 popover보다
-    /// 오래 살아 다음 open에 카운트다운 중이던 pill이 stale 재등장하는 것 방지.
-    func clearShareConfirmation() {
-        shareNotice.clear()
-    }
 
-    /// transient in-Customize pill 표시 — `tone`은 green success/orange denial 스타일 선택.
-    /// 수 초 후 auto-clear; popover 닫힘 시에는 `clearCustomizationNotice`로 clear.
-    func presentCustomizationNotice(_ message: String, tone: CustomizationNoticeTone = .positive) {
-        customizeNotice.present(CustomizationNoticeContent(message: message, tone: tone))
-    }
 
-    /// 표시 중인 Customize pill 해제·auto-clear task 취소 — 다음 open에 stale 재등장 방지.
-    func clearCustomizationNotice() {
-        customizeNotice.clear()
-    }
 
-    func persistExpanded() {
-        persistence.saveExpandedMetrics(expandedMetricIDs)
-    }
 
-    func persistExpandOnEnable() {
-        persistence.saveExpandOnEnable(defaultExpandedOnEnableIDs)
-    }
 
-    private func persistExpandedProviders() {
-        persistence.saveExpandedProviders(expandedProviderIDs)
-    }
 
     // MARK: - Mutations
 
@@ -367,18 +274,12 @@ final class LayoutStore {
         persistMetricOrder()
         priorityPinIDs = []
         persistence.savePriorityPins(priorityPinIDs)
-        expandedMetricIDs = Set(defaultExpandedMetricIDs.filter { registry.hasCanonicalMetric($0) })
-        defaultExpandedOnEnableIDs = []
-        persistExpanded()
-        persistExpandOnEnable()
-        expandedProviderIDs = []
-        persistExpandedProviders()
-        persistSeededDefaults(Set(LayoutOrdering.knownMetricIDs(Array(currentDefaults), registry: registry)))
+        persistence.clearOnDemandState()
         persistence.saveDisabledMetrics([])
         persist()
     }
 
-    /// 한 provider의 customization만 default로 reset(enabled metric·metric 순서·pin·caret membership) —
+    /// 한 provider의 customization만 default로 reset(enabled metric·metric 순서·Priority 고정) —
     /// 다른 provider와 전체 provider 순서는 유지. `resetToDefault`의 per-provider 대응; 미지 provider는 no-op.
     /// account 카드 id로 호출해도 family 설정 1벌을 reset — 같은 family의 모든 카드가 함께 복귀.
     func resetProvider(_ providerID: String) {
@@ -413,20 +314,9 @@ final class LayoutStore {
         }
         persistMetricOrder()
 
-        // pin·expanded·expand-on-enable carry: 이 family entry만 default로 교체, 나머지 set 유지.
+        // 해당 프로바이더의 Priority 고정만 해제.
         priorityPinIDs = priorityPinIDs.filter { ProviderAccountID.family(of: ProviderAccountID.providerID(ofMetric: $0)) != family }
         persistence.savePriorityPins(priorityPinIDs)
-
-        expandedMetricIDs.subtract(owned)
-        expandedMetricIDs.formUnion(defaults(defaultExpandedMetricIDs))
-        defaultExpandedOnEnableIDs.subtract(owned)
-        persistExpanded()
-        persistExpandOnEnable()
-
-        // default는 collapsed 카드.
-        if expandedProviderIDs.remove(family) != nil {
-            persistExpandedProviders()
-        }
 
         syncPlacedOrder() // `placed` persist 포함
     }
@@ -450,9 +340,6 @@ final class LayoutStore {
         persistence.saveMetricOrder(metricOrderByProvider)
     }
 
-    private func persistSeededDefaults(_ ids: Set<String>) {
-        persistence.saveSeededDefaults(ids)
-    }
 
     /// 카드별 개인 지표 순서 — 공통 이력의 계정별 복사본 제외.
     func metricOrder(for providerID: String) -> [String] {

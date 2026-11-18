@@ -353,66 +353,6 @@ final class AppContainer {
             ?? AccountCardPresentationPlanner.snapshotProfileID(for: cardID, profiles: accountProfiles.profiles)
     }
 
-    /// family의 현재 선택된 관리형 profile이 backing하는 표시 카드.
-    func preferredAccountCardID(for family: String, among cardIDs: [String]) -> String? {
-        guard let profileID = accountProfiles.preferredProfileID(family: family) else { return nil }
-        return cardIDs.first { accountProfileIDsByCardID[$0] == profileID }
-    }
-
-    /// family의 표시 카드 — 저장된 선택과 동일 profile 우선, 없으면 Settings 선택·공유 runtime·첫 카드 순.
-    func visibleAccountCardID(for family: String, among cardIDs: [String], stored: String) -> String? {
-        DashboardUsageAccountSelection.visibleCardID(
-            for: family,
-            among: cardIDs,
-            stored: stored,
-            preferredCardID: preferredAccountCardID(for: family, among: cardIDs),
-            profileIDsByCardID: accountProfileIDsByCardID
-        )
-    }
-
-    /// family에 속한 표시 가능 카드 — 등록 계정이 있으면 미등록 로그인 제외.
-    func accountCardIDs(for family: String, among orderedIDs: [String]) -> [String] {
-        orderedAccountCardIDs(orderedIDs).filter { ProviderAccountID.family(of: $0) == family }
-    }
-
-    /// dashboard 계정 선택이 바뀔 때마다 증가 — 선택은 `UserDefaults`에 저장돼 관찰되지 않으므로,
-    /// 메뉴 바 strip이 이 값을 읽어 refresh 성패와 무관하게 선택 계정으로 다시 그림.
-    private(set) var accountSelectionRevision = 0
-
-    func noteAccountSelectionChanged() {
-        accountSelectionRevision &+= 1
-    }
-
-    /// 메뉴 바의 선택 카드 필터 — 대시보드 표시 모드와 무관하게 provider당 카드 1장 유지.
-    func collapsingAccountCards(_ orderedIDs: [String], selectionByFamily: [String: String]) -> [String] {
-        let availableCards = orderedAccountCardIDs(orderedIDs)
-        let availableIDs = Set(availableCards)
-        var visible = orderedIDs.filter { availableIDs.contains($0) }
-        for family in AccountProfilesStore.supportedFamilies {
-            let cards = availableCards.filter { ProviderAccountID.family(of: $0) == family }
-            guard cards.count > 1 else { continue }
-            visible = DashboardUsageAccountSelection.visibleCardIDs(
-                orderedCardIDs: visible,
-                familyCardIDs: Set(cards),
-                selectedCardID: visibleAccountCardID(
-                    for: family,
-                    among: cards,
-                    stored: selectionByFamily[family] ?? ""
-                )
-            )
-        }
-        return visible
-    }
-
-    /// 계정 selector에 표시할 이름 — 규칙은 `DashboardUsageAccountSelection.optionTitle`.
-    func accountOptionTitle(for cardID: String) -> String {
-        DashboardUsageAccountSelection.optionTitle(
-            cardID: cardID,
-            profileLabel: accountProfileLabel(for: cardID),
-            accountName: accounts.resolvedDisplayName(cardID: cardID)
-        )
-    }
-
     /// 전환 대상의 조회·주간 타이머·재조회와 이미 시작한 인증 반영의 종료 대기.
     func waitForAccountSwitchWork(providerIDs: Set<String>) async {
         if isReconcilingExternalClaudeAuthentication {
@@ -427,19 +367,6 @@ final class AppContainer {
             || usageTimer.hasPendingWork(providerIDs: providerIDs)
     }
 
-    /// Settings 계정 전환 성공 시 dashboard selector를 1회 갱신.
-    /// 메뉴 바 star는 family 설정이라 재지정 불필요 — 표시 값만 선택 카드를 따라감.
-    /// 이후 dashboard picker 변경은 view 전용 — terminal 전환 없음.
-    func syncDashboardUsageAccount(to profile: AccountProfile) async {
-        if DashboardUsageAccountSelection.selectAfterAccountSwitch(
-            family: profile.family,
-            profileID: profile.id,
-            availableCardIDs: registry.providers.map(\.id)
-        ) != nil {
-            noteAccountSelectionChanged()
-        }
-        await refreshSharedRuntime(afterSwitchingTo: profile)
-    }
 
     func refreshSharedRuntime(afterSwitchingTo profile: AccountProfile) async {
         guard registry.providers.contains(where: { $0.id == profile.family }) else {

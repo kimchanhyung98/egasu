@@ -266,7 +266,6 @@ final class CursorEnterpriseProviderTests: XCTestCase {
         let layout = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
         XCTAssertTrue(layout.isMetricEnabled("cursor.usage"))
         XCTAssertTrue(layout.isMetricEnabled("cursor.requests"))
-        XCTAssertTrue(layout.isExpandedMetric("cursor.requests"))
         XCTAssertTrue(totalData.hasData)
         XCTAssertEqual(totalData.kind, .count)
         XCTAssertEqual(totalData.used, 37)

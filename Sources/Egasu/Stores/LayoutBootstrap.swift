@@ -1,33 +1,21 @@
 import Foundation
 
-/// owner 승인 기본값과 seed marker 없는 기존 사용자용 legacy baseline 묶음
 struct LayoutDefaultSet {
     let metricIDs: [String]
     let migrationBaselineMetricIDs: [String]
-    let expandedMetricIDs: [String]
 }
 
-/// startup 종료 시점에 `LayoutStore`가 필요로 하는 전체 상태와 초기화 후 수행할 migration 쓰기 목록
 struct LayoutInitialState {
     let placed: [PlacedWidget]
     let providerOrder: [String]
     let metricOrderByProvider: [String: [String]]
-    let expandedMetricIDs: Set<String>
-    let expandedProviderIDs: Set<String>
-    let defaultExpandedOnEnableIDs: Set<String>
     let disabledMetricIDs: Set<String>
     let shouldPersistVisibility: Bool
-
-    let shouldPersistPlaced: Bool
-    let shouldPersistExpanded: Bool
-    let shouldPersistExpandOnEnable: Bool
     let shouldPersistMetricOrder: Bool
-    let shouldPersistExpandedProviders: Bool
-    let seededDefaultsToPersist: Set<String>?
+    let shouldClearOnDemandState: Bool
 }
 
-/// 신규 설치·기존 사용자용 layout 로드
-/// startup·default-upgrade 정책을 한곳에 모으고, 초기화 이후 라이브 액션은 `LayoutStore` 담당
+/// 기본 켜짐에서 명시적 숨김만 제외. 이전 켜짐 목록은 보이는 상태를 바꾸지 않고 한 번 변환.
 @MainActor
 enum LayoutBootstrap {
     static func load(
@@ -45,6 +33,11 @@ enum LayoutBootstrap {
             .union(knownCardIDs).union(legacyCards ?? [])
         var order = copiesFamily
             ? LayoutOrdering.normalizedMetricOrder(savedOrder, registry: registry) : savedOrder
+        if let expanded = persistence.loadExpandedMetrics() {
+            let onDemand = LayoutOrdering.foldingExpansion(expanded)
+                .union(LayoutOrdering.foldingExpansion(persistence.loadExpandOnEnable() ?? []))
+            order = LayoutOrdering.flatteningOnDemand(order, onDemand: onDemand)
+        }
         if copiesFamily {
             order = LayoutOrdering.copyingOrderToCards(order, accountCards: cards.filter(ProviderAccountID.isAccountCard).sorted())
         }
@@ -104,129 +97,11 @@ enum LayoutBootstrap {
             return legacyByID[descriptor.id] ?? PlacedWidget(descriptorID: descriptor.id)
         }
         placed.append(contentsOf: legacyPlaced.filter { !currentIDs.contains($0.descriptorID) })
-        let hasStoredLayout = persistence.hasStoredLayout || persistence.hasStoredDisabledMetrics
-        let metricOrderByProvider = order
-        // 기존 확장 영역의 시드만 계산 — 현재 지표의 숨김 선택은 위에서 보존.
-        let seededResult = seedNewDefaultMetrics(
-            into: LayoutOrdering.foldingToCanonical(persistence.loadPlaced() ?? []),
-            persistence: persistence, hasStoredLayout: hasStoredLayout,
-            registry: registry, defaults: defaults
-        )
-
-        // expanded 소속은 신규 설치 전용 default — 기능 도입 전 기존 layout은 전부 caret 위 유지
-        var shouldPersistExpanded = false
-        var expandedMetricIDs: Set<String>
-        if let savedExpanded = persistence.loadExpandedMetrics() {
-            expandedMetricIDs = LayoutOrdering.foldingExpansion(savedExpanded)
-            shouldPersistExpanded = expandedMetricIDs != Set(savedExpanded)
-        } else if hasStoredLayout {
-            expandedMetricIDs = []
-        } else {
-            expandedMetricIDs = Set(defaults.expandedMetricIDs.filter { registry.hasCanonicalMetric($0) })
-            shouldPersistExpanded = true
-        }
-
-        let savedExpandedProviders = persistence.loadExpandedProviders()
-        let expandedProviderIDs = Set((savedExpandedProviders ?? []).map(ProviderAccountID.family))
-        let shouldPersistExpandedProviders = savedExpandedProviders.map {
-            expandedProviderIDs != Set($0)
-        } ?? false
-
-        // 새로 배포된 default metric만 caret 아래로 시작 가능 — 사용자가 이미 보던 metric은 숨기지 않는 규칙
-        let newlyExpanded = Set(seededResult.newlyPlaced)
-            .intersection(defaults.expandedMetricIDs)
-            .filter { registry.hasCanonicalMetric($0) }
-        if !newlyExpanded.isSubset(of: expandedMetricIDs) {
-            expandedMetricIDs.formUnion(newlyExpanded)
-            shouldPersistExpanded = true
-        }
-
-        // optional default-expanded metric은 최초 enable 시 caret 아래 진입 — 저장 queue 우선으로 사용자 이동 재생성 방지
-        let placedIDs = Set(seededResult.placed.map(\.descriptorID))
-        let expandedNow = expandedMetricIDs
-        let isExpandOnEnableCandidate: (String) -> Bool = { [registry] id in
-            registry.hasCanonicalMetric(id) && !expandedNow.contains(id) && !placedIDs.contains(id)
-        }
-        let savedOnEnable = persistence.loadExpandOnEnable()
-        let defaultExpandedOnEnableIDs: Set<String>
-        var shouldPersistExpandOnEnable = savedOnEnable == nil
-        if let savedOnEnable {
-            // 알려진 metric은 유효 후보여야 하나, 미지 id는 부재 중 계정 card 소속일 수 있어 descriptor 복귀까지 보존
-            defaultExpandedOnEnableIDs = LayoutOrdering.foldingExpansion(savedOnEnable).filter { id in
-                !registry.hasCanonicalMetric(id) || isExpandOnEnableCandidate(id)
-            }
-            shouldPersistExpandOnEnable = defaultExpandedOnEnableIDs != Set(savedOnEnable)
-        } else {
-            defaultExpandedOnEnableIDs = Set(defaults.expandedMetricIDs.filter(isExpandOnEnableCandidate))
-        }
-
         return LayoutInitialState(
-            placed: placed,
-            providerOrder: providerOrder,
-            metricOrderByProvider: metricOrderByProvider,
-            expandedMetricIDs: expandedMetricIDs,
-            expandedProviderIDs: expandedProviderIDs,
-            defaultExpandedOnEnableIDs: defaultExpandedOnEnableIDs,
-            disabledMetricIDs: disabled,
-            shouldPersistVisibility: mayPersist,
-            shouldPersistPlaced: false,
-            shouldPersistExpanded: shouldPersistExpanded,
-            shouldPersistExpandOnEnable: shouldPersistExpandOnEnable,
+            placed: placed, providerOrder: providerOrder, metricOrderByProvider: order,
+            disabledMetricIDs: disabled, shouldPersistVisibility: mayPersist,
             shouldPersistMetricOrder: order != savedOrder,
-            shouldPersistExpandedProviders: shouldPersistExpandedProviders,
-            seededDefaultsToPersist: seededResult.shouldPersistSeededDefaults
-                ? seededResult.seededDefaults
-                : nil
-        )
-    }
-
-    private struct SeededDefaultsResult {
-        let placed: [PlacedWidget]
-        let seededDefaults: Set<String>
-        let shouldPersistPlaced: Bool
-        let shouldPersistSeededDefaults: Bool
-        let newlyPlaced: [String]
-    }
-
-    private static func seedNewDefaultMetrics(
-        into placed: [PlacedWidget],
-        persistence: LayoutPersistence,
-        hasStoredLayout: Bool,
-        registry: WidgetRegistry,
-        defaults: LayoutDefaultSet
-    ) -> SeededDefaultsResult {
-        let knownDefaults = LayoutOrdering.knownMetricIDs(defaults.metricIDs, registry: registry)
-        let knownDefaultSet = Set(knownDefaults)
-        let hasStoredSeededDefaults = persistence.hasStoredSeededDefaults
-
-        let seededDefaults: Set<String>
-        var shouldPersistSeededDefaults = false
-        if let saved = persistence.loadSeededDefaults() {
-            // registry에 provider가 없는 metric의 marker도 유지 — prune하면 card 복귀 시 사용자가 끈 default metric이 신규로 오인되어 재활성화됨
-            // 카드 scoped marker는 canonical로 접어 유지 — 접지 않으면 family metric이 신규로 오인됨
-            seededDefaults = Set(saved.map(ProviderAccountID.canonicalMetricID))
-            shouldPersistSeededDefaults = seededDefaults != Set(saved)
-        } else if hasStoredLayout {
-            seededDefaults = Set(LayoutOrdering.knownMetricIDs(defaults.migrationBaselineMetricIDs, registry: registry))
-            shouldPersistSeededDefaults = true
-        } else {
-            seededDefaults = knownDefaultSet
-            shouldPersistSeededDefaults = true
-        }
-
-        let placedIDs = Set(placed.map(\.descriptorID))
-        let toAdd = knownDefaults.filter { !seededDefaults.contains($0) && !placedIDs.contains($0) }
-        let nextSeededDefaults = seededDefaults.union(knownDefaultSet)
-        shouldPersistSeededDefaults = shouldPersistSeededDefaults
-            || !hasStoredSeededDefaults
-            || nextSeededDefaults != seededDefaults
-
-        return SeededDefaultsResult(
-            placed: placed + toAdd.map { PlacedWidget(descriptorID: $0) },
-            seededDefaults: nextSeededDefaults,
-            shouldPersistPlaced: !toAdd.isEmpty,
-            shouldPersistSeededDefaults: shouldPersistSeededDefaults,
-            newlyPlaced: toAdd
+            shouldClearOnDemandState: persistence.hasOnDemandState
         )
     }
 }
@@ -288,6 +163,14 @@ enum LayoutOrdering {
         }
     }
 
+    /// 옛 On Demand 소속을 뒤로 모으되 각 구역의 상대 순서 유지.
+    static func flatteningOnDemand(_ order: [String: [String]], onDemand: Set<String>) -> [String: [String]] {
+        order.mapValues { ids in
+            ids.filter { !onDemand.contains(ProviderAccountID.canonicalMetricID($0)) }
+                + ids.filter { onDemand.contains(ProviderAccountID.canonicalMetricID($0)) }
+        }
+    }
+
     /// 카드별 caret 소속을 family 설정으로 축약 — family 자체 항목이 있으면 그것만, 없으면 카드 항목을 승격
     /// (카드 화면에서만 caret을 편집한 설치가 fold 때문에 그 선택을 잃지 않도록)
     static func foldingExpansion(_ saved: [String]) -> Set<String> {
@@ -305,38 +188,6 @@ enum LayoutOrdering {
         return result
     }
 
-    /// 카드별 pin을 family pin으로 합치고 provider 상한을 metric 순서대로 재적용
-    /// 순위가 같거나 없으면 저장 순서로 결정 — 매 launch 같은 pin이 남도록
-    static func foldingPins(
-        _ pins: [String],
-        order: [String: [String]],
-        limit: Int
-    ) -> Set<String> {
-        var byFamily: [String: [(id: String, position: Int)]] = [:]
-        var seen = Set<String>()
-        for (position, pin) in pins.enumerated() {
-            let canonicalID = ProviderAccountID.canonicalMetricID(pin)
-            guard seen.insert(canonicalID).inserted else { continue }
-            let family = ProviderAccountID.family(of: ProviderAccountID.providerID(ofMetric: canonicalID))
-            byFamily[family, default: []].append((canonicalID, position))
-        }
-        var result = Set<String>()
-        for (family, familyPins) in byFamily {
-            guard familyPins.count > limit else {
-                result.formUnion(familyPins.map(\.id))
-                continue
-            }
-            // 상한 초과분은 metric 순서 앞쪽을 남김 — 메뉴바 strip이 그리는 순서와 동일
-            let ranking = order[family] ?? []
-            let sorted = familyPins.sorted { lhs, rhs in
-                let lhsRank = ranking.firstIndex(of: lhs.id) ?? Int.max
-                let rhsRank = ranking.firstIndex(of: rhs.id) ?? Int.max
-                return lhsRank == rhsRank ? lhs.position < rhs.position : lhsRank < rhsRank
-            }
-            result.formUnion(sorted.prefix(limit).map(\.id))
-        }
-        return result
-    }
 
     static func defaultMetricOrder(registry: WidgetRegistry) -> [String: [String]] {
         var result: [String: [String]] = [:]

@@ -200,3 +200,12 @@
 "Soft limit at %lld%%" = "Soft limit at %lld%%";
 
 "Failed" = "Failed";
+
+"%@ didn't report any data for this range." = "%@ didn't report any data for this range.";
+"30 Days Ending %@" = "30 Days Ending %@";
+"Breakdown Unavailable" = "Breakdown Unavailable";
+"Copy %@ Usage" = "Copy %@ Usage";
+"Loading Breakdown…" = "Loading Breakdown…";
+"Refresh to load the details for this range." = "Refresh to load the details for this range.";
+"Saved %@" = "Saved %@";
+"Top Models" = "Top Models";

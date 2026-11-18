@@ -12,7 +12,7 @@ struct DashboardFamily: Identifiable {
         accounts.contains { $0.isVisible(headerNotice: headerNotice) }
     }
 
-    /// 이메일 계정명을 뺀 사본 — Privacy Mode가 꺼진 공유 이미지용.
+    /// 공유 이미지에서 이메일 계정명을 제외한 사본.
     var hidingEmails: DashboardFamily {
         DashboardFamily(id: id, provider: provider, displayName: displayName, accounts: accounts.map(\.hidingEmail))
     }

@@ -4,7 +4,6 @@ import SwiftUI
 enum DashboardCommand: Equatable {
     case refresh([String])
     case manageAccounts
-    case shareScreenshot(String)
     case open(URL)
     case editAccount(String)
     case setPinned(String, Bool)
@@ -78,7 +77,6 @@ enum DashboardMenus {
                             title: L10n.dashboard("Rename"), command: .rename(account.id), isDisabled: renameDisabled)
                     ] : []) + [
                     DashboardMenuItem(title: L10n.dashboard("Edit Account…"), command: .editAccount(account.id)),
-                    DashboardMenuItem(title: L10n.dashboard("Share Screenshot"), command: .shareScreenshot(account.id))
                 ]
         ].filter { !$0.isEmpty }
     }

@@ -262,52 +262,26 @@ final class AccountCardMappingTests: XCTestCase {
                 orderedProfileIDsByFamily: ["codex": profiles.map(\.id)],
                 profileIDsByCardID: mapping
             )
-            let presented = AccountCardPresentationPlanner.presentedCardIDs(
-                orderedCardIDs: ordered,
-                modesByFamily: ["codex": .separateCards],
-                selectedCardIDsByFamily: ["codex": "codex"]
-            )
-            let titles = try presented.map { cardID in
+            let labels = try ordered.map { cardID in
                 let profileID = try XCTUnwrap(mapping[cardID])
-                let profile = try XCTUnwrap(store.profile(id: profileID))
-                return AccountCardPresentationPlanner.cardTitle(
-                    providerID: cardID, fallback: "Codex", mode: .separateCards, accountName: profile.label
-                )
+                return try XCTUnwrap(store.profile(id: profileID)).label
             }
 
-            XCTAssertEqual(titles, names.map { "Codex: \($0)" })
-            XCTAssertEqual(presented.contains("codex"), sharedIdentity != "identity-unregistered")
-            let groups = presented.compactMap { cardID in
-                AccountCardPresentationPlanner.presentedGroup(
-                    ProviderGroup(
-                        provider: CodexProvider.makeProvider(id: cardID),
-                        alwaysShownWidgets: [PlacedWidget(descriptorID: "\(cardID).weekly")],
-                        expandedWidgets: ["trend", "today", "yesterday", "resetWatch"].map {
-                            PlacedWidget(descriptorID: "\(cardID).\($0)")
-                        }
-                    ),
-                    mode: .separateCards
-                )
-            }
+            XCTAssertEqual(labels, names, "every registered account has one card, in account order")
+            XCTAssertEqual(ordered.contains("codex"), sharedIdentity != "identity-unregistered")
+            // 공유 홈 전용 행은 공유 홈 카드(`codex`)에만 — 추가 계정 카드는 숨김.
             for metric in ["trend", "today", "yesterday", "resetWatch"] {
-                XCTAssertEqual(groups.filter { group in
-                    group.widgets.contains { $0.descriptorID == "\(group.id).\(metric)" }
-                }.map(\.id), sharedIdentity == "identity-unregistered" ? [] : ["codex"])
+                XCTAssertEqual(
+                    ordered.filter { !AppContainer.hidesMetric("\($0).\(metric)", onCard: $0) },
+                    sharedIdentity == "identity-unregistered" ? [] : ["codex"]
+                )
             }
             XCTAssertEqual(store.preferredProfileID(family: "codex"), profiles[0].id)
             XCTAssertEqual(store.profiles(family: "codex").map(\.identityKey), profiles.map(\.identityKey))
         }
     }
 
-    func testSavedCodexAccountSelectionSurvivesSnapshotAndLiveCardChangesAcrossAllSurfaces() throws {
-        try assertCodexAccountSelectionSurvivesCardChanges(selectLiveCard: false)
-    }
-
-    func testNewLiveCodexSelectionSurvivesSnapshotAndLiveCardChangesAcrossAllSurfaces() throws {
-        try assertCodexAccountSelectionSurvivesCardChanges(selectLiveCard: true)
-    }
-
-    private func assertCodexAccountSelectionSurvivesCardChanges(selectLiveCard: Bool) throws {
+    func testCodexAccountCardsSurviveSharedIdentityChanges() throws {
         let defaults = makeScratchDefaults()
         let store = AccountProfilesStore(defaults: defaults)
         let preferred = try store.add(family: "codex", label: "Account 1", identityKey: "identity-1")
@@ -315,18 +289,7 @@ final class AccountCardMappingTests: XCTestCase {
         let sameIdentity = try store.add(family: "codex", label: "Account 3", identityKey: selected.identityKey)
         store.setPreferred(family: "codex", profileID: preferred.id)
         let profiles = store.profiles(family: "codex")
-        let savedCard = AccountUsageCardPlanner.cardID(family: "codex", profileID: selected.id)
         let separateNamedCard = AccountUsageCardPlanner.cardID(family: "codex", profileID: sameIdentity.id)
-        let liveMapping = AppContainer.accountProfileIDsByCardID(
-            assembly: ProviderAccountAssembly(identityKeysByCard: ["codex": selected.identityKey]),
-            profiles: store
-        )
-        DashboardUsageAccountSelection.select(
-            selectLiveCard ? "codex" : savedCard,
-            for: "codex",
-            profileID: selectLiveCard ? liveMapping["codex"] : nil,
-            defaults: defaults
-        )
         let savedDefaults = defaults.dictionaryRepresentation()
 
         for sharedIdentity in [preferred.identityKey, selected.identityKey, "unregistered"] {
@@ -348,40 +311,13 @@ final class AccountCardMappingTests: XCTestCase {
                 orderedProfileIDsByFamily: ["codex": profiles.map(\.id)],
                 profileIDsByCardID: mapping
             )
-            let visible = try XCTUnwrap(DashboardUsageAccountSelection.visibleCardID(
-                for: "codex",
-                among: ordered,
-                stored: DashboardUsageAccountSelection.selectedID(for: "codex", defaults: defaults),
-                preferredCardID: ordered.first { mapping[$0] == preferred.id },
-                profileIDsByCardID: mapping
-            ))
-            let expected = sharedIdentity == selected.identityKey ? "codex" : savedCard
 
-            XCTAssertEqual(visible, expected)
-            XCTAssertEqual(mapping[visible], selected.id)
-            XCTAssertEqual(ordered.count, profiles.count)
+            XCTAssertEqual(ordered.count, profiles.count, "계정마다 카드 하나")
             XCTAssertTrue(ordered.contains(separateNamedCard), "a separate account name is not merged by identity")
-            XCTAssertEqual(
-                AccountCardPresentationPlanner.presentedCardIDs(
-                    orderedCardIDs: ordered,
-                    modesByFamily: ["codex": .singleCard],
-                    selectedCardIDsByFamily: ["codex": visible]
-                ),
-                [expected],
-                "Dashboard and Share use the same resolved selection"
-            )
-            XCTAssertEqual(
-                DashboardUsageAccountSelection.visibleCardIDs(
-                    orderedCardIDs: ordered,
-                    familyCardIDs: Set(ordered),
-                    selectedCardID: visible
-                ),
-                [expected],
-                "the menu bar uses the same resolved selection"
-            )
             XCTAssertEqual(store.preferredProfileID(family: "codex"), preferred.id)
             XCTAssertEqual(store.profiles(family: "codex").map(\.identityKey), profiles.map(\.identityKey))
             XCTAssertTrue(NSDictionary(dictionary: defaults.dictionaryRepresentation()).isEqual(to: savedDefaults))
         }
     }
+
 }

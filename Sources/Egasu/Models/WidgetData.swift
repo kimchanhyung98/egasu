@@ -57,7 +57,7 @@ struct WidgetData: Hashable {
     /// `values` 중 렌더 대상 — descriptor factory가 설정, provider row 하나로 여러 tile 지원.
     var selection: ValueSelection = .all
     /// Today / Yesterday / Last 30 Days spend tile 전용 true — 시간 window 누적이라 all-zero가 "미사용" 의미.
-    /// balance/availability row의 0은 고갈이지 idle 아님 — false 유지로 "No usage in this period" note 제외.
+    /// 잔액·가용량 행의 0은 고갈을 뜻하므로 기간 사용량에서 제외.
     var isUsagePeriod: Bool = false
     /// unbounded count의 menu-bar 값 뒤에 붙는 tray 전용 단위 단어 (예: "2 resets") — bare 값 tile은 nil.
     /// descriptor가 설정 — tile rename에도 suffix 유지 (title 매칭 대체).
@@ -383,17 +383,14 @@ struct WidgetData: Hashable {
     }
 
     /// unbounded row 값(및 expiry 경고 icon)의 hover text — reset-credit row는 per-credit expiry breakdown, 그 외 정확한 figures + source note.
-    /// 축약 없고 note 없는 non-zero row는 nil.
+    /// 세부 내역 없는 0 사용량 기간과, 축약 수치·출처가 없는 행은 nil.
     var unboundedValueTooltip: String? {
         // reset-credit row는 expiry breakdown 우선 — 작은 count라 figures tooltip 없음.
         if let expiry = expiryTooltip { return expiry }
-        if isZeroUsage && isUsagePeriod {
-            return ([L10n.metrics("No usage in this period")] + [unboundedTooltipNote].compactMap { $0 }).joined(separator: "\n")
-        }
+        if isUsagePeriod && !hasModelBreakdown && isZeroUsage && values.allSatisfy({ $0.number == 0 }) { return nil }
         if let figures = unboundedTooltip {
             return ([figures] + [unboundedTooltipNote].compactMap { $0 }).joined(separator: "\n")
         }
-        // "no usage" note는 spend 기간에만 적합 — balance row의 0은 고갈이므로 note 없음.
         return nil
     }
 
@@ -402,7 +399,7 @@ struct WidgetData: Hashable {
     }
 
     /// zero-usage 기간 — 데이터 있고 selected 값 전부 0.
-    /// "no data"·소액 사용과 구분 — figures 대신 "no usage" note 표시 근거.
+    /// 데이터 없음과 0이 아닌 소액 사용을 구분.
     var isZeroUsage: Bool {
         guard hasData else { return false }
         let selected = selectedValues

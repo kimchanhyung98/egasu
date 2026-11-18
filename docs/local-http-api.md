@@ -42,8 +42,7 @@ Claude의 429 대기 중 한도 최신 여부는 `/v1/limits`의 `fetchedAt`·`e
 두 라우트 모두 렌더링된 같은 프로바이더 스냅샷을 읽음.
 HTTP 조회로 구독 타이머용 메시지 전송이나 새로 고침을 시작하지 않음.
 따라서 iCloud 동기화가 켜져 있으면 둘 다 대시보드와 같은 iCloud 합산 사용량을 보게 되며, `/v1/usage`는 기존 UI 지향 형태를 반환하고 `/v1/limits`는 그 데이터를 안정적인 리소스 ID와 원시 스칼라 값으로 투영.
-대시보드의 **Single Card** / **Separate Cards** 모드와 Settings 계정 순서는 API 결과를 필터링하거나 재정렬하지 않음.
-Single Card가 프로바이더의 계정 하나만 보여 줘도 사용 가능한 계정 스냅샷은 계속 조회 가능.
+All Usage 레이아웃과 Accounts의 계정 표시 순서에 관계없이 활성화된 프로바이더에서 사용 가능한 계정 스냅샷을 반환.
 
 - **200 OK** — JSON 배열(아직 아무것도 가져오지 않았으면 빈 `[]`일 수 있음).
 
@@ -208,7 +207,7 @@ Claude의 이전 한도를 재사용한 경우, 마지막 정상 한도 조회 �
 지출 행은 계속 동일한 `text` 행으로 직렬화되므로 기존 로컬 연동의 현재 형태 유지.
 
 두 응답 형식 모두에서 Claude·Codex의 `displayName`은 `Claude`·`Codex` 같은 프로바이더명 유지.
-Separate Cards 모드에서도 계정명이나 대시보드의 `{Provider}: {name}` 제목은 여기에 노출되지 않음.
+All Usage 레이아웃과 관계없이 같은 `displayName` 사용.
 신뢰된 1회 실행 CLI는 같은 스키마를 사용하지만 `displayName`에 해석된 Claude·Codex 계정명을 유지할 수 있음.
 매칭은 이름이 아니라 `providerId`(또는 응답 객체의 키) 기준.
 

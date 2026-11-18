@@ -1,34 +1,36 @@
 import Foundation
 
-/// 호버 팝오버(사용 추세 차트, 모델 분해) 개폐 상태 코디네이터.
-/// dwell 후 열림, 행과 팝오버 양쪽에서 커서 이탈 시 grace 후 닫힘.
+/// 사용 추세·모델별 내역 팝오버의 열림·닫힘 상태 관리.
+/// 포인터가 머무르면 열고, 행·팝오버 양쪽을 벗어나면 유예 시간 후 닫기.
 /// `@State` 보유와 `isPresented` 바인딩을 위한 `@Observable` 참조 타입.
 @MainActor
 @Observable
 final class HoverPopoverState {
     var isPresented = false
 
-    /// 살아 있는 모든 코디네이터 추적 — 패널 close 경로의 일괄 dismiss용.
-    /// 뷰 트리가 패널 `orderOut`에도 생존하므로 `.onDisappear`만으로는 orphan 방지 불가.
+    /// 살아 있는 모든 상태 객체 추적 — 패널 닫기 시 팝오버 일괄 정리.
+    /// orderOut 뒤에도 뷰가 유지되므로 onDisappear 외에 직접 정리 필요.
     @ObservationIgnored private static let live = NSHashTable<HoverPopoverState>.weakObjects()
 
     static func dismissAll() {
         for state in live.allObjects { state.dismiss() }
     }
 
-    /// 포인터가 인라인 행/값 위에 있는지 여부 — 호버 어포던스 구동용으로 관찰 가능.
-    /// `dismiss()`가 반드시 클리어 — 패널 `orderOut` 후 재오픈 시 stale `true` 방지.
+    /// 포인터가 행·값 위에 있는지 관찰하여 호버 표시 구동.
+    /// dismiss에서 반드시 초기화하여 패널 재열기 시 이전 호버 상태 재사용 방지.
     private(set) var overInline = false
     @ObservationIgnored private var overDetail = false
-    /// pin 동안 커서 위치와 무관하게 팝오버 유지 (resets claim confirm/in-flight 플로우용).
-    /// `dismiss()`는 pin보다 우선. `isPinned` 노출로 데이터 기반 dismissal이 claim 플로우 중 보류 가능.
+    /// 초기화권 사용 확인·요청 중에는 포인터 위치와 무관하게 팝오버 유지.
+    /// 직접 닫기는 고정보다 우선 — isPinned로 요청 중 데이터 변경에 따른 닫기 보류 가능.
     @ObservationIgnored private var pinned = false
     var isPinned: Bool { pinned }
+    /// 클릭·Space로 연 상태 — 포인터 이탈로 닫지 않고 Limit Resets의 작업 버튼 표시.
+    private(set) var openedExplicitly = false
     @ObservationIgnored private var showTask: Task<Void, Never>?
     @ObservationIgnored private var hideTask: Task<Void, Never>?
     @ObservationIgnored private var releasePinTask: Task<Void, Never>?
 
-    /// 400ms 노출은 hover-tooltip dwell과 동일, 180ms grace는 행→팝오버 커서 이동 허용. 테스트 주입용.
+    /// 표시 지연 400ms, 닫힘 유예 180ms — 행에서 팝오버로 포인터를 옮길 시간 확보, 테스트에서 주입 가능.
     private let revealDelay: Duration
     private let hideGrace: Duration
 
@@ -39,7 +41,7 @@ final class HoverPopoverState {
     }
 
     func inlineHover(_ active: Bool) {
-        // `onContinuousHover`는 매 프레임 발화 — 실제 전이에만 변경해 프레임마다 알림 방지
+        // 연속 호버 이벤트 중 실제 상태가 바뀔 때만 갱신하여 중복 알림 방지.
         if overInline != active { overInline = active }
         active ? scheduleShow() : scheduleHide()
     }
@@ -49,7 +51,7 @@ final class HoverPopoverState {
         if inside { hideTask?.cancel(); hideTask = nil } else { scheduleHide() }
     }
 
-    /// 팝오버 pin/unpin. pin은 대기 중 hide 취소, unpin은 hover-out grace 재가동.
+    /// 팝오버 고정·해제 — 고정 시 예약된 닫기 취소, 해제 시 포인터 이탈 유예 재시작.
     func setPinned(_ active: Bool) {
         releasePinTask?.cancel()
         releasePinTask = nil
@@ -70,7 +72,20 @@ final class HoverPopoverState {
         }
     }
 
-    /// 강제 닫기 (팝오버/대시보드 teardown) — 화면 orphan 방지.
+    /// 클릭·Space로 즉시 열기 — 호버 대기와 포인터 이탈 닫기 생략.
+    func openDetails() {
+        showTask?.cancel(); showTask = nil
+        hideTask?.cancel(); hideTask = nil
+        openedExplicitly = true
+        isPresented = true
+    }
+
+    /// 상세를 표시할 수 없으면 팝오버의 이전 열림·고정 상태 폐기.
+    func detailAvailabilityChanged(_ isAvailable: Bool) {
+        if !isAvailable { dismiss() }
+    }
+
+    /// 팝오버·대시보드 종료 시 강제로 닫아 화면에 남는 표시 방지.
     func dismiss() {
         showTask?.cancel(); showTask = nil
         hideTask?.cancel(); hideTask = nil
@@ -79,6 +94,7 @@ final class HoverPopoverState {
         overInline = false
         overDetail = false
         pinned = false
+        openedExplicitly = false
         isPresented = false
     }
 
@@ -95,7 +111,7 @@ final class HoverPopoverState {
     }
 
     private func scheduleHide() {
-        guard !pinned else { return }   // pin 해제 전까지 hover-out 무시
+        guard !pinned, !openedExplicitly else { return }   // 고정·명시적 열기 동안 포인터 이탈 무시
         showTask?.cancel(); showTask = nil
         hideTask?.cancel()
         let delay = hideGrace

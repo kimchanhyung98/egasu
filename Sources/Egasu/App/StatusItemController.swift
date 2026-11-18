@@ -284,6 +284,7 @@ final class StatusItemController: NSObject {
         // `orderOut` 뒤에도 SwiftUI 뷰가 유지되므로 포인터 이탈 없이 남는 툴팁·팝오버 직접 닫기.
         HoverTooltips.dismissAll()
         HoverPopoverState.dismissAll()
+        ReducedMotionPopoverController.dismissAll()
         panel.clearStrayFocus()
         // 닫는 화면의 높이를 저장한 뒤 SwiftUI 화면 상태 초기화.
         heightController.saveBeforeClosing()

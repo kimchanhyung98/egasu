@@ -2,26 +2,16 @@ import XCTest
 @testable import Egasu
 
 final class OpenCodeLayoutTests: XCTestCase {
-    private let aboveFold = ["opencode.session", "opencode.weekly", "opencode.monthly", "opencode.trend"]
-    private let belowCaret = ["opencode.today", "opencode.yesterday", "opencode.last30"]
+    private let metrics = [
+        "opencode.session", "opencode.weekly", "opencode.monthly", "opencode.trend",
+        "opencode.today", "opencode.yesterday", "opencode.last30"
+    ]
 
     @MainActor
     func testAllMetricsEnabledByDefault() {
         let defaults = DefaultLayout.metricIDs(in: WidgetRegistry.from([OpenCodeProvider()]))
-        for id in aboveFold + belowCaret {
+        for id in metrics {
             XCTAssertTrue(defaults.contains(id), "\(id) should be enabled by default")
-        }
-    }
-
-    func testCapsAndTrendStayAboveTheFold() {
-        for id in aboveFold {
-            XCTAssertFalse(DefaultLayout.expandedMetricIDs.contains(id), "\(id) should stay above the fold")
-        }
-    }
-
-    func testSpendTilesSitBelowTheCaret() {
-        for id in belowCaret {
-            XCTAssertTrue(DefaultLayout.expandedMetricIDs.contains(id), "\(id) should sit below the caret")
         }
     }
 

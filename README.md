@@ -40,7 +40,7 @@ Most providers read the credentials already on your machine (keychain, auth file
 - **[All Usage](/docs/dashboard.md#all-usage).** 등록 계정별 사용량·초기화 시각·사용 속도 표시.
   Minimal은 프로바이더별 계정 묶음, Cards는 계정별 독립 카드.
   행 우클릭으로 지표 숨기기·Priority 고정·새로 고침·Accounts 관리 연결.
-  [공유 이미지](/docs/dashboard.md#공유)는 해당 계정에 보이는 지표와 순서를 반영.
+  [프로바이더 섹션 공유 이미지](/docs/dashboard.md#공유)는 표시 중인 모든 계정과 지표 순서를 반영.
 - **[계정 전환](/docs/cli.md#계정).** Claude·Codex의 기본 인증 저장소를 쓰는 새 CLI 세션에 선택한 로그인 적용.
   셸 설정 파일·터미널 환경을 유지하며, Claude 첫 등록·외부 로그인과 전환 중 보존할 변경된 인증은 토큰의 계정·조직을 검증한 뒤 저장본에 반영.
   선택된 Claude 공유 로그인은 사용량 조회에서도 계정·조직 일치 검증.

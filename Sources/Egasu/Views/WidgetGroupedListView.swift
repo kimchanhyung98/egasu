@@ -60,10 +60,12 @@ struct WidgetGroupedListView: View {
     }
 
     private func section(_ family: DashboardFamily) -> some View {
-        DashboardProviderSection(family: family, layoutStyle: layoutStyle) {
+        DashboardProviderSection(family: family, layoutStyle: layoutStyle) { isHovered in
             DashboardProviderHeader(
                 family: family,
-                serviceIssue: container.providerStatus.status(for: family.provider.id).issue
+                serviceIssue: container.providerStatus.status(for: family.provider.id).issue,
+                isRevealed: isHovered,
+                onCopyScreenshot: { shareScreenshot(family.accounts.map(\.id)) }
             )
             .highPriorityGesture(familyDragGesture(for: family))
         } account: { account in
@@ -108,6 +110,9 @@ struct WidgetGroupedListView: View {
             DashboardLiveRow(
                 line: line,
                 layoutStyle: layoutStyle,
+                providerName: account.providerName,
+                accountStatus: status,
+                savedAt: dataStore.snapshots[account.id]?.refreshedAt,
                 onToggleMeterStyle: { dataStore.meterStyle.toggle() },
                 onToggleResetDisplay: { dataStore.resetDisplayMode.toggle() },
                 retainsResetClaimRow: retainedResetClaims[line.id] != nil,
@@ -165,8 +170,6 @@ struct WidgetGroupedListView: View {
                     _ = await container.refresh(providerID: id, force: true)
                 }
             }
-        case .shareScreenshot(let accountID):
-            shareScreenshot(accountID)
         case .manageAccounts:
             popover.openAccounts(nil)
         case .open(let url):
@@ -186,15 +189,21 @@ struct WidgetGroupedListView: View {
         }
     }
 
-    private func shareScreenshot(_ accountID: String) {
-        guard let account = container.dashboardAccounts().first(where: { $0.id == accountID }) else { return }
-        _ = ShareCardRenderer.share(
-            account: account, plan: dataStore.plan(for: account.id), layout: layout, appearance: colorScheme,
-            displayName: AccountCardPresentationPlanner.cardTitle(
-                providerID: account.id, fallback: container.displayName(for: account.provider),
-                mode: .separateCards, accountName: container.accountOptionTitle(for: account.id)
-            )
-        )
+    @discardableResult
+    private func shareScreenshot(_ accountIDs: [String]) -> Bool {
+        guard let live = container.dashboardFamilies().first(where: { $0.accounts.contains { accountIDs.contains($0.id) } }) else { return false }
+        var family = live
+        family.accounts = live.accounts.filter { accountIDs.contains($0.id) }
+        let plans = Dictionary(uniqueKeysWithValues: family.accounts.compactMap { account in
+            dataStore.plan(for: account.id).map { (account.id, $0) }
+        })
+        guard ShareCardRenderer.share(
+            family: family, plans: plans, appearance: colorScheme,
+            blursAccountNames: container.privacy.hideUsageWhileScreenSharing,
+            layoutStyle: layoutStyle
+        ) else { return false }
+        popover.shareNotice.present(true)
+        return true
     }
 
     // MARK: - Reorder
@@ -215,7 +224,7 @@ struct WidgetGroupedListView: View {
                 return ReorderLift.make(id: line.id, payload: .view(AnyView(preview)), value: value, frames: rowFrames)
             },
             orderedIDs: { account.lines.map(\.id) },
-            reorder: { layout.reorderMetric(dragged: line.id, target: $0, in: account.id, preservingExpandedMembership: true) }
+            reorder: { layout.reorderMetric(dragged: line.id, target: $0, in: account.id) }
         )
     }
 

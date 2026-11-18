@@ -15,8 +15,10 @@ enum SpendTileMapper {
         modelUsage: ModelUsageSeries? = nil,
         modelSourceNote: String? = nil
     ) {
+        let calendar = Calendar.current
+        let asOf = calendar.startOfDay(for: now)
         let today = dayKey(from: now)
-        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now).map(dayKey(from:))
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: now).map(dayKey(from:))
 
         if let entry = usage.daily.first(where: { dayKey(fromUsageDate: $0.date) == today }), hasUsage(entry) {
             lines.append(dayUsageLine(label: "Today", entry: entry, estimated: estimatedDays?.contains(today) ?? estimated,
@@ -26,7 +28,8 @@ enum SpendTileMapper {
                                         days: [today],
                                         totalTokens: entry.totalTokens,
                                         totalCostUSD: entry.costUSD,
-                                        sourceNote: modelSourceNote
+                                        sourceNote: modelSourceNote,
+                                        period: ModelUsagePeriod(window: .today, asOf: asOf, calendar: calendar)
                                       )))
         }
         if let entry = usage.daily.first(where: { dayKey(fromUsageDate: $0.date) == yesterday }), hasUsage(entry) {
@@ -37,7 +40,8 @@ enum SpendTileMapper {
                                         days: Set([yesterday].compactMap { $0 }),
                                         totalTokens: entry.totalTokens,
                                         totalCostUSD: entry.costUSD,
-                                        sourceNote: modelSourceNote
+                                        sourceNote: modelSourceNote,
+                                        period: ModelUsagePeriod(window: .yesterday, asOf: asOf, calendar: calendar)
                                       )))
         }
 
@@ -56,7 +60,8 @@ enum SpendTileMapper {
                                     days: Set(usage.daily.compactMap { dayKey(fromUsageDate: $0.date) }),
                                     totalTokens: totalTokens,
                                     totalCostUSD: totalCost,
-                                    sourceNote: modelSourceNote
+                                    sourceNote: modelSourceNote,
+                                    period: ModelUsagePeriod(window: .last30, asOf: asOf, calendar: calendar)
                                  )))
         }
     }
@@ -256,11 +261,12 @@ enum SpendTileMapper {
         days: Set<String>,
         totalTokens: Int,
         totalCostUSD: Double?,
-        sourceNote: String?
+        sourceNote: String?,
+        period: ModelUsagePeriod
     ) -> ModelUsageBreakdown? {
         guard let usage, let sourceNote, !days.isEmpty else { return nil }
 
-        // case-fold된 이름이 key — `GLM-5.2`와 `glm-5.2`가 한 행에 모이고, accumulator의 표기 투표가 제목 casing 결정.
+        // 대소문자를 구분하지 않고 같은 모델로 병합. 대표 표기는 토큰 가중치로 결정.
         var byModel: [String: ModelAccumulator] = [:]
         for day in usage.daily where dayKey(fromUsageDate: day.date).map(days.contains) == true {
             for model in day.models where model.totalTokens > 0 || (model.costUSD ?? 0) > 0 {
@@ -277,7 +283,8 @@ enum SpendTileMapper {
             totalTokens: totalTokens,
             totalCostUSD: totalCostUSD,
             models: folded,
-            sourceNote: sourceNote
+            sourceNote: sourceNote,
+            period: period
         )
     }
 

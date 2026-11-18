@@ -4,29 +4,16 @@ import XCTest
 @MainActor
 final class SharedMetricSettingsTests: XCTestCase {
     func testSharedReorderKeepsPersonalSlotsWithoutTheBareCard() {
-        for useDivider in [false, true] {
-            let fixture = catalog(includeBare: false)
-            let store = makeStore(defaults: makeDefaults(), catalog: fixture)
-            store.expandedMetricIDs = []
-            let workID = cardID(profile: "work")
-            let trend = "\(workID).trend"
-            for (target, prefix) in [
-                ("\(workID).weekly", ["\(workID).session", trend, "\(workID).weekly"]),
-                ("\(workID).session", [trend, "\(workID).session", "\(workID).weekly"])
-            ] {
-                if useDivider {
-                    var order = store.orderedSupportedMetrics(for: workID).map(\.id).filter { $0 != trend }
-                    let index = order.firstIndex(of: target)!
-                    order.insert(trend, at: index)
-                    let divider = "\(workID)::expanded-divider"
-                    XCTAssertTrue(
-                        store.applyMetricDividerOrder(
-                            order + [divider], dragged: trend, dividerID: divider, in: workID))
-                } else {
-                    XCTAssertTrue(store.reorderMetric(dragged: trend, target: target, in: workID))
-                }
-                XCTAssertEqual(Array(store.orderedSupportedMetrics(for: workID).map(\.id).prefix(3)), prefix)
-            }
+        let fixture = catalog(includeBare: false)
+        let store = makeStore(defaults: makeDefaults(), catalog: fixture)
+        let workID = cardID(profile: "work")
+        let trend = "\(workID).trend"
+        for (target, prefix) in [
+            ("\(workID).weekly", ["\(workID).session", trend, "\(workID).weekly"]),
+            ("\(workID).session", [trend, "\(workID).session", "\(workID).weekly"])
+        ] {
+            XCTAssertTrue(store.reorderMetric(dragged: trend, target: target, in: workID))
+            XCTAssertEqual(Array(store.orderedSupportedMetrics(for: workID).map(\.id).prefix(3)), prefix)
         }
     }
 

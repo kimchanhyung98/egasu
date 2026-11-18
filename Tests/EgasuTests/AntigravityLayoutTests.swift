@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class AntigravityLayoutTests: XCTestCase {
 
-    func testFreshDefaultsSeedFiveMetricsWithoutPriorityPins() {
+    func testFreshDefaultsSeedFiveMetrics() {
         let store = makeStore("FreshDefaults")
 
         XCTAssertEqual(store.placed.map(\.descriptorID), [
@@ -13,13 +13,12 @@ final class AntigravityLayoutTests: XCTestCase {
             "antigravity.claude", "antigravity.claudeWeekly", "antigravity.argonWeekly"
         ])
 
-        XCTAssertTrue(store.priorityPinIDs.isEmpty)
+        XCTAssertTrue(store.priorityPinIDs.isEmpty, "새 설치는 고정 없이 시작")
 
         let group = store.customizeGroups.first { $0.provider.id == "antigravity" }
-        XCTAssertEqual(group?.alwaysShownMetrics.map(\.id), ["antigravity.geminiPro", "antigravity.geminiWeekly"])
-        XCTAssertEqual(
-            group?.expandedMetrics.map(\.id),
-            ["antigravity.claude", "antigravity.claudeWeekly", "antigravity.argonWeekly"])
+        XCTAssertEqual(group?.metrics.map(\.id), [
+            "antigravity.geminiPro", "antigravity.geminiWeekly", "antigravity.claude", "antigravity.claudeWeekly", "antigravity.argonWeekly"
+        ])
     }
 
     func testHistoryOnlyProviderIsSpendCapableWhileEnabledWithoutChangingLayout() {
@@ -32,7 +31,6 @@ final class AntigravityLayoutTests: XCTestCase {
         )
         let placed = store.placed
         let pins = store.priorityPinIDs
-        let expanded = store.expandedMetricIDs
 
         XCTAssertEqual(store.registry.descriptors.map(\.id), [
             "antigravity.geminiPro", "antigravity.geminiWeekly",
@@ -47,7 +45,6 @@ final class AntigravityLayoutTests: XCTestCase {
         XCTAssertTrue(store.spendCapableProviders.isEmpty)
         XCTAssertEqual(store.placed, placed)
         XCTAssertEqual(store.priorityPinIDs, pins)
-        XCTAssertEqual(store.expandedMetricIDs, expanded)
 
         enablement.setEnabled(true, for: "antigravity")
 
@@ -55,10 +52,9 @@ final class AntigravityLayoutTests: XCTestCase {
         XCTAssertEqual(store.spendCapableProviders.map(\.id), ["antigravity"])
         XCTAssertEqual(store.placed, placed)
         XCTAssertEqual(store.priorityPinIDs, pins)
-        XCTAssertEqual(store.expandedMetricIDs, expanded)
     }
 
-    func testExistingUserLayoutAutoSeedsWeeklyMetricsBelowCaretForClaudePool() {
+    func testNewWeeklyMetricsAreEnabledWithoutRestoringPreviouslyHiddenQuotas() {
         // 주간 지표가 없던 등록 목록에서 새 지표가 추가되는 실행 재현.
         let defaults = makeDefaults("SeedWeeklies")
         saveStored([
@@ -78,10 +74,7 @@ final class AntigravityLayoutTests: XCTestCase {
 
         XCTAssertTrue(store.isMetricEnabled("antigravity.geminiWeekly"))
         XCTAssertTrue(store.isMetricEnabled("antigravity.claudeWeekly"))
-        XCTAssertTrue(store.expandedMetricIDs.contains("antigravity.claudeWeekly"))
-        XCTAssertFalse(store.expandedMetricIDs.contains("antigravity.geminiWeekly"))
-        XCTAssertFalse(store.expandedMetricIDs.contains("antigravity.claude"),
-                       "a metric the user already lived with is never silently tucked away")
+        XCTAssertNil(defaults.object(forKey: "layout.expandedMetrics"))
     }
 
     func testNewArgonMetricKeepsSavedOrderPinsAndExistingVisibility() {
@@ -99,15 +92,16 @@ final class AntigravityLayoutTests: XCTestCase {
             providers: registry.providers,
             descriptors: registry.descriptors.filter { $0.id != "antigravity.argonWeekly" }
         )
-        _ = LayoutStore(registry: oldRegistry, defaults: defaults, storageKey: "layout")
+        let previous = LayoutStore(registry: oldRegistry, defaults: defaults, storageKey: "layout")
+        let flattenedOrder = ["antigravity.claude", "antigravity.geminiPro", "antigravity.geminiWeekly", "antigravity.claudeWeekly"]
+        XCTAssertEqual(previous.orderedSupportedMetrics(for: "antigravity").map(\.id), flattenedOrder)
         let store = LayoutStore(registry: .antigravityOnly, defaults: defaults, storageKey: "layout")
 
         XCTAssertEqual(
-            store.orderedSupportedMetrics(for: "antigravity").map(\.id), priorOrder + ["antigravity.argonWeekly"])
+            store.orderedSupportedMetrics(for: "antigravity").map(\.id), flattenedOrder + ["antigravity.argonWeekly"])
         XCTAssertTrue(store.isMetricEnabled("antigravity.argonWeekly"))
         XCTAssertEqual(store.priorityPinIDs, ["antigravity.claude"])
-        XCTAssertTrue(store.expandedMetricIDs.contains("antigravity.argonWeekly"))
-        XCTAssertFalse(store.expandedMetricIDs.contains("antigravity.claude"))
+        XCTAssertNil(defaults.object(forKey: "layout.expandedMetrics"))
     }
 
     func testSavedGeminiFlashStateStaysInvisibleWhileItsTombstonesAreRetained() {

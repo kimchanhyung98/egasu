@@ -35,6 +35,9 @@ enum WidgetDataResolver {
                 result.valueTextOverride = message.localized
             }
             result.codexResetClaimBinding = snapshot.codexResetClaimBinding
+        } else if let snapshot, snapshot.refreshFailure == nil,
+                  descriptor.sample.isUsagePeriod {
+            result = Self.unreportedPeriod(descriptor)
         } else {
             // 실제 지표 행이 없으면 데이터 없음 처리 — 표시 기본값의 숫자는 사용하지 않음.
             result = descriptor.sample
@@ -42,6 +45,15 @@ enum WidgetDataResolver {
         }
 
         return result
+    }
+
+    private static func unreportedPeriod(_ descriptor: WidgetDescriptor) -> WidgetData {
+        var data = descriptor.sample
+        let zeros = [MetricValue(number: 0, kind: .dollars), MetricValue(number: 0, kind: .count, label: "tokens")]
+        data.values = data.selection.apply(to: zeros)
+        data.limit = nil
+        data.hasData = !data.values.isEmpty
+        return data
     }
 
     private static func resolve(_ line: MetricLine, descriptor: WidgetDescriptor) -> WidgetData? {

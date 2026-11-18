@@ -91,46 +91,6 @@ final class ModelUsageHoverTests: XCTestCase {
         XCTAssertEqual(data.modelBreakdown?.models.map(\.model), ["gpt-5.5"])
     }
 
-    func testWholePercentsAlwaysSumToOneHundred() {
-        // 개별 반올림은 99가 되므로 최대 remainder가 남은 1점 흡수
-        XCTAssertEqual(ModelUsageDetail.wholePercents([1.0 / 3, 1.0 / 3, 1.0 / 3]), [34, 33, 33])
-        // 개별 반올림은 101이 되므로 floor + remainder 분배로 합계 100 고정
-        XCTAssertEqual(ModelUsageDetail.wholePercents([0.62, 0.335, 0.045]), [62, 34, 4])
-        XCTAssertEqual(ModelUsageDetail.wholePercents([1.0]), [100])
-        XCTAssertEqual(ModelUsageDetail.wholePercents([0, 0]), [0, 0], "an empty period stays all zero")
-
-        for shares in [[0.005, 0.005, 0.99], [0.2, 0.2, 0.2, 0.2, 0.2], [0.617, 0.337, 0.046]] {
-            XCTAssertEqual(ModelUsageDetail.wholePercents(shares).reduce(0, +), 100)
-        }
-    }
-
-    func testSharesUseCostWhenEveryModelIsPriced() {
-        let models = [
-            ModelUsageEntry(model: "alpha", totalTokens: 10, costUSD: 3),
-            ModelUsageEntry(model: "beta", totalTokens: 90, costUSD: 1)
-        ]
-
-        XCTAssertEqual(ModelUsageDetail.shares(for: models), [0.75, 0.25])
-    }
-
-    func testSharesUseTokensForEveryModelWhenOneIsUnpriced() {
-        let models = [
-            ModelUsageEntry(model: "alpha", totalTokens: 25, costUSD: 9),
-            ModelUsageEntry(model: "beta", totalTokens: 75, costUSD: nil)
-        ]
-
-        XCTAssertEqual(ModelUsageDetail.shares(for: models), [0.25, 0.75])
-    }
-
-    func testSharesAreZeroWhenThereIsNoCostOrTokenTotal() {
-        let models = [
-            ModelUsageEntry(model: "alpha", totalTokens: 0, costUSD: nil),
-            ModelUsageEntry(model: "beta", totalTokens: 0, costUSD: nil)
-        ]
-
-        XCTAssertEqual(ModelUsageDetail.shares(for: models), [0, 0])
-    }
-
     func testHoverPopoverStateOpensThenClosesAroundBothRegions() async {
         let state = HoverPopoverState(revealDelay: .milliseconds(1), hideGrace: .milliseconds(1))
         XCTAssertFalse(state.isPresented)
@@ -165,6 +125,54 @@ final class ModelUsageHoverTests: XCTestCase {
 
         state.dismiss()
         XCTAssertFalse(state.isPresented, "teardown closes it immediately")
+    }
+
+    func testExplicitDetailsStayOpenAfterBothHoverRegionsAreLeft() async throws {
+        let state = HoverPopoverState(revealDelay: .milliseconds(1), hideGrace: .milliseconds(1))
+        state.openDetails()
+        XCTAssertTrue(state.openedExplicitly)
+        state.inlineHover(false)
+        state.detailHover(false)
+
+        try await Task.sleep(for: .milliseconds(40))
+
+        XCTAssertTrue(state.isPresented, "클릭으로 연 상세는 포인터가 벗어나도 유지")
+        state.dismiss()
+        XCTAssertFalse(state.openedExplicitly)
+        XCTAssertFalse(state.isPresented)
+    }
+
+    func testDetailDoesNotReopenAfterItsDataReturns() {
+        let state = HoverPopoverState()
+        state.openDetails()
+        state.detailAvailabilityChanged(true)
+        XCTAssertTrue(state.isPresented)
+        XCTAssertTrue(state.openedExplicitly)
+
+        state.detailAvailabilityChanged(false)
+        XCTAssertFalse(state.isPresented)
+        XCTAssertFalse(state.openedExplicitly)
+
+        state.detailAvailabilityChanged(true)
+        XCTAssertFalse(state.isPresented)
+    }
+
+    func testPanelDismissalClearsExplicitPinnedAndPendingDetails() async throws {
+        let explicit = HoverPopoverState(revealDelay: .milliseconds(1), hideGrace: .milliseconds(1))
+        let pending = HoverPopoverState(revealDelay: .milliseconds(20), hideGrace: .milliseconds(1))
+        explicit.openDetails()
+        explicit.setPinned(true)
+        pending.inlineHover(true)
+
+        HoverPopoverState.dismissAll()
+        try await Task.sleep(for: .milliseconds(50))
+
+        for state in [explicit, pending] {
+            XCTAssertFalse(state.isPresented)
+            XCTAssertFalse(state.openedExplicitly)
+            XCTAssertFalse(state.isPinned)
+            XCTAssertFalse(state.overInline)
+        }
     }
 
     private func sampleBreakdown() -> ModelUsageBreakdown {

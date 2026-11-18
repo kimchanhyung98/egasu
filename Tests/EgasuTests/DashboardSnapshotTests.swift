@@ -71,21 +71,23 @@ final class DashboardSnapshotTests: XCTestCase {
         }
     }
 
-    func testCardsLayoutRendersSeparateAccountsWithExpandedMeters() throws {
+    func testCardsLayoutRendersSeparateAccountsWithExpandedMetersAndMatchingShareImage() throws {
         for appearance in [ColorScheme.light, .dark] {
             for language in LanguageSetting.allCases {
                 try L10n.withLanguage(language) {
                     var heights: [DashboardLayoutStyle: CGFloat] = [:]
                     for style in DashboardLayoutStyle.allCases {
                         let view = DashboardProviderSection(family: codexFamily(), layoutStyle: style) { account in
-                            DashboardAccountRows(
-                                account: account, plan: account.name == "Account 1" ? "Pro" : "Plus", layoutStyle: style
-                            )
+                            DashboardAccountRows(account: account, plan: account.name == "Account 1" ? "Pro" : "Plus", layoutStyle: style)
                         }
                         let variant = "\(style.rawValue)-\(language.rawValue)-\(appearance)"
                         let image = try render(view, appearance: appearance, name: "layout-\(variant)")
                         XCTAssertEqual(image.size.width, PanelMetrics.width - PanelMetrics.margin * 2)
                         heights[style] = image.size.height
+                        let shared = ShareCardView(family: codexFamily(), appearance: appearance, layoutStyle: style)
+                        let shareImage = try XCTUnwrap(ShareCardRenderer.image(for: shared))
+                        XCTAssertEqual(shareImage.size.width, ShareCardView.width)
+                        try export(shareImage, name: "share-\(variant)")
                     }
                     XCTAssertGreaterThan(try XCTUnwrap(heights[.cards]), try XCTUnwrap(heights[.minimal]))
                 }
@@ -356,6 +358,118 @@ final class DashboardSnapshotTests: XCTestCase {
                 badge: "A\(index + 1)", label: "Weekly", shortLabel: "Weekly", value: "42%",
                 fraction: Double(index + 1) / 6)
         }, overflow: 2)
+    }
+
+    func testClickableSpendValuesKeepTheSharedRingLayout() throws {
+        let total = TotalSpend(period: .today, slices: [
+            TotalSpendSlice(provider: MockData.claude, title: "Claude", amountUSD: 14, tokenCount: 14_000_000, estimated: false),
+            TotalSpendSlice(provider: MockData.codex, title: "Codex", amountUSD: 9, tokenCount: 6_000_000, estimated: false),
+        ])
+        for appearance in [ColorScheme.light, .dark] {
+            for metric in TotalSpendMetric.allCases {
+                let projection = total.projection(for: metric)
+                let staticImage = try render(
+                    TotalSpendRingContent(projection: projection),
+                    appearance: appearance, name: "spend-static-\(metric.rawValue)-\(appearance)"
+                )
+                let interactiveImage = try render(
+                    TotalSpendRingContent(projection: projection, onCycleMetric: {}),
+                    appearance: appearance, name: "spend-clickable-\(metric.rawValue)-\(appearance)"
+                )
+                XCTAssertEqual(interactiveImage.size, staticImage.size)
+                XCTAssertEqual(interactiveImage.size.height, 104)
+            }
+        }
+    }
+
+    func testShareCardRendersWithFooterBand() throws {
+        let card = ShareCardView(family: codexFamily(), plans: ["codex": "Pro"], appearance: .light)
+        let image = try XCTUnwrap(ShareCardRenderer.image(for: card))
+        XCTAssertEqual(image.size.width, ShareCardView.width)
+        try export(image, name: "share-light")
+    }
+
+    func testUsageBreakdownPopoverRendersSummaryModelsAndEmptyState() throws {
+        let models = [
+            ModelUsageEntry(model: "claude-sonnet-4.5", totalTokens: 900_000, costUSD: 3.10),
+            ModelUsageEntry(model: "claude-opus-4.1", totalTokens: 200_000, costUSD: 0.80),
+            ModelUsageEntry(model: "claude-haiku-4.5", totalTokens: 100_000, costUSD: 0.18),
+        ]
+        let usage = UsageBreakdown(title: "Today", breakdown: ModelUsageBreakdown(
+            totalTokens: 1_200_000, totalCostUSD: 4.08, models: models, sourceNote: "Estimated from local logs on this Mac."
+        ))
+        for appearance in [ColorScheme.light, .dark] {
+            let detail = UsageBreakdownContent(usage: usage, providerName: "Claude", icon: .providerMark("claude"), figure: .cost, onPickFigure: { _ in })
+                .padding(UsageBreakdownDetail.padding)
+                .frame(width: UsageBreakdownDetail.width, alignment: .leading)
+                .background(Theme.panelBody)
+                .environment(\.colorScheme, appearance)
+                .environment(\.hoverTooltipsDisabled, true)
+            let image = try XCTUnwrap(ShareCardRenderer.image(for: detail))
+            XCTAssertGreaterThan(image.size.height, 120)
+            try export(image, name: "usage-breakdown-\(appearance)")
+        }
+        let empty = UsageBreakdownContent(usage: UsageBreakdown(title: "Yesterday", breakdown: .empty), providerName: "Codex", icon: .providerMark("codex"), figure: .cost)
+            .padding(UsageBreakdownDetail.padding)
+            .frame(width: UsageBreakdownDetail.width, alignment: .leading)
+            .background(Theme.panelBody)
+        try export(try XCTUnwrap(ShareCardRenderer.image(for: empty)), name: "usage-breakdown-empty")
+        let card = UsageBreakdownShareCard(usage: usage, providerName: "Claude", icon: .providerMark("claude"), figure: .tokens, appearance: .light)
+        try export(try XCTUnwrap(ShareCardRenderer.image(for: card)), name: "usage-breakdown-share")
+        var archived = usage.breakdown
+        archived.period = ModelUsagePeriod(window: .last30, asOf: Calendar.current.startOfDay(for: now).addingTimeInterval(-1), calendar: .current)
+        for appearance in [ColorScheme.light, .dark] {
+            let archivedCard = UsageBreakdownShareCard(
+                usage: UsageBreakdown(title: "Last 30 Days", breakdown: archived),
+                providerName: "Claude", icon: .providerMark("claude"), figure: .cost, appearance: appearance
+            )
+            try export(try XCTUnwrap(ShareCardRenderer.image(for: archivedCard)), name: "usage-breakdown-archived-share-\(appearance)")
+        }
+    }
+
+    func testUsageTrendDetailRendersInTheSharedPopoverFrame() throws {
+        let firstDay = Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 11))!
+        let points = (0..<31).map {
+            MetricChartPoint(value: Double(($0 * 37) % 11) * 100_000, label: "", date: Calendar.current.date(byAdding: .day, value: $0, to: firstDay))
+        }
+        for appearance in [ColorScheme.light, .dark] {
+            let detail = UsageTrendDetail(title: "Usage Trend", points: points, note: "From your Codex logs (estimated)") { _ in }
+                .background(Theme.panelBody)
+                .environment(\.colorScheme, appearance)
+            let image = try XCTUnwrap(ShareCardRenderer.image(for: detail))
+            XCTAssertEqual(image.size.width, 288)
+            XCTAssertGreaterThan(image.size.height, 110)
+            try export(image, name: "usage-trend-\(appearance)")
+        }
+    }
+
+    func testSavedBreakdownAndZeroPeriodRowRender() throws {
+        let saved = UsageBreakdownSavedDetail(
+            title: "Today", figures: ["$4.08", "1.2M tokens"], savedAt: Date(timeIntervalSinceReferenceDate: 800_000_000),
+            status: DashboardAccountStatus(), onHoverChange: { _ in }
+        )
+        .background(Theme.panelBody)
+        let savedImage = try XCTUnwrap(ShareCardRenderer.image(for: saved))
+        XCTAssertGreaterThan(savedImage.size.height, 80)
+        try export(savedImage, name: "usage-breakdown-saved")
+
+        let name = "EgasuTests.ZeroRowSnapshot.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defaults.removePersistentDomain(forName: name)
+        let registry = WidgetRegistry.from(ProviderCatalog.make())
+        let store = WidgetDataStore(registry: registry, providers: [], defaults: defaults)
+        store.snapshots["claude"] = .init(providerID: "claude", displayName: "Claude", lines: [
+            .progress(label: "Weekly", used: 30, limit: 100, format: .percent, periodDurationMs: MetricPeriod.weekMs)
+        ])
+        let today = store.data(for: try XCTUnwrap(registry.descriptor(id: "claude.today")))
+        XCTAssertNil(today.rowDetail(reportsModels: true))
+        guard case .value(let value, _, _) = today.dashboardRow().mark else { return XCTFail("값 행이어야 함") }
+        L10n.withLanguage(.english) { XCTAssertTrue(value.hasPrefix("$0.00"), value) }
+        let row = DashboardMetricRow(model: today.dashboardRow())
+            .padding(.horizontal, DashboardGrid.cardPadding)
+            .frame(width: PanelMetrics.width)
+            .background(Theme.panelBody)
+        try export(try XCTUnwrap(ShareCardRenderer.image(for: row)), name: "period-row-zero")
     }
 
 }

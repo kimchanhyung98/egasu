@@ -4,10 +4,21 @@ import SwiftUI
 
 @MainActor
 final class ShareCardRendererTests: XCTestCase {
+    private func family(_ provider: Provider, rows: [WidgetData]) -> DashboardFamily {
+        let lines = rows.enumerated().map { index, data in
+            DashboardLine(
+                descriptor: WidgetDescriptor(id: "\(provider.id).row\(index)", providerID: provider.id, metricLabel: data.title, sample: data),
+                data: data
+            )
+        }
+        let account = DashboardAccount(provider: provider, providerName: provider.displayName, name: nil, lines: lines)
+        return DashboardFamily(id: provider.id, provider: provider, displayName: provider.displayName, accounts: [account])
+    }
+
     private func sampleCard() -> ShareCardView {
         let provider = MockData.claude
         let rows = MockData.descriptors(for: provider.id).map { $0.sample }
-        return ShareCardView(provider: provider, plan: "Max", rows: rows, appearance: .light)
+        return ShareCardView(family: family(provider, rows: rows), plans: [provider.id: "Max"], appearance: .light)
     }
 
     func testImageRasterizesAtAuthoredWidthMultiple() throws {
@@ -33,67 +44,20 @@ final class ShareCardRendererTests: XCTestCase {
     }
 
     func testRendersEmptyProviderWithoutCrashing() throws {
-        let card = ShareCardView(provider: MockData.cursor, plan: nil, rows: [], appearance: .dark)
+        let card = ShareCardView(family: family(MockData.cursor, rows: []), appearance: .dark)
         let image = try XCTUnwrap(ShareCardRenderer.image(for: card))
         let rep = try XCTUnwrap(image.representations.first)
         XCTAssertEqual(rep.pixelsWide % Int(ShareCardView.width), 0)
         XCTAssertGreaterThan(rep.pixelsHigh, 0)
     }
 
-    func testDisplayNameOverrideRendersExactCompositeTitleIntoPNG() throws {
-        let expectedTitle = "Claude: Account 1"
-        let provider = MockData.claude
-        let exactTitleProvider = Provider(
-            id: provider.id,
-            displayName: expectedTitle,
-            icon: provider.icon,
-            links: provider.links
-        )
-
-        func pngPixels(provider: Provider, displayNameOverride: String? = nil) throws -> Data {
-            let card = ShareCardView(
-                provider: provider,
-                plan: nil,
-                rows: [],
-                appearance: .light,
-                displayNameOverride: displayNameOverride
-            )
-            let image = try XCTUnwrap(ShareCardRenderer.image(for: card))
-            let png = try XCTUnwrap(ShareCardRenderer.pngData(from: image))
-            let bitmap = try XCTUnwrap(NSBitmapImageRep(data: png))
-            let pixels = try XCTUnwrap(bitmap.bitmapData)
-            // PNG 메타데이터·압축 바이트가 아닌 디코딩된 픽셀로 제목 렌더 결과 비교.
-            return Data(bytes: pixels, count: bitmap.bytesPerRow * bitmap.pixelsHigh)
-        }
-
-        let overriddenPixels = try pngPixels(provider: provider, displayNameOverride: expectedTitle)
-        let exactTitlePixels = try pngPixels(provider: exactTitleProvider)
-        let providerTitlePixels = try pngPixels(provider: provider)
-
-        XCTAssertEqual(overriddenPixels.count, exactTitlePixels.count)
-        var largestDifference = 0
-        for (overridden, exact) in zip(overriddenPixels, exactTitlePixels) {
-            largestDifference = max(largestDifference, abs(Int(overridden) - Int(exact)))
-        }
-        XCTAssertLessThanOrEqual(
-            largestDifference, 1,
-            "the exact composite title should match within one rasterization quantization level"
-        )
-        XCTAssertNotEqual(
-            overriddenPixels,
-            providerTitlePixels,
-            "the display-name override must change visible PNG pixels"
-        )
-    }
-
-    func testRendersSoftLimitAndResetWatchInBothDensitiesAndDisplayModes() throws {
+    func testRendersSoftLimitAndResetWatchInBothDisplayModes() throws {
         let suite = "EgasuTests.SoftLimit.Rendering.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let provider = CodexProvider().provider
         let deadline = Date().addingTimeInterval(3600)
-        for density in DensitySetting.allCases {
-            defaults.set(density.rawValue, forKey: DensitySetting.key)
+        do {
             for mode in [WidgetDisplayMode.used, .remaining] {
                 var quota = WidgetData(title: "Weekly", icon: provider.icon, kind: .percent, used: 95, limit: 100)
                 quota.softLimitUsedFraction = 0.95
@@ -108,7 +72,7 @@ final class ShareCardRendererTests: XCTestCase {
                 for appearance in [ColorScheme.light, .dark] {
                     let dashboard = VStack(spacing: 0) {
                         ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                            WidgetRowView(data: row)
+                            DashboardMetricRow(model: row.dashboardRow())
                         }
                     }
                     .padding(.horizontal, 14)
@@ -117,13 +81,13 @@ final class ShareCardRendererTests: XCTestCase {
                     .environment(\.colorScheme, appearance)
                     .environment(\.hoverTooltipsDisabled, true)
                     .defaultAppStorage(defaults)
-                    let card = ShareCardView(provider: provider, rows: rows, appearance: appearance)
+                    let card = ShareCardView(family: family(provider, rows: rows), appearance: appearance)
                         .defaultAppStorage(defaults)
                     for (name, image, width) in [
                         ("dashboard", ShareCardRenderer.image(for: dashboard), 320),
                         ("share", ShareCardRenderer.image(for: card), Int(ShareCardView.width))
                     ] {
-                        let rendered = try XCTUnwrap(image, "\(name), \(density), \(mode), \(appearance)")
+                        let rendered = try XCTUnwrap(image, "\(name), \(mode), \(appearance)")
                         let rep = try XCTUnwrap(rendered.representations.first)
                         XCTAssertGreaterThan(rep.pixelsWide, 0)
                         XCTAssertEqual(rep.pixelsWide % width, 0)
@@ -136,19 +100,19 @@ final class ShareCardRendererTests: XCTestCase {
         }
     }
 
-    func testSoftLimitMarkerRendersYellowWithoutChangingItsWidth() throws {
+    func testSoftLimitMarkerRendersAsOneThinWarningLine() throws {
         let suite = "EgasuTests.SoftLimit.YellowMarker.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        for density in DensitySetting.allCases {
-            defaults.set(density.rawValue, forKey: DensitySetting.key)
+        for layoutStyle in DashboardLayoutStyle.allCases {
             for mode in [WidgetDisplayMode.used, .remaining] {
                 for appearance in [ColorScheme.light, .dark] {
                     var row = WidgetData(title: "Weekly", icon: .providerMark("codex"), kind: .percent, used: 40, limit: 100)
                     row.displayMode = mode
                     for showsMarker in [false, true] {
                         row.softLimitUsedFraction = showsMarker ? 0.90 : nil
-                        let view = WidgetRowView(data: row)
+                        let view = DashboardMetricRow(model: row.dashboardRow(), layoutStyle: layoutStyle)
+                            .environment(\.drawsLevelsAsShapes, true)
                             .padding(.horizontal, 14)
                             .frame(width: 320)
                             .background(appearance == .light ? Color.white : Color.black)
@@ -179,7 +143,7 @@ final class ShareCardRendererTests: XCTestCase {
                                 }
                             }
                         }
-                        let context = "\(density), \(mode), \(appearance), marker: \(showsMarker)"
+                        let context = "\(layoutStyle), \(mode), \(appearance), marker: \(showsMarker)"
                         if showsMarker {
                             XCTAssertFalse(yellowColumns.isEmpty, context)
                             XCTAssertLessThanOrEqual(yellowColumns.count, 2 * bitmap.pixelsWide / 320, context)
@@ -189,18 +153,6 @@ final class ShareCardRendererTests: XCTestCase {
                     }
                 }
             }
-        }
-    }
-
-    func testCondensedTextRowIndicesFollowsNeighborRule() {
-        let rows = MockData.descriptors(for: MockData.claude.id).map { $0.sample }
-        XCTAssertGreaterThan(rows.count, 1, "sample fixture should have multiple rows")
-        let condensed = WidgetData.condensedTextRowOffsets(in: rows)
-        XCTAssertFalse(condensed.contains(0), "the first row is never condensed")
-        for i in 1..<rows.count {
-            let expected = !rows[i - 1].isBounded && !rows[i].isBounded
-            XCTAssertEqual(condensed.contains(i), expected,
-                           "row \(i) condensing should match the neighbor-aware text-only rule")
         }
     }
 
@@ -225,5 +177,133 @@ final class ShareCardRendererTests: XCTestCase {
         // 매직 바이트로 pasteboard 내용이 실제 PNG임을 확인
         let magic: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
         XCTAssertEqual(Array(png.prefix(magic.count)), magic)
+    }
+    func testCurrentAccountNameChangesTheSharedImagePixels() throws {
+        let provider = MockData.claude
+        func pixels(name: String) throws -> Data {
+            let account = DashboardAccount(provider: provider, providerName: provider.displayName, name: name, lines: [])
+            let family = DashboardFamily(
+                id: provider.id, provider: provider, displayName: provider.displayName, accounts: [account])
+            let view = ShareCardView(family: family, appearance: .light, blursAccountNames: false)
+            let image = try XCTUnwrap(ShareCardRenderer.image(for: view))
+            let png = try XCTUnwrap(ShareCardRenderer.pngData(from: image))
+            let bitmap = try XCTUnwrap(NSBitmapImageRep(data: png))
+            let data = try XCTUnwrap(bitmap.bitmapData)
+            return Data(bytes: data, count: bitmap.bytesPerRow * bitmap.pixelsHigh)
+        }
+        let current = try pixels(name: "Office")
+        let repeated = try pixels(name: "Office")
+        XCTAssertEqual(current.count, repeated.count)
+        XCTAssertLessThanOrEqual(zip(current, repeated).map { abs(Int($0) - Int($1)) }.max() ?? 0, 1)
+        XCTAssertNotEqual(current, try pixels(name: "Work"), "현재 계정 이름을 이미지에 반영")
+    }
+
+}
+
+@MainActor
+extension ShareCardRendererTests {
+    func testFamilyShareCopiesVisibleAccountRowsInSavedOrder() throws {
+        let provider = MockData.codex
+        var today = WidgetData(title: "Today", icon: provider.icon, kind: .dollars, used: 3, limit: nil)
+        today.isUsagePeriod = true
+        let weekly = WidgetData(title: "Weekly", icon: provider.icon, kind: .percent, used: 42, limit: 100)
+        var trend = WidgetData(title: "Usage Trend", icon: provider.icon, kind: .count, used: 0, limit: nil)
+        trend.isChart = true
+        trend.chartPoints = [MetricChartPoint(value: 120, label: "Monday", valueLabel: "120")]
+        var unavailable = WidgetData(title: "Session", icon: provider.icon, kind: .percent, used: 17, limit: 100)
+        unavailable.hasData = false
+
+        let family = familyShareFixture(
+            provider: provider, name: "Work", rows: [today, unavailable, weekly, trend]
+        )
+        let expected = familyShareFixture(provider: provider, name: "Work", rows: [today, weekly, trend])
+        let reversed = familyShareFixture(provider: provider, name: "Work", rows: [trend, weekly, today])
+        let collapsed = familyShareFixture(provider: provider, name: "Work", rows: [weekly])
+        let pasteboard = NSPasteboard(name: .init("EgasuTests.FamilyShare.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+
+        for style in [DashboardLayoutStyle.minimal, .cards] {
+            let expectedPixels = try familySharePixels(expected, style: style)
+            let collapsedPixels = try familySharePixels(collapsed, style: style)
+            XCTAssertGreaterThan(expectedPixels.count, collapsedPixels.count)
+            let actual = try copiedFamilySharePixels(family, style: style, pasteboard: pasteboard)
+            assertFamilySharePixels(actual, match: expectedPixels)
+            XCTAssertNotEqual(actual, try familySharePixels(reversed, style: style))
+        }
+    }
+
+    func testFamilyShareOmitsEmailAndOrganizationFromTheAccountCaption() throws {
+        let provider = MockData.codex
+        let weekly = WidgetData(title: "Weekly", icon: provider.icon, kind: .percent, used: 17, limit: 100)
+        let emailFree = familyShareFixture(provider: provider, name: nil, rows: [weekly])
+        let pasteboard = NSPasteboard(name: .init("EgasuTests.FamilyShareEmail.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+
+        for style in [DashboardLayoutStyle.minimal, .cards] {
+            for privacyMode in [false, true] {
+                let expected = try familySharePixels(emailFree, style: style, privacyMode: privacyMode)
+                for name in ["work@example.com", "work@example.com (Example Org)"] {
+                    let family = familyShareFixture(provider: provider, name: name, rows: [weekly])
+                    let actual = try copiedFamilySharePixels(
+                        family, style: style, pasteboard: pasteboard, privacyMode: privacyMode
+                    )
+                    assertFamilySharePixels(actual, match: expected)
+                }
+            }
+        }
+    }
+
+    private func familyShareFixture(provider: Provider, name: String?, rows: [WidgetData]) -> DashboardFamily {
+        let lines = rows.map { row in
+            let descriptor = WidgetDescriptor(
+                id: "\(provider.id).\(row.title)", providerID: provider.id, metricLabel: row.title, sample: row
+            )
+            return DashboardLine(descriptor: descriptor, data: row)
+        }
+        let account = DashboardAccount(
+            provider: provider, providerName: provider.displayName, name: name, lines: lines
+        )
+        return DashboardFamily(id: provider.id, provider: provider, displayName: provider.displayName, accounts: [account])
+    }
+
+    private func copiedFamilySharePixels(
+        _ family: DashboardFamily, style: DashboardLayoutStyle, pasteboard: NSPasteboard,
+        privacyMode: Bool = false
+    ) throws -> Data {
+        guard
+            ShareCardRenderer.share(
+                family: family, plans: [family.id: "Plus"], appearance: .light, blursAccountNames: privacyMode,
+                layoutStyle: style, pasteboard: pasteboard
+            )
+        else { throw XCTSkip("The macOS pasteboard service is unavailable in this test host.") }
+        return try familySharePixels(png: XCTUnwrap(pasteboard.data(forType: .png)))
+    }
+
+    private func familySharePixels(
+        _ family: DashboardFamily, style: DashboardLayoutStyle, privacyMode: Bool = false
+    ) throws -> Data {
+        let view = ShareCardView(
+            family: family, plans: [family.id: "Plus"], appearance: .light,
+            blursAccountNames: privacyMode, layoutStyle: style
+        )
+        let image = try XCTUnwrap(ShareCardRenderer.image(for: view))
+        return try familySharePixels(png: XCTUnwrap(ShareCardRenderer.pngData(from: image)))
+    }
+
+    private func familySharePixels(png: Data) throws -> Data {
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: png))
+        let pixels = try XCTUnwrap(bitmap.bitmapData)
+        return Data(bytes: pixels, count: bitmap.bytesPerRow * bitmap.pixelsHigh)
+    }
+
+    private func assertFamilySharePixels(
+        _ actual: Data, match expected: Data, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        XCTAssertEqual(actual.count, expected.count, file: file, line: line)
+        var largestDifference = 0
+        for (actualByte, expectedByte) in zip(actual, expected) {
+            largestDifference = max(largestDifference, abs(Int(actualByte) - Int(expectedByte)))
+        }
+        XCTAssertLessThanOrEqual(largestDifference, 1, file: file, line: line)
     }
 }
