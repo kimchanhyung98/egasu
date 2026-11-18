@@ -7,7 +7,7 @@ struct LayoutSnapshot: Equatable {
     let placed: [PlacedWidget]
     let providerOrder: [String]
     let metricOrderByProvider: [String: [String]]
-    let pinnedMetricIDs: Set<String>
+    let priorityPinIDs: Set<String>
     let expandedMetricIDs: Set<String>
     let defaultExpandedOnEnableIDs: Set<String>
 }

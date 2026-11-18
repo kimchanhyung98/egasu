@@ -14,9 +14,8 @@ final class LayoutStore {
     /// 프로바이더·계정 카드별 지표 순서 — 숨김 변경과 별개로 위치 유지.
     var metricOrderByProvider: [String: [String]]
 
-    /// 메뉴바 pin된 canonical metric id — membership만 저장, 표시 순서는 provider+metric 순서에서 파생.
-    /// `canPin`으로 provider당 최대 `maxPinsPerProvider`개 제한(strip이 값을 pair로 쌓는 구조).
-    private(set) var pinnedMetricIDs: Set<String>
+    /// Priority 고정 — 개인 지표는 계정 카드, 공통 지표는 프로바이더 기준으로 저장.
+    private(set) var priorityPinIDs: Set<String>
 
     /// per-provider "Shown on expand" divider 아래의 canonical metric id — membership만 저장, section 내 순서는
     /// metric 순서를 따름. disabled 동안에도 membership 유지 — 재활성화 시 원래 section 복원.
@@ -25,12 +24,8 @@ final class LayoutStore {
     /// expanded metric을 펼쳐 둔 family — 사용자 preference라 popover 닫힘·앱 재시작에도 유지.
     private(set) var expandedProviderIDs: Set<String>
 
-    private let pinNotice = TransientNotice<String?>(clearedValue: nil, timeout: .seconds(3))
     private let shareNotice = TransientNotice<Bool>(clearedValue: false, timeout: .seconds(2.5))
     private let customizeNotice = TransientNotice<CustomizationNoticeContent?>(clearedValue: nil, timeout: .seconds(2.5))
-
-    var pinLimitNotice: String? { pinNotice.value }
-    var pinNoticeShakeTrigger: Int { pinNotice.trigger }
 
     var shareConfirmation: Bool { shareNotice.value }
     var shareConfirmationTrigger: Int { shareNotice.trigger }
@@ -45,11 +40,6 @@ final class LayoutStore {
     private var undoHistory = LayoutUndoHistory()
     /// `undo()` replay 중 flag — replay가 유발한 mutation의 stack 재기록 차단(undo는 새 undoable action이 아님).
     private var isApplyingUndo = false
-
-    /// 메뉴바 표시 스타일(Text strip/Bars) — persist, 기본 .bars.
-    var menuBarStyle: MenuBarStyle {
-        didSet { persistence.saveMenuBarStyle(menuBarStyle) }
-    }
 
     private(set) var registry: WidgetRegistry
     private let persistence: LayoutPersistence
@@ -91,7 +81,6 @@ final class LayoutStore {
             defaults: LayoutDefaultSet(
                 metricIDs: defaultMetricIDs ?? DefaultLayout.metricIDs(in: registry),
                 migrationBaselineMetricIDs: migrationBaselineMetricIDs,
-                pinnedMetricIDs: defaultPinnedMetricIDs,
                 expandedMetricIDs: defaultExpandedMetricIDs
             ),
             knownCardIDs: knownCardIDs
@@ -99,15 +88,13 @@ final class LayoutStore {
         placed = initial.placed
         providerOrder = initial.providerOrder
         metricOrderByProvider = initial.metricOrderByProvider
-        pinnedMetricIDs = initial.pinnedMetricIDs
+        priorityPinIDs = Self.loadPriorityPins(from: persistence, registry: registry)
         expandedMetricIDs = initial.expandedMetricIDs
         expandedProviderIDs = initial.expandedProviderIDs
         defaultExpandedOnEnableIDs = initial.defaultExpandedOnEnableIDs
-        menuBarStyle = initial.menuBarStyle
 
         if initial.shouldPersistExpandOnEnable { persistExpandOnEnable() }
         if initial.shouldPersistExpanded { persistExpanded() }
-        if initial.shouldPersistPins { persistPins() }
         if initial.shouldPersistMetricOrder { persistMetricOrder() }
         if initial.shouldPersistExpandedProviders { persistExpandedProviders() }
         if let seededDefaults = initial.seededDefaultsToPersist { persistSeededDefaults(seededDefaults) }
@@ -130,7 +117,6 @@ final class LayoutStore {
             defaults: LayoutDefaultSet(
                 metricIDs: defaultMetricIDs ?? DefaultLayout.metricIDs(in: registry),
                 migrationBaselineMetricIDs: migrationBaselineMetricIDs,
-                pinnedMetricIDs: defaultPinnedMetricIDs,
                 expandedMetricIDs: defaultExpandedMetricIDs
             ),
             knownCardIDs: knownCardIDs
@@ -138,17 +124,15 @@ final class LayoutStore {
         placed = reloaded.placed
         providerOrder = reloaded.providerOrder
         metricOrderByProvider = reloaded.metricOrderByProvider
-        pinnedMetricIDs = reloaded.pinnedMetricIDs
+        priorityPinIDs = Self.loadPriorityPins(from: persistence, registry: registry)
         expandedMetricIDs = reloaded.expandedMetricIDs
         expandedProviderIDs = reloaded.expandedProviderIDs
         defaultExpandedOnEnableIDs = reloaded.defaultExpandedOnEnableIDs
-        menuBarStyle = reloaded.menuBarStyle
         undoHistory.clear()
         cancelDrag()
 
         if reloaded.shouldPersistExpandOnEnable { persistExpandOnEnable() }
         if reloaded.shouldPersistExpanded { persistExpanded() }
-        if reloaded.shouldPersistPins { persistPins() }
         if reloaded.shouldPersistMetricOrder { persistMetricOrder() }
         if reloaded.shouldPersistExpandedProviders { persistExpandedProviders() }
         if let seededDefaults = reloaded.seededDefaultsToPersist { persistSeededDefaults(seededDefaults) }
@@ -197,6 +181,7 @@ final class LayoutStore {
                 add(settingsID)
             } else if let widget = placed.first(where: { $0.descriptorID == settingsID }) {
                 remove(widget.id)
+                if priorityPinIDs.remove(settingsID) != nil { persistence.savePriorityPins(priorityPinIDs) }
             }
         }
     }
@@ -211,7 +196,7 @@ final class LayoutStore {
             placed: placed,
             providerOrder: providerOrder,
             metricOrderByProvider: metricOrderByProvider,
-            pinnedMetricIDs: pinnedMetricIDs,
+            priorityPinIDs: priorityPinIDs,
             expandedMetricIDs: expandedMetricIDs,
             defaultExpandedOnEnableIDs: defaultExpandedOnEnableIDs
         )
@@ -249,56 +234,69 @@ final class LayoutStore {
         placed = snapshot.placed
         providerOrder = snapshot.providerOrder
         metricOrderByProvider = snapshot.metricOrderByProvider
-        pinnedMetricIDs = snapshot.pinnedMetricIDs
+        priorityPinIDs = snapshot.priorityPinIDs
         expandedMetricIDs = snapshot.expandedMetricIDs
         defaultExpandedOnEnableIDs = snapshot.defaultExpandedOnEnableIDs
         persist()
         persistProviderOrder()
         persistMetricOrder()
-        persistPins()
+        persistence.savePriorityPins(priorityPinIDs)
         persistExpanded()
         persistExpandOnEnable()
     }
 
-    // MARK: - Menu bar pins
+    // MARK: - Priority pins
 
-    /// provider별 pin 상한 — Text strip이 provider 값을 2개씩 한 column에 쌓는 렌더링 제약.
-    static let maxPinsPerProvider = 2
-
-    func isPinned(_ descriptorID: String) -> Bool {
-        registry.descriptor(id: descriptorID) != nil && pinnedMetricIDs.contains(Self.canonical(descriptorID))
+    /// 가져온 고정값에서 알려진 고정 불가 지표만 제거하고, 현재 카탈로그에 없는 지표는 복귀를 위해 보관.
+    private static func loadPriorityPins(from persistence: LayoutPersistence, registry: WidgetRegistry) -> Set<String> {
+        let saved = Set(persistence.loadPriorityPins() ?? [])
+        let valid = saved.filter { registry.descriptor(id: $0)?.pinnable != false }
+        if valid != saved { persistence.savePriorityPins(valid) }
+        return valid
     }
 
-    /// family의 pin 수 — pin은 canonical이라 카드 수와 무관하게 family당 한 번만 셈.
-    func pinnedCount(forProvider providerID: String) -> Int {
-        let family = ProviderAccountID.family(of: providerID)
-        return pinnedMetricIDs.count {
-            ProviderAccountID.family(of: ProviderAccountID.providerID(ofMetric: $0)) == family
+    /// 기존 별표의 사용자 지정분을 알려진 계정으로 1회 이전 — Priority 저장값이 있으면 생략.
+    func migrateMenuBarStars(isHiddenOnCard: (String, String) -> Bool = { _, _ in false }) -> Int? {
+        guard !persistence.hasStoredPriorityPins else { return nil }
+        defer { persistence.savePriorityPins(priorityPinIDs) }
+        guard let saved = persistence.loadPins() else { return nil }
+        // 프로바이더가 꺼져 있어도 별표는 남겨 두고 다시 켰을 때 표시.
+        let stars = Set(saved.map(Self.canonical)).filter(registry.hasCanonicalMetric)
+        let defaults = Set(defaultPinnedMetricIDs).filter(registry.hasCanonicalMetric)
+        guard stars != defaults else { return nil }
+        var pins = Set<String>()
+        for star in stars {
+            let family = LayoutOrdering.family(ofMetric: star)
+            for provider in registry.providers where ProviderAccountID.family(of: provider.id) == family {
+                let cardMetricID = LayoutOrdering.cardMetricID(star, on: provider.id)
+                if registry.descriptor(id: cardMetricID)?.pinnable == true,
+                   isMetricEnabled(cardMetricID), !isHiddenOnCard(cardMetricID, provider.id) {
+                    pins.insert(ProviderAccountID.isSharedMetric(cardMetricID) ? Self.canonical(cardMetricID) : cardMetricID)
+                }
+            }
         }
+        priorityPinIDs = pins
+        return pins.isEmpty ? nil : pins.count
     }
 
-    /// cap을 깨지 않고 새로 pin 가능한지 — 이미 pin된 id는 true(unpin toggle 유지).
-    func canPin(_ descriptorID: String) -> Bool {
-        if pinnedMetricIDs.contains(Self.canonical(descriptorID)) { return true }
-        guard let descriptor = registry.descriptor(id: descriptorID), descriptor.pinnable else { return false }
-        if pinnedCount(forProvider: descriptor.providerID) >= Self.maxPinsPerProvider { return false }
-        return true
+    /// 계정별 고정 조회 — 공통 지표는 프로바이더 설정으로 조회.
+    func isMetricPinned(_ descriptorID: String) -> Bool {
+        let settingsID = ProviderAccountID.isSharedMetric(descriptorID) ? Self.canonical(descriptorID) : descriptorID
+        return registry.descriptor(id: descriptorID) != nil && priorityPinIDs.contains(settingsID)
     }
 
-    /// 지금 pin 불가한 사유(가능하면 nil) — pin 버튼 tooltip과 거부 클릭 피드백의 단일 source.
-    func pinDenialReason(_ descriptorID: String) -> String? {
-        guard !canPin(descriptorID) else { return nil }
-        if let providerID = registry.descriptor(id: descriptorID)?.providerID,
-           pinnedCount(forProvider: providerID) >= Self.maxPinsPerProvider {
-            return L10n.common("Up to %d stars per provider", Self.maxPinsPerProvider)
+    /// 표시 중인 고정 가능 지표만 고정 — 개인·공통 범위에 저장하고 실행 취소 지원.
+    func setMetric(_ descriptorID: String, pinned: Bool) {
+        let settingsID = ProviderAccountID.isSharedMetric(descriptorID) ? Self.canonical(descriptorID) : descriptorID
+        recordingUndoStep {
+            if pinned {
+                guard registry.descriptor(id: descriptorID)?.pinnable == true, isMetricEnabled(descriptorID),
+                      priorityPinIDs.insert(settingsID).inserted else { return }
+            } else {
+                guard priorityPinIDs.remove(settingsID) != nil else { return }
+            }
+            persistence.savePriorityPins(priorityPinIDs)
         }
-        return nil
-    }
-
-    /// 거부된 pin 시도 기록 — footer가 cap을 설명(수 초 표시 + 매 시도 deny shake).
-    func notePinDenied(_ descriptorID: String) {
-        guard let reason = pinDenialReason(descriptorID) else { return }
-        pinNotice.present(reason)
     }
 
     /// "Share Screenshot" copy 성공 기록 — floating "Copied to clipboard" pill 표시.
@@ -322,29 +320,6 @@ final class LayoutStore {
     /// 표시 중인 Customize pill 해제·auto-clear task 취소 — 다음 open에 stale 재등장 방지.
     func clearCustomizationNotice() {
         customizeNotice.clear()
-    }
-
-    /// 메뉴바 pin/unpin — cap 초과 pin은 no-op이라 `canPin`으로 gate한 호출자는 over-pin 불가.
-    /// 다른 레이아웃 action처럼 undoable — no-op guard 덕에 거부·중복 pin은 step 미기록.
-    func setPinned(_ pinned: Bool, for descriptorID: String) {
-        let canonicalID = Self.canonical(descriptorID)
-        recordingUndoStep {
-            if pinned {
-                guard canPin(descriptorID), registry.descriptor(id: descriptorID) != nil else { return }
-                guard pinnedMetricIDs.insert(canonicalID).inserted else { return }
-            } else {
-                guard pinnedMetricIDs.remove(canonicalID) != nil else { return }
-            }
-            persistPins()
-        }
-    }
-
-    func togglePin(_ descriptorID: String) {
-        setPinned(!isPinned(descriptorID), for: descriptorID)
-    }
-
-    func persistPins() {
-        persistence.savePins(pinnedMetricIDs)
     }
 
     func persistExpanded() {
@@ -390,8 +365,8 @@ final class LayoutStore {
         persistProviderOrder()
         metricOrderByProvider = LayoutOrdering.defaultMetricOrder(registry: registry)
         persistMetricOrder()
-        pinnedMetricIDs = Set(defaultPinnedMetricIDs.filter { registry.hasCanonicalMetric($0) })
-        persistPins()
+        priorityPinIDs = []
+        persistence.savePriorityPins(priorityPinIDs)
         expandedMetricIDs = Set(defaultExpandedMetricIDs.filter { registry.hasCanonicalMetric($0) })
         defaultExpandedOnEnableIDs = []
         persistExpanded()
@@ -439,9 +414,8 @@ final class LayoutStore {
         persistMetricOrder()
 
         // pin·expanded·expand-on-enable carry: 이 family entry만 default로 교체, 나머지 set 유지.
-        pinnedMetricIDs.subtract(owned)
-        pinnedMetricIDs.formUnion(defaults(defaultPinnedMetricIDs))
-        persistPins()
+        priorityPinIDs = priorityPinIDs.filter { ProviderAccountID.family(of: ProviderAccountID.providerID(ofMetric: $0)) != family }
+        persistence.savePriorityPins(priorityPinIDs)
 
         expandedMetricIDs.subtract(owned)
         expandedMetricIDs.formUnion(defaults(defaultExpandedMetricIDs))

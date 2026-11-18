@@ -5,7 +5,7 @@ import XCTest
 final class UpstreamLayoutImportTests: XCTestCase {
     private let layoutKey = "openusage.layout.v1"
 
-    func testCanonicalV2PinsWorkWithoutBareCardAndDoNotProjectUnknownAccountPins() throws {
+    func testV2PinIDsStayScopedWithoutProjectingCanonicalOrUnknownCards() throws {
         let fixture = makeDefaults()
         let cardID = "claude@known"
         let provider = Provider(id: cardID, displayName: "Work", icon: .providerMark("claude"))
@@ -28,10 +28,9 @@ final class UpstreamLayoutImportTests: XCTestCase {
         XCTAssertTrue(importLayout(fixture))
         for _ in 0..<2 {
             let store = LayoutStore(registry: registry, defaults: fixture.defaults)
-            XCTAssertEqual(store.pinnedMetricIDs, ["claude.weekly"])
-            XCTAssertTrue(store.isPinned("\(cardID).weekly"))
-            XCTAssertFalse(store.isPinned("\(cardID).session"))
-            XCTAssertEqual(store.pinnedGroups.flatMap { $0.metrics.map(\.id) }, ["\(cardID).weekly"])
+            XCTAssertEqual(store.priorityPinIDs, Set(pins))
+            XCTAssertFalse(store.isMetricPinned("\(cardID).weekly"), "기본 카드의 고정을 다른 계정에 투영하지 않음")
+            XCTAssertFalse(store.isMetricPinned("\(cardID).session"))
             XCTAssertEqual(storedPriorityPins(fixture), Set(pins))
         }
     }
@@ -135,7 +134,7 @@ final class UpstreamLayoutImportTests: XCTestCase {
         XCTAssertTrue(store.isMetricEnabled("claude.session"))
         XCTAssertTrue(store.isMetricEnabled("claude.extra"))
         XCTAssertTrue(storedPriorityPins(fixture).contains("claude.session"))
-        XCTAssertEqual(store.pinnedMetricIDs, ["claude.session"])
+        XCTAssertEqual(store.priorityPinIDs, ["claude.session"])
         XCTAssertEqual(store.providerOrder, ["cursor", "claude"])
         XCTAssertEqual(store.metricOrderByProvider["claude"], ["claude.extra", "claude.session", "claude.weekly"])
     }
@@ -156,7 +155,8 @@ final class UpstreamLayoutImportTests: XCTestCase {
         XCTAssertTrue(store.isMetricEnabled("claude.session"))
         XCTAssertTrue(store.isMetricEnabled("claude.today"))
         XCTAssertFalse(storedPriorityPins(fixture).contains("claude.weekly"))
-        XCTAssertTrue(store.pinnedMetricIDs.isEmpty, "미등록 계정의 고정으로 기본 카드나 기본 별표를 선택하지 않음")
+        XCTAssertEqual(store.priorityPinIDs, Set(pins), "미등록 계정의 선택도 복귀에 대비해 보존")
+        XCTAssertFalse(store.isMetricPinned("claude.weekly"), "미등록 계정의 고정을 기본 카드에 적용하지 않음")
         store.setMetricEnabled("claude.extra", false)
 
         let reloaded = LayoutStore(registry: .mock, defaults: fixture.defaults)
@@ -198,6 +198,8 @@ final class UpstreamLayoutImportTests: XCTestCase {
         XCTAssertTrue(store.isMetricEnabled("claude.session"))
         XCTAssertTrue(storedPriorityPins(fixture).contains("\(card).weekly"))
         XCTAssertFalse(storedPriorityPins(fixture).contains("claude.weekly"))
+        XCTAssertTrue(store.isMetricPinned("\(card).weekly"))
+        XCTAssertFalse(store.isMetricPinned("claude.weekly"))
         XCTAssertEqual(store.metricOrder(for: card), ["\(card).weekly", "\(card).session"])
     }
 

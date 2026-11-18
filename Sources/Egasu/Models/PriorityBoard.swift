@@ -77,6 +77,25 @@ struct PriorityItem: Identifiable {
     var id: String { line.id }
     var data: WidgetData { line.data }
 
+    func runOutText(now: Date) -> String? {
+        guard case .burningFast(let runway) = reason, let resetsAt = data.resetsAt,
+              runway < resetsAt.timeIntervalSince(now), let duration = Formatters.compactDuration(runway)
+        else { return nil }
+        return L10n.dashboard("Out in %@", duration)
+    }
+
+    func resetsInText(now: Date) -> String? {
+        guard case .useItOrLoseIt(let resetsAt) = reason,
+              let duration = Formatters.countdown(to: resetsAt, now: now)
+        else { return nil }
+        return L10n.metrics("Resets in %@", duration)
+    }
+
+    func usedUpNote(now: Date) -> String? {
+        guard case .emptyBalance = reason else { return data.compactResetText(now: now) }
+        return data.unboundedDetail
+    }
+
 }
 
 /// 사용자가 고정한 지표와 해당 계정.
@@ -123,12 +142,14 @@ struct PriorityBoard {
     let summary: Summary
     /// 모든 계정이 보고했고 소진 임박이 없음.
     let showsClearRow: Bool
+    /// 초기화 전 사용 목록이 시간에 따라 바뀌는 다음 시각.
+    let nextUseItOrLoseItChange: Date?
 
     /// 새 읽기 없이도 기간이 지나며 순위가 바뀌거나 빠른 소진이 풀릴 수 있음 — 30초 재계산 필요 여부.
-    func requiresRankingClock(at now: Date) -> Bool {
-        if runningOut.contains(where: { if case .burningFast = $0.reason { true } else { false } }) { return true }
-        return runningOut.count > 1
-            && runningOut.contains { item in
+    static func requiresRankingClock(for items: [PriorityItem], at now: Date) -> Bool {
+        if items.contains(where: { if case .burningFast = $0.reason { true } else { false } }) { return true }
+        return items.count > 1
+            && items.contains { item in
                 guard let reset = item.data.resetsAt, let period = item.data.periodDurationMs else { return false }
                 return reset > now && period > 0
             }
@@ -177,6 +198,14 @@ struct PriorityBoard {
                 .noReportedLimits
             }
         let runningOut = ranked.filter { $0.reason.section == .runningOut }
+        let nextUseItOrLoseItChange: Date? = useItOrLoseIt ? lines.compactMap { _, line in
+            let data = line.data
+            guard !pinnedIDs.contains(line.id), data.isQuotaMeter, data.valueTextOverride == nil,
+                  data.severity == .normal, let reset = data.resetsAt else { return nil }
+            let start = reset.addingTimeInterval(-PaceNotificationLogic.useItOrLoseItLead)
+            guard PaceNotificationLogic.isUnusedNearReset(data, now: max(start, now)) else { return nil }
+            return start > now ? start : reset
+        }.min() : nil
         return PriorityBoard(
             pinned: readings.compactMap(\.pin),
             runningOut: runningOut,
@@ -184,7 +213,8 @@ struct PriorityBoard {
             usedUp: ranked.filter { $0.reason.section == .usedUp && !$0.isPinned },
             useItOrLoseIt: ranked.filter { $0.reason.section == .useItOrLoseIt && !$0.isPinned },
             notices: notices, waiting: waiting, summary: summary,
-            showsClearRow: reportsLimit && !awaitingUsage && notices.isEmpty && runningOut.isEmpty
+            showsClearRow: reportsLimit && !awaitingUsage && notices.isEmpty && runningOut.isEmpty,
+            nextUseItOrLoseItChange: nextUseItOrLoseItChange
         )
     }
 

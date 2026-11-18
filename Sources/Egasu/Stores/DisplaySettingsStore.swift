@@ -18,6 +18,11 @@ enum DashboardLayoutStyle: String, CaseIterable, Sendable {
 @Observable
 final class DisplaySettingsStore {
     static let dashboardLayoutKey = "allUsageLayout"
+    static let menuBarStyleKey = "openusage.layout.v1.menuBarStyle"
+    static let menuBarLimitKey = "menuBarLimit"
+    static let menuBarSelectionKey = "menuBarSelection"
+    static let menuBarExtrasKey = "menuBarExtras"
+    static let legacyMenuBarAlwaysShowsKey = "menuBarAlwaysShows"
     static let priorityWarningKey = "priorityWarning"
     static let priorityCriticalKey = "priorityCritical"
     static let priorityBurningFastKey = "priorityBurningFast"
@@ -30,6 +35,22 @@ final class DisplaySettingsStore {
 
     var dashboardLayout: DashboardLayoutStyle {
         didSet { defaults.set(dashboardLayout.rawValue, forKey: Self.dashboardLayoutKey) }
+    }
+
+    var menuBarStyle: MenuBarStyle {
+        didSet { defaults.set(menuBarStyle.rawValue, forKey: Self.menuBarStyleKey) }
+    }
+
+    var menuBarLimit: MenuBarLimit {
+        didSet { defaults.set(menuBarLimit.rawValue, forKey: Self.menuBarLimitKey) }
+    }
+
+    var menuBarSelection: MenuBarSelection {
+        didSet { defaults.set(menuBarSelection.rawValue, forKey: Self.menuBarSelectionKey) }
+    }
+
+    var showsMenuBarExtras: Bool {
+        didSet { defaults.set(showsMenuBarExtras, forKey: Self.menuBarExtrasKey) }
     }
 
     var priorityLimits: PriorityLimits {
@@ -54,6 +75,11 @@ final class DisplaySettingsStore {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         dashboardLayout = defaults.enumValue(forKey: Self.dashboardLayoutKey, default: .minimal)
+        menuBarStyle = defaults.enumValue(forKey: Self.menuBarStyleKey, default: .text)
+        menuBarLimit = defaults.enumValue(forKey: Self.menuBarLimitKey, default: .upToThree)
+        let legacySelection: MenuBarSelection = defaults.bool(forKey: Self.legacyMenuBarAlwaysShowsKey, default: false) ? .priority : .runningOut
+        menuBarSelection = defaults.enumValue(forKey: Self.menuBarSelectionKey, default: legacySelection)
+        showsMenuBarExtras = defaults.bool(forKey: Self.menuBarExtrasKey, default: true)
         priorityLimits = PriorityLimits(
             warning: defaults.object(forKey: Self.priorityWarningKey) as? Int ?? PriorityLimits.standard.warning,
             critical: defaults.object(forKey: Self.priorityCriticalKey) as? Int ?? PriorityLimits.standard.critical

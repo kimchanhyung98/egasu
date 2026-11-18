@@ -72,8 +72,8 @@ final class PopoverState {
 
     let shareNotice = TransientNotice<Bool>(clearedValue: false, timeout: .seconds(2.5))
 
-    init(dashboardTab: DashboardTab = .allUsage) {
-        self.dashboardTab = dashboardTab
+    init(dashboardTab: DashboardTab? = nil, defaults: UserDefaults = .standard) {
+        self.dashboardTab = dashboardTab ?? .preferred(in: defaults)
     }
 
     /// 한 단계 뒤로 — 계정 상세 → 목록 → 대시보드. 대시보드면 false(패널 닫기).

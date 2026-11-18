@@ -313,9 +313,10 @@ final class SoftLimitWidgetDataStoreTests: XCTestCase {
             ])
         }
         store.setCodexResetWatch(.init(chancePercent: 75, deadline: .distantFuture, communityYesPercent: 60))
+        layout.setMetric("codex.weekly", pinned: true)
         let originalPlaced = layout.placed
         let originalExpanded = layout.expandedMetricIDs
-        let originalPins = layout.pinnedMetricIDs
+        let originalPins = layout.priorityPinIDs
 
         for mode in [AccountCardDisplayMode.singleCard, .separateCards] {
             let visibleIDs = AccountCardPresentationPlanner.presentedCardIDs(
@@ -341,7 +342,7 @@ final class SoftLimitWidgetDataStoreTests: XCTestCase {
         }
         XCTAssertEqual(layout.placed, originalPlaced)
         XCTAssertEqual(layout.expandedMetricIDs, originalExpanded)
-        XCTAssertEqual(layout.pinnedMetricIDs, originalPins)
+        XCTAssertEqual(layout.priorityPinIDs, originalPins)
     }
 
     private func makeDefaults() -> UserDefaults {

@@ -74,11 +74,10 @@ OpenCode처럼 로컬 기록만 수집하는 프로바이더는 사용량 조회
    `WidgetDescriptor+Factories.swift`의 팩토리(`percent`, `boundedDollars`, `spend`, `tokenSpend`, `combined`, `values`, `badge` 등)로 프로바이더의 지표를 `WidgetDescriptor`로 노출.
 4. **기본 배치 확인.**
    모든 지표는 기본 켜짐이며 기존 숨김 설정 우선.
-   Always Visible/On Demand 위치, 메뉴 막대 고정 여부와 새 지표 순서를 소유자와 확인.
-   지표 활성화 목록은 등록된 지표에서 계산.
-   확인한 배치는 `DefaultLayout.expandedMetricIDs`, `DefaultLayout.pinnedMetricIDs`와 `widgetDescriptors` 선언 순서에 반영.
-   접기 버튼이 필요하면 활성 지표 중 하나 이상을 Always Visible로 유지.
-   활성 지표가 전부 On Demand이면 대시보드가 모든 지표를 항상 표시하는 방식으로 처리.
+   새 지표의 순서를 소유자와 확인하고 `widgetDescriptors` 선언 순서에 반영.
+   메뉴 막대는 [표시 기준](/docs/menu-bar.md#표시-항목)에 따라 Priority 보드에서 지표 선택.
+   Priority 고정은 사용자가 설정.
+   `DefaultLayout.pinnedMetricIDs`는 이전 기본 별표와 저장된 별표를 비교하는 마이그레이션 전용 값.
 5. **등록.**
    `ProviderCatalog.make()`의 앱·CLI 공용 목록에 프로바이더 추가.
    Claude·Codex·Cursor를 앞에 유지하고, 새 프로바이더는 나머지 목록에 표시 이름의 알파벳순으로 배치.

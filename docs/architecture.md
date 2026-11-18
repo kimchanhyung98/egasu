@@ -132,9 +132,10 @@ UI는 관찰 가능한 몇 개의 스토어에서 읽음:
 
 - `WidgetDataStore` — 화면·로컬 API의 표시 스냅샷, 표시 설정, 알림 입력.
   조회·캐시·동기화 처리는 아래 사용량 처리 모듈에 위임.
-- `LayoutStore` — 어떤 지표를 표시할지, 프로바이더/지표 순서, 메뉴 막대에 별표한 지표.
+- `LayoutStore` — 지표 표시·숨김, 프로바이더·지표 순서와 Priority 고정.
   한도 지표의 표시·순서는 계정별 저장.
-  이력·Reset Watch는 프로바이더 공통 설정이며, 메뉴 막대 별표도 프로바이더 단위.
+  이력·Reset Watch의 표시·순서·고정은 프로바이더 공통 설정.
+  한도 지표의 Priority 고정은 등록 계정별 설정.
 - 계정 표시 설정 — 공통 표시 모드 하나와 프로바이더 계열별 관리형 계정 순서를 인증·레이아웃과 분리해 로컬 저장.
   순서는 안정적인 관리형 프로필 ID를 사용하므로 이름, 로그인이나 런타임 카드 ID가 바뀌어도 계정 위치 유지.
   초기 개발 빌드의 계열별 모드는 `openusage.accountCardPresentation.v1`의 `modesByFamily`에 저장.
@@ -284,7 +285,7 @@ Reset Watch 평가기의 입력은 조회 결과인 `receive`와 설정 변경�
 프로바이더 순서와 계정 순서는 각각 별도 관리.
 Accounts는 레이아웃의 프로바이더 계열 순서와 계열 내부 관리형 계정 순서 편집.
 All Usage는 두 순서를 합성해 등록 계정별 행과 현재 계정명 표시.
-메뉴 막대는 계정 표시 모드와 관계없이 프로바이더별 선택 계정 하나 사용.
+메뉴 막대는 모든 표시 계정에서 Running Out·Priority·Pinned Only 중 선택한 [표시 기준](/docs/menu-bar.md#표시-항목)에 따라 지표 선택.
 푸터의 Share Screenshot 선택기는 저장된 계정 표시 모드 사용.
 계정 줄의 Share Screenshot은 지정한 계정을 Separate Cards 방식으로 렌더링.
 제품 동작은 [대시보드](/docs/dashboard.md)와 [계정](/docs/accounts.md) 참조.

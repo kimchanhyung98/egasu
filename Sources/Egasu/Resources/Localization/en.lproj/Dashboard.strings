@@ -110,3 +110,16 @@
 "No usage to show. Check visible metrics in Accounts." = "No usage to show. Check visible metrics in Accounts.";
 
 "%d days, %@ to %@, peak %@." = "%d days, %@ to %@, peak %@.";
+
+"%lld more" = "%lld more";
+"All Clear" = "All Clear";
+"Fix" = "Fix";
+"Needs Attention" = "Needs Attention";
+"No Reported Limits" = "No Reported Limits";
+"Nothing is running out." = "Nothing is running out.";
+"Out in %@" = "Out in %@";
+"Pinned" = "Pinned";
+"Running Out" = "Running Out";
+"Use It or Lose It" = "Use It or Lose It";
+"Used Up" = "Used Up";
+"View All Usage" = "View All Usage";

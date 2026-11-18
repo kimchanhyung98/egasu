@@ -86,7 +86,7 @@ final class AccountCardLayoutSharingTests: XCTestCase {
         )
     }
 
-    func testProviderReorderIncludesANewAccountRuntimeInTheFamilyBlockAndPinnedOrdinal() {
+    func testProviderReorderKeepsTheAccountBlockAndExistingPriorityPins() {
         let defaults = makeDefaults("ReorderNewAccountRuntime")
         saveStored(["claude", "codex", "cursor"], forKey: "layout.providerOrder", in: defaults)
         let snapshotID = "claude@profile-b"
@@ -120,16 +120,16 @@ final class AccountCardLayoutSharingTests: XCTestCase {
             defaultExpandedMetricIDs: []
         )
         for metricID in ["claude.session", "codex.session", "cursor.session"] {
-            store.setPinned(true, for: metricID)
+            store.setMetric(metricID, pinned: true)
         }
 
         XCTAssertEqual(store.providerOrder, ["claude", "codex", "cursor"])
         XCTAssertTrue(store.reorderProvider(dragged: "cursor", target: "claude"))
 
         XCTAssertEqual(store.providerOrder, ["cursor", "claude", snapshotID, "codex"])
-        XCTAssertEqual(store.pinnedGroups.map(\.provider.id), ["cursor", "claude", snapshotID, "codex"])
+        XCTAssertEqual(store.priorityPinIDs, ["claude.session", "codex.session", "cursor.session"])
         let menuBarIDs = DashboardUsageAccountSelection.visibleCardIDs(
-            orderedCardIDs: store.pinnedGroups.map(\.provider.id),
+            orderedCardIDs: store.displayGroups.map(\.provider.id),
             familyCardIDs: ["claude", snapshotID],
             selectedCardID: snapshotID
         )
@@ -185,8 +185,8 @@ final class AccountCardLayoutSharingTests: XCTestCase {
         let layout = makeStore(defaults: defaults, includesCodexAccountCard: true)
         layout.setMetricEnabled("codex.session", true)
         layout.setMetricEnabled("codex.trend", true)
-        layout.setPinned(true, for: "claude.session")
-        layout.setPinned(true, for: "codex.session")
+        layout.setMetric("claude.session", pinned: true)
+        layout.setMetric("codex.session", pinned: true)
         XCTAssertTrue(layout.setProviderExpanded(true, for: "claude"))
         XCTAssertTrue(layout.setProviderExpanded(true, for: "codex"))
         DashboardUsageAccountSelection.select(cardID, for: "claude", defaults: defaults)
@@ -224,7 +224,7 @@ final class AccountCardLayoutSharingTests: XCTestCase {
         let providerOrder = layout.providerOrder
         let placed = layout.placed
         let metricOrder = layout.metricOrderByProvider
-        let pins = layout.pinnedMetricIDs
+        let pins = layout.priorityPinIDs
         let expandedMetrics = layout.expandedMetricIDs
         let expandOnEnable = layout.defaultExpandedOnEnableIDs
         let expandedProviders = layout.expandedProviderIDs
@@ -233,7 +233,7 @@ final class AccountCardLayoutSharingTests: XCTestCase {
         let persistedPlaced = persistence.loadPlaced()
         let persistedProviderOrder = persistence.loadProviderOrder()
         let persistedMetricOrder = persistence.loadMetricOrder()
-        let persistedPins = persistence.loadPins()
+        let persistedPins = persistence.loadPriorityPins()
         let persistedExpandedMetrics = persistence.loadExpandedMetrics()
         let persistedExpandOnEnable = persistence.loadExpandOnEnable()
         let persistedExpandedProviders = persistence.loadExpandedProviders()
@@ -284,7 +284,7 @@ final class AccountCardLayoutSharingTests: XCTestCase {
         XCTAssertEqual(layout.providerOrder, providerOrder)
         XCTAssertEqual(layout.placed, placed)
         XCTAssertEqual(layout.metricOrderByProvider, metricOrder)
-        XCTAssertEqual(layout.pinnedMetricIDs, pins)
+        XCTAssertEqual(layout.priorityPinIDs, pins)
         XCTAssertEqual(layout.expandedMetricIDs, expandedMetrics)
         XCTAssertEqual(layout.defaultExpandedOnEnableIDs, expandOnEnable)
         XCTAssertEqual(layout.expandedProviderIDs, expandedProviders)
@@ -292,7 +292,7 @@ final class AccountCardLayoutSharingTests: XCTestCase {
         XCTAssertEqual(persistence.loadPlaced(), persistedPlaced)
         XCTAssertEqual(persistence.loadProviderOrder(), persistedProviderOrder)
         XCTAssertEqual(persistence.loadMetricOrder(), persistedMetricOrder)
-        XCTAssertEqual(persistence.loadPins(), persistedPins)
+        XCTAssertEqual(persistence.loadPriorityPins(), persistedPins)
         XCTAssertEqual(persistence.loadExpandedMetrics(), persistedExpandedMetrics)
         XCTAssertEqual(persistence.loadExpandOnEnable(), persistedExpandOnEnable)
         XCTAssertEqual(persistence.loadExpandedProviders(), persistedExpandedProviders)
@@ -364,24 +364,22 @@ final class AccountCardLayoutSharingTests: XCTestCase {
         XCTAssertEqual(second, ["claude.session", "claude.trend"])
     }
 
-    func testFoldedMenuBarStarsStayWithinThePerProviderLimit() {
-        let defaults = makeDefaults("FoldStars")
+    func testLegacyStarsMigrateWithoutTheRetiredProviderCap() {
+        let defaults = makeDefaults("MigrateStars")
         defaults.set(
             ["\(cardID).today", "claude.session", "\(cardID).trend"],
             forKey: "layout.menuBarPins"
         )
-
         let store = makeStore(defaults: defaults)
 
+        XCTAssertEqual(store.migrateMenuBarStars(), 4)
+        XCTAssertEqual(store.priorityPinIDs, [
+            "claude.session", "\(cardID).session", "claude.today", "claude.trend"
+        ])
         XCTAssertEqual(
-            store.pinnedMetricIDs,
-            ["claude.session", "claude.trend"],
-            "folding three card stars keeps the first two in metric order"
-        )
-        XCTAssertEqual(
-            LayoutPersistence(defaults: defaults, storageKey: "layout").loadPins().map(Set.init),
-            ["claude.session", "claude.trend"]
-        )
+            LayoutPersistence(defaults: defaults, storageKey: "layout").loadPriorityPins().map(Set.init),
+            store.priorityPinIDs)
+        XCTAssertNil(store.migrateMenuBarStars(), "저장된 Priority 고정은 다시 이전하지 않음")
     }
 
     // MARK: - Fixtures

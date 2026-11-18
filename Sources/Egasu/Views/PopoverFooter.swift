@@ -32,11 +32,6 @@ struct PopoverFooter: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-            } else if screen == .accounts, let notice = layout.pinLimitNotice {
-                Text(notice)
-                    .font(.caption2)
-                    .foregroundStyle(Theme.notice)
-                    .denyShake(trigger: layout.pinNoticeShakeTrigger, shakeOnAppear: true)
             } else {
                 EmptyView()
             }
@@ -53,7 +48,6 @@ struct PopoverFooter: View {
             }
         }
         .animation(Motion.spring, value: layout.shareConfirmation)
-        .animation(Motion.spring, value: layout.pinLimitNotice)
     }
 
     /// 원형 ⋯ 버튼 뒤 Options 메뉴. Check for Updates…는 항상 표시하고 Sparkle이 확인할 수 없으면 비활성.
@@ -149,13 +143,7 @@ struct PopoverFooter: View {
     private var footerIdentity: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("egasu \(AppInfo.version)")
-            if let notice = layout.pinLimitNotice {
-                Text(notice)
-                    .foregroundStyle(Theme.notice)
-                    .denyShake(trigger: layout.pinNoticeShakeTrigger, shakeOnAppear: true)
-            } else {
-                nextUpdateButton
-            }
+            nextUpdateButton
         }
         .font(.caption2)
         .foregroundStyle(.secondary)

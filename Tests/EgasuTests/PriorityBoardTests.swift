@@ -303,4 +303,10 @@ final class PriorityBoardTests: XCTestCase {
     private func account(_ id: String, lines: [DashboardLine]) -> DashboardAccount {
         DashboardAccount(provider: provider(id), providerName: id.capitalized, name: nil, lines: lines)
     }
+    func testMenuBarLimitFromCount() {
+        XCTAssertEqual(MenuBarLimit(count: 0), .iconOnly)
+        XCTAssertEqual(MenuBarLimit(count: 4), .upToFour)
+        XCTAssertEqual(MenuBarLimit(count: 9), .upToFive)
+    }
+
 }

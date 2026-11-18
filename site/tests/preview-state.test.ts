@@ -38,6 +38,7 @@ test('Web account entry stays available while native account management has its 
 test('Settings includes normal native rows and notification triggers', () => {
   const labels = new Set(settingGroups.flatMap((group) => group.rows.map((row) => row.label)));
   const hiddenEasterEggs = new Set(['Party Mode', 'Drunk Mode']);
+  const nativeOnlyRows = new Set(['All Usage Layout', 'Max Items In Menu Bar', 'Menu Bar Items', 'Show Extra Indicators']);
   const settingsSource = englishSource('Views/SettingsScreen.swift');
   assert.match(settingsSource, /\bLanguageSettingsRow\(selection:/);
   const nativeRows = [...settingsSource.matchAll(/row\("([^"]+)"\)/g)].map((match) => match[1]);
@@ -47,7 +48,7 @@ test('Settings includes normal native rows and notification triggers', () => {
   assert.ok(nativeRows.includes('Language'), 'The native row extractor must find the Language picker');
   assert.ok(nativeRows.includes('Show Total Spend'), 'The native row extractor must keep existing rows');
   for (const label of nativeRows) {
-    if (label !== 'All Usage Layout' && !hiddenEasterEggs.has(label)) assert.ok(labels.has(label), label);
+    if (!nativeOnlyRows.has(label) && !hiddenEasterEggs.has(label)) assert.ok(labels.has(label), label);
   }
   const milestones = englishSource('Support/PaceNotificationLogic.swift').split('var settingLabel: String')[1].split('var notificationTitle')[0];
   const milestoneLabels = [...milestones.matchAll(/(?:return|case \.\w+:)\s*"([^"]+)"/g)].map((match) => match[1]);

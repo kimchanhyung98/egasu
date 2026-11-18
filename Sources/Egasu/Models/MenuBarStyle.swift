@@ -1,7 +1,7 @@
 import Foundation
 
-/// menu-bar item의 pinned metric 렌더 방식 — `text` strip 또는 compact `bars` glyph.
-/// Settings에서 선택, `LayoutStore`가 persist — 기본값 `.bars`.
+/// 메뉴 막대 지표 표시 형식 — 텍스트 또는 막대.
+/// `DisplaySettingsStore`가 저장하며 기본값은 `.text`.
 enum MenuBarStyle: String, Hashable, Sendable, CaseIterable {
     case text
     case bars

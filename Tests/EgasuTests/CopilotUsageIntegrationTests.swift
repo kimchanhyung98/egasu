@@ -307,7 +307,7 @@ final class CopilotUsageIntegrationTests: XCTestCase {
         let ids = ["copilot.premium", "copilot.extra", "copilot.orgCredits", "copilot.orgSpend", "copilot.chat", "copilot.completions"]
         XCTAssertEqual(fixture.provider.widgetDescriptors.map(\.id), ids)
         XCTAssertEqual(fixture.layout.visiblePlaced.map(\.descriptorID), ids)
-        XCTAssertEqual(fixture.layout.pinnedGroups.flatMap(\.metrics).map(\.id), ["copilot.premium"])
+        XCTAssertTrue(fixture.layout.priorityPinIDs.isEmpty)
         XCTAssertEqual(fixture.layout.displayGroups.first?.alwaysShownWidgets.map(\.descriptorID), Array(ids.prefix(2)))
         XCTAssertEqual(fixture.layout.displayGroups.first?.expandedWidgets.map(\.descriptorID), Array(ids.dropFirst(2)))
         XCTAssertFalse(fixture.provider.widgetDescriptors.contains(where: \.isSpendTile))

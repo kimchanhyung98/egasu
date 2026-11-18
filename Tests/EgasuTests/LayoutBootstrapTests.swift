@@ -13,7 +13,6 @@ final class LayoutBootstrapTests: XCTestCase {
         )
 
         XCTAssertEqual(state.placed.map(\.descriptorID), ["claude.session", "claude.weekly"])
-        XCTAssertEqual(state.pinnedMetricIDs, ["claude.session"])
         XCTAssertEqual(state.expandedMetricIDs, ["claude.weekly"])
         XCTAssertEqual(state.seededDefaultsToPersist, ["claude.session", "claude.weekly"])
         XCTAssertTrue(state.shouldPersistExpanded)
@@ -59,7 +58,6 @@ final class LayoutBootstrapTests: XCTestCase {
         LayoutDefaultSet(
             metricIDs: ["claude.session", "claude.weekly"],
             migrationBaselineMetricIDs: ["claude.session", "claude.weekly"],
-            pinnedMetricIDs: ["claude.session"],
             expandedMetricIDs: ["claude.weekly"]
         )
     }

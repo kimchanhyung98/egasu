@@ -114,4 +114,23 @@ final class TelemetryPrivacyTests: XCTestCase {
         XCTAssertEqual(properties["enabled_providers"] as? [String], ["claude"])
         XCTAssertEqual(properties["enabled_metric_ids"] as? [String], ["claude.weekly"])
     }
+
+    func testDailyActiveKeepsSchemaThreeAndDropsRemovedLayoutFields() throws {
+        let properties = try XCTUnwrap(TelemetryPrivacy.properties(for: "app_daily_active", source: [
+            "schema_version": 3, "pinned_metric_ids": ["claude.session"],
+            "expanded_metric_ids": ["claude.weekly"], "menu_bar_style": "bars",
+        ]))
+        XCTAssertEqual(properties["schema_version"] as? Int, 3, "Priority 고정으로 바뀐 pinned_metric_ids를 이전 별표와 구분")
+        XCTAssertEqual(properties["pinned_metric_ids"] as? [String], ["claude.session"])
+        XCTAssertNil(properties["expanded_metric_ids"])
+        XCTAssertNil(properties["menu_bar_style"])
+    }
+
+    func testUnknownOrMissingSchemaVersionUsesTheBaseline() {
+        XCTAssertEqual(TelemetryPrivacy.properties(for: "app_daily_active", source: ["schema_version": 99])?["schema_version"] as? Int, 2)
+        XCTAssertEqual(TelemetryPrivacy.properties(for: "app_daily_active", source: [:])?["schema_version"] as? Int, 2)
+        XCTAssertEqual(TelemetryPrivacy.properties(for: "provider_refresh_daily", source: [
+            "provider_id": "codex", "schema_version": 2,
+        ])?["schema_version"] as? Int, 2)
+    }
 }

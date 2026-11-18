@@ -89,11 +89,9 @@ extension LayoutStore {
         displayGroups.flatMap(\.widgets).compactMap { descriptor(for: $0) }
     }
 
-    /// 외부 optional source를 구동하는 행 — dashboard 표시와 메뉴 막대 전용 pin을 순서대로 합치고 중복 제거.
+    /// 추가 데이터 조회에 사용할 표시 지표를 대시보드 순서로 반환.
     func orderedRefreshDescriptors() -> [WidgetDescriptor] {
-        var seen = Set<String>()
-        return (orderedRenderedDescriptors() + pinnedGroups.flatMap(\.metrics))
-            .filter { seen.insert($0.id).inserted }
+        orderedRenderedDescriptors()
     }
 
     /// enabled provider 전체와 각자가 지원하는 *모든* metric(저장된 metric 순서) — enabled/disabled 행
@@ -167,21 +165,6 @@ extension LayoutStore {
         return ordered.filter { !isExpandedMetric($0) }
             + [dividerID]
             + ordered.filter { isExpandedMetric($0) }
-    }
-
-    /// provider별로 묶인 pin된 metric(Customize 순서) — 일시 disabled provider는 렌더 그룹에서 빠지되
-    /// pin은 유지. 메뉴바 strip 구동.
-    var pinnedGroups: [ProviderMetrics] {
-        orderedProviders().compactMap { provider in
-            guard isProviderEnabled(provider.id) else { return nil }
-            // strip 순서를 Customize와 일치 — always-shown pin 먼저, expanded pin 다음.
-            let metrics = orderedSupportedMetrics(for: provider.id).filter { isPinned($0.id) }
-            return metrics.isEmpty ? nil : ProviderMetrics(
-                provider: provider,
-                alwaysShownMetrics: metrics.filter { !isExpandedMetric($0.id) },
-                expandedMetrics: metrics.filter { isExpandedMetric($0.id) }
-            )
-        }
     }
 
     /// provider header drag drop으로 provider 전체 reorder — 현재 표시 중(enabled) 순서 기준.

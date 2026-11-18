@@ -91,14 +91,8 @@ struct AccountMetricSettingsCard: View {
                 set: { layout.setMetricEnabled(metric.id, $0) }
             ),
             isPinned: Binding(
-                get: { layout.isPinned(metric.id) },
-                set: { pinned in
-                    if pinned && !layout.canPin(metric.id) {
-                        layout.notePinDenied(metric.id)
-                    } else {
-                        layout.setPinned(pinned, for: metric.id)
-                    }
-                }
+                get: { layout.isMetricPinned(metric.id) },
+                set: { layout.setMetric(metric.id, pinned: $0) }
             ),
             grip: { ReorderGrip().highPriorityGesture(metricDragGesture(for: metric)) }
         )
@@ -146,7 +140,7 @@ struct AccountMetricSettingsCard: View {
                     title: L10n.metrics(metric.title),
                     isPinnable: metric.pinnable,
                     isShown: .constant(layout.isMetricEnabled(metric.id)),
-                    isPinned: .constant(layout.isPinned(metric.id))
+                    isPinned: .constant(layout.isMetricPinned(metric.id))
                 ) { ReorderGrip() }
                 .liftedRowSurface()
                 return ReorderLift.make(
@@ -161,7 +155,7 @@ struct AccountMetricSettingsCard: View {
     }
 }
 
-/// 지표 한 행 — 기존 메뉴 막대 고정은 표시 여부와 독립, 고정할 수 없는 지표는 자리만 유지.
+/// 지표 한 행 — 표시 중인 지표만 Priority에 고정 가능, 고정 불가 지표는 자리 유지.
 struct AccountMetricRow<Grip: View>: View {
     let title: String
     let isPinnable: Bool
@@ -197,6 +191,7 @@ struct AccountMetricRow<Grip: View>: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(!isShown)
             .accessibilityLabel(isPinned ? L10n.accounts("Unpin %@", title) : L10n.accounts("Pin %@", title))
         } else {
             Color.clear.frame(width: 16, height: 22)

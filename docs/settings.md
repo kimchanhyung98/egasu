@@ -48,7 +48,10 @@
 
 | 설정 | 옵션 | 동작 |
 |---|---|---|
-| Icon Style(아이콘 스타일) | Text / Bars | 별표한 지표를 메뉴 막대에 그리는 방식.<br>기본값은 Bars.<br>[메뉴 막대](/docs/menu-bar.md) 참조. |
+| Icon Style(아이콘 스타일) | Text / Bars | 메뉴 막대 표시 방식, 저장값이 없으면 Text.<br>App Icon Only에서는 비활성. |
+| Max Items In Menu Bar | App Icon Only / Up to 1~5 | 기본 최대 3개.<br>App Icon Only는 항상 앱 아이콘만 표시. |
+| Menu Bar Items | Running Out / Priority / Pinned Only | 표시 기준을 저장한 적이 없으면 이전 Always Show In Menu Bar 설정이 켜진 경우 Priority, 그 외 Running Out.<br>App Icon Only에서는 비활성.<br>[표시 기준](/docs/menu-bar.md#표시-항목) 참조. |
+| Show Extra Indicators | 켜기 / 끄기 | 기본 켬.<br>넘친 항목 수와 업데이트 점 표시. |
 | Theme(테마) | System / Light / Dark | 팝오버에 적용할 앱 전체 화면 스타일 재정의. |
 | All Usage Layout | Minimal / Cards | Minimal은 프로바이더 안 계정 묶음(기본값), Cards는 계정별 독립 카드.<br>선택은 즉시 적용하며 앱 재실행 후에도 유지. |
 | Time Format(시간 형식) | Auto / 12-hour / 24-hour | 정확한 시각을 읽는 방식(예: "Resets today at 6:38 PM" 대 "18:38").<br>기본값은 24-hour, Auto는 시스템을 따름. |
@@ -129,7 +132,7 @@ Claude 또는 Codex 카드의 계정을 식별할 수 없는 경우, 계정 목�
 네 할당량 알림을 모두 꺼도 **Codex Reset Watch** 알림은 별도 설정에 따라 동작.
 여러 알림이 동시에 발생하면 하나의 그룹 배너로 묶임.
 
-**Codex Reset Watch**는 Codex 프로바이더가 켜져 있으면 지표 표시·메뉴 막대 별표 없이 알림만 사용 가능.
+**Codex Reset Watch**는 Codex 프로바이더가 켜져 있으면 지표 표시·Priority 고정 없이 알림만 사용 가능.
 처음 켠 뒤 조회에서 현재 유효한 이벤트를 확인한 경우도 통지 대상.
 기록이 남아 있는 공개 이벤트는 이 Mac에서 한 번 통지하며, 계정 수와 관계없이 같은 알림은 하나만 발생.
 같은 이벤트의 확률·투표율·예정 시각 수정으로 반복하지 않으며, 예측 이후 리셋 예정 정보를 확인하면 추가로 한 번 통지 가능.
@@ -152,7 +155,7 @@ Reset Watch의 부제목은 예측·예정 구분이며 계정명은 표시하�
 
 | 설정 | 옵션 | 동작 |
 |---|---|---|
-| Hide From Screen Share(화면 공유 중 숨기기) | 켜기 / 끄기 | 켜기(기본값)는 화면 공유·녹화를 감지하면 메뉴 막대 지표를 egasu 아이콘과 워드마크로 교체.<br>캡처 종료를 감지하면 별표 지표 복원.<br>감지 지연이나 미지원 캡처 방식으로 사용량이 노출될 수 있음.<br>[메뉴 막대](/docs/menu-bar.md#화면-공유-중-사용량-숨기기) 참조. |
+| Hide From Screen Share(화면 공유 중 숨기기) | 켜기 / 끄기 | 켜기(기본값)는 화면 공유·녹화를 감지하면 메뉴 막대 지표를 egasu 아이콘으로 교체.<br>캡처 종료를 감지하면 선택한 표시 복원.<br>감지 지연이나 미지원 캡처 방식으로 사용량이 노출될 수 있음.<br>[메뉴 막대](/docs/menu-bar.md#화면-공유-중-사용량-숨기기) 참조. |
 | Share Anonymous Usage(익명 사용량 공유) | 켜기 / 끄기 | 기본값은 끄기.<br>계정 정보·인증 정보·사용량 값 없이 일일 요약·제한된 실패/복구 진단·조건에 맞는 크래시 리포트 공유.<br>필드와 동의 동작은 [개인정보 및 사용 데이터](/docs/privacy.md) 참조. |
 
 ## Tokscale CLI 동기화
@@ -284,7 +287,7 @@ Bun은 있지만 사용 가능한 `bunx`가 없으면 재설치하지 않고 오
 
 앱 버전은 팝오버 푸터에 표시.
 
-설정은 업데이트 후에도 그대로 유지 — 레이아웃, 별표, 환경 설정, 메뉴 막대 단축키 모두 보존.
+업데이트 후에도 레이아웃, Priority 고정, 환경 설정, 메뉴 막대 단축키 유지.
 업데이트로 설정 저장 방식이 바뀌면 실행 시 기존 설정을 제자리에서 업그레이드하고, 중간 버전을 몇 개 건너뛰었다면 해당 단계도 순서대로 적용.
 초기화되는 것은 없음.
 (초기 베타는 업데이트마다 모든 설정을 지웠지만, 이제는 그렇지 않음.)

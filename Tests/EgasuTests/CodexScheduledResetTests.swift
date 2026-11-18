@@ -303,13 +303,16 @@ final class CodexScheduledResetTests: XCTestCase {
 
             for mode in [WidgetDisplayMode.used, .remaining] {
                 data.displayMode = mode
-                let content = MenuBarContentBuilder.build(
-                    groups: [ProviderMetrics(provider: provider, metrics: [descriptor])],
-                    data: { _ in data }, now: Self.now.addingTimeInterval(120)
+                let now = Self.now.addingTimeInterval(120)
+                let account = DashboardAccount(
+                    provider: provider, providerName: provider.displayName, name: nil,
+                    lines: [DashboardLine(descriptor: descriptor, data: data)]
                 )
-                let metric = try XCTUnwrap(content.groups.first?.metrics.first)
-                XCTAssertEqual(metric.value, "99%")
-                XCTAssertEqual(metric.fraction, 0.99, accuracy: 0.000_001)
+                let board = PriorityBoard.make(accounts: [account], pinned: [descriptor.id], now: now)
+                let content = MenuBarContentBuilder.build(board: board, limit: .upToThree, selection: .priority, now: now)
+                let item = try XCTUnwrap(content.items.first)
+                XCTAssertEqual(item.value, "99%")
+                XCTAssertEqual(try XCTUnwrap(item.fraction), 0.99, accuracy: 0.000_001)
                 XCTAssertEqual(content.nextInvalidation, scheduledFor?.addingTimeInterval(2 * 3_600))
             }
 

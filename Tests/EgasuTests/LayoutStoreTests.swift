@@ -87,20 +87,19 @@ final class LayoutStoreTests: XCTestCase {
 
     func testUndoReversesPinAndUnpin() {
         let store = makeStore("UndoPin")
-        // cursor.usage는 기본 활성이지만 mock에 cursor 기본 pin이 없어 unpinned 시작
         XCTAssertTrue(store.isMetricEnabled("cursor.usage"))
-        XCTAssertFalse(store.isPinned("cursor.usage"))
+        XCTAssertFalse(store.isMetricPinned("cursor.usage"))
 
-        store.setPinned(true, for: "cursor.usage")
-        XCTAssertTrue(store.isPinned("cursor.usage"))
+        store.setMetric("cursor.usage", pinned: true)
+        XCTAssertTrue(store.isMetricPinned("cursor.usage"))
         XCTAssertTrue(store.undo())
-        XCTAssertFalse(store.isPinned("cursor.usage"), "undo reverses a pin")
+        XCTAssertFalse(store.isMetricPinned("cursor.usage"), "undo reverses a pin")
 
-        XCTAssertTrue(store.isPinned("claude.weekly"))
-        store.setPinned(false, for: "claude.weekly")
-        XCTAssertFalse(store.isPinned("claude.weekly"))
+        store.setMetric("cursor.usage", pinned: true)
+        store.setMetric("cursor.usage", pinned: false)
+        XCTAssertFalse(store.isMetricPinned("cursor.usage"))
         XCTAssertTrue(store.undo())
-        XCTAssertTrue(store.isPinned("claude.weekly"), "undo reverses an unpin")
+        XCTAssertTrue(store.isMetricPinned("cursor.usage"), "undo reverses an unpin")
     }
 
     func testUndoReversesExpandedMove() {
@@ -137,15 +136,15 @@ final class LayoutStoreTests: XCTestCase {
     func testUndoWalksBackMultipleMixedSteps() {
         let store = makeStore("UndoMultiStep", hiddenMetricIDs: ["cursor.credits"])
         store.setMetricEnabled("cursor.credits", true)
-        store.setPinned(true, for: "cursor.usage")
+        store.setMetric("cursor.usage", pinned: true)
         store.setMetricEnabled("claude.session", false)
 
         XCTAssertTrue(store.undo())
         XCTAssertTrue(store.isMetricEnabled("claude.session"))
-        XCTAssertTrue(store.isPinned("cursor.usage"))
+        XCTAssertTrue(store.isMetricPinned("cursor.usage"))
 
         XCTAssertTrue(store.undo())
-        XCTAssertFalse(store.isPinned("cursor.usage"))
+        XCTAssertFalse(store.isMetricPinned("cursor.usage"))
         XCTAssertTrue(store.isMetricEnabled("cursor.credits"))
 
         XCTAssertTrue(store.undo())
@@ -172,7 +171,7 @@ final class LayoutStoreTests: XCTestCase {
         var pinned = false
         for _ in 0..<(LayoutUndoHistory.maxDepth + 10) {
             pinned.toggle()
-            store.setPinned(pinned, for: "claude.weekly")
+            store.setMetric("claude.weekly", pinned: pinned)
         }
         var steps = 0
         while store.undo() { steps += 1 }
@@ -680,7 +679,7 @@ final class LayoutStoreTests: XCTestCase {
         XCTAssertTrue(store.isMetricEnabled("claude.sonnet"))
         XCTAssertTrue(store.isMetricEnabled("claude.last30"))
         XCTAssertTrue(store.isMetricEnabled("codex.resetWatch"))
-        XCTAssertFalse(store.isPinned("codex.resetWatch"))
+        XCTAssertFalse(store.isMetricPinned("codex.resetWatch"))
         XCTAssertTrue(store.isMetricEnabled("codex.spark"))
         XCTAssertTrue(store.isMetricEnabled("codex.sparkWeekly"))
         XCTAssertTrue(store.isMetricEnabled("codex.credits"))
@@ -741,7 +740,7 @@ final class LayoutStoreTests: XCTestCase {
         XCTAssertEqual(Array(store.orderedSupportedMetrics(for: "claude").map(\.id).prefix(2)), [
             "claude.weekly", "claude.session"
         ])
-        XCTAssertTrue(store.pinnedMetricIDs.isEmpty)
+        XCTAssertTrue(store.priorityPinIDs.isEmpty)
         XCTAssertEqual(store.expandedMetricIDs, ["claude.weekly"])
     }
 
@@ -776,35 +775,36 @@ final class LayoutStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.orderedSupportedMetrics(for: "claude").map(\.id).first, "claude.extra")
     }
 
-    func testFreshStoreSeedsDefaultPins() {
-        let store = makeStore("SeedPins")
-        let expected = Set(DefaultLayout.pinnedMetricIDs.filter { MockData.descriptor($0) != nil })
-
-        XCTAssertFalse(expected.isEmpty, "fixture registry should know some default-pinned metrics")
-        XCTAssertEqual(store.pinnedMetricIDs, expected)
+    func testFreshStoreStartsWithoutPriorityPins() {
+        XCTAssertTrue(makeStore("NoPins").priorityPinIDs.isEmpty)
     }
 
-    func testUnpinningEverythingPersistsAndIsNotReseeded() {
-        let defaults = makeDefaults("UnpinAll")
+    func testPriorityPinsPersistAcrossReload() {
+        let defaults = makeDefaults("PinsReload")
         let store = LayoutStore(registry: .mock, defaults: defaults, storageKey: "layout")
-        XCTAssertFalse(store.pinnedMetricIDs.isEmpty)
+        store.setMetric("cursor.usage", pinned: true)
+        XCTAssertTrue(LayoutStore(registry: .mock, defaults: defaults, storageKey: "layout").isMetricPinned("cursor.usage"))
 
-        for id in store.pinnedMetricIDs { store.setPinned(false, for: id) }
-        XCTAssertTrue(store.pinnedMetricIDs.isEmpty)
-
+        store.setMetric("cursor.usage", pinned: false)
         let reloaded = LayoutStore(registry: .mock, defaults: defaults, storageKey: "layout")
-        XCTAssertTrue(reloaded.pinnedMetricIDs.isEmpty, "an explicitly emptied pin set must not be reseeded")
+        XCTAssertTrue(reloaded.priorityPinIDs.isEmpty, "비운 고정은 다시 채우지 않음")
     }
 
-    func testResetToDefaultRestoresDefaultPins() {
-        let store = makeStore("ResetPins")
-        for id in store.pinnedMetricIDs { store.setPinned(false, for: id) }
-        XCTAssertTrue(store.pinnedMetricIDs.isEmpty)
+    func testResetToDefaultClearsPriorityPins() {
+        let defaults = makeDefaults("ResetPins")
+        let persistence = LayoutPersistence(defaults: defaults, storageKey: "layout")
+        persistence.savePins(["claude.session"])
+        let store = LayoutStore(registry: .mock, defaults: defaults, storageKey: "layout")
+        XCTAssertEqual(store.migrateMenuBarStars(), 1)
+        XCTAssertTrue(store.isMetricPinned("claude.session"))
 
         store.resetToDefault()
 
-        let expected = Set(DefaultLayout.pinnedMetricIDs.filter { MockData.descriptor($0) != nil })
-        XCTAssertEqual(store.pinnedMetricIDs, expected)
+        XCTAssertTrue(store.priorityPinIDs.isEmpty)
+        XCTAssertEqual(persistence.loadPins(), ["claude.session"])
+        let reloaded = LayoutStore(registry: .mock, defaults: defaults, storageKey: "layout")
+        XCTAssertNil(reloaded.migrateMenuBarStars(), "초기화한 고정을 이전 별표로 다시 채우지 않음")
+        XCTAssertTrue(reloaded.priorityPinIDs.isEmpty)
     }
 
     func testProviderReorderMovesAnAbsentAccountCardWithItsFamily() {
@@ -1216,21 +1216,21 @@ final class LayoutStoreTests: XCTestCase {
 
         // reset이 복원할 모든 차원에서 Claude를 default와 다르게 변경
         store.setMetricEnabled("claude.weekly", true)
-        store.setPinned(true, for: "claude.weekly")
+        store.setMetric("claude.weekly", pinned: true)
         store.setProviderExpanded(true, for: "claude")
         store.reorderMetric(dragged: "claude.extra", target: "claude.session", in: "claude")
 
         // Claude reset이 건드리면 안 되는 Codex도 변경
         store.setMetricEnabled("codex.weekly", true)
-        store.setPinned(true, for: "codex.weekly")
+        store.setMetric("codex.weekly", pinned: true)
 
         store.resetProvider("claude")
 
-        // Claude: enabled set·metric 순서·pin·expanded 상태 모두 default 복원
+        // Claude 표시·순서·펼침 복원, Priority 고정 해제.
         XCTAssertTrue(store.isMetricEnabled("claude.session"))
         XCTAssertFalse(store.isMetricEnabled("claude.weekly"))
-        XCTAssertTrue(store.isPinned("claude.session"))
-        XCTAssertFalse(store.isPinned("claude.weekly"))
+        XCTAssertFalse(store.isMetricPinned("claude.session"), "프로바이더 초기화는 Priority 고정을 비움")
+        XCTAssertFalse(store.isMetricPinned("claude.weekly"))
         XCTAssertFalse(store.isProviderExpanded("claude"))
         XCTAssertEqual(
             store.orderedSupportedMetrics(for: "claude").map(\.id),
@@ -1239,7 +1239,7 @@ final class LayoutStoreTests: XCTestCase {
 
         // Codex는 영향 없음
         XCTAssertTrue(store.isMetricEnabled("codex.weekly"))
-        XCTAssertTrue(store.isPinned("codex.weekly"))
+        XCTAssertTrue(store.isMetricPinned("codex.weekly"))
 
         // provider 순서 유지 — contents-only reset
         XCTAssertEqual(store.customizeGroups.map(\.provider.id), orderBefore)

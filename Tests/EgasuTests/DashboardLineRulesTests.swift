@@ -48,6 +48,88 @@ final class DashboardLineRulesTests: XCTestCase {
         }
     }
 
+    func testPinnedQuotasFollowMissingRetainedAndRecoveredReadingsWithoutChangingSavedOrder() async throws {
+        let provider = Provider(id: "test", displayName: "Test", icon: .providerMark("codex"))
+        let descriptors = ["Session", "Weekly"].map {
+            WidgetDescriptor.percent(id: "test.\($0.lowercased())", provider: provider, title: $0)
+        }
+        let registry = WidgetRegistry(providers: [provider], descriptors: descriptors)
+        let now = Date()
+        func success(weekly: Double?) -> ProviderSnapshot {
+            var lines: [MetricLine] = [.progress(label: "Session", used: 10, limit: 100, format: .percent)]
+            if let weekly { lines.append(.progress(label: "Weekly", used: weekly, limit: 100, format: .percent)) }
+            return .make(provider: provider, plan: nil, lines: lines, refreshedAt: now)
+        }
+        let failure = ProviderSnapshot.error(provider: provider, message: "Sign in again")
+        let runtime = SequenceProviderRuntime(provider: provider, descriptors: descriptors, snapshots: [
+            failure, success(weekly: 20), failure, success(weekly: nil), success(weekly: 87), success(weekly: 20)
+        ])
+        let suite = "EgasuTests.PinnedReadings.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let layout = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
+        layout.setMetric("test.session", pinned: true)
+        layout.setMetric("test.weekly", pinned: true)
+        XCTAssertTrue(layout.reorderMetric(dragged: "test.weekly", target: "test.session", in: provider.id))
+        let savedOrder = ["test.weekly", "test.session"]
+        let store = WidgetDataStore(
+            registry: registry, providers: [runtime],
+            cache: ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshot", ttl: 600),
+            defaults: defaults, now: { now }
+        )
+        func board() throws -> PriorityBoard {
+            let group = try XCTUnwrap(layout.displayGroups.first)
+            let account = DashboardAccount(
+                provider: provider, providerName: provider.displayName, name: nil,
+                lines: group.widgets.compactMap { layout.descriptor(for: $0) }
+                    .map { DashboardLine(descriptor: $0, data: store.data(for: $0)) }
+            )
+            let family = DashboardFamily(id: provider.id, provider: provider, displayName: provider.displayName, accounts: [account])
+            XCTAssertTrue(family.isVisible(headerNotice: store.headerNotice(for:)))
+            XCTAssertEqual(layout.priorityPinIDs, Set(savedOrder))
+            XCTAssertEqual(group.widgets.map(\.descriptorID), savedOrder)
+            return store.priorityBoard(accounts: family.accounts, pinned: layout.priorityPinIDs, now: now)
+        }
+
+        await store.refreshAll(force: true)
+        let missing = try board()
+        XCTAssertTrue(missing.pinned.isEmpty)
+        XCTAssertEqual(missing.notices.map(\.id), [provider.id])
+        XCTAssertFalse(missing.showsClearRow)
+        XCTAssertTrue(MenuBarContentBuilder.build(board: missing, limit: .upToThree, selection: .pinnedOnly, now: now).isEmpty)
+
+        await store.refreshAll(force: true)
+        let loaded = try board()
+        XCTAssertEqual(loaded.pinned.map(\.id), savedOrder)
+        XCTAssertTrue(loaded.showsClearRow)
+
+        await store.refreshAll(force: true)
+        let retained = try board()
+        XCTAssertEqual(retained.pinned.map(\.id), savedOrder)
+        XCTAssertEqual(retained.pinned.map { $0.data.used }, [20, 10])
+        XCTAssertEqual(retained.notices.map(\.id), [provider.id])
+        XCTAssertFalse(retained.showsClearRow)
+
+        await store.refreshAll(force: true)
+        XCTAssertEqual(try board().pinned.map(\.id), ["test.session"], "보고가 빠진 한도만 숨기며 고정 설정은 유지")
+
+        await store.refreshAll(force: true)
+        let recovered = try board()
+        XCTAssertEqual(recovered.pinned.map(\.id), savedOrder)
+        XCTAssertTrue(recovered.notices.isEmpty)
+        XCTAssertEqual(recovered.runningOut.map(\.id), ["test.weekly"])
+        XCTAssertTrue(recovered.attention.isEmpty)
+        XCTAssertFalse(recovered.showsClearRow)
+        XCTAssertEqual(MenuBarContentBuilder.build(board: recovered, limit: .upToThree, selection: .pinnedOnly, now: now).items.map(\.id), savedOrder)
+
+        await store.refreshAll(force: true)
+        XCTAssertTrue(try board().showsClearRow)
+        let reloaded = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
+        XCTAssertEqual(reloaded.priorityPinIDs, Set(savedOrder))
+        XCTAssertEqual(reloaded.displayGroups.first?.widgets.map(\.descriptorID), savedOrder)
+        XCTAssertEqual(runtime.refreshCount, 6)
+    }
+
     func testEmptyFamilyWithoutANoticeStaysHidden() {
         let provider = Provider(id: "kimi", displayName: "Kimi", icon: .providerMark("kimi"))
         let family = DashboardFamily(
@@ -62,6 +144,20 @@ final class DashboardLineRulesTests: XCTestCase {
         XCTAssertFalse(line(hasData: false).isVisible, "데이터 없는 한도·값 행은 숨김")
         XCTAssertTrue(line(hasData: false) { $0.isUsagePeriod = true }.isVisible, "기간 행은 No data로 유지")
         XCTAssertTrue(line(hasData: false) { $0.isChart = true }.isVisible, "차트 행은 No data로 유지")
+    }
+
+    func testPriorityAmountUsesTheReportedUnboundedValue() {
+        let provider = Provider(id: "openrouter", displayName: "OpenRouter", icon: .providerMark("openrouter"))
+        let descriptor = WidgetDescriptor.values(id: "openrouter.balance", provider: provider, title: "Balance")
+        let snapshot = ProviderSnapshot.make(
+            provider: provider, plan: nil,
+            lines: [.values(label: descriptor.metricLabel, values: [.init(number: 42.5, kind: .dollars)])],
+            refreshedAt: Date()
+        )
+        let data = WidgetDataResolver.resolve(descriptor, snapshot: snapshot, codexResetWatch: .init())
+
+        XCTAssertEqual(data.used, 0)
+        XCTAssertEqual(data.amountText, "$42.50")
     }
 
     func testResetExpiryRowNeedsAnAvailableCredit() {

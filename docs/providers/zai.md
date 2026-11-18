@@ -81,7 +81,7 @@ egasu의 Z.ai 조회에는 사용자가 제공한 API 키 필요.
 5. **Add Account** 선택.
 
 조회에 성공하면 대시보드에 사용량 표시.
-메뉴 막대에도 표시하려면 Accounts 상세에서 해당 지표 고정.
+지표를 고정하고 **Menu Bar Items**에서 **Priority** 또는 **Pinned Only**를 선택하면 메뉴 막대 표시 대상에 포함.
 
 ### 환경 변수로 키 제공
 

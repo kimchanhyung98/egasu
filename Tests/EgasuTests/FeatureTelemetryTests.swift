@@ -26,7 +26,7 @@ final class FeatureTelemetryTests: XCTestCase {
             store.enabled = true
             let sink = self.sink, clock = self.clock
             recorder = TelemetryRecorder(sink: sink, store: store, snapshot: {
-                TelemetryConfigSnapshot(enabledProviders: ["claude"], enabledMetricIDs: [], pinnedMetricIDs: [], expandedMetricIDs: [], menuBarStyle: "text")
+                TelemetryConfigSnapshot(enabledProviders: ["claude"], enabledMetricIDs: [], pinnedMetricIDs: [])
             }, now: { clock.value })
         }
         func cleanUp() { recorder.stopDiagnostics(); defaults.removePersistentDomain(forName: suite) }

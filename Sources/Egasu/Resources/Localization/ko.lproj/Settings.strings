@@ -151,3 +151,10 @@
 "All Usage Layout" = "전체 사용량 레이아웃";
 "Cards" = "카드";
 "Minimal" = "미니멀";
+
+"App Icon Only" = "앱 아이콘만";
+"Max Items In Menu Bar" = "메뉴 막대 최대 항목";
+"Menu Bar Items" = "메뉴 막대 표시 항목";
+"Pinned Only" = "고정한 지표만";
+"Show Extra Indicators" = "추가 표시";
+"Up to %d" = "최대 %d개";

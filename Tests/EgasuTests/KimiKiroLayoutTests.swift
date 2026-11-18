@@ -15,9 +15,7 @@ final class KimiKiroLayoutTests: XCTestCase {
         XCTAssertEqual(store.placed.map(\.descriptorID), [
             "kimi.session", "kimi.weekly", "kimi.total", "kimi.extra", "kimi.extraBalance", "kiro.credits"
         ])
-        XCTAssertEqual(store.pinnedMetricIDs, [
-            "kimi.weekly", "kiro.credits"
-        ])
+        XCTAssertTrue(store.priorityPinIDs.isEmpty)
 
         let kimi = store.customizeGroups.first { $0.provider.id == "kimi" }
         XCTAssertEqual(
@@ -52,7 +50,39 @@ final class KimiKiroLayoutTests: XCTestCase {
         for current in [store, relaunched] {
             XCTAssertEqual(current.customizeGroups.first { $0.provider.id == "kimi" }?.metrics.map(\.id), expectedOrder)
             XCTAssertEqual(current.placed.map(\.descriptorID), expectedOrder.filter { $0 != "kimi.weekly" })
-            XCTAssertEqual(current.pinnedMetricIDs, ["kimi.weekly"])
+            XCTAssertTrue(current.priorityPinIDs.isEmpty)
         }
+    }
+    func testRemovingCodeMetricPreservesOtherVisibilityOrderAndPinsAcrossRelaunch() {
+        let suiteName = "EgasuTests.KimiKiroLayout.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let provider = KimiProvider()
+        let registry = WidgetRegistry.from([provider])
+        var oldDescriptors = registry.descriptors.filter { $0.id != "kimi.monthlyCode" }
+        oldDescriptors.insert(
+            .values(id: "kimi.monthlyCode", provider: provider.provider, title: "Monthly Code", selection: .kind(.percent))
+                .exportingLimit("monthlyCode", unit: "percent", source: .value(kind: .percent)),
+            at: 3
+        )
+        let oldRegistry = WidgetRegistry(providers: registry.providers, descriptors: oldDescriptors)
+        let store = LayoutStore(registry: oldRegistry, defaults: defaults, storageKey: "layout")
+        XCTAssertTrue(store.reorderMetric(dragged: "kimi.extraBalance", target: "kimi.total", in: "kimi"))
+        store.setMetricEnabled("kimi.weekly", false)
+        store.setMetric("kimi.total", pinned: true)
+        store.setMetric("kimi.monthlyCode", pinned: true)
+        let expectedOrder = store.accountSettingsMetrics(for: "kimi").map(\.id).filter { $0 != "kimi.monthlyCode" }
+
+        store.replaceRegistry(registry)
+        let relaunched = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
+
+        for current in [store, relaunched] {
+            XCTAssertEqual(current.accountSettingsMetrics(for: "kimi").map(\.id), expectedOrder)
+            XCTAssertEqual(current.placed.map(\.descriptorID), expectedOrder.filter { $0 != "kimi.weekly" })
+            XCTAssertTrue(current.isMetricPinned("kimi.total"))
+            XCTAssertFalse(current.isMetricPinned("kimi.monthlyCode"))
+            XCTAssertFalse(current.isMetricEnabled("kimi.monthlyCode"))
+        }
+        XCTAssertEqual(defaults.stringArray(forKey: "layout.disabledMetrics"), ["kimi.weekly"])
     }
 }

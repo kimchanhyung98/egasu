@@ -3,10 +3,17 @@ import XCTest
 
 @MainActor
 final class PopoverScreenTests: XCTestCase {
-    func testStartsOnAllUsageBeforeThePriorityScreenIsConnected() {
-        let state = PopoverState()
+    func testLaunchTabUsesStoredPreferenceOrPriorityDefault() throws {
+        let suiteName = "EgasuTests.PopoverScreen.InitialTab.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let state = PopoverState(defaults: defaults)
         XCTAssertEqual(state.screen, .dashboard)
-        XCTAssertEqual(state.dashboardTab, .allUsage)
+        XCTAssertEqual(state.dashboardTab, .priority)
+
+        defaults.set(DashboardTab.allUsage.rawValue, forKey: DashboardTab.defaultKey)
+        XCTAssertEqual(PopoverState(defaults: defaults).dashboardTab, .allUsage)
     }
 
     func testStartsOnDashboardPriority() {
@@ -219,7 +226,7 @@ final class PopoverScreenTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        XCTAssertEqual(DashboardTab.preferred(in: defaults), .allUsage)
+        XCTAssertEqual(DashboardTab.preferred(in: defaults), .priority)
         defaults.set(DashboardTab.allUsage.rawValue, forKey: DashboardTab.defaultKey)
         XCTAssertEqual(DashboardTab.preferred(in: defaults), .allUsage)
     }

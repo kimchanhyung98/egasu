@@ -74,6 +74,13 @@ extension WidgetData {
         return (valuePrefix ?? "") + MetricFormatter.number(displayedValue, kind: kind, style: .row)
     }
 
+    /// Priority 행의 값. Used·Left를 바꿀 수 있는 지표에는 사용·잔여 단어 추가.
+    var amountText: String {
+        if !isBounded, !selectedValues.isEmpty { return valueText }
+        return hasMeterStyleToggle
+            ? MetricFormatter.usageValue(gridValueText, word: displayMode == .used ? "used" : "left") : gridValueText
+    }
+
     /// 초기화 열의 짧은 표기 — 카운트다운("3h 5m") 또는 시각("토 02:59").
     func compactResetText(now: Date = Date()) -> String? {
         if let forecast {
