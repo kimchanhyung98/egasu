@@ -1,9 +1,9 @@
+import { providerMetrics } from './metrics.ts';
+import { providers } from './providers.ts';
 // 앱 재현 그래픽의 데모 입력값과 파생 규칙.
 // 원칙 — 손으로 적는 것은 앱이 실제로 받는 입력뿐이고, 화면에 보이는 문자열은 전부 여기서 계산.
 // 라벨을 직접 적으면 상태가 늘어날 때마다 어긋남.
-import { providerMetrics } from './metrics';
-import { providers } from './providers';
-import { cards } from './dashboard';
+import { cards } from './dashboard.ts';
 
 // ---------- 포맷터. 전부 en_US 고정 — 앱이 로케일과 무관하게 en_US로 찍음 ----------
 
@@ -118,8 +118,8 @@ export function boundedView(r: BoundedRow, mode: 'used' | 'left') {
 
 export const appVersion = '1.0.0';
 
-export type { QuickLink, Card } from './dashboard';
-export { cards } from './dashboard';
+export type { QuickLink, Card } from './dashboard.ts';
+export { cards } from './dashboard.ts';
 
 // ---------- Total Spend 카드 ----------
 
@@ -243,10 +243,10 @@ export function spendView(period: SpendPeriodId, metric: SpendMetricId): SpendVi
 
 // ---------- 메뉴 막대 스트립 ----------
 
-// 별표된 지표만 올라감. 기본은 provider마다 Weekly 하나.
+// 기본 Running Out 선택의 공개 한도 예시. Used Up는 제외.
 const stripGroups = cards.filter((card) => card.provider === 'claude' || card.provider === 'codex').map((card) => ({
   icon: card.icon,
-  fractions: card.always.flatMap((row) => row.kind === 'bounded' && providerMetrics[card.provider].alwaysVisible.some((metric) => metric.starred && metric.title === row.label) ? [row.used / row.limit] : []),
+  fractions: card.always.flatMap((row) => row.kind === 'bounded' && row.used / row.limit >= 0.7 && row.used < row.limit ? [row.used / row.limit] : []),
 }));
 
 export const strip = {
@@ -254,14 +254,6 @@ export const strip = {
   bars: stripGroups.flatMap((group) => group.fractions),
 };
 
-// ---------- Customize L1 ----------
-
-// 부제의 metrics 수는 켜진 수가 아니라 provider가 가진 전체 지표 수 —
-// LayoutStore+Customization.metricCount = registry.descriptors(for:).count.
-// metrics.ts의 선언 목록에서 세므로 지표가 늘면 목록과 수가 같이 움직임.
-// 앱은 항상 복수형 "N metrics"로 찍고 단수 분기가 없음(ProviderListRow.swift:31).
-// 켜짐 여부는 최초 실행 시 Mac에서 발견된 도구에 따라 정해지는 사용자 상태(ProviderEnablementStore).
-// 여기서는 앱 실제 화면과 같은 조합(Claude·Codex·Antigravity)을 씀.
 const enabledProviders = new Set(['claude', 'codex', 'antigravity']);
 
 export const customize = providers.map((p) => ({

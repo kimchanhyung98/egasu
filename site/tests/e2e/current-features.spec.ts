@@ -1,10 +1,10 @@
-import { test, expect, openHome, openSettings, chooseSetting } from './fixtures';
+import { test, expect, openHome, openSettings, chooseSetting, allUsage } from './fixtures';
 
 test('Reset Watch keeps probability and votes when usage flips, and shares time preferences', async ({ page }) => {
   await openHome(page);
+  await allUsage(page);
   const app = page.locator('[data-mock]');
   const codex = app.locator('[data-card="codex-account-1"]');
-  await codex.getByRole('button', { name: 'Show more', exact: true }).click();
   const forecast = codex.locator('[data-metric="codex.resetWatch"]');
   await expect(forecast).toContainText('65% chance');
   await expect(forecast).toContainText('72% expect a reset');
@@ -27,6 +27,7 @@ test('Reset Watch keeps probability and votes when usage flips, and shares time 
 
 test('Soft Limit validates percentages, mirrors its guide, and keeps forecast meters separate', async ({ page }) => {
   await openHome(page);
+  await allUsage(page);
   const app = page.locator('[data-mock]');
   const weekly = app.locator('[data-card="claude-account-1"] [data-metric="claude.weekly"]');
   await expect(weekly.locator('.am-soft-marker')).toBeHidden();
@@ -98,13 +99,14 @@ test('unused allowance reminders preserve their choice without enabling other al
 
 test('dashboard context menu confirms the selected account before switching', async ({ page }) => {
   await openHome(page);
+  await allUsage(page);
   const app = page.locator('[data-mock]');
   await openSettings(page);
   await chooseSetting(page, 'Usage Cards', 'Single Card');
   await app.getByRole('button', { name: 'Back', exact: true }).click();
   await chooseSetting(page, 'Claude Account', 'Account 2');
   const card = app.locator('[data-card="claude-account-2"]');
-  await card.locator('.am-head').click({ button: 'right' });
+  await card.locator('[data-account-actions-trigger]').click({ button: 'right' });
   const action = card.getByRole('menuitem', { name: 'Use Claude: Account 2', exact: true });
   await expect(action).toBeEnabled();
   await action.click();
@@ -118,11 +120,12 @@ test('dashboard context menu confirms the selected account before switching', as
   await expect(card).toHaveAttribute('data-inactive-account', 'false');
   await card.getByRole('button', { name: 'Claude Account', exact: true }).press('Shift+F10');
   await expect(action).toBeDisabled();
-  await expect(card.getByRole('menuitem', { name: 'Refresh Claude', exact: true })).toBeFocused();
+  await expect(card.getByRole('menuitem', { name: 'Refresh', exact: true })).toBeFocused();
 });
 
-test('text-only account cards keep context menus and restore focus to their headers', async ({ page }) => {
+test('text-only accounts keep context menus and restore focus to their headers', async ({ page }) => {
   await openHome(page);
+  await allUsage(page);
   const app = page.locator('[data-mock]');
   await app.getByRole('button', { name: 'Options', exact: true }).click();
   await app.getByRole('menuitem', { name: 'Customize', exact: true }).click();
@@ -135,15 +138,11 @@ test('text-only account cards keep context menus and restore focus to their head
   await app.locator('[data-scr="metrics:codex"] .am-back').click();
   await app.locator('[data-scr="customize"] .am-back').click();
   const first = app.locator('[data-card="codex-account-1"]');
-  const second = app.locator('[data-card="codex-account-2"]');
   const firstHeader = first.locator('[data-account-actions-trigger]');
-  const secondHeader = second.locator('[data-account-actions-trigger]');
   await expect(first.locator('[data-metric="codex.today"]')).toBeVisible();
-  for (const card of [first, second]) {
-    await expect(card.locator('.am-head button:visible, .am-card button:visible')).toHaveCount(0);
-  }
+  await expect(first.locator('.am-meter:visible')).toHaveCount(0);
   await firstHeader.click({ button: 'right' });
-  await expect(first.getByRole('menuitem', { name: 'Refresh Codex', exact: true })).toBeFocused();
+  await expect(first.getByRole('menuitem', { name: 'Refresh', exact: true })).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(firstHeader).toBeFocused();
   await firstHeader.press('Shift+Tab');
@@ -153,47 +152,28 @@ test('text-only account cards keep context menus and restore focus to their head
   await expect(first.locator('.am-account-actions')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(firstHeader).toBeFocused();
-
-  const action = second.getByRole('menuitem', { name: 'Use Codex: Account 2', exact: true });
-  await secondHeader.click({ button: 'right' });
-  await action.click();
-  const dialog = app.getByRole('dialog', { name: 'Switch Account?' });
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await expect(secondHeader).toBeFocused();
-  await expect(second).toHaveAttribute('data-inactive-account', 'true');
-  await secondHeader.press('Shift+F10');
-  await action.press('Enter');
-  await dialog.getByRole('button', { name: 'Switch Account', exact: true }).click();
-  await expect(secondHeader).toBeFocused();
-  await expect(second).toHaveAttribute('data-inactive-account', 'false');
-  await expect(second.locator('[data-metric="codex.today"]')).toBeVisible();
 });
 
-test('both Codex cards share the public Reset Watch forecast across account switching and reload', async ({ page }) => {
+test('Codex limits stay per account while Reset Watch follows the active account once', async ({ page }) => {
   await openHome(page);
+  await allUsage(page);
   const app = page.locator('[data-mock]');
-  await expect(app).toHaveAttribute('data-usage-cards', 'separate');
   const first = app.locator('[data-card="codex-account-1"]');
   const second = app.locator('[data-card="codex-account-2"]');
-  for (const [index, card] of [first, second].entries()) {
-    await expect(card).toBeVisible();
-    await expect(card.locator('[data-account-title]')).toHaveText(`Codex: Account ${index + 1}`);
-    await card.getByRole('button', { name: 'Show more', exact: true }).click();
-    await expect(card.locator('.am-forecast')).toBeVisible();
-    await expect(card.locator('.am-forecast')).toContainText('65% chance');
-    await expect(card.locator('.am-forecast')).toContainText('72% expect a reset');
-  }
-  await expect(first.locator('[data-metric="codex.session"]')).toContainText('28% used');
-  await expect(second.locator('[data-metric="codex.session"]')).toContainText('42% used');
-  await second.locator('.am-head').click({ button: 'right' });
-  await second.getByRole('menuitem', { name: 'Use Codex: Account 2', exact: true }).click();
-  await app.getByRole('dialog').getByRole('button', { name: 'Switch Account', exact: true }).click();
   await expect(first.locator('.am-forecast')).toBeVisible();
+  await expect(second.locator('.am-forecast')).toBeHidden();
+  await expect(first.locator('[data-metric="codex.session"]')).toContainText('28%');
+  await expect(second.locator('[data-metric="codex.session"]')).toContainText('42%');
+  await second.locator('[data-account-actions-trigger]').click({ button: 'right' });
+  await second.getByRole('menuitem', { name: 'Use Codex: Account 2', exact: true }).click();
+  await app.locator('[data-account-confirm]').click();
+  await expect(first.locator('.am-forecast')).toBeHidden();
   await expect(second.locator('.am-forecast')).toBeVisible();
   await page.reload();
+  await allUsage(page);
   await expect(first).toBeVisible();
-  await expect(second).toBeVisible();
   await expect(second).toHaveAttribute('data-inactive-account', 'false');
+  await expect(second.locator('.am-forecast')).toBeVisible();
 });
 
 test('new feature tours show forecasts, credit count, and guides without leaking stage state', async ({ page }) => {
@@ -220,9 +200,9 @@ test('reset credit details float above the dashboard without changing card heigh
     if (!request.url().startsWith('http://127.0.0.1:')) external.push(request.url());
   });
   await openHome(page);
+  await allUsage(page);
   const app = page.locator('[data-mock]');
   const card = app.locator('[data-card="codex-account-1"]');
-  await card.getByRole('button', { name: 'Show more', exact: true }).click();
   const trigger = card.locator('.am-reset-trigger');
   await trigger.scrollIntoViewIfNeeded();
   const height = await card.evaluate((element) => element.getBoundingClientRect().height);
@@ -251,8 +231,8 @@ test('reset credit details float above the dashboard without changing card heigh
 test('reset credit hover opens only from the count and remains open while moving into the detail', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Touch uses the tested click and keyboard path');
   await openHome(page);
+  await allUsage(page);
   const card = page.locator('[data-mock] [data-card="codex-account-1"]');
-  await card.getByRole('button', { name: 'Show more', exact: true }).click();
   const row = card.locator('.am-resets');
   const detail = row.locator('.am-reset-detail');
   await row.locator('> b').hover();
@@ -261,6 +241,6 @@ test('reset credit hover opens only from the count and remains open while moving
   await expect(detail).toBeVisible();
   await detail.hover();
   await expect(detail).toBeVisible();
-  await card.locator('[data-account-title]').hover();
+  await card.locator('[data-account-actions-trigger]').hover();
   await expect(detail).toBeHidden();
 });

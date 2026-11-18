@@ -1,36 +1,18 @@
 ---
-// 텍스트 전용 행과 Usage Trend 스파크라인. Views/WidgetRowView.swift · Views/UsageSparkline.swift.
 import type { Row } from '../../data/demo';
-import { metricID, providerMetrics } from '../../data/metrics';
+import { metricID, isSharedMetric } from '../../data/metrics';
 import Meter from './Meter.astro';
 import Forecast from './Forecast.astro';
 import ResetCredits from './ResetCredits.astro';
-
-interface Props { r: Row; provider: string }
-const { r, provider } = Astro.props;
-const metric = metricID(provider, r.label);
-const defaults = providerMetrics[provider];
-const hidden = [...defaults.alwaysVisible, ...defaults.onDemand].find((entry) => entry.id === metric)?.enabled === false;
+interface Props { r: Row; provider: string; accountID: string; uid: string }
+const { r, provider, accountID } = Astro.props;
+const metric = metricID(provider, r.label)!;
+const noData = (r.kind === 'text' && r.values.includes('No data')) || (r.kind === 'bounded' && r.noData);
 ---
-
-{r.kind === 'bounded' && <Meter r={r} metric={metric} hidden={hidden} />}
-{r.kind === 'forecast' && <Forecast r={r} metric={metric} hidden={hidden} />}
-{r.kind === 'text' && metric === 'codex.rateLimitResets' && <ResetCredits metric={metric} hidden={hidden} />}
-{
-  r.kind === 'text' && metric !== 'codex.rateLimitResets' && (
-    <div class="am-trow" data-metric={metric} data-account-history={['Today', 'Yesterday'].includes(r.label) ? '' : undefined} hidden={hidden}>
-      <b>{r.label}</b>
-      <span class="am-trow-val">{r.values.join(' · ')}</span>
-    </div>
-  )
-}
-{
-  r.kind === 'trend' && (
-    <div class="am-trow am-trend" data-metric={metric} data-account-history hidden={hidden}>
-      <b>{r.label}</b>
-      <span class="am-spark" aria-hidden="true">
-        {r.bars.map((h) => <i class={`am-h${Math.round(h * 100)}`} />)}
-      </span>
-    </div>
-  )
-}
+<div class="am-metric-wrap" data-row={metric} data-account-id={accountID} data-provider={provider} data-shared={String(isSharedMetric(metric))} data-no-data={String(Boolean(noData))} hidden={noData}>
+  {r.kind === 'bounded' && <Meter r={r} metric={metric} />}
+  {r.kind === 'forecast' && <Forecast r={r} metric={metric} />}
+  {r.kind === 'text' && metric === 'codex.rateLimitResets' && <ResetCredits metric={metric} />}
+  {r.kind === 'text' && metric !== 'codex.rateLimitResets' && <div class="am-trow" data-metric={metric} tabindex="0"><b>{r.label}</b><span class="am-trow-val">{r.values.join(' · ')}</span></div>}
+  {r.kind === 'trend' && <div class="am-trow am-trend" data-metric={metric} tabindex="0"><b>{r.label}</b><span class="am-spark" aria-label="Usage Trend">{r.bars.map((height) => <i class={`am-h${Math.round(height * 100)}`} />)}</span></div>}
+</div>

@@ -73,6 +73,24 @@ test('all tour tabs support keyboard navigation without moving the page', async 
   await expect(tour.locator('[data-tour-terminal]')).toBeVisible();
 });
 
+test('all tour tabs switch on click without moving the page', async ({ page }) => {
+  await openHome(page);
+  const tour = page.locator('[data-feature-tour]');
+  await tour.scrollIntoViewIfNeeded();
+  await tour.locator('[data-tour-tab="menu-bar"]').click();
+  const y = await page.evaluate(() => scrollY);
+  for (const stage of stages) {
+    const tab = tour.locator(`[data-tour-tab="${stage}"]`);
+    await tab.click();
+    await expect(tour).toHaveAttribute('data-tour-stage', stage);
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+    await expect(tour.locator(`[data-tour-description="${stage}"]`)).toBeVisible();
+    await expect(page.locator('#feature-stage')).toHaveAttribute('aria-labelledby', `tab-${stage}`);
+    expect(await page.evaluate(() => scrollY)).toBe(y);
+  }
+  await expect(tour.locator('[data-tour-terminal]')).toBeVisible();
+});
+
 test('animated account onboarding completes and interrupted tours settle cleanly', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await openHome(page);

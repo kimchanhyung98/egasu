@@ -8,8 +8,8 @@ test('the page remains readable and downloadable with JavaScript disabled', asyn
   await expect(page.locator('.tour-fallback')).toBeVisible();
   await expect(page.locator('[data-tour-description="menu-bar"]')).toBeVisible();
   await expect(page.locator('[data-mock]').getByRole('button', { name: 'Options', exact: true })).toBeHidden();
-  await expect(page.locator('[data-mock] .am-section[data-provider]:visible')).toHaveCount(5);
-  await expect(page.locator('[data-mock] .am-section[data-provider="codex"]:visible')).toHaveCount(2);
+  await expect(page.locator('[data-mock] [data-dashboard-panel="Priority"]')).toBeVisible();
+  expect(await page.locator('[data-mock] .am-priority-row:visible').count()).toBeGreaterThan(0);
   const downloads = page.locator('[data-download]');
   expect(await downloads.count()).toBeGreaterThan(0);
   for (const link of await downloads.all()) {

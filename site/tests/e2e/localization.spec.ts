@@ -1,5 +1,5 @@
 import type { Locator } from '@playwright/test';
-import { test, expect, openHome, openSettings } from './fixtures';
+import { test, expect, openHome, openSettings, allUsage } from './fixtures';
 
 async function choose(app: Locator, id: string, value: string): Promise<void> {
   const picker = app.locator(`[data-picker="${id}"]`);
@@ -43,16 +43,16 @@ test('Korean applies immediately to settings, accounts, dashboard details, and c
   await screen.getByRole('button', { name: '뒤로', exact: true }).click();
 
   const spend = app.locator('.am-spend-card');
-  await expect(spend.locator('[data-metric-label="cost"]')).toHaveText('비용');
+  await expect(spend.locator('[data-state="today:cost"] .am-ring-center')).toHaveAccessibleName(/비용/);
   await expect(spend.getByRole('radio', { name: '오늘', exact: true })).toBeVisible();
-  await spend.locator('[data-metric-btn]').click();
-  await spend.getByRole('menuitemradio', { name: '토큰', exact: true }).click();
+  await spend.locator('[data-state="today:cost"] .am-ring-center').click();
+  await spend.locator('[data-state="today:costPerMtok"] .am-ring-center').click();
   await expect(spend.locator('[data-state="today:tokens"] .am-ring-center')).toContainText('백만');
 
+  await allUsage(page);
   const codex = app.locator('[data-card="codex-account-1"]');
   await expect(codex.locator('[data-account-title]')).toHaveText('Codex: 계정 1');
-  await expect(codex.locator('[data-metric="codex.session"] .am-row-label > b')).toHaveText('세션');
-  await codex.getByRole('button', { name: '더 보기', exact: true }).click();
+  await expect(codex.locator('[data-metric="codex.session"] .am-metric-label')).toHaveText('세션');
   const forecast = codex.locator('[data-metric="codex.resetWatch"]');
   await expect(forecast).toBeVisible();
   await expect(forecast.locator('.am-row-label > b')).toHaveText('초기화 예측');
@@ -73,9 +73,9 @@ test('Korean applies immediately to settings, accounts, dashboard details, and c
   await app.getByRole('menuitem', { name: '커스터마이즈', exact: true }).click();
   await app.locator('[data-scr="customize"] [data-go="metrics:codex"]').click();
   const metrics = app.locator('[data-scr="metrics:codex"]');
-  await expect(metrics.locator('.am-group > b')).toHaveText(['항상 표시', '필요 시 표시']);
+  await expect(metrics.locator('.am-group > b')).toHaveText('지표');
   await expect(metrics.getByRole('switch', { name: '초기화 예측', exact: true })).toBeVisible();
-  await expect(metrics.locator('[data-star="codex.session"] .am-sr')).toHaveText('세션 메뉴 막대에 고정');
+  await expect(metrics.locator('[data-star="codex.session"] .am-sr')).toHaveText('세션 고정');
 });
 
 test('Korean remains applied after display changes and restores on reload', async ({ page }) => {
@@ -91,23 +91,24 @@ test('Korean remains applied after display changes and restores on reload', asyn
   await expect(app.locator('[data-picker="density"]')).toContainText('기본');
   await app.locator('[data-scr="settings"] .am-back').click();
 
+  await allUsage(page);
   const codex = app.locator('[data-card="codex-account-1"]');
   const session = codex.locator('[data-metric="codex.session"]');
-  await expect(session.locator('.am-headline .l')).toHaveText('72% 남음');
-  await expect(session.locator('.abs')).toHaveText('오늘 오후 9:00 초기화');
-  await codex.locator('[data-expand]').click();
+  await expect(session.locator('.am-headline .l')).toHaveText('72%');
+  await expect(session.locator('.abs')).toHaveText('오늘 오후 9:00');
   const forecast = codex.locator('[data-metric="codex.resetWatch"]');
   await expect(forecast.locator('.abs')).toHaveText('10월 27일 오전 10:00까지');
   await forecast.locator('[data-toggle-reset]').click();
   await expect(forecast.locator('.rel')).toBeVisible();
   await expect(forecast.locator('.rel')).toHaveText('18시간 30분 이내');
-  await expect(session.locator('.rel')).toHaveText('6시간 0분 후 초기화');
+  await expect(session.locator('.rel')).toHaveText('3시간 27분');
 
   await page.reload();
+  await allUsage(page);
   await expect(app).toHaveAttribute('lang', 'ko');
   await expect(app).toHaveAttribute('data-mode', 'left');
   await expect(app).toHaveAttribute('data-reset', 'relative');
-  await expect(session.locator('.am-headline .l')).toHaveText('72% 남음');
+  await expect(session.locator('.am-headline .l')).toHaveText('72%');
   await settings(app);
   await expect(app.locator('[data-picker="language"] [data-picker-value]')).toHaveText('한국어');
   await expect(app.locator('[data-picker="language"] [data-picker-value]')).toHaveAttribute('lang', 'ko');
@@ -141,9 +142,9 @@ test('language cycles through Korean, Japanese, and English across interactive a
   }
   await expect(app.locator('[data-language-notice]')).toHaveText('Language changes apply immediately in this preview.');
   await app.locator('[data-scr="settings"] .am-back').click();
+  await allUsage(page);
   const codex = app.locator('[data-card="codex-account-1"]');
   await expect(codex.locator('[data-account-title]')).toHaveText('Codex: Account 1');
-  await codex.getByRole('button', { name: 'Show more', exact: true }).click();
   await expect(codex.getByRole('img', { name: 'Reset chance is high', exact: true })).toBeVisible();
   await expect(codex.locator('.am-forecast .am-headline')).toHaveText('65% chance');
   await expect(codex.locator('.am-forecast .abs')).toHaveText('By Oct 27 at 10:00');

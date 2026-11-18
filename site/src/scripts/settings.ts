@@ -1,5 +1,5 @@
 import { accountFamilies } from '../data/accounts';
-import { initialPreviewState, changePreference, selectDashboardAccount, activateAccount, restorePreviewState, previewTime } from '../data/preview-state';
+import { initialPreviewState, changePreference, selectDashboardAccount, activateAccount, restorePreviewState, previewTime, type PreviewState } from '../data/preview-state';
 import { languageTags } from '../data/settings';
 import { closeMenu } from './menus';
 import { applyPreviewLanguage, localizePreview } from './localization';
@@ -13,7 +13,7 @@ const pending = new WeakMap<HTMLElement, { family: string; id: string; button: H
 
 const appOnlyPreferences = new Set([
   'launchAtLogin', 'underTenPercent', 'healthyToClose', 'closeToRunningOut', 'useItOrLoseIt',
-  'hideFromScreenShare', 'shareAnonymousUsage', 'updateAutomatically', 'betaUpdates', 'logLevel', 'iconStyle',
+  'hideFromScreenShare', 'shareAnonymousUsage', 'updateAutomatically', 'betaUpdates', 'logLevel',
   'codexResetWatch',
 ]);
 
@@ -29,6 +29,14 @@ function save(): void {
   } catch (error) {
     report(error, 'Preview changes could not be saved. They will last until you reload.');
   }
+}
+
+export function previewState(): PreviewState { return state; }
+
+export function updatePreviewState(next: PreviewState): void {
+  state = next;
+  render();
+  save();
 }
 
 export function previewPreference(id: string): string | boolean {
@@ -168,8 +176,7 @@ export function applySettingsToMock(mock: HTMLElement): void {
   mock.querySelectorAll<HTMLElement>('.am-section[data-account-id]').forEach((section) => {
     const family = section.dataset.provider ?? '';
     const id = section.dataset.accountId;
-    section.hidden ||= !separate && state.viewedAccounts[family] !== id;
-    section.dataset.inactiveAccount = String(state.activeAccounts[family] !== id);
+    section.dataset.inactiveAccount = String(id !== 'default' && state.activeAccounts[family] !== id);
     const title = section.querySelector<HTMLElement>('[data-account-title]');
     if (title) title.textContent = (separate ? title.dataset.separateTitle : title.dataset.familyTitle) ?? '';
     const selector = section.querySelector<HTMLElement>('.am-acctwrap');
