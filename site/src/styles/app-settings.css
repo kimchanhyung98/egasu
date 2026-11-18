@@ -1,8 +1,8 @@
-/* 앱 화면 재현 그래픽 — Settings·Customize.
+/* 앱 화면 재현 그래픽 — Accounts·Settings.
    소스: Sources/Egasu/ v0.11.1. 밀도 Compact, 외관 다크.
    1 CSS px = 1 SwiftUI pt. */
 
-/* ---------- Settings / Customize ---------- */
+/* ---------- Accounts / Settings ---------- */
 
 .am-screen {
   padding: 12px 14px;
@@ -93,7 +93,7 @@
 
 .am-toggle.is-on::after { left: 13.5px; }
 
-/* Customize provider 행 */
+/* 계정 목록 행 */
 .am-prow {
   padding: var(--am-control-pad) 12px;
   display: flex;
@@ -164,7 +164,7 @@
   color: var(--am-secondary);
 }
 
-/* 누를 수 있는 토글(Customize L1). 끄면 행 전체가 0.55로 흐려지는 것이 앱의 전부. */
+/* 누를 수 있는 토글. 끄면 행 전체가 0.55로 흐려지는 것이 앱의 전부. */
 button.am-toggle { cursor: pointer; }
 .am-toggle::after { transition: left 0.15s var(--ease, ease); }
 

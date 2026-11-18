@@ -24,7 +24,17 @@ function translator(locale: PreviewLocale, context: string): (text: string) => s
 interface SourceValue { source: string; rendered: string }
 const textSources = new WeakMap<Text, SourceValue>();
 const attributeSources = new WeakMap<Element, Map<string, SourceValue>>();
+const accountText = new WeakMap<Element, { template: string; name: string }>();
+const accountNameSlot = '\0';
 let currentLocale: PreviewLocale = 'en';
+
+export function setPreviewAccountText(
+  element: HTMLElement, format: (name: string) => string, name: string, literal: boolean,
+): void {
+  element.textContent = format(name);
+  if (literal) accountText.set(element, { template: format(accountNameSlot), name });
+  else accountText.delete(element);
+}
 
 function sourceValue(previous: SourceValue | undefined, value: string): SourceValue {
   return previous?.rendered === value ? previous : { source: value, rendered: value };
@@ -32,8 +42,7 @@ function sourceValue(previous: SourceValue | undefined, value: string): SourceVa
 
 function contextFor(element: Element): string {
   if (element.closest('[data-scr="settings"]')) return 'Settings';
-  if (element.closest('[data-tour-sheet]')) return 'Accounts';
-  if (element.closest('[data-scr^="metrics:"], [data-scr="customize"]')) return 'Customize';
+  if (element.closest('[data-tour-sheet], [data-scr="accounts"], [data-scr^="account:"]')) return 'Accounts';
   return 'Dashboard';
 }
 
@@ -45,9 +54,13 @@ export function localizePreview(root: HTMLElement): void {
   while ((node = walker.nextNode())) {
     const text = node as Text;
     const element = text.parentElement!;
-    if (element.closest('[data-pick="language"], [data-picker="language"], script, style, code')) continue;
+    if (element.closest('[data-pick="language"], [data-picker="language"], [data-preview-literal], script, style, code')) continue;
     const value = sourceValue(textSources.get(text), text.data);
-    value.rendered = translator(currentLocale, contextFor(element))(value.source);
+    const translate = translator(currentLocale, contextFor(element));
+    const account = accountText.get(element);
+    value.rendered = account
+      ? translate(account.template).replace(accountNameSlot, () => account.name)
+      : translate(value.source);
     if (text.data !== value.rendered) text.data = value.rendered;
     textSources.set(text, value);
   }

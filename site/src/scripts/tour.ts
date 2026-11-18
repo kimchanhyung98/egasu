@@ -56,7 +56,7 @@ export function initFeatureTour(): void {
     section.dataset.tourZoom = value ? 'focused' : 'overview';
     updateCamera();
   };
-  const showScreen = (screen: 'dashboard' | 'settings'): void => {
+  const showScreen = (screen: 'dashboard' | 'accounts'): void => {
     mock.dataset.screen = screen;
     mock.querySelectorAll<HTMLElement>('[data-scr]').forEach((el) => {
       el.hidden = el.dataset.scr !== screen;
@@ -92,7 +92,7 @@ export function initFeatureTour(): void {
   const settle = (): void => {
     closeTransientViews();
     setZoom(true);
-    showScreen(selected === 'accounts' ? 'settings' : 'dashboard');
+    showScreen(selected === 'accounts' ? 'accounts' : 'dashboard');
     section.dataset.tourPopup = selected === 'menu-bar' || selected === 'integrations' ? 'closed' : 'open';
     showAccount(selected === 'accounts');
     terminal.hidden = selected !== 'integrations';
@@ -170,13 +170,13 @@ export function initFeatureTour(): void {
         get('.am-optmenu').hidden = false;
         get('[data-options]').setAttribute('aria-expanded', 'true');
         await waitForStep(220, signal);
-        await clickAt('.am-optmenu [data-go="settings"]', signal);
+        await clickAt('.am-optmenu [data-go="accounts"]', signal);
         get('.am-optmenu').hidden = true;
         get('[data-options]').setAttribute('aria-expanded', 'false');
-        showScreen('settings');
+        showScreen('accounts');
         setPhase('accounts-empty');
         await waitForStep(750, signal);
-        await clickAt('[data-settings-group="accounts"] [data-add-account]', signal);
+        await clickAt('[data-scr="accounts"] [data-add-account]', signal);
         sheet.hidden = false;
         setPhase('add-account');
         await waitForStep(750, signal);

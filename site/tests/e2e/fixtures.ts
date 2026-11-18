@@ -1,3 +1,4 @@
+import { settingGroups } from '../../src/data/settings';
 import { test as base, expect, type Page } from '@playwright/test';
 
 export const downloadURL = 'https://github.com/kimchanhyung98/egasu/releases/download/v0.99.2/egasu.dmg';
@@ -51,9 +52,13 @@ export async function openSettings(page: Page): Promise<void> {
 
 export async function chooseSetting(page: Page, label: string, value: string): Promise<void> {
   const app = page.locator('[data-mock]');
-  await app.getByRole('button', { name: label, exact: true }).click();
-  await app.getByRole('menuitemradio', { name: value, exact: true }).click();
-  await expect(app.getByRole('button', { name: label, exact: true })).toBeFocused();
+  const group = settingGroups.find((group) => group.rows.some((row) => row.label === label));
+  if (group) await app.locator(`button[data-settings-tab="${group.tab}"]`).click();
+  const id = group!.rows.find((row) => row.label === label)!.id;
+  const picker = app.locator(`[data-picker="${id}"]`);
+  await picker.click();
+  await app.locator(`[data-pick="${id}"][data-value="${value}"]`).click();
+  await expect(picker).toBeFocused();
 }
 
 export async function allUsage(page: Page): Promise<void> {
@@ -62,4 +67,15 @@ export async function allUsage(page: Page): Promise<void> {
   const tab = mock.locator('button[data-dashboard-tab="All Usage"][role="tab"]');
   if (await tab.getAttribute('aria-selected') !== 'true') await tab.click();
   await expect(mock.locator('[data-dashboard-panel="All Usage"]')).toBeVisible();
+}
+
+export async function openAccounts(page: Page): Promise<void> {
+  const app = page.locator('[data-mock]');
+  await app.locator('[data-options]').click();
+  await app.getByRole('menuitem', { name: 'Accounts', exact: true }).click();
+}
+
+export async function accountDetail(page: Page, provider: string, account = 'account-1'): Promise<void> {
+  await openAccounts(page);
+  await page.locator(`[data-mock] [data-account-list] .am-open[data-go="account:${provider}:${account}"]`).click();
 }

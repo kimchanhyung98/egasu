@@ -1,20 +1,17 @@
 import { accountFamilies } from '../data/accounts';
-import { initialPreviewState, changePreference, selectDashboardAccount, activateAccount, restorePreviewState, previewTime, type PreviewState } from '../data/preview-state';
+import { initialPreviewState, changePreference, activateAccount, restorePreviewState, previewTime, accountName, accountEmail, renameAccount, type PreviewState } from '../data/preview-state';
 import { languageTags } from '../data/settings';
 import { closeMenu } from './menus';
-import { applyPreviewLanguage, localizePreview } from './localization';
+import { applyPreviewLanguage, localizePreview, setPreviewAccountText } from './localization';
 
-// 이름 변경 전 미리보기 설정을 같은 출처에서 계속 사용.
 const STORAGE_KEY = 'openusage.site.preview.v1';
 let state = initialPreviewState();
 let render = (): void => {};
 let notify = (_mock: HTMLElement, _message: string): void => {};
 const pending = new WeakMap<HTMLElement, { family: string; id: string; button: HTMLElement }>();
-
 const appOnlyPreferences = new Set([
-  'launchAtLogin', 'underTenPercent', 'healthyToClose', 'closeToRunningOut', 'useItOrLoseIt',
-  'hideFromScreenShare', 'shareAnonymousUsage', 'updateAutomatically', 'betaUpdates', 'logLevel',
-  'codexResetWatch',
+  'launchAtLogin', 'warningNotification', 'criticalNotification', 'closeToRunningOut', 'useItOrLoseItNotification',
+  'shareAnonymousUsage', 'updateAutomatically', 'betaUpdates', 'logLevel', 'codexResetWatch',
 ]);
 
 function report(error: unknown, message: string): void {
@@ -24,14 +21,12 @@ function report(error: unknown, message: string): void {
 }
 
 function save(): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch (error) {
-    report(error, 'Preview changes could not be saved. They will last until you reload.');
-  }
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+  catch (error) { report(error, 'Preview changes could not be saved. They will last until you reload.'); }
 }
 
 export function previewState(): PreviewState { return state; }
+export function previewPreference(id: string): string | boolean { return state.preferences[id]; }
 
 export function updatePreviewState(next: PreviewState): void {
   state = next;
@@ -39,34 +34,22 @@ export function updatePreviewState(next: PreviewState): void {
   save();
 }
 
-export function previewPreference(id: string): string | boolean {
-  return state.preferences[id];
-}
-
 export function setPreviewPreference(id: string, value: string | boolean): void {
-  state = changePreference(state, id, value);
-  render();
-  save();
+  const next = changePreference(state, id, value);
+  if (id === 'defaultTab') document.querySelectorAll<HTMLElement>('[data-mock]').forEach((mock) => { mock.dataset.dashboardTab = String(value); });
+  updatePreviewState(next);
 }
 
 export function choosePreviewSetting(mock: HTMLElement, id: string, value: string): void {
-  if (id.startsWith('acct-')) {
-    state = selectDashboardAccount(state, id.slice(5), value);
-    render();
-    save();
-  } else {
-    setPreviewPreference(id, value);
-    if (appOnlyPreferences.has(id)) {
-      notify(mock, 'Preview value changed. Apply this setting in the Mac app.');
-    }
-  }
+  setPreviewPreference(id, value);
+  if (appOnlyPreferences.has(id)) notify(mock, 'Preview value changed. Apply this setting in the Mac app.');
 }
 
 function closeAccountDialog(mock: HTMLElement): void {
   const previous = pending.get(mock);
   mock.querySelector<HTMLDialogElement>('[data-account-dialog]')?.close();
   pending.delete(mock);
-  previous?.button.focus();
+  previous?.button.focus({ preventScroll: true });
 }
 
 export function handleSettingsClick(target: Element, mock: HTMLElement): boolean {
@@ -77,161 +60,151 @@ export function handleSettingsClick(target: Element, mock: HTMLElement): boolean
     notify(mock, native.dataset.nativeAction ?? 'Open the Mac app to use this feature.');
     return true;
   }
-  if (target.closest('[data-account-cancel]')) {
-    closeAccountDialog(mock);
+  if (target.closest('[data-soft-cancel], [data-soft-confirm]')) {
+    if (target.closest('[data-soft-confirm]')) setPreviewPreference('softLimitEnabled', true);
+    mock.querySelector<HTMLDialogElement>('[data-soft-limit-dialog]')!.close();
+    mock.querySelector<HTMLElement>('[data-setting="softLimitEnabled"]')?.focus({ preventScroll: true });
     return true;
   }
+  if (target.closest('[data-account-cancel]')) { closeAccountDialog(mock); return true; }
   if (target.closest('[data-account-confirm]')) {
     const selection = pending.get(mock);
     if (selection) {
-      state = activateAccount(state, selection.family, selection.id);
+      updatePreviewState(activateAccount(state, selection.family, selection.id));
       closeAccountDialog(mock);
-      render();
-      save();
     }
     return true;
   }
   const accountSwitch = target.closest<HTMLButtonElement>('[data-account-switch]');
   if (accountSwitch) {
-    const family = accountSwitch.dataset.accountSwitch ?? '';
-    const id = accountSwitch.dataset.accountId ?? '';
+    const family = accountSwitch.dataset.accountSwitch!;
+    const id = accountSwitch.dataset.accountId!;
     if (state.activeAccounts[family] === id || accountSwitch.disabled) return true;
-    const profile = accountFamilies.find((entry) => entry.id === family)?.profiles.find((entry) => entry.id === id);
-    const dialog = mock.querySelector<HTMLDialogElement>('[data-account-dialog]');
-    const message = dialog?.querySelector<HTMLElement>('[data-account-confirm-text]');
-    if (profile && dialog && message) {
-      const menu = accountSwitch.closest<HTMLElement>('.am-account-actions');
-      const section = menu?.closest('.am-section');
-      const trigger = section?.querySelector<HTMLElement>('[data-account-actions-trigger]') ?? accountSwitch;
-      if (menu) closeMenu(menu);
-      pending.set(mock, { family, id, button: trigger });
-      message.textContent = `Use ${profile.name} in this demo? Your Mac’s sign-in will stay unchanged.`;
-      localizePreview(mock);
-      dialog.showModal();
-    }
+    const dialog = mock.querySelector<HTMLDialogElement>('[data-account-dialog]')!;
+    const menu = accountSwitch.closest<HTMLElement>('.am-account-actions');
+    const trigger = menu?.closest('.am-section')?.querySelector<HTMLElement>('[data-account-actions-trigger]') ?? accountSwitch;
+    if (menu) closeMenu(menu);
+    pending.set(mock, { family, id, button: trigger });
+    const masked = state.preferences.privacyMode === true && trigger.closest('[data-scr="dashboard"]') !== null;
+    const name = masked ? accountEmail(family, id).replace(/^[^@]+/, '••••') : accountName(state, family, id);
+    setPreviewAccountText(
+      dialog.querySelector<HTMLElement>('[data-account-confirm-text]')!,
+      (name) => `Use ${name} in this demo? Your Mac’s sign-in will stay unchanged.`,
+      name, masked || Object.hasOwn(state.accountNames, `${family}:${id}`),
+    );
+    localizePreview(mock);
+    dialog.showModal();
     return true;
   }
   const toggle = target.closest<HTMLButtonElement>('button[data-setting]');
   if (toggle) {
-    const id = toggle.dataset.setting ?? '';
+    const id = toggle.dataset.setting!;
+    if (id === 'softLimitEnabled' && !state.preferences[id]) {
+      mock.querySelector<HTMLDialogElement>('[data-soft-limit-dialog]')!.showModal();
+      return true;
+    }
     setPreviewPreference(id, !state.preferences[id]);
-    if (id === 'softLimitEnabled') notify(mock, 'Preview guide changed. Automatic cancellation is currently unavailable in the Mac app.');
     if (appOnlyPreferences.has(id)) notify(mock, 'Preview value changed. Apply this setting in the Mac app.');
     return true;
   }
   return false;
 }
 
-/** 레이아웃 필터 이후 적용해 숨긴 provider·지표를 다시 노출하지 않음. */
 export function applySettingsToMock(mock: HTMLElement): void {
   const preferences = state.preferences;
-  const dark = preferences.theme === 'Dark' || (preferences.theme === 'System' && matchMedia('(prefers-color-scheme: dark)').matches);
-  mock.dataset.theme = dark ? 'dark' : 'light';
-  mock.dataset.density = preferences.density === 'Default' ? 'default' : 'compact';
+  mock.dataset.theme = preferences.theme === 'Dark' || (preferences.theme === 'System' && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
   mock.dataset.mode = preferences.showUsageAs === 'Left' ? 'left' : 'used';
   mock.dataset.reset = preferences.resetTimes === 'Countdown' ? 'relative' : 'absolute';
-  mock.dataset.pacing = String(preferences.alwaysShowPacing);
-  mock.dataset.transparency = String(preferences.increaseTransparency
-    && !matchMedia('(prefers-reduced-transparency: reduce), (prefers-contrast: more)').matches);
+  mock.dataset.pacing = String(preferences.paceMarks);
+  mock.dataset.layout = String(preferences.allUsageLayout).toLowerCase();
+  mock.dataset.privacy = String(preferences.privacyMode);
   mock.dataset.softLimit = preferences.softLimitEnabled ? String(preferences.softLimitWindow) : 'off';
   mock.style.setProperty('--soft-limit-used', `${preferences.softLimitThreshold}%`);
   mock.style.setProperty('--soft-limit-left', `${100 - Number(preferences.softLimitThreshold)}%`);
-  mock.querySelectorAll<HTMLElement>('[data-requires]').forEach((element) => {
-    element.hidden = !preferences[element.dataset.requires ?? ''];
-  });
-  mock.querySelectorAll<HTMLInputElement>('[data-number-setting]').forEach((input) => {
-    input.value = String(preferences[input.dataset.numberSetting ?? '']);
-  });
-  const separate = preferences.usageCards === 'Separate Cards';
-  mock.dataset.usageCards = separate ? 'separate' : 'single';
-
+  mock.querySelectorAll<HTMLElement>('[data-requires]').forEach((element) => { element.hidden = !preferences[element.dataset.requires!]; });
+  mock.querySelectorAll<HTMLInputElement>('[data-number-setting]').forEach((input) => { input.value = String(preferences[input.dataset.numberSetting!]); });
   mock.querySelectorAll<HTMLButtonElement>('[data-setting]').forEach((button) => {
-    const on = preferences[button.dataset.setting ?? ''] === true;
+    const on = preferences[button.dataset.setting!] === true;
     button.classList.toggle('is-on', on);
     button.setAttribute('aria-checked', String(on));
   });
-  mock.querySelectorAll<HTMLElement>('[data-picker]').forEach((button) => {
-    const id = button.dataset.picker ?? '';
-    const family = accountFamilies.find((entry) => id === `acct-${entry.id}`);
-    const value = family ? state.viewedAccounts[family.id] : preferences[id];
-    const text = family ? family.profiles.find((profile) => profile.id === value)?.name : value;
+  mock.querySelectorAll<HTMLButtonElement>('[data-picker]').forEach((button) => {
+    const id = button.dataset.picker!;
+    const value = preferences[id];
     const label = button.querySelector('[data-picker-value]');
-    if (label && text !== undefined) {
-      label.textContent = String(text);
-      if (id === 'language') label.setAttribute('lang', languageTags[String(text)]);
+    if (label) {
+      label.textContent = String(value);
+      if (id === 'language') label.setAttribute('lang', languageTags[String(value)]);
     }
-    mock.querySelectorAll<HTMLElement>(`[data-pick="${id}"]`).forEach((option) => {
-      option.setAttribute('aria-checked', String(option.dataset.value === value));
-    });
+    if (id === 'iconStyle' || id === 'menuBarItems') button.disabled = preferences.menuBarLimit === 'App Icon Only';
+    mock.querySelectorAll<HTMLElement>(`[data-pick="${id}"]`).forEach((option) => { option.setAttribute('aria-checked', String(option.dataset.value === value)); });
   });
-  mock.querySelectorAll<HTMLElement>('[data-account-switch]').forEach((button) => {
-    const on = state.activeAccounts[button.dataset.accountSwitch ?? ''] === button.dataset.accountId;
+  mock.querySelectorAll<HTMLButtonElement>('[data-account-switch]').forEach((button) => {
+    const family = button.dataset.accountSwitch!;
+    const id = button.dataset.accountId!;
+    const on = state.activeAccounts[family] === id;
     if (button.getAttribute('role') === 'menuitem') {
-      (button as HTMLButtonElement).disabled = on;
+      button.disabled = on;
+      const provider = accountFamilies.find((entry) => entry.id === family)!.name;
+      const masked = preferences.privacyMode === true;
+      const name = masked ? accountEmail(family, id).replace(/^[^@]+/, '••••') : accountName(state, family, id);
+      setPreviewAccountText(
+        button, (name) => `Use ${provider}: ${name}`, name, masked || Object.hasOwn(state.accountNames, `${family}:${id}`),
+      );
     } else {
       button.classList.toggle('is-on', on);
       button.setAttribute('aria-checked', String(on));
     }
   });
-  mock.querySelectorAll<HTMLElement>('.am-section[data-account-id]').forEach((section) => {
-    const family = section.dataset.provider ?? '';
-    const id = section.dataset.accountId;
-    section.dataset.inactiveAccount = String(id !== 'default' && state.activeAccounts[family] !== id);
-    const title = section.querySelector<HTMLElement>('[data-account-title]');
-    if (title) title.textContent = (separate ? title.dataset.separateTitle : title.dataset.familyTitle) ?? '';
-    const selector = section.querySelector<HTMLElement>('.am-acctwrap');
-    if (selector) selector.hidden = separate;
-  });
   const hour12 = new Intl.DateTimeFormat(undefined, { hour: 'numeric' }).resolvedOptions().hour12 === true;
-  mock.querySelectorAll<HTMLElement>('[data-preview-time]').forEach((element) => {
-    element.textContent = previewTime(element.dataset.previewTime ?? '', preferences.timeFormat, hour12);
-  });
-  const iCloud = mock.querySelector<HTMLElement>('[data-icloud-preview]');
-  if (iCloud) iCloud.hidden = !preferences.syncAcrossMacs;
-  const permission = mock.querySelector<HTMLElement>('[data-notification-permission]');
-  if (permission) permission.hidden = !['underTenPercent', 'healthyToClose', 'closeToRunningOut', 'useItOrLoseIt', 'codexResetWatch'].some((id) => preferences[id]);
-  localizePreview(mock);
+  mock.querySelectorAll<HTMLElement>('[data-preview-time]').forEach((element) => { element.textContent = previewTime(element.dataset.previewTime!, preferences.timeFormat, hour12); });
+  mock.querySelector<HTMLElement>('[data-icloud-preview]')!.hidden = !preferences.syncAcrossMacs;
+  mock.querySelector<HTMLElement>('[data-notification-permission]')!.hidden = !['warningNotification', 'criticalNotification', 'closeToRunningOut', 'useItOrLoseItNotification', 'codexResetWatch'].some((id) => preferences[id]);
+  const spend = mock.querySelector<HTMLElement>('.am-spend-card');
+  if (spend) spend.hidden = preferences.showTotalSpend === false;
 }
 
 export function initPreviewSettings(refresh: () => void, showNotice: typeof notify): void {
-  render = () => {
-    refresh();
-    applyPreviewLanguage(String(state.preferences.language));
-  };
+  render = () => { refresh(); applyPreviewLanguage(String(state.preferences.language)); };
   notify = showNotice;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) state = restorePreviewState(JSON.parse(raw));
     else {
-      const oldMode = localStorage.getItem('openusage.site.meterStyle');
-      const oldReset = localStorage.getItem('openusage.site.resetDisplayMode');
-      if (oldMode === 'left') state = changePreference(state, 'showUsageAs', 'Left');
-      if (oldReset === 'relative') state = changePreference(state, 'resetTimes', 'Countdown');
+      if (localStorage.getItem('openusage.site.meterStyle') === 'left') state = changePreference(state, 'showUsageAs', 'Left');
+      if (localStorage.getItem('openusage.site.resetDisplayMode') === 'relative') state = changePreference(state, 'resetTimes', 'Countdown');
     }
-  } catch (error) {
-    report(error, 'Saved preview settings could not be loaded. This page is using the demo defaults.');
-  }
-  document.querySelectorAll<HTMLElement>('[data-mock]').forEach((mock) => {
-    mock.dataset.dashboardTab = String(state.preferences.defaultTab);
-  });
+  } catch (error) { report(error, 'Saved preview settings could not be loaded. This page is using the demo defaults.'); }
+  document.querySelectorAll<HTMLElement>('[data-mock]').forEach((mock) => { mock.dataset.dashboardTab = String(state.preferences.defaultTab); });
   document.querySelectorAll<HTMLDialogElement>('[data-account-dialog]').forEach((dialog) => {
-    dialog.addEventListener('cancel', (event) => {
-      event.preventDefault();
-      const mock = dialog.closest<HTMLElement>('[data-mock]');
-      if (mock) closeAccountDialog(mock);
-    });
+    dialog.addEventListener('cancel', (event) => { event.preventDefault(); closeAccountDialog(dialog.closest<HTMLElement>('[data-mock]')!); });
+  });
+  document.querySelectorAll<HTMLDialogElement>('[data-soft-limit-dialog]').forEach((dialog) => {
+    dialog.addEventListener('close', () => dialog.closest('[data-mock]')!.querySelector<HTMLElement>('[data-setting="softLimitEnabled"]')?.focus({ preventScroll: true }));
+  });
+  const rename = (form: HTMLFormElement): void => {
+    const input = form.querySelector<HTMLInputElement>('[data-rename-input]')!;
+    const error = form.querySelector<HTMLElement>('[data-rename-error]')!;
+    try {
+      updatePreviewState(renameAccount(state, form.dataset.provider!, form.dataset.accountId!, input.value));
+      input.value = accountName(state, form.dataset.provider!, form.dataset.accountId!);
+      error.hidden = true;
+    } catch (failure) {
+      console.warn('Preview account rename failed');
+      error.textContent = failure instanceof Error ? failure.message : 'Could not rename this account.';
+      error.hidden = false;
+      localizePreview(form.closest<HTMLElement>('[data-mock]')!);
+    }
+  };
+  document.querySelectorAll<HTMLFormElement>('[data-rename-form]').forEach((form) => {
+    form.addEventListener('submit', (event) => { event.preventDefault(); rename(form); });
+    form.addEventListener('change', () => rename(form));
   });
   document.addEventListener('change', (event) => {
     const input = event.target;
     if (!(input instanceof HTMLInputElement) || !input.matches('[data-number-setting]')) return;
-    const mock = input.closest<HTMLElement>('[data-mock]');
-    if (!mock) return;
-    try {
-      setPreviewPreference(input.dataset.numberSetting ?? '', input.value);
-    } catch (error) {
-      report(error, 'Enter a whole percentage from 1 to 100. The previous threshold is unchanged.');
-      render();
-    }
+    try { setPreviewPreference(input.dataset.numberSetting!, input.value); }
+    catch (error) { report(error, 'Enter a whole percentage from 1 to 100. The previous threshold is unchanged.'); render(); }
   });
   document.addEventListener('keydown', (event) => {
     const input = event.target;
@@ -240,8 +213,6 @@ export function initPreviewSettings(refresh: () => void, showNotice: typeof noti
       input.dispatchEvent(new Event('change', { bubbles: true }));
     }
   });
-  for (const query of ['(prefers-color-scheme: dark)', '(prefers-reduced-transparency: reduce)', '(prefers-contrast: more)']) {
-    matchMedia(query).addEventListener('change', render);
-  }
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
   render();
 }

@@ -1,5 +1,27 @@
 // 앱 번역 리소스에 없는 웹 미리보기 문구.
 export const previewTranslations: Record<string, { ko: string; ja: string }> = {
+  "This preview changes language immediately. The Mac app applies it after restarting.": { ko: "이 미리보기에서는 언어가 즉시 바뀝니다. Mac 앱에서는 재시작 후 적용됩니다.", ja: "このプレビューでは言語がすぐに変わります。Macアプリでは再起動後に反映されます。" },
+  "Sample provider added. Connect your account in the Mac app.": { ko: "예시 프로바이더를 추가했습니다. 실제 계정은 Mac 앱에서 연결하세요.", ja: "サンプルのプロバイダーを追加しました。実際のアカウントはMacアプリで接続してください。" },
+  "Sign in again in the Mac app. This preview does not access your credentials.": { ko: "Mac 앱에서 다시 로그인하세요. 이 미리보기는 로그인 정보에 접근하지 않습니다.", ja: "Macアプリで再ログインしてください。このプレビューは認証情報にアクセスしません。" },
+  "Remove accounts in the Mac app. Your actual accounts are not connected to this preview.": { ko: "계정 삭제는 Mac 앱에서 진행하세요. 이 미리보기에는 실제 계정이 연결되어 있지 않습니다.", ja: "アカウントの削除はMacアプリで行ってください。このプレビューに実際のアカウントは接続されていません。" },
+  'Use up to 60 characters without slashes, backslashes, or control characters.': {
+    ko: '이름은 60자 이내로 입력하세요. 슬래시, 역슬래시, 제어 문자는 사용할 수 없습니다.',
+    ja: 'スラッシュ、バックスラッシュ、制御文字を使わず、60文字以内で入力してください。',
+  },
+  "This account name is already in use.": { ko: "이미 사용 중인 계정 이름입니다.", ja: "このアカウント名はすでに使用されています。" },
+  "Could not rename this account.": { ko: "계정 이름을 변경하지 못했습니다.", ja: "アカウント名を変更できませんでした。" },
+  "Account Settings": { ko: "계정별 설정", ja: "アカウント設定" },
+  "Shared Settings": { ko: "공통 설정", ja: "共通設定" },
+  "%@, Show in Priority": { ko: "%@, 우선순위에 표시", ja: "%@、優先に表示" },
+  "%@, Receive Alerts": { ko: "%@, 알림 받기", ja: "%@、通知を受け取る" },
+  "Unpin %@": { ko: "%@ 고정 해제", ja: "%@の固定を解除" },
+  "Reorder %@": { ko: "%@ 순서 변경", ja: "%@の順序を変更" },
+  "egasu is maintained by kimchanhyung98. This website uses sample data.": { ko: "egasu는 kimchanhyung98이 관리합니다. 이 웹사이트는 예시 데이터를 사용합니다.", ja: "egasuはkimchanhyung98が管理しています。このWebサイトはサンプルデータを使用します。" },
+  "Shows the limit guide and allows cancellation only for verified client/account connections. The current Codex connection is not account-verified and will not cancel tasks. Unconnected sessions and unsupported providers are not protected.": { ko: "한도 안내선을 표시합니다. 작업 취소는 클라이언트와 계정 연결을 확인한 경우에만 허용합니다. 현재 Codex 연결은 계정 확인이 되지 않아 작업을 취소하지 않습니다. 연결되지 않은 세션과 지원하지 않는 프로바이더에는 적용되지 않습니다.", ja: "上限の目安線を表示します。タスクのキャンセルはクライアントとアカウントの接続を確認できた場合のみ許可します。現在のCodex接続はアカウント未確認のためタスクをキャンセルしません。未接続のセッションと未対応のプロバイダーには適用されません。" },
+  'Reset chance is high': { ko: '초기화 가능성 높음', ja: 'リセットの可能性が高い' },
+  'Reset chance is low': { ko: '초기화 가능성 낮음', ja: 'リセットの可能性が低い' },
+  '%@ dollars': { ko: '%@ 달러', ja: '%@ドル' },
+  '%@ million': { ko: '%@ 백만', ja: '%@百万' },
   'Download': { ko: '다운로드', ja: 'ダウンロード' },
   'Language changes apply immediately in this preview.': {
     ko: '이 미리보기에서는 언어 변경이 즉시 적용됩니다.',
@@ -111,9 +133,9 @@ export const previewTranslations: Record<string, { ko: string; ja: string }> = {
   'Switch Account': { ko: '계정 전환', ja: 'アカウントを切り替え' },
   'Account %d': { ko: '계정 %d', ja: 'アカウント%d' },
   '%@ Account %d': { ko: '%@ 계정 %d', ja: '%@ アカウント%d' },
-  'egasu usage dashboard. Open Customize and Settings from Options.': {
-    ko: 'egasu 사용량 대시보드. 옵션에서 커스터마이즈와 설정으로 이동.',
-    ja: 'egasuの使用量ダッシュボード。オプションからカスタマイズと設定を開けます。',
+  'egasu usage dashboard. Open Accounts and Settings from Options.': {
+    ko: 'egasu 사용량 대시보드. 옵션에서 계정과 설정으로 이동.',
+    ja: 'egasuの使用量ダッシュボード。オプションからアカウントと設定を開けます。',
   },
   '%@ Account': { ko: '%@ 계정', ja: '%@アカウント' },
   '%@ Actions': { ko: '%@ 작업', ja: '%@の操作' },

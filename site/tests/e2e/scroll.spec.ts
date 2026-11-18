@@ -14,6 +14,7 @@ async function wheel(page: Page, delta: number): Promise<void> {
 test('app content scrolls internally and keeps top, bottom, and footer wheel input inside the app', async ({ page }) => {
   await openHome(page);
   await openSettings(page);
+  await page.locator('[data-mock] button[data-settings-tab="Advanced"]').click();
   const app = page.locator('[data-mock]');
   const body = app.locator('[data-scr="settings"] .am-body');
   await body.hover();
@@ -28,7 +29,7 @@ test('app content scrolls internally and keeps top, bottom, and footer wheel inp
   await body.evaluate((element) => { element.scrollTop = 0; });
   await wheel(page, -800);
   expect(await page.evaluate(() => scrollY)).toBe(y);
-  await app.locator('[data-scr="settings"] .am-foot').hover();
+  await app.locator('[data-scr="settings"] .am-settings-tabs').hover();
   const footerY = await page.evaluate(() => scrollY);
   await wheel(page, 800);
   expect(await page.evaluate(() => scrollY)).toBe(footerY);

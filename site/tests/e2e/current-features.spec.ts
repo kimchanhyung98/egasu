@@ -1,4 +1,4 @@
-import { test, expect, openHome, openSettings, chooseSetting, allUsage } from './fixtures';
+import { test, expect, openHome, openSettings, chooseSetting, allUsage, accountDetail } from './fixtures';
 
 test('Reset Watch keeps probability and votes when usage flips, and shares time preferences', async ({ page }) => {
   await openHome(page);
@@ -34,13 +34,14 @@ test('Soft Limit validates percentages, mirrors its guide, and keeps forecast me
   await openSettings(page);
   const threshold = app.getByRole('spinbutton', { name: 'Threshold' });
   await expect(threshold).toBeHidden();
+  await app.locator('button[data-settings-tab="Advanced"]').click();
   await app.getByRole('switch', { name: 'Enable Soft Limit' }).click();
+  await app.locator('[data-soft-confirm]').click();
   await threshold.fill('95');
-  await threshold.press('Enter');
-  await expect(threshold).toBeFocused();
+  await app.locator('[data-settings-group="softLimit"] > b').click();
   await expect(app).toHaveAttribute('data-soft-limit', 'Weekly');
   await threshold.fill('101');
-  await threshold.press('Tab');
+  await app.locator('[data-settings-group="softLimit"] > b').click();
   await expect(threshold).toHaveValue('95');
   await expect(app.getByRole('status')).toContainText('previous threshold is unchanged');
   await app.getByRole('button', { name: 'Back', exact: true }).click();
@@ -62,22 +63,26 @@ test('Soft Limit validates percentages, mirrors its guide, and keeps forecast me
   await page.reload();
   await expect(app).toHaveAttribute('data-soft-limit', '5 Hours');
   await openSettings(page);
+  await app.locator('button[data-settings-tab="Advanced"]').click();
   await expect(threshold).toHaveValue('95');
 });
 
 test('Reset Watch notifications can be enabled without quota notifications', async ({ page }) => {
   await openHome(page);
+  await allUsage(page);
   await openSettings(page);
   const app = page.locator('[data-mock]');
+  await app.locator('button[data-settings-tab="Alerts"]').click();
   const setting = app.getByRole('switch', { name: 'Codex Reset Watch', exact: true });
   await expect(setting).toHaveAttribute('aria-checked', 'false');
   await setting.click();
   await expect(app.getByRole('button', { name: 'Allow Notifications', exact: true })).toBeVisible();
-  for (const name of ['Critical', 'Warning', 'Burning Fast', 'Use It or Lose It']) {
+  for (const name of ['Warning, Receive Alerts', 'Critical, Receive Alerts', 'Burning Fast, Receive Alerts', 'Use It or Lose It, Receive Alerts']) {
     await expect(app.getByRole('switch', { name, exact: true })).toHaveAttribute('aria-checked', 'false');
   }
   await page.reload();
   await openSettings(page);
+  await app.locator('button[data-settings-tab="Alerts"]').click();
   await expect(setting).toHaveAttribute('aria-checked', 'true');
 });
 
@@ -85,15 +90,18 @@ test('unused allowance reminders preserve their choice without enabling other al
   await openHome(page);
   await openSettings(page);
   const app = page.locator('[data-mock]');
-  const setting = app.getByRole('switch', { name: 'Use It or Lose It', exact: true });
+  const tab = app.getByRole('tab', { name: 'Alerts', exact: true });
+  await tab.click();
+  const setting = app.getByRole('switch', { name: 'Use It or Lose It, Receive Alerts', exact: true });
   await expect(setting).toHaveAttribute('aria-checked', 'false');
   await setting.click();
   await expect(app.getByRole('button', { name: 'Allow Notifications', exact: true })).toBeVisible();
-  for (const name of ['Critical', 'Warning', 'Burning Fast', 'Codex Reset Watch']) {
+  for (const name of ['Critical, Receive Alerts', 'Warning, Receive Alerts', 'Burning Fast, Receive Alerts', 'Codex Reset Watch']) {
     await expect(app.getByRole('switch', { name, exact: true })).toHaveAttribute('aria-checked', 'false');
   }
   await page.reload();
   await openSettings(page);
+  await tab.click();
   await expect(setting).toHaveAttribute('aria-checked', 'true');
 });
 
@@ -101,10 +109,6 @@ test('dashboard context menu confirms the selected account before switching', as
   await openHome(page);
   await allUsage(page);
   const app = page.locator('[data-mock]');
-  await openSettings(page);
-  await chooseSetting(page, 'Usage Cards', 'Single Card');
-  await app.getByRole('button', { name: 'Back', exact: true }).click();
-  await chooseSetting(page, 'Claude Account', 'Account 2');
   const card = app.locator('[data-card="claude-account-2"]');
   await card.locator('[data-account-actions-trigger]').click({ button: 'right' });
   const action = card.getByRole('menuitem', { name: 'Use Claude: Account 2', exact: true });
@@ -113,45 +117,42 @@ test('dashboard context menu confirms the selected account before switching', as
   const dialog = app.getByRole('dialog', { name: 'Switch Account?' });
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(card).toHaveAttribute('data-inactive-account', 'true');
-  await card.getByRole('button', { name: 'Claude Account', exact: true }).press('Shift+F10');
+  await card.locator('[data-account-actions-trigger]').press('Shift+F10');
   await expect(action).toBeFocused();
   await action.press('Enter');
   await dialog.getByRole('button', { name: 'Switch Account', exact: true }).click();
   await expect(card).toHaveAttribute('data-inactive-account', 'false');
-  await card.getByRole('button', { name: 'Claude Account', exact: true }).press('Shift+F10');
+  await card.locator('[data-account-actions-trigger]').press('Shift+F10');
   await expect(action).toBeDisabled();
   await expect(card.getByRole('menuitem', { name: 'Refresh', exact: true })).toBeFocused();
 });
 
-test('text-only accounts keep context menus and restore focus to their headers', async ({ page }) => {
+test('text-only account cards open context menus and restore focus to their headers', async ({ page }) => {
   await openHome(page);
-  await allUsage(page);
+  await accountDetail(page, 'codex');
   const app = page.locator('[data-mock]');
-  await app.getByRole('button', { name: 'Options', exact: true }).click();
-  await app.getByRole('menuitem', { name: 'Customize', exact: true }).click();
-  await app.locator('[data-scr="customize"] [data-go="metrics:codex"]').click();
-  for (const toggle of await app.locator('[data-scr="metrics:codex"] [data-metric-toggle]').all()) {
-    const enabled = await toggle.getAttribute('aria-checked') === 'true';
-    const today = await toggle.getAttribute('data-metric-toggle') === 'codex.today';
-    if (enabled !== today) await toggle.click();
+  const detail = app.locator('[data-scr="account:codex:account-1"]');
+  for (const toggle of await detail.locator('[data-metric-toggle]').all()) {
+    if (await toggle.getAttribute('data-metric-toggle') !== 'codex.today') await toggle.click();
   }
-  await app.locator('[data-scr="metrics:codex"] .am-back').click();
-  await app.locator('[data-scr="customize"] .am-back').click();
+  await app.locator('.am-scr:not([hidden]) .am-back').click();
+  await app.locator('.am-scr:not([hidden]) .am-back').click();
+  await allUsage(page);
   const first = app.locator('[data-card="codex-account-1"]');
-  const firstHeader = first.locator('[data-account-actions-trigger]');
+  const header = first.locator('[data-account-actions-trigger]');
   await expect(first.locator('[data-metric="codex.today"]')).toBeVisible();
-  await expect(first.locator('.am-meter:visible')).toHaveCount(0);
-  await firstHeader.click({ button: 'right' });
-  await expect(first.getByRole('menuitem', { name: 'Refresh', exact: true })).toBeFocused();
+  await expect(first.locator('.am-row:visible')).toHaveCount(0);
+  await header.click({ button: 'right' });
+  const refresh = first.getByRole('menuitem', { name: 'Refresh', exact: true });
+  await expect(refresh).toBeFocused();
+  await header.click();
+  await expect(refresh).toBeHidden();
+  await expect(header).toBeFocused();
+  await header.press('Shift+F10');
+  await expect(refresh).toBeFocused();
   await page.keyboard.press('Escape');
-  await expect(firstHeader).toBeFocused();
-  await firstHeader.press('Shift+Tab');
-  await page.keyboard.press('Tab');
-  await expect(firstHeader).toBeFocused();
-  await firstHeader.press('Shift+F10');
-  await expect(first.locator('.am-account-actions')).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(firstHeader).toBeFocused();
+  await expect(refresh).toBeHidden();
+  await expect(header).toBeFocused();
 });
 
 test('Codex limits stay per account while Reset Watch follows the active account once', async ({ page }) => {
@@ -178,6 +179,7 @@ test('Codex limits stay per account while Reset Watch follows the active account
 
 test('new feature tours show forecasts, credit count, and guides without leaking stage state', async ({ page }) => {
   await openHome(page);
+  await allUsage(page);
   const tour = page.locator('[data-feature-tour]');
   await tour.evaluate((element) => element.scrollIntoView({ block: 'start', behavior: 'instant' }));
   await tour.locator('[data-tour-tab="reset-watch"]').click();
@@ -217,10 +219,9 @@ test('reset credit details float above the dashboard without changing card heigh
   const bounds = await detail.boundingBox();
   expect(bounds!.x).toBeGreaterThanOrEqual(8);
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width - 8);
-  await page.keyboard.press('Escape');
+  await trigger.click();
   await expect(detail).toBeHidden();
-  await expect(trigger).toBeFocused();
-  await trigger.press('Enter');
+  await trigger.click();
   await expect(detail).toBeVisible();
   await app.getByRole('button', { name: 'Next update in 4m', exact: true }).click();
   await expect(detail).toBeHidden();
@@ -229,7 +230,7 @@ test('reset credit details float above the dashboard without changing card heigh
 });
 
 test('reset credit hover opens only from the count and remains open while moving into the detail', async ({ page, isMobile }) => {
-  test.skip(isMobile, 'Touch uses the tested click and keyboard path');
+  test.skip(isMobile, 'Touch uses the tested tap path');
   await openHome(page);
   await allUsage(page);
   const card = page.locator('[data-mock] [data-card="codex-account-1"]');

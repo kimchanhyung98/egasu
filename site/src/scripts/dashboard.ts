@@ -1,5 +1,6 @@
 import { dashboardLines, priorityBoard, menuBarItems } from '../data/preview-dashboard';
-import { orderedMetrics, accountName, type PreviewState } from '../data/preview-state';
+import { metricKey, providerMetrics } from '../data/metrics';
+import { orderedMetrics, accountName, accountEmail, type PreviewState } from '../data/preview-state';
 import { providers } from '../data/providers';
 
 export function renderDashboard(mock: HTMLElement, state: PreviewState): void {
@@ -21,20 +22,14 @@ export function renderDashboard(mock: HTMLElement, state: PreviewState): void {
       if (line) row.querySelector<HTMLElement>('[data-severity]')?.setAttribute('data-severity', line.severity);
       content.append(row);
     });
-    const canSwitchAccount = state.preferences.usageCards === 'Single Card'
-      && state.viewedAccounts[family] === accountID
-      && section.querySelector('[data-account-selector]') !== null;
-    section.hidden = !state.enabledProviders.includes(family) || (!own.length && !canSwitchAccount);
-    content.hidden = !own.length;
-    const empty = section.querySelector<HTMLElement>('[data-account-empty]');
-    if (empty) empty.hidden = own.length !== 0;
+    section.hidden = !state.enabledProviders.includes(family) || !own.length;
     section.dataset.inactiveAccount = String(accountID !== 'default' && state.activeAccounts[family] !== accountID);
   });
   mock.querySelectorAll<HTMLElement>('[data-family]').forEach((family) => {
     const id = family.dataset.family!;
-    const hasVisibleAccount = family.querySelector('.am-account-section:not([hidden])') !== null;
+    const hasData = lines.some((line) => line.provider === id);
     const pending = board.pending.includes(id);
-    family.hidden = !state.enabledProviders.includes(id) || (!hasVisibleAccount && !pending);
+    family.hidden = !state.enabledProviders.includes(id) || (!hasData && !pending);
     family.querySelector<HTMLElement>('[data-family-notice]')!.hidden = !pending;
     const container = family.querySelector<HTMLElement>('.am-family-accounts')!;
     const order = state.accountOrder[id] ?? ['default'];
@@ -79,12 +74,7 @@ export function renderDashboard(mock: HTMLElement, state: PreviewState): void {
   mock.dataset.layout = state.preferences.allUsageLayout === 'Cards' ? 'cards' : 'minimal';
   setDashboardTab(mock, mock.dataset.dashboardTab ?? String(state.preferences.defaultTab));
 
-  mock.querySelectorAll<HTMLElement>('[data-account-name]').forEach((element) => {
-    const family = element.dataset.accountName!;
-    const id = element.dataset.accountId!;
-    element.textContent = accountName(state, family, id);
-    element.classList.toggle('is-in-use', state.activeAccounts[family] === id);
-  });
+  renderAccountSettings(mock, state);
   renderMenuBar(mock, state);
 }
 
@@ -102,6 +92,61 @@ export function setDashboardTab(mock: HTMLElement, tab: string): void {
     panel.hidden = !hasProviders || panel.dataset.dashboardPanel !== tab;
   });
   mock.querySelector<HTMLElement>('[data-priority-copy]')?.toggleAttribute('hidden', !hasProviders || tab !== 'Priority');
+}
+
+function renderAccountSettings(mock: HTMLElement, state: PreviewState): void {
+  const empty = mock.querySelector<HTMLElement>('[data-accounts-empty]');
+  if (empty) empty.hidden = state.enabledProviders.length !== 0;
+  mock.querySelectorAll<HTMLElement>('[data-account-list-row]').forEach((row) => {
+    row.hidden = !state.enabledProviders.includes(row.dataset.provider!);
+  });
+  const list = mock.querySelector<HTMLElement>('[data-account-list]');
+  if (list) state.providerOrder.forEach((family) => {
+    const order = state.accountOrder[family] ?? ['default'];
+    order.forEach((account) => {
+      const row = list.querySelector<HTMLElement>(`[data-provider="${family}"][data-account-id="${account}"]`);
+      if (row) list.append(row);
+    });
+  });
+  mock.querySelectorAll<HTMLElement>('[data-metric-toggle], [data-pin]').forEach((button) => {
+    const id = button.dataset.metricToggle ?? button.dataset.pin!;
+    const key = metricKey(id, button.dataset.accountId);
+    const shown = !state.hiddenMetrics.includes(key);
+    if (button.dataset.pin) {
+      const pinned = state.pinnedMetrics.includes(key);
+      button.setAttribute('aria-pressed', String(pinned));
+      const title = providerMetrics[id.split('.')[0]].rows.find((row) => row.id === id)!.title;
+      button.setAttribute('aria-label', `${pinned ? 'Unpin' : 'Pin'} ${title}`);
+      (button as HTMLButtonElement).disabled = !shown;
+    } else {
+      button.setAttribute('aria-checked', String(shown));
+      button.classList.toggle('is-on', shown);
+    }
+  });
+  mock.querySelectorAll<HTMLElement>('[data-account-detail]').forEach((detail) => {
+    const order = orderedMetrics(state, detail.dataset.accountDetail!, detail.dataset.accountId!).map((metric) => metric.id);
+    detail.querySelectorAll<HTMLElement>('[data-metric-list]').forEach((list) => {
+      [...list.children].sort((a, b) => order.indexOf((a as HTMLElement).dataset.metricSetting!) - order.indexOf((b as HTMLElement).dataset.metricSetting!)).forEach((row) => list.append(row));
+    });
+  });
+  renderAccountNames(mock, state);
+}
+
+function renderAccountNames(mock: HTMLElement, state: PreviewState): void {
+  mock.querySelectorAll<HTMLElement>('[data-account-name]').forEach((element) => {
+    const family = element.dataset.accountName!;
+    const id = element.dataset.accountId!;
+    const dashboard = element.closest('[data-scr="dashboard"]');
+    element.toggleAttribute('data-preview-literal', Object.hasOwn(state.accountNames, `${family}:${id}`) || Boolean(dashboard && mock.dataset.showEmails === 'true'));
+    element.textContent = dashboard && mock.dataset.showEmails === 'true' ? accountEmail(family, id) : accountName(state, family, id);
+    element.classList.toggle('is-in-use', state.activeAccounts[family] === id);
+  });
+  mock.querySelectorAll<HTMLElement>('[data-in-use]').forEach((badge) => { badge.hidden = state.activeAccounts[badge.dataset.inUse!] !== badge.dataset.accountId; });
+  mock.querySelectorAll<HTMLInputElement>('[data-rename-input]').forEach((input) => {
+    const form = input.closest<HTMLElement>('[data-rename-form]')!;
+    if (input !== document.activeElement) input.value = accountName(state, form.dataset.provider!, form.dataset.accountId!);
+  });
+  mock.querySelectorAll<HTMLButtonElement>('[data-rename-account]').forEach((button) => { button.disabled = state.preferences.privacyMode === true; });
 }
 
 function renderMenuBar(mock: HTMLElement, state: PreviewState): void {

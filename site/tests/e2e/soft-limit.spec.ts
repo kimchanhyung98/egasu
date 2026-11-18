@@ -9,15 +9,16 @@ async function markerFraction(row: Locator): Promise<number> {
   });
 }
 
-test('Soft Limit notices keep Options available while the message is visible', async ({ page }) => {
+test('Soft Limit confirmation preserves navigation and cancellation status', async ({ page }) => {
   await openHome(page);
+  await allUsage(page);
   const app = page.locator('[data-mock]');
   await openSettings(page);
+  await app.locator('button[data-settings-tab="Advanced"]').click();
   await app.getByRole('switch', { name: 'Enable Soft Limit' }).click();
+  await app.locator('[data-soft-confirm]').click();
   await app.getByRole('button', { name: 'Back', exact: true }).click();
-  const notice = app.getByRole('status');
-  await expect(notice).toBeVisible();
-  await expect(notice).toContainText('Preview guide changed');
+  await expect(app).toHaveAttribute('data-soft-limit', 'Weekly');
   const options = app.getByRole('button', { name: 'Options', exact: true });
   await options.scrollIntoViewIfNeeded();
   expect(await options.evaluate((button) => {
@@ -27,16 +28,18 @@ test('Soft Limit notices keep Options available while the message is visible', a
   await options.click();
   await app.getByRole('menuitem', { name: 'Settings', exact: true }).click();
   await expect(app).toHaveAttribute('data-screen', 'settings');
-  await expect(notice).toBeVisible();
+  await expect(app.locator('[data-settings-group="softLimit"]')).toContainText('Automatic cancellation is currently unavailable.');
 });
 
 test('Soft Limit covers Fable and Antigravity model windows and mirrors them in Left mode', async ({ page }) => {
   await openHome(page);
+  await allUsage(page);
   const app = page.locator('[data-mock]');
   await openSettings(page);
+  await app.locator('button[data-settings-tab="Advanced"]').click();
   await app.getByRole('switch', { name: 'Enable Soft Limit' }).click();
+  await app.locator('[data-soft-confirm]').click();
   await app.getByRole('button', { name: 'Back', exact: true }).click();
-  await allUsage(page);
   const fable = app.locator('[data-card="claude-account-1"] [data-metric="claude.fable"]');
   const antigravity = app.locator('[data-card="antigravity"]');
   const session = antigravity.locator('[data-metric="antigravity.claude"]');
@@ -62,12 +65,14 @@ test('Soft Limit covers Fable and Antigravity model windows and mirrors them in 
 
 test('Soft Limit does not add guides to supported metrics without data or the public forecast', async ({ page }) => {
   await openHome(page);
+  await allUsage(page);
   const app = page.locator('[data-mock]');
   await openSettings(page);
+  await app.locator('button[data-settings-tab="Advanced"]').click();
   await app.getByRole('switch', { name: 'Enable Soft Limit' }).click();
+  await app.locator('[data-soft-confirm]').click();
   await app.getByRole('button', { name: 'Back', exact: true }).click();
 
-  await allUsage(page);
   for (const [provider, metric] of [['claude', 'claude.sonnet'], ['codex', 'codex.spark']]) {
     const row = app.locator(`[data-card="${provider}-account-1"] [data-metric="${metric}"]`);
     await expect(row).toBeHidden();

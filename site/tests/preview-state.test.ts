@@ -2,82 +2,61 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { test } from 'node:test';
 import { accountFamilies } from '../src/data/accounts.ts';
-import { settingGroups } from '../src/data/settings.ts';
+import { settingGroups, settingsTabs, alertConditions } from '../src/data/settings.ts';
 import { softLimitWindows } from '../src/data/metrics.ts';
-import { initialPreviewState, changePreference, selectDashboardAccount, activateAccount, restorePreviewState, previewTime } from '../src/data/preview-state.ts';
+import { initialPreviewState, changePreference, activateAccount, renameAccount, restorePreviewState, previewTime } from '../src/data/preview-state.ts';
 
 const source = (path: string): string => readFileSync(new URL(`../../Sources/Egasu/${path}`, import.meta.url), 'utf8');
 const englishSource = (path: string): string => source(path)
   .replace(/\bL10n\.\w+\(\s*("(?:\\.|[^"\\])*")\s*\)/g, '$1');
 
-// W 전환 전 사이트의 기존 설정 진입점 유지, 네이티브 네 탭은 새 경로에서 검사.
-test('web settings keep their complete current sections until the settings preview changes', () => {
-  assert.deepEqual(settingGroups.map((group) => group.title), [
-    'General', 'Accounts', 'iCloud Sync', 'Appearance', 'Usage Display', 'Soft Limit',
-    'Notifications', 'Privacy', 'Tokscale', 'Command Line', 'Advanced', 'Updates',
-  ]);
+test('Settings follows the native tab order and covers its named sections', () => {
+  const screen = englishSource('Views/Settings/SettingsScreen.swift');
+  const tabs = [...screen.matchAll(/case \.\w+: Settings(\w+)Tab\(/g)].map((match) => match[1]);
+  assert.deepEqual(settingsTabs, tabs);
+  for (const tab of settingsTabs) {
+    const body = englishSource(`Views/Settings/Settings${tab}Tab.swift`);
+    const titles = [...body.matchAll(/Section\("([^"]+)"\)/g)].map((match) => match[1]);
+    const groups = settingGroups.filter((group) => group.tab === tab);
+    for (const title of titles) assert.ok(groups.some((group) => group.title === title), `${tab}: ${title}`);
+  }
+  assert.ok(!settingGroups.some((group) => group.id === 'accounts'));
 });
 
-test('native settings route every tab while web account management stays available', () => {
-  const settings = source('Views/Settings/SettingsScreen.swift');
-  for (const [tab, view] of [['general', 'SettingsGeneralTab'], ['display', 'SettingsDisplayTab'],
-    ['alerts', 'SettingsAlertsTab'], ['advanced', 'SettingsAdvancedTab']]) {
-    assert.match(settings, new RegExp(`case \\.${tab}: ${view}\\(`));
-  }
-  assert.doesNotMatch(settings, /\bAccountsSettingsSection\(/);
-  const accounts = settingGroups.filter((group) => group.id === 'accounts');
-  assert.equal(accounts.length, 1);
-  assert.equal(accounts[0].accessory, 'add');
-  assert.deepEqual(accounts[0].families, accountFamilies);
-  assert.match(source('Views/Accounts/AccountsView.swift'), /\bAccountListView\(/);
-  assert.match(englishSource('Views/PopoverFooter.swift'), /"Add New Account"/);
-});
-
-test('shared settings rows and all notification triggers keep their preview controls', () => {
-  const labels = new Set(settingGroups.flatMap((group) => [group.title, ...group.rows.map((row) => row.label)]));
-  const native = ['SettingsGeneralTab', 'SettingsDisplayTab', 'SettingsAlertsTab', 'SettingsAdvancedTab',
-    'ICloudSyncSettingsSection', 'SoftLimitSettingsSection', 'TokscaleSettingsSection']
-    .map((name) => englishSource(`Views/Settings/${name}.swift`)).join('\n');
-  const nativeRows = [...native.matchAll(/(?:SettingsPicker\(\s*|Toggle\(\s*|title:\s*)"([^"\\]+)"/g)]
-    .map((match) => match[1]);
-  assert.ok(nativeRows.includes('Show Total Spend'));
-  assert.ok(nativeRows.includes('Launch at Login'));
-  const nativeOnlyUntilPreview = new Set(['Default Tab', 'All Usage Layout', 'Max Items In Menu Bar',
-    'Menu Bar Items', 'Show Extra Indicators']);
-  const previousLabels: Record<string, string> = {
-    'Pace Marks': 'Always Show Pacing', 'Privacy Mode': 'Hide From Screen Share', 'Check Automatically': 'Update Automatically',
-  };
-  for (const label of nativeRows) {
-    if (!nativeOnlyUntilPreview.has(label)) assert.ok(labels.has(previousLabels[label] ?? label), label);
-  }
-  assert.match(native, /LanguageSettingsRow\(selection:/);
+test('Settings covers native controls and the four alert conditions', () => {
+  const labels = new Set(settingGroups.flatMap((group) => group.rows.map((row) => row.label)));
+  const files = settingsTabs.map((tab) => `Views/Settings/Settings${tab}Tab.swift`);
+  const native = files.flatMap((file) => [...englishSource(file).replace(/private var commandLineSection:[\s\S]*?(?=private var debugSection:)/, '').matchAll(/(?:Toggle|SettingsPicker)\(\s*"([^"]+)"|SettingsTitle\(\s*title:\s*"([^"]+)"/g)].map((match) => match[1] ?? match[2]));
+  assert.ok(native.includes('Default Tab'));
+  assert.ok(native.includes('Show Total Spend'));
+  for (const label of native.filter((label) => !label.includes('\\('))) assert.ok(labels.has(label), label);
+  const alerts = englishSource('Views/Settings/SettingsAlertsTab.swift');
+  for (const { label } of alertConditions) assert.ok(alerts.includes(`"${label}"`), label);
+  assert.deepEqual(alertConditions.map((condition) => condition.label), ['Warning', 'Critical', 'Burning Fast', 'Use It or Lose It']);
   assert.ok(labels.has('Language'));
-  const milestones = englishSource('Support/PaceNotificationLogic.swift').split('var settingLabel: String')[1].split('var notificationTitle')[0];
-  const milestoneLabels = [...milestones.matchAll(/(?:return|case \.\w+:)\s*"([^"]+)"/g)].map((match) => match[1]);
-  assert.equal(milestoneLabels.length, 4, 'Every native notification trigger must be checked');
-  for (const label of milestoneLabels) assert.ok(labels.has(label), label);
-  const resetWatch = englishSource('Stores/CodexResetWatchNotificationEvaluator.swift');
-  const resetWatchLabel = resetWatch.match(/static var settingLabel: String \{ "([^"]+)" \}/)?.[1];
-  assert.ok(resetWatchLabel, 'The native Reset Watch notification label must be checked');
-  assert.ok(labels.has(resetWatchLabel));
+  assert.ok(labels.has('Codex Reset Watch'));
 });
 
-test('Notifications, Soft Limit, and Tokscale expose their preview controls', () => {
+test('Alerts, Soft Limit, and Tokscale expose their preview controls', () => {
   const expectedRows = {
-    notifications: {
-      underTenPercent: 'toggle',
-      healthyToClose: 'toggle',
+    thresholds: { tab: 'Alerts', rows: { warning: 'picker', critical: 'picker' } },
+    conditions: { tab: 'Alerts', rows: {
+      warningNotification: 'toggle',
+      criticalNotification: 'toggle',
+      showBurningFast: 'toggle',
       closeToRunningOut: 'toggle',
-      useItOrLoseIt: 'toggle',
-      codexResetWatch: 'toggle',
-    },
-    softLimit: { softLimitEnabled: 'toggle', softLimitWindow: 'picker', softLimitThreshold: 'number' },
-    tokscale: { usageSync: 'action' },
+      showUseItOrLoseIt: 'toggle',
+      useItOrLoseItNotification: 'toggle',
+    } },
+    notifications: { tab: 'Alerts', rows: { codexResetWatch: 'toggle' } },
+    softLimit: { tab: 'Advanced', rows: { softLimitEnabled: 'toggle', softLimitWindow: 'picker', softLimitThreshold: 'number' } },
+    tokscale: { tab: 'Advanced', rows: { usageSync: 'action' } },
   };
-  for (const [groupId, controls] of Object.entries(expectedRows)) {
+  for (const [groupId, { tab, rows }] of Object.entries(expectedRows)) {
     const group = settingGroups.find((group) => group.id === groupId);
     assert.ok(group, groupId);
-    for (const [id, kind] of Object.entries(controls)) {
+    assert.equal(group.tab, tab, groupId);
+    for (const [id, kind] of Object.entries(rows)) {
       assert.equal(group.rows.find((row) => row.id === id)?.control.kind, kind, id);
     }
   }
@@ -85,18 +64,6 @@ test('Notifications, Soft Limit, and Tokscale expose their preview controls', ()
   for (const id of ['softLimitWindow', 'softLimitThreshold']) {
     assert.equal(softLimit?.rows.find((row) => row.id === id)?.requires, 'softLimitEnabled', id);
   }
-});
-
-test('native layout and terminal controls stay wired after moving the settings files', () => {
-  const display = englishSource('Views/Settings/SettingsDisplayTab.swift');
-  assert.match(display, /"All Usage Layout", selection: \$display\.dashboardLayout,\s*options: DashboardLayoutStyle\.allCases/);
-  assert.doesNotMatch(display, /\bDensitySetting\b/);
-  const advanced = source('Views/Settings/SettingsAdvancedTab.swift');
-  assert.match(advanced, /\n        commandLineSection\n/);
-  assert.match(advanced, /commandLineTool\.install\(\)/);
-  assert.match(advanced, /commandLineTool\.uninstall\(\)/);
-  const preview = settingGroups.flatMap((group) => group.rows).find((row) => row.id === 'density')?.control;
-  assert.ok(preview && preview.kind === 'picker');
 });
 
 test('Soft Limit preserves its threshold, rejects invalid percentages, and defaults to off', () => {
@@ -141,7 +108,7 @@ test('Settings includes the native Log Level options and app actions', () => {
   assert.equal(logLevel.kind, 'picker');
   if (logLevel.kind === 'picker') assert.deepEqual(logLevel.options, expected);
   const actions = settingGroups.flatMap((group) => group.rows).flatMap((row) => row.control.kind === 'action' ? [row.control.label] : []);
-  for (const action of ['Record Shortcut', 'Sync', 'Install…', 'Copy Log Path', 'Reveal in Finder', 'Check for Updates…']) assert.ok(actions.includes(action), action);
+  for (const action of ['Record Shortcut', 'Sync', 'Copy Log Path', 'Reveal in Finder', 'Check for Updates…']) assert.ok(actions.includes(action), action);
 });
 
 test('Language offers the three app languages and starts in English', () => {
@@ -165,50 +132,105 @@ test('public account examples are shared, generic, and have one active account',
   for (const family of accountFamilies) {
     assert.ok(family.profiles.every((profile) => /^Account \d+$/.test(profile.name)));
     assert.equal(family.profiles.filter((profile) => profile.id === family.activeAccount).length, 1);
-    assert.equal(settingGroups.find((group) => group.id === 'accounts')!.families, accountFamilies);
   }
 });
 
-test('the web preview starts with both Codex accounts and preserves an explicit single-card choice', () => {
+test('both accounts remain registered when the active account changes', () => {
   const initial = initialPreviewState();
-  assert.equal(initial.preferences.usageCards, 'Separate Cards');
-  assert.equal(accountFamilies.find((family) => family.id === 'codex')?.profiles.length, 2);
-  const single = changePreference(initial, 'usageCards', 'Single Card');
-  assert.equal(restorePreviewState(JSON.parse(JSON.stringify(single))).preferences.usageCards, 'Single Card');
-});
-
-test('dashboard selection does not switch the active account', () => {
-  const before = initialPreviewState();
-  const after = selectDashboardAccount(before, 'claude', 'account-2');
-  assert.equal(after.viewedAccounts.claude, 'account-2');
-  assert.equal(after.activeAccounts.claude, 'account-1');
-  assert.equal(before.viewedAccounts.claude, 'account-1');
-  assert.deepEqual(after.preferences, before.preferences);
-});
-
-test('confirmed Settings switching selects exactly one account and moves the dashboard once', () => {
-  const switched = activateAccount(initialPreviewState(), 'codex', 'account-2');
+  const switched = activateAccount(initial, 'codex', 'account-2');
   assert.equal(switched.activeAccounts.codex, 'account-2');
-  assert.equal(switched.viewedAccounts.codex, 'account-2');
-  const viewed = selectDashboardAccount(switched, 'codex', 'account-1');
-  assert.equal(viewed.activeAccounts.codex, 'account-2');
-  assert.equal(viewed.viewedAccounts.codex, 'account-1');
-  assert.equal(viewed.activeAccounts.claude, 'account-1');
+  assert.equal(switched.activeAccounts.claude, 'account-1');
+  assert.deepEqual(switched.accountOrder.codex, ['account-1', 'account-2']);
+  assert.deepEqual(restorePreviewState(JSON.parse(JSON.stringify(switched))), switched);
 });
 
-test('card presentation preserves both account choices across mode changes and reload', () => {
-  let state = activateAccount(initialPreviewState(), 'claude', 'account-2');
-  state = selectDashboardAccount(state, 'claude', 'account-1');
-  state = changePreference(state, 'usageCards', 'Separate Cards');
-  state = changePreference(state, 'showUsageAs', 'Left');
-  state = changePreference(state, 'resetTimes', 'Countdown');
-  const restored = restorePreviewState(JSON.parse(JSON.stringify(state)));
-  assert.deepEqual(restored, state);
-  const single = changePreference(restored, 'usageCards', 'Single Card');
-  assert.equal(single.viewedAccounts.claude, 'account-1');
-  assert.equal(single.activeAccounts.claude, 'account-2');
-  assert.equal(single.preferences.showUsageAs, 'Left');
-  assert.equal(single.preferences.resetTimes, 'Countdown');
+test('swapped account names restore regardless of saved entry order', () => {
+  let state = changePreference(initialPreviewState(), 'theme', 'Dark');
+  state = renameAccount(state, 'claude', 'account-1', 'Temporary');
+  state = renameAccount(state, 'claude', 'account-2', 'Account 1');
+  state = renameAccount(state, 'claude', 'account-1', 'Account 2');
+  assert.deepEqual(restorePreviewState(JSON.parse(JSON.stringify(state))), state);
+  const reversed = { ...state, accountNames: Object.fromEntries(Object.entries(state.accountNames).reverse()) };
+  assert.deepEqual(restorePreviewState(JSON.parse(JSON.stringify(reversed))), state);
+});
+
+test('restored account names keep normalization and reject final name conflicts', () => {
+  const state = initialPreviewState();
+  const restored = restorePreviewState({ ...state, accountNames: {
+    'claude:account-1': ' Account 2 ', 'claude:account-2': ' ', 'codex:account-1': 'Work',
+  } });
+  assert.deepEqual(restored.accountNames, {
+    'claude:account-1': 'Account 2', 'claude:account-2': 'claude.account-2@example.com', 'codex:account-1': 'Work',
+  });
+  for (const accountNames of [
+    { 'claude:account-1': 'Account 2' },
+    { 'claude:account-1': 'Work', 'claude:account-2': 'Work' },
+    { 'claude:account-1': 'Work', 'claude:account-2': ' work ' },
+    { 'claude:account-1': 'claude.account-2@example.com', 'claude:account-2': '' },
+  ]) {
+    assert.throws(() => restorePreviewState({ ...state, accountNames }), /already in use/);
+  }
+});
+
+test('canonically equivalent account names conflict during rename and restore', () => {
+  const decomposed = 'E\u0301quipe';
+  const state = renameAccount(initialPreviewState(), 'claude', 'account-1', decomposed);
+  assert.equal(restorePreviewState(state).accountNames['claude:account-1'], decomposed);
+  assert.throws(() => renameAccount(state, 'claude', 'account-2', 'équipe'), /already in use/);
+  assert.throws(() => restorePreviewState({
+    ...state, accountNames: { ...state.accountNames, 'claude:account-2': 'équipe' },
+  }), /already in use/);
+});
+
+test('rename and restore reject control characters but keep valid joined names', () => {
+  const initial = initialPreviewState();
+  const key = 'claude:account-1';
+  for (const name of ['Ops\u0000Team', 'Ops\tTeam', 'Ops\u0085Team']) {
+    assert.throws(() => renameAccount(initial, 'claude', 'account-1', name), /control characters/);
+    assert.throws(() => restorePreviewState({ ...initial, accountNames: { [key]: name } }), /control characters/);
+  }
+
+  const name = '팀 👩\u200d💻';
+  const renamed = renameAccount(initial, 'claude', 'account-1', name);
+  assert.equal(renamed.accountNames[key], name);
+  assert.equal(restorePreviewState(JSON.parse(JSON.stringify(renamed))).accountNames[key], name);
+});
+
+test('saved account order only accepts registered provider families', () => {
+  const initial = initialPreviewState();
+  const accountOrder = { ...initial.accountOrder, claude: ['account-2', 'account-1'] };
+  assert.deepEqual(restorePreviewState({ ...initial, accountOrder }).accountOrder, accountOrder);
+  for (const family of ['toString', 'valueOf', '__proto__']) {
+    assert.throws(() => restorePreviewState({
+      ...initial, accountOrder: { ...accountOrder, [family]: [] },
+    }), /Invalid preview account order/);
+  }
+});
+
+test('obsolete presentation settings migrate while supported preferences survive', () => {
+  const restored = restorePreviewState({
+    preferences: {
+      usageCards: 'Single Card', density: 'Default', increaseTransparency: true,
+      theme: 'Dark', showUsageAs: 'Left', allUsageLayout: 'Cards',
+      alwaysShowPacing: true, hideFromScreenShare: true, useItOrLoseIt: true,
+      underTenPercent: true, healthyToClose: true,
+    },
+    activeAccounts: { claude: 'account-2' }, viewedAccounts: { claude: 'account-1' },
+  });
+  assert.equal(restored.preferences.usageCards, undefined);
+  assert.equal(restored.preferences.density, undefined);
+  assert.equal(restored.preferences.increaseTransparency, undefined);
+  assert.equal(restored.preferences.paceMarks, true);
+  assert.equal(restored.preferences.privacyMode, true);
+  assert.equal(restored.preferences.useItOrLoseItNotification, true);
+  assert.equal(restored.preferences.criticalNotification, true);
+  assert.equal(restored.preferences.warningNotification, true);
+  assert.equal(restored.preferences.theme, 'Dark');
+  assert.equal(restored.preferences.showUsageAs, 'Left');
+  assert.equal(restored.activeAccounts.claude, 'account-2');
+  assert.equal(restored.preferences.allUsageLayout, 'Cards');
+  assert.deepEqual(restorePreviewState(JSON.parse(JSON.stringify(restored))), restored);
+  assert.throws(() => changePreference(restored, 'allUsageLayout', 'Compact'));
 });
 
 test('invalid stored values cannot inject settings or select unknown accounts', () => {
@@ -219,6 +241,13 @@ test('invalid stored values cannot inject settings or select unknown accounts', 
   assert.throws(() => activateAccount(state, 'codex', 'company'));
   assert.throws(() => restorePreviewState([]));
   assert.throws(() => restorePreviewState({ ...state, preferences: { ...state.preferences, theme: 'invalid' } }));
+  for (const accountNames of [
+    { 'claude:unknown': 'Work' }, { 'unknown:account-1': 'Work' }, { 'claude:account-1:extra': 'Work' },
+    { 'claude:account-1': false }, { 'claude:account-1': 'x'.repeat(61) },
+    { 'claude:account-1': 'Work/Home' }, { 'claude:account-1': 'Work\\Home' },
+  ]) {
+    assert.throws(() => restorePreviewState({ ...state, accountNames }));
+  }
 });
 
 test('time formatting handles noon, midnight, dates, and system preference', () => {

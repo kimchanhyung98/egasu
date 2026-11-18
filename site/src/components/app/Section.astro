@@ -6,49 +6,23 @@ import { accountFamilies } from '../../data/accounts';
 interface Props { c: Card; uid: string; hidden?: boolean }
 const { c, uid, hidden = false } = Astro.props;
 const accountID = c.accountID ?? 'default';
-const family = accountFamilies.find((item) => item.id === c.provider);
-const active = family?.activeAccount;
+const active = accountFamilies.find((family) => family.id === c.provider)?.activeAccount;
 const inactive = c.accountID !== undefined && active !== c.accountID;
-const accounts = family?.profiles ?? [];
-const separate = true;
 const menuID = `${uid}-actions-${c.id}`;
 ---
 <div class="am-section am-account-section" data-card={c.id} data-provider={c.provider} data-account-id={accountID} data-inactive-account={String(inactive)} hidden={hidden}>
   <div class="am-account-caption" tabindex="0" role="group" aria-label={`${c.title}${c.account ? ` ${c.account}` : ''}`}>
-    <span class="am-sr" data-account-title data-family-title={c.title} data-separate-title={c.account ? `${c.title}: ${c.account}` : c.title}>{c.account ? `${c.title}: ${c.account}` : c.title}</span>
-    {c.account && <span class="am-account-label" data-account-name={c.provider} data-account-id={accountID}>{c.account}</span>}
-    {
-      c.account && accounts.length > 1 && (
-        <span class="am-acctwrap" hidden={separate}>
-          <button type="button" class="am-acct" data-account-selector data-picker={`acct-${c.provider}`} aria-label={`${c.title} Account`} aria-haspopup="menu" aria-expanded="false" aria-controls={`${uid}-acct-${c.id}`}>
-            <span data-picker-value>{c.account}</span>
-            <Glyph name="chevron-down" />
-          </button>
-        </span>
-      )
-    }
+    {c.account && <button type="button" class="am-account-label" data-toggle-account-name data-account-name={c.provider} data-account-id={accountID}>{c.account}</button>}
     {c.plan && <span class="am-plan">{c.plan}</span>}
     <button type="button" class="am-icon-action am-caption-menu" tabindex="0" data-open-account-menu data-account-actions-trigger aria-label={`${c.title} Actions`} aria-haspopup="menu" aria-expanded="false" aria-controls={menuID}><Glyph name="more" /></button>
   </div>
   <div class="am-card am-account-metrics">
     {cardRows(c).map((row) => <Row r={row} provider={c.provider} accountID={accountID} uid={uid} inactive={inactive} />)}
   </div>
-  {c.account && accounts.length > 1 && <p class="am-note" data-account-empty hidden>No metrics to show</p>}
-  {c.account && accounts.length > 1 && (
-    <ul class="am-menu am-pickmenu" id={`${uid}-acct-${c.id}`} role="menu" aria-label={`${c.title} Account`} hidden>
-      {accounts.map((a) => (
-        <li role="none">
-          <button type="button" role="menuitemradio" aria-checked={a.id === c.accountID ? 'true' : 'false'} data-pick={`acct-${c.provider}`} data-value={a.id}>
-            <Glyph name="check" class="am-check" />
-            {a.name}
-          </button>
-        </li>
-      ))}
-    </ul>
-  )}
   <ul class="am-menu am-account-actions" id={menuID} role="menu" aria-label={`${c.title} Actions`} hidden>
     {c.accountID && <li role="none"><button type="button" role="menuitem" data-account-switch={c.provider} data-account-id={accountID} disabled={accountID === active}>Use {c.title}: {c.account}</button></li>}
     <li role="none"><button type="button" role="menuitem" data-native-action={`Refresh ${c.title} from the Mac app. This preview uses sample data.`}>Refresh</button></li>
-    <li role="none"><button type="button" role="menuitem" data-go={`metrics:${c.provider}`}>Customize…</button></li>
+    {c.accountID && <li role="none"><button type="button" role="menuitem" data-rename-account={c.provider} data-account-id={accountID}>Rename</button></li>}
+    <li role="none"><button type="button" role="menuitem" data-go={`account:${c.provider}:${accountID}`}>Edit Account…</button></li>
   </ul>
 </div>
