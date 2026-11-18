@@ -92,7 +92,8 @@ final class ReducedMotionPopoverController: NSObject, NSPopoverDelegate {
         self.popover = NSPopover()
         super.init()
         popover.animates = false
-        popover.behavior = .transient
+        // 키 포커스가 바뀌어도 상세를 유지하고, 앵커가 있는 패널 안의 다른 클릭으로 닫음.
+        popover.behavior = .semitransient
         popover.contentViewController = host
         popover.delegate = self
         Self.live.add(self)

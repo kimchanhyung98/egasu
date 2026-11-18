@@ -7,6 +7,13 @@ import XCTest
 final class DashboardSnapshotTests: XCTestCase {
     private let now = Date()
 
+    func testReducedMotionDetailUsesParentScopedDismissalWithoutAnimation() {
+        let controller = ReducedMotionPopoverController(isPresented: .constant(false))
+
+        XCTAssertEqual(controller.popover.behavior, .semitransient)
+        XCTAssertFalse(controller.popover.animates)
+    }
+
     func testAllUsageCardRendersAccountSectionsAndEveryRowKind() throws {
         for appearance in [ColorScheme.light, .dark] {
             let view = DashboardProviderSection(family: codexFamily()) { account in
