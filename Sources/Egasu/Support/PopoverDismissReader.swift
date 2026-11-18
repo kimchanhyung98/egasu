@@ -93,8 +93,8 @@ struct PopoverKeyReader: NSViewRepresentable {
                         eventWindowID: eventWindowID,
                         popoverWindowID: ObjectIdentifier(window)
                     ) else { return false }
-                    // 텍스트 컨트롤 편집 중이거나 shortcut recorder 캡처 중이면 key는 그쪽 소유.
-                    if window.firstResponder is NSText || ShortcutRecorderField.isRecordingActive {
+                    // 텍스트·기본 단축키 입력기가 포커스를 가지면 키 처리를 해당 컨트롤에 위임.
+                    if window.firstResponder is NSText {
                         return false
                     }
                     if isComma {

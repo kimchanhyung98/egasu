@@ -2,7 +2,6 @@ import SwiftUI
 
 struct SoftLimitThresholdField: View {
     let settings: SoftLimitSettingsStore
-    @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
     @State private var text: String
     @State private var errorMessage: String?
     @FocusState private var isFocused: Bool
@@ -13,10 +12,8 @@ struct SoftLimitThresholdField: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                Text(L10n.settings("Threshold"))
-                Spacer(minLength: 8)
+        VStack(alignment: .leading, spacing: 4) {
+            LabeledContent(L10n.settings("Threshold")) {
                 HStack(spacing: 4) {
                     TextField("90", text: $text)
                         .textFieldStyle(.roundedBorder)
@@ -29,16 +26,8 @@ struct SoftLimitThresholdField: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, density.controlRowPadding)
-
             if let errorMessage {
-                Text(errorMessage)
-                    .font(.caption)
-                    .foregroundStyle(Theme.notice)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                SettingsNote(errorMessage)
             }
         }
         .onChange(of: isFocused) { _, focused in

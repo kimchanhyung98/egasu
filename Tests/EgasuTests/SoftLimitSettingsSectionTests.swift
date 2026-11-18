@@ -4,7 +4,7 @@ import XCTest
 
 @MainActor
 final class SoftLimitSettingsSectionTests: XCTestCase {
-    func testRendersEnabledAndDisabledSettingsInBothDensitiesAndAppearances() throws {
+    func testRendersEnabledAndDisabledSettingsAcrossAppearances() throws {
         let suite = "EgasuTests.SoftLimit.SettingsRendering.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -14,8 +14,7 @@ final class SoftLimitSettingsSectionTests: XCTestCase {
         if let export { try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true) }
         for enabled in [false, true] {
             settings.enabled = enabled
-            for density in DensitySetting.allCases {
-                defaults.set(density.rawValue, forKey: DensitySetting.key)
+            do {
                 for appearance in [ColorScheme.light, .dark] {
                     let view = SoftLimitSettingsSection(settings: settings, coordinator: coordinator, providers: [MockData.codex, MockData.claude])
                         .padding(12)
@@ -37,7 +36,7 @@ final class SoftLimitSettingsSectionTests: XCTestCase {
                     XCTAssertGreaterThan(bitmap.pixelsWide, 0)
                     XCTAssertGreaterThan(bitmap.pixelsHigh, 100)
                     if let export {
-                        try png.write(to: export.appendingPathComponent("soft-limit-\(enabled)-\(density.rawValue)-\(appearance).png"))
+                        try png.write(to: export.appendingPathComponent("soft-limit-\(enabled)-\(appearance).png"))
                     }
                 }
             }

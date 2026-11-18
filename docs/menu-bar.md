@@ -2,7 +2,7 @@
 
 선택한 기준에 맞는 지표를 Priority 보드에서 골라 메뉴 막대에 표시.
 
-메뉴·사용량 설명·접근성 문구는 [Settings → General](/docs/settings.md#일반)의 Language 선택에 따라 표시.
+메뉴·사용량 설명·접근성 문구는 [Settings → General](/docs/settings.md#general)의 Language 선택에 따라 표시.
 변경한 언어는 앱 재실행 후 적용하며 프로바이더 이름과 사용자 계정명은 원문 유지.
 
 ## 아이콘 우클릭
@@ -12,7 +12,7 @@
 
 ## 표시 항목
 
-설정 위치: [Settings → Appearance](/docs/settings.md#화면).
+설정 위치: [Settings → Display → Menu Bar Icons](/docs/settings.md#menu-bar-icons).
 
 - **Icon Style**에서 Text(프로바이더 마크·이름·값) 또는 Bars(한 아이콘에 쌓은 막대) 선택.
   저장값이 없으면 기본값 Text.
@@ -57,7 +57,7 @@
 
 ## 화면 공유 중 사용량 숨기기
 
-Settings → Privacy → **Hide From Screen Share**(화면 공유 중 숨기기, 기본값 켬).
+**Settings → Advanced → Privacy → Privacy Mode**(개인정보 보호 모드, 기본값 켬).
 화면 공유·녹화를 감지하면 메뉴 막대의 사용량을 egasu 아이콘으로 대체.
 직접 시작한 화면 녹화도 감지 대상에 포함.
 캡처 종료를 감지하면 선택한 표시로 복귀.

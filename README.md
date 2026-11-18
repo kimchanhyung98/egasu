@@ -46,7 +46,7 @@ Most providers read the credentials already on your machine (keychain, auth file
   선택된 Claude 공유 로그인은 사용량 조회에서도 계정·조직 일치 검증.
 - **[구독 타이머](/docs/refreshing.md#구독-타이머-자동-시작).** Codex·Claude·Antigravity·Kimi·Z.ai의 지원 한도를 서버에서 재확인한 뒤 짧은 구독 메시지로 시작 유도.
   계정·풀·기간별 전송 상한과 기록은 앱 재시작 뒤에도 유지.
-- **[알림](/docs/settings.md#알림).** 잔량 부족·빠른 소진·기간 종료 전 남은 할당량과 Codex Reset Watch 통지.
+- **[알림](/docs/settings.md#alerts).** 잔량 부족·빠른 소진·기간 종료 전 남은 할당량과 Codex Reset Watch 통지.
   다섯 조건을 개별 선택하며 기본값은 꺼짐.
 - **Global shortcut.** Toggle the popover from anywhere — record any combo in Settings.
 - **Accounts.** 계정 추가·전환·재로그인·API 키와 계정별 지표 표시·순서 관리.
@@ -60,7 +60,7 @@ Most providers read the credentials already on your machine (keychain, auth file
   기존 Claude 조회가 진행 중이면 완료 후 재시도.
 - **[Local HTTP API](docs/local-http-api.md).** Other local apps can read machine-friendly limits from `127.0.0.1:6736/v1/limits`; the legacy `/v1/usage` UI contract remains supported. It is loopback-only, rejects browser-origin requests, and never serves credentials.
 - **[Proxy support](docs/proxy.md).** Route provider requests through SOCKS5 or HTTP(S) via `~/.openusage/config.json`.
-- **[네이티브 설정](/docs/settings.md).** 로그인 시 실행, 단축키, 메뉴 막대 표시, 테마, All Usage 배치와 12/24시간 표기.
+- **[네이티브 설정](/docs/settings.md).** General·Display·Alerts·Advanced에서 로그인 시 실행, 단축키, 표시, 알림과 진단 설정.
 - **[Automatic updates](docs/updates.md).** Signed, notarized in-app updates via Sparkle, with an optional beta channel.
 
 

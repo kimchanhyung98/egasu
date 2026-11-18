@@ -30,11 +30,21 @@ struct PopoverTopBar: View {
                 }
             }
         case .settings:
-            navigationBar(back: { popover.back() }) {
-                Text(L10n.common("Settings"))
-            } trailing: {
-                EmptyView()
+            VStack(spacing: 10) {
+                ZStack {
+                    Text(L10n.common("Settings"))
+                        .font(.headline)
+                    HStack(spacing: 0) {
+                        backButton { popover.back() }
+                        Spacer(minLength: 0)
+                    }
+                }
+                .frame(height: 28)
+                SettingsTabBar()
             }
+            .padding(.horizontal, PanelMetrics.margin)
+            .padding(.top, PanelMetrics.margin)
+            .padding(.bottom, DashboardContentView.barGap)
         }
     }
 
@@ -73,6 +83,48 @@ struct PopoverTopBar: View {
         .buttonStyle(.plain)
         .hoverTooltip(L10n.dashboard("Back"))
         .accessibilityLabel(L10n.dashboard("Back"))
+    }
+}
+
+/// Settings 탭 막대 — 기호 + 이름, 고른 탭은 파란 글자와 배경.
+private struct SettingsTabBar: View {
+    @Environment(PopoverState.self) private var popover
+    @Environment(\.reduceAnimations) private var reduceAnimations
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(SettingsTab.allCases, id: \.self) { tab(for: $0) }
+        }
+    }
+
+    private func tab(for tab: SettingsTab) -> some View {
+        let isSelected = popover.settingsTab == tab
+        return Button {
+            popover.settingsTab = tab
+        } label: {
+            VStack(spacing: 2) {
+                Image(systemName: tab.symbol)
+                    .font(.system(size: 16))
+                    .frame(height: 20)
+                Text(tab.title)
+                    .font(.system(size: 11))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(isSelected ? AnyShapeStyle(Theme.severityColor(.normal)) : AnyShapeStyle(.secondary))
+            .frame(maxWidth: .infinity)
+            .padding(.top, 5)
+            .padding(.bottom, 4)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Theme.controlFill)
+                }
+            }
+            .animation(reduceAnimations ? nil : .easeInOut(duration: 0.18), value: isSelected)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

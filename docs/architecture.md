@@ -278,7 +278,7 @@ Reset Watch 평가기의 입력은 조회 결과인 `receive`와 설정 변경�
 권한 요청·재허용 확인, 배너·사운드·그룹화, 오류 기록, 무효 요청 제거와 알림 클릭 처리 담당.
 권한 요청 결과를 재사용하더라도 매 전달 전 시스템의 현재 허용 상태 확인.
 실제 배너 표시와 권한 창은 별도의 앱 실행 검증 대상.
-사용자 설정과 알림 조건은 [알림 설정](/docs/settings.md#알림)과 [Reset Watch 알림](/docs/providers/codex.md#reset-watch-알림) 참조.
+사용자 설정과 알림 조건은 [알림 설정](/docs/settings.md#alerts)과 [Reset Watch 알림](/docs/providers/codex.md#reset-watch-알림) 참조.
 
 ## 계정 표시
 

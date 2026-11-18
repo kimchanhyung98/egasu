@@ -15,8 +15,6 @@ struct RateLimitResetsDetail: View {
     /// 지정 만료 시각의 credit을 주어진 idempotency key로 claim — `nil`이면 timeline이 read-only.
     var claim: ((_ expiry: Date, _ redeemRequestID: String) async -> ResetClaimOutcome)?
 
-    @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
-
     @State private var claimedExpiries: Set<Date> = []
     @State private var confirmation: Confirmation?
     @State private var claimingExpiry: Date?
@@ -90,7 +88,7 @@ struct RateLimitResetsDetail: View {
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             Text(L10n.dashboard("You have no rate limit resets"))
-                .font(.system(size: density.supportingPointSize))
+                .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
@@ -107,7 +105,7 @@ struct RateLimitResetsDetail: View {
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             Text(L10n.dashboard("%d available", count))
-                .font(.system(size: density.supportingPointSize))
+                .font(.system(size: 11))
                 .foregroundStyle(.primary)
             Text(L10n.dashboard("Expiry times unavailable"))
                 .font(.system(size: 11))
@@ -185,14 +183,14 @@ struct RateLimitResetsDetail: View {
     }
 
     /// resting/claimable node의 고정 높이 — hover로 countdown↔"Use" 교체 시 행 높이가 튀지 않게 고정.
-    private var nodeHeight: CGFloat { density.supportingPointSize + 18 }
+    private var nodeHeight: CGFloat { 29 }
     /// confirm 카드 내부 padding — `dotCenterY`와 공유해 rail dot이 카드 첫 줄에 정렬.
     private let confirmCardPadding: CGFloat = 10
 
     private func row(_ entry: Entry) -> some View {
         HStack(spacing: 8) {
             Text(entry.time)
-                .font(.system(size: density.supportingPointSize))
+                .font(.system(size: 11))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
             Spacer(minLength: 8)
@@ -219,7 +217,7 @@ struct RateLimitResetsDetail: View {
                     .transition(.opacity)
             } else if let countdown = entry.countdown {
                 Text(countdown)
-                    .font(.system(size: density.supportingPointSize))
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
                     .fixedSize(horizontal: true, vertical: false)
@@ -232,7 +230,7 @@ struct RateLimitResetsDetail: View {
     private func confirmRow(_ entry: Entry) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L10n.dashboard("Use this reset?"))
-                .font(.system(size: density.supportingPointSize, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.primary)
             Text(L10n.dashboard("Immediately reset your usage limits. This can't be undone."))
                 .font(.system(size: 11))
@@ -261,7 +259,7 @@ struct RateLimitResetsDetail: View {
     private func claimingRow() -> some View {
         HStack(spacing: 8) {
             Text(L10n.dashboard("Resetting your usage…"))
-                .font(.system(size: density.supportingPointSize))
+                .font(.system(size: 11))
                 .foregroundStyle(.secondary)
             Spacer(minLength: 8)
             ProgressView().controlSize(.small)
@@ -276,7 +274,7 @@ struct RateLimitResetsDetail: View {
                 .foregroundStyle(banner.tint)
                 .accessibilityHidden(true)
             Text(banner.text)
-                .font(.system(size: density.supportingPointSize, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(banner.tint)
                 .fixedSize(horizontal: false, vertical: true)
         }

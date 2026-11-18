@@ -10,46 +10,48 @@ const source = (path: string): string => readFileSync(new URL(`../../Sources/Ega
 const englishSource = (path: string): string => source(path)
   .replace(/\bL10n\.\w+\(\s*("(?:\\.|[^"\\])*")\s*\)/g, '$1');
 
-test('Settings preserves native section order with account management on its own screen', () => {
-  const body = englishSource('Views/SettingsScreen.swift').split('return VStack(alignment: .leading, spacing: density.sectionSpacing)')[1].split('    // MARK: - Notifications')[0];
-  const sections: Record<string, string> = {
-    AccountsSettingsSection: 'Accounts', ICloudSyncSettingsSection: 'iCloud Sync', notificationsSection: 'Notifications',
-    TokscaleSettingsSection: 'Tokscale', commandLineSection: 'Command Line', advancedSection: 'Advanced',
-    SoftLimitSettingsSection: 'Soft Limit',
-  };
-  const native = [...body.matchAll(/section\("([^"]+)"\)|\b(AccountsSettingsSection|ICloudSyncSettingsSection|SoftLimitSettingsSection|notificationsSection|TokscaleSettingsSection|commandLineSection|advancedSection)\b/g)]
-    .map((match) => match[1] ?? sections[match[2]]);
-  assert.ok(native.includes('General'), 'The native section extractor must find the General section');
-  // 사이트 Accounts 교체 전까지 기존 설정 진입점 유지 — 아래 전환 조건으로 별도 검증.
-  assert.deepEqual(settingGroups.filter((group) => group.id !== 'accounts').map((group) => group.title), native);
+// W 전환 전 사이트의 기존 설정 진입점 유지, 네이티브 네 탭은 새 경로에서 검사.
+test('web settings keep their complete current sections until the settings preview changes', () => {
+  assert.deepEqual(settingGroups.map((group) => group.title), [
+    'General', 'Accounts', 'iCloud Sync', 'Appearance', 'Usage Display', 'Soft Limit',
+    'Notifications', 'Privacy', 'Tokscale', 'Command Line', 'Advanced', 'Updates',
+  ]);
 });
 
-test('Web account entry stays available while native account management has its own screen', () => {
+test('native settings route every tab while web account management stays available', () => {
+  const settings = source('Views/Settings/SettingsScreen.swift');
+  for (const [tab, view] of [['general', 'SettingsGeneralTab'], ['display', 'SettingsDisplayTab'],
+    ['alerts', 'SettingsAlertsTab'], ['advanced', 'SettingsAdvancedTab']]) {
+    assert.match(settings, new RegExp(`case \\.${tab}: ${view}\\(`));
+  }
+  assert.doesNotMatch(settings, /\bAccountsSettingsSection\(/);
   const accounts = settingGroups.filter((group) => group.id === 'accounts');
   assert.equal(accounts.length, 1);
-  assert.equal(accounts[0].title, 'Accounts');
   assert.equal(accounts[0].accessory, 'add');
   assert.deepEqual(accounts[0].families, accountFamilies);
-  assert.doesNotMatch(source('Views/SettingsScreen.swift'), /\bAccountsSettingsSection\(/);
   assert.match(source('Views/Accounts/AccountsView.swift'), /\bAccountListView\(/);
   assert.match(englishSource('Views/PopoverFooter.swift'), /"Add New Account"/);
 });
 
-test('Settings includes normal native rows and notification triggers', () => {
-  const labels = new Set(settingGroups.flatMap((group) => group.rows.map((row) => row.label)));
-  const hiddenEasterEggs = new Set(['Party Mode', 'Drunk Mode']);
-  const nativeOnlyRows = new Set(['All Usage Layout', 'Max Items In Menu Bar', 'Menu Bar Items', 'Show Extra Indicators']);
-  const settingsSource = englishSource('Views/SettingsScreen.swift');
-  assert.match(settingsSource, /\bLanguageSettingsRow\(selection:/);
-  const nativeRows = [...settingsSource.matchAll(/row\("([^"]+)"\)/g)].map((match) => match[1]);
-  const languageRows = [...englishSource('Views/LanguageSettingsRow.swift').matchAll(/Text\("([^"]+)"\)\s+Spacer\([^)]*\)\s+Picker\(/g)]
+test('shared settings rows and all notification triggers keep their preview controls', () => {
+  const labels = new Set(settingGroups.flatMap((group) => [group.title, ...group.rows.map((row) => row.label)]));
+  const native = ['SettingsGeneralTab', 'SettingsDisplayTab', 'SettingsAlertsTab', 'SettingsAdvancedTab',
+    'ICloudSyncSettingsSection', 'SoftLimitSettingsSection', 'TokscaleSettingsSection']
+    .map((name) => englishSource(`Views/Settings/${name}.swift`)).join('\n');
+  const nativeRows = [...native.matchAll(/(?:SettingsPicker\(\s*|Toggle\(\s*|title:\s*)"([^"\\]+)"/g)]
     .map((match) => match[1]);
-  nativeRows.push(...languageRows);
-  assert.ok(nativeRows.includes('Language'), 'The native row extractor must find the Language picker');
-  assert.ok(nativeRows.includes('Show Total Spend'), 'The native row extractor must keep existing rows');
+  assert.ok(nativeRows.includes('Show Total Spend'));
+  assert.ok(nativeRows.includes('Launch at Login'));
+  const nativeOnlyUntilPreview = new Set(['Default Tab', 'All Usage Layout', 'Max Items In Menu Bar',
+    'Menu Bar Items', 'Show Extra Indicators']);
+  const previousLabels: Record<string, string> = {
+    'Pace Marks': 'Always Show Pacing', 'Privacy Mode': 'Hide From Screen Share', 'Check Automatically': 'Update Automatically',
+  };
   for (const label of nativeRows) {
-    if (!nativeOnlyRows.has(label) && !hiddenEasterEggs.has(label)) assert.ok(labels.has(label), label);
+    if (!nativeOnlyUntilPreview.has(label)) assert.ok(labels.has(previousLabels[label] ?? label), label);
   }
+  assert.match(native, /LanguageSettingsRow\(selection:/);
+  assert.ok(labels.has('Language'));
   const milestones = englishSource('Support/PaceNotificationLogic.swift').split('var settingLabel: String')[1].split('var notificationTitle')[0];
   const milestoneLabels = [...milestones.matchAll(/(?:return|case \.\w+:)\s*"([^"]+)"/g)].map((match) => match[1]);
   assert.equal(milestoneLabels.length, 4, 'Every native notification trigger must be checked');
@@ -60,10 +62,14 @@ test('Settings includes normal native rows and notification triggers', () => {
   assert.ok(labels.has(resetWatchLabel));
 });
 
-test('native All Usage layout is wired while the web keeps its current Density control', () => {
-  const native = englishSource('Views/SettingsScreen.swift');
-  assert.match(native, /row\("All Usage Layout"\)\s*\{\s*picker\(\$display\.dashboardLayout, options: DashboardLayoutStyle\.allCases/);
-  assert.doesNotMatch(native, /row\("Density"\)/);
+test('native layout and terminal controls stay wired after moving the settings files', () => {
+  const display = englishSource('Views/Settings/SettingsDisplayTab.swift');
+  assert.match(display, /"All Usage Layout", selection: \$display\.dashboardLayout,\s*options: DashboardLayoutStyle\.allCases/);
+  assert.doesNotMatch(display, /\bDensitySetting\b/);
+  const advanced = source('Views/Settings/SettingsAdvancedTab.swift');
+  assert.match(advanced, /\n        commandLineSection\n/);
+  assert.match(advanced, /commandLineTool\.install\(\)/);
+  assert.match(advanced, /commandLineTool\.uninstall\(\)/);
   const preview = settingGroups.flatMap((group) => group.rows).find((row) => row.id === 'density')?.control;
   assert.ok(preview && preview.kind === 'picker');
 });

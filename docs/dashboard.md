@@ -5,7 +5,7 @@
 앱 시작 시 기본 Priority, 저장한 기본 탭이 있으면 해당 값 적용.
 패널만 닫았다 열면 마지막 선택 탭 유지.
 
-표시 언어는 [설정의 Language](/docs/settings.md#일반)에서 선택.
+표시 언어는 [설정의 Language](/docs/settings.md#general)에서 선택.
 영어·한국어·일본어 지원이며 변경 후 앱 재실행 필요.
 사용자가 지정한 계정명과 공급자·모델명은 원문 유지.
 기존 캐시에 번역 정보가 없는 안내·차트 날짜는 새로고침 전까지 이전 문구 유지 가능.
@@ -43,14 +43,15 @@ Claude와 Codex로 시작한 뒤 Mac의 로컬 인증 정보·사용 흔적을 �
 | Needs Attention | 사용량을 가져오지 못한 계정 표시, **Fix**로 계정 상세 열기.<br>VoiceOver에서 조회 실패 사유 안내. Privacy Mode에서는 일반 오류 안내 사용.<br>Claude·Codex 계정의 Keychain 읽기 실패이면 **Fix**가 그 계정만 다시 조회하며 macOS Keychain 승인 창 표시 |
 | Used Up | 고정하지 않은 한도 중 다 쓴 항목(흐리게) |
 
-- [Use It or Lose It 알림](/docs/settings.md#알림) 설정은 알림 전송 여부만 제어.
+- [Alerts의 Priority 설정](/docs/settings.md#priority)에서 **Use It or Lose It**의 **Show in Priority**로 구역 표시를 설정.
+  **Receive Alerts**는 macOS 알림 전송 여부를 별도로 제어.
 - 한도 데이터를 받았고, 수신 대기·계정 경고·소진 임박이 없으면 **All Clear**("Nothing is running out.") 행 표시.
   고정한 경고 지표도 소진 임박 판정에 포함.
   경고 지표가 모두 고정된 경우 Pinned에만 표시하며 Running Out 구역과 All Clear는 숨김.
 - 첫 조회 전인 계정은 자리 표시(**Waiting for Usage**).
 - 한도를 보고하는 계정이 없으면 **No Reported Limits**와 **View All Usage** 버튼.
-- 링의 채움 비율은 [Show Usage As](/docs/settings.md#사용량-표시)의 Used / Left 설정 적용.
-  링 색은 남은 양과 [알림 기준](/docs/settings.md#알림)에 따라 결정.
+- 링의 채움 비율은 [Show Usage As](/docs/settings.md#usage)의 Used / Left 설정 적용.
+  링 색은 남은 양과 [알림 기준](/docs/settings.md#thresholds)에 따라 결정.
   Warning 기준 이하는 주황, Critical 기준 이하는 빨강.
 - Burning Fast: 지금 속도면 초기화 전에 다 쓸 한도.
   한 번 표시되면 예상 기말 사용량이 한도의 90% 이하로 내려올 때까지 유지.
@@ -77,7 +78,7 @@ Claude와 Codex로 시작한 뒤 Mac의 로컬 인증 정보·사용 흔적을 �
 
 ## All Usage
 
-[Settings → Appearance](/docs/settings.md#화면)의 **All Usage Layout**에서 표시 방식 선택.
+[Settings → Display](/docs/settings.md#all-usage-layout)의 **All Usage Layout**에서 표시 방식 선택.
 기본값 **Minimal**은 프로바이더 카드 안에 계정별 한 줄 지표 묶음 표시.
 **Cards**는 계정마다 독립 카드, 한도 지표는 제목·전체 폭 막대·사용량과 초기화 설명으로 표시.
 Claude·Codex 등록 계정은 두 방식 모두 같은 프로바이더 섹션에 저장된 순서대로 표시.
@@ -162,7 +163,7 @@ Kiro는 로컬 CLI V3의 턴별 크레딧 환산 비용과 대화 길이 기반 
 계산 기준과 범위는 [Kiro](/docs/providers/kiro.md#상단-통계-지원-범위) 참조.
 활성 지표에 보여 줄 값이 없는 기간에는 카드를 숨기지 않고 간결한 빈 상태 표시.
 카드가 아예 필요 없다면?
-[설정](/docs/settings.md) 상단의 **Show Total Spend**(총 지출 표시)로 끄기.
+[Settings → Display → Usage](/docs/settings.md#usage)의 **Show Total Spend**(총 지출 표시)로 끄기.
 
 ## 행
 
@@ -183,7 +184,7 @@ Kiro는 로컬 CLI V3의 턴별 크레딧 환산 비용과 대화 길이 기반 
   정확한 시각은 사용자 시간대와 Settings의 Auto·12h·24h 선택 유지.
   초기화권 만료처럼 다른 곳의 남은 시간에도 같은 표기 적용.
 - 막대에 마우스를 올리면 초기화 시점 속도 예측(`~35% left at reset`, `~12% over limit at reset` 등).
-- **Always Show Pacing**을 켜면([Settings](/docs/settings.md#사용량-표시)) 막대에 균등 속도 눈금 표시.
+- **Pace Marks**를 켜면([Settings](/docs/settings.md#usage)) 막대에 균등 속도 눈금 표시.
   유효한 초기화 시각·주기가 필요하며, 기간 시작 직후와 미시작·소진 상태는 제외.
 - **Soft Limit**을 켜면 지원 대상 5시간 또는 주간 막대에 직접 입력한 1%–100% 임계값의 얇은 안내선 표시 — 저장된 임계값이 없으면 기본값 90%.
   프로바이더의 강제 한도와 별개인 사용자 기준선이며, 채움·사용량·속도 판정·초기화에는 영향 없음.

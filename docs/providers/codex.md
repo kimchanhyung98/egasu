@@ -225,7 +225,7 @@ Reset Watch는 앱 UI와 선택적 macOS 알림으로 제공.
 
 ### Reset Watch 알림
 
-**Settings → Notifications → Codex Reset Watch**에서 사용 여부 선택, 기본값 꺼짐.
+**Settings → Alerts → Other Notifications → Codex Reset Watch**에서 사용 여부 선택, 기본값 꺼짐.
 Codex 프로바이더가 켜져 있으면 지표를 숨겨도 알림만 사용 가능.
 앱 실행 중 정상 조회로 확인한 새 공개 이벤트가 대상이며, 처음 켠 뒤 현재 유효한 이벤트를 확인한 경우도 포함.
 

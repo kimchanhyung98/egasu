@@ -5,7 +5,6 @@ final class SettingsLocalizationTests: XCTestCase {
     func testDisplayLabelsFollowLanguageWithoutChangingStoredValues() {
         L10n.withLanguage(.korean) {
             XCTAssertEqual(AppearanceSetting.system.label, "시스템 설정")
-            XCTAssertEqual(DensitySetting.compact.label, "좁게")
             XCTAssertEqual(TimeFormatSetting.twentyFourHour.label, "24시간제")
             XCTAssertEqual(LogLevelSetting.warn.label, "경고")
             XCTAssertEqual(MenuBarStyle.bars.label, "막대")
@@ -14,7 +13,6 @@ final class SettingsLocalizationTests: XCTestCase {
         }
         L10n.withLanguage(.japanese) {
             XCTAssertEqual(AppearanceSetting.system.label, "システム")
-            XCTAssertEqual(DensitySetting.compact.label, "コンパクト")
             XCTAssertEqual(TimeFormatSetting.twentyFourHour.label, "24時間表示")
             XCTAssertEqual(LogLevelSetting.warn.label, "警告")
             XCTAssertEqual(MenuBarStyle.bars.label, "バー")
@@ -22,7 +20,6 @@ final class SettingsLocalizationTests: XCTestCase {
             XCTAssertEqual(ResetDisplayMode.relative.label, "残り時間")
         }
         XCTAssertEqual(AppearanceSetting.system.rawValue, "system")
-        XCTAssertEqual(DensitySetting.compact.rawValue, "compact")
         XCTAssertEqual(TimeFormatSetting.twentyFourHour.rawValue, "24h")
         XCTAssertEqual(LogLevelSetting.warn.rawValue, "warn")
         XCTAssertEqual(MenuBarStyle.bars.rawValue, "bars")

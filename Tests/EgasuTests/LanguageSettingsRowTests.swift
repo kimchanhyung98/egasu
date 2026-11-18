@@ -17,26 +17,22 @@ final class LanguageSettingsRowTests: XCTestCase {
         XCTAssertFalse(text.contains("Restart egasu"), text)
     }
 
-    func testRestartButtonRendersInEveryLanguageAndDensity() async throws {
+    func testRestartButtonRendersInEveryLanguage() async throws {
         let labels: [LanguageSetting: String] = [.english: "Restart Now", .korean: "지금 다시 시작", .japanese: "今すぐ再起動"]
         for language in LanguageSetting.allCases {
-            for density in DensitySetting.allCases {
-                let selection: LanguageSetting = language == .english ? .korean : .english
-                let text = try await recognizedText(selection: selection, activeLanguage: language, density: density)
-                let expected = try XCTUnwrap(labels[language]).filter { !$0.isWhitespace }
-                XCTAssertTrue(text.filter { !$0.isWhitespace }.contains(expected), "\(language)/\(density): \(text)")
-            }
+            let selection: LanguageSetting = language == .english ? .korean : .english
+            let text = try await recognizedText(selection: selection, activeLanguage: language)
+            let expected = try XCTUnwrap(labels[language]).filter { !$0.isWhitespace }
+            XCTAssertTrue(text.filter { !$0.isWhitespace }.contains(expected), "\(language): \(text)")
         }
     }
 
     private func recognizedText(
-        selection: LanguageSetting, activeLanguage: LanguageSetting,
-        density: DensitySetting = .compact
+        selection: LanguageSetting, activeLanguage: LanguageSetting
     ) async throws -> String {
         let suite = "LanguageSettingsRowTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.set(density.rawValue, forKey: DensitySetting.key)
         let image = try L10n.withLanguage(activeLanguage) {
             let view = LanguageSettingsRow(selection: .constant(selection), activeLanguage: activeLanguage)
                 .frame(width: 292)
@@ -54,13 +50,19 @@ final class LanguageSettingsRowTests: XCTestCase {
             window.contentView = hosting
             window.setContentSize(hosting.fittingSize)
             hosting.layoutSubtreeIfNeeded()
-            let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+            let bitmap = try XCTUnwrap(
+                NSBitmapImageRep(
+                    bitmapDataPlanes: nil, pixelsWide: Int(ceil(hosting.bounds.width * 2)),
+                    pixelsHigh: Int(ceil(hosting.bounds.height * 2)), bitsPerSample: 8, samplesPerPixel: 4,
+                    hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+            bitmap.size = hosting.bounds.size
             hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
             if let path = ProcessInfo.processInfo.environment["EGASU_LANGUAGE_RESTART_SCREENSHOTS"] {
                 let directory = URL(fileURLWithPath: path)
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                 let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
-                try png.write(to: directory.appendingPathComponent("\(activeLanguage.rawValue)-\(density.rawValue)-light-\(selection.rawValue).png"))
+                let name = "\(activeLanguage.rawValue)-light-\(selection.rawValue).png"
+                try png.write(to: directory.appendingPathComponent(name))
             }
             return try XCTUnwrap(bitmap.cgImage)
         }

@@ -235,7 +235,7 @@ struct DashboardView: View {
                 reorderLift: $reorderLift
             )
         case .settings:
-            SettingsScreen(reorderSpaceName: Self.reorderSpace, reorderLift: $reorderLift)
+            SettingsScreen()
         }
     }
 }
