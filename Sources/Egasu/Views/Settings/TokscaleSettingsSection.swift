@@ -2,7 +2,6 @@ import SwiftUI
 
 struct TokscaleSettingsSection: View {
     @Bindable var store: TokscaleSyncStore
-    @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
 
     @State private var isNameSheetPresented = false
     @State private var isLoginSheetPresented = false
@@ -11,24 +10,16 @@ struct TokscaleSettingsSection: View {
     fileprivate static let bunInstallationURL = URL(string: "https://bun.com/docs/installation")!
 
     var body: some View {
-        VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
-            header
-
-            VStack(alignment: .leading, spacing: 0) {
-                actionRow
-                disclosure
-
-                if store.phase != .idle {
-                    Divider()
-                    status
-                }
-
-                if !store.output.isEmpty {
-                    Divider()
-                    commandOutput
-                }
+        Section {
+            actionRow
+            if store.phase != .idle {
+                status
             }
-            .cardSurface()
+            if !store.output.isEmpty {
+                commandOutput
+            }
+        } header: {
+            header
         }
         .sheet(isPresented: $isNameSheetPresented) {
             TokscaleDeviceNameSheet(store: store)
@@ -44,8 +35,6 @@ struct TokscaleSettingsSection: View {
     private var header: some View {
         HStack(spacing: 5) {
             Text("Tokscale")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
             Button {
                 isNameSheetPresented = true
             } label: {
@@ -57,26 +46,39 @@ struct TokscaleSettingsSection: View {
             .accessibilityLabel(L10n.settings("Manage Tokscale Device Name"))
             .disabled(store.isRunning)
         }
-        .padding(.horizontal, 8)
     }
 
+    /// ⓘ는 설명을 보여 주고, 누르면 Tokscale 개인정보 처리방침을 엶.
     private var actionRow: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 5) {
-                Text(L10n.settings("Usage Sync"))
-                Link(destination: Self.privacyURL) {
-                    Image(systemName: "info.circle")
-                        .imageScale(.small)
-                        .foregroundStyle(.secondary)
+        VStack(alignment: .trailing, spacing: 4) {
+            HStack(spacing: 10) {
+                HStack(spacing: 4) {
+                    Text(L10n.settings("Usage Sync"))
+                    Link(destination: Self.privacyURL) {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .hoverTooltip(L10n.settings("Sync local usage to your public Tokscale profile."))
+                    .accessibilityLabel(L10n.settings("Tokscale Privacy Policy"))
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(L10n.settings("Tokscale Privacy Policy"))
+                Spacer(minLength: 8)
+                action
             }
-            Spacer(minLength: 8)
-            action
+            if let nextSyncAllowedAt = store.nextSyncAllowedAt {
+                Text(
+                    L10n.settings(
+                        "Sync Available at %@",
+                        TimeFormatSetting.current.shortTime(nextSyncAllowedAt, base: L10n.locale)
+                    )
+                )
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+                .fixedSize(horizontal: false, vertical: true)
+            }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, density.controlRowPadding)
     }
 
     @ViewBuilder
@@ -109,21 +111,6 @@ struct TokscaleSettingsSection: View {
         }
     }
 
-    private var disclosure: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(L10n.settings("Sync local usage to your public Tokscale profile."))
-            if let nextSyncAllowedAt = store.nextSyncAllowedAt {
-                Text(L10n.settings("Sync Available at %@", TimeFormatSetting.current.shortTime(nextSyncAllowedAt, base: L10n.locale)))
-            }
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, 12)
-        .padding(.bottom, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
     @ViewBuilder
     private var status: some View {
         VStack(alignment: .leading, spacing: 7) {
@@ -153,8 +140,6 @@ struct TokscaleSettingsSection: View {
                     .font(.caption)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -199,8 +184,6 @@ struct TokscaleSettingsSection: View {
                 .foregroundStyle(.secondary)
             TokscaleCommandOutput(output: store.output, height: 108)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
     }
 }
 
@@ -275,7 +258,7 @@ struct TokscaleDeviceNameSheet: View {
                 Button(L10n.settings("Save")) {
                     save()
                 }
-                .glassButtonStyle(prominent: true)
+                .buttonStyle(.borderedProminent)
                 .controlSize(.small)
             }
         }
@@ -354,7 +337,7 @@ private struct TokscaleLoginSheet: View {
                         didStartLogin = true
                         store.startLogin()
                     }
-                    .glassButtonStyle(prominent: true)
+                    .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                 }
             }

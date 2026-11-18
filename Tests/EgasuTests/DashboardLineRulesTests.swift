@@ -1,3 +1,4 @@
+import Observation
 import XCTest
 @testable import Egasu
 
@@ -278,31 +279,70 @@ final class DashboardLineRulesTests: XCTestCase {
     }
 
     func testResetClaimResultOutlivesPointerExitAndDismissCancelsItsDelayedRelease() async throws {
-        let state = HoverPopoverState(hideGrace: .milliseconds(1))
+        let hold = Duration.milliseconds(80)
+        let resultHold = expectation(description: "Result pin waits for the hold duration")
+        let dismissedHold = expectation(description: "Old result pin waits before dismissal")
+        let cancelledHold = expectation(description: "Dismissing cancels the old result hold")
+        let resumedHold = expectation(description: "Old result hold resumes after reopening")
+        var scheduledHold = resultHold
+        var pendingWait: CheckedContinuation<Void, Never>?
+        let state = HoverPopoverState(
+            hideGrace: .milliseconds(1),
+            waitForPinRelease: { delay in
+                XCTAssertEqual(delay, hold)
+                guard !Task.isCancelled else { return }
+                let isOldHold = scheduledHold === dismissedHold
+                await withTaskCancellationHandler {
+                    await withCheckedContinuation {
+                        pendingWait = $0
+                        scheduledHold.fulfill()
+                    }
+                } onCancel: {
+                    if isOldHold { cancelledHold.fulfill() }
+                }
+                if isOldHold { resumedHold.fulfill() }
+            })
+        defer {
+            state.dismiss()
+            pendingWait?.resume()
+        }
+
         state.isPresented = true
         state.setPinned(true)
         state.detailHover(false)
-        state.releasePin(after: .milliseconds(80))
-        try await Task.sleep(for: .milliseconds(15))
+        state.releasePin(after: hold)
+        await fulfillment(of: [resultHold], timeout: 3)
         XCTAssertTrue(state.isPresented)
         XCTAssertTrue(state.isPinned)
 
-        let deadline = ContinuousClock.now + .seconds(2)
-        while state.isPresented && ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(10))
+        let closed = expectation(description: "Unpinning closes the popover after the pointer has left")
+        withObservationTracking {
+            _ = state.isPresented
+        } onChange: {
+            closed.fulfill()
         }
+        try XCTUnwrap(pendingWait).resume()
+        pendingWait = nil
+        await fulfillment(of: [closed], timeout: 3)
+        XCTAssertFalse(state.isPinned)
         XCTAssertFalse(state.isPresented, "결과를 읽을 시간 뒤에는 포인터 이탈 닫기 복귀")
+
+        scheduledHold = dismissedHold
+        state.isPresented = true
+        state.setPinned(true)
+        state.releasePin(after: hold)
+        await fulfillment(of: [dismissedHold], timeout: 3)
+        state.dismiss()
+        XCTAssertFalse(state.isPresented)
+        XCTAssertFalse(state.isPinned)
+        await fulfillment(of: [cancelledHold], timeout: 3)
 
         state.isPresented = true
         state.setPinned(true)
-        state.releasePin(after: .milliseconds(30))
-        state.dismiss()
-        XCTAssertFalse(state.isPresented)
-        state.isPresented = true
-        state.setPinned(true)
-        try await Task.sleep(for: .milliseconds(70))
+        try XCTUnwrap(pendingWait).resume()
+        pendingWait = nil
+        await fulfillment(of: [resumedHold], timeout: 3)
         XCTAssertTrue(state.isPinned, "이전 결과의 예약이 새 확인의 고정을 풀지 않음")
-        state.dismiss()
     }
 
     func testSharedHomeOnlyRowsHideOnlyOnExtraAccountCards() {

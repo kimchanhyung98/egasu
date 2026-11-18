@@ -57,7 +57,6 @@ class MenuBarPanel: NSPanel {
 
     /// 컨트롤의 포커스 링과 단축키 입력 대기 해제 — 일반 텍스트 편집은 유지.
     func clearStrayFocus() {
-        guard !ShortcutRecorderField.isRecordingActive else { return }
         let recording = (firstResponder as? NSTextView)?.delegate is KeyboardShortcuts.RecorderCocoa
         guard recording || !(firstResponder is NSText) else { return }
         _ = makeFirstResponder(nil)

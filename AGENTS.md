@@ -110,3 +110,4 @@ Always fail loudly into error logging (log file, PostHog) and show friendly erro
 - Use title case for any hardcoded copy used as a title.
 - Match the existing design language; egasu has a specific look and feel.
 - Only add tooltips (`hoverTooltip`) when explicitly asked to. Don't add them proactively to new controls.
+  Settings 행 아래 설명을 제목 옆 ⓘ로 옮기는 경우는 예외.

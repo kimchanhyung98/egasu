@@ -2,7 +2,7 @@
 
 선택한 기준에 맞는 지표를 Priority 보드에서 골라 메뉴 막대에 표시.
 
-메뉴·사용량 설명·접근성 문구는 [Settings → General](/docs/settings.md#일반)의 Language 선택에 따라 표시.
+메뉴·사용량 설명·접근성 문구는 [Settings → General](/docs/settings.md#general)의 Language 선택에 따라 표시.
 변경한 언어는 앱 재실행 후 적용하며 프로바이더 이름과 사용자 계정명은 원문 유지.
 
 ## 아이콘 우클릭
@@ -12,7 +12,7 @@
 
 ## 표시 항목
 
-설정 위치: [Settings → Appearance](/docs/settings.md#화면).
+설정 위치는 [Settings → Display → Menu Bar Icons](/docs/settings.md#메뉴-막대-아이콘).
 
 - **Icon Style**에서 Text(프로바이더 마크·이름·값) 또는 Bars(한 아이콘에 쌓은 막대) 선택.
   저장값이 없으면 기본값 Text.
@@ -51,13 +51,15 @@
 - 고정 방법과 규칙은 [대시보드 § 고정](/docs/dashboard.md#고정) 참조.
 - 메뉴 막대 별표 설정이 남아 있으면 첫 실행에 한 번 Priority 고정으로 이전.
   - 기본 별표를 그대로 쓰던 경우는 이전하지 않음.
+  - Priority 고정이 이미 저장되어 있으면 이전하지 않음.
+    고정 목록을 비워 저장한 경우도 동일.
   - 숨긴 지표의 별표는 버림.
   - Claude·Codex 별표는 그때 알려진 모든 계정의 같은 지표로 펼침(추가 계정에서 숨기는 로컬 기록·Reset Watch 제외).
   - 이전하면 **Menu Bar Items**를 Priority로, **Max Items In Menu Bar**를 고정 수에 맞춤(3~5개).
 
 ## 화면 공유 중 사용량 숨기기
 
-Settings → Privacy → **Hide From Screen Share**(화면 공유 중 숨기기, 기본값 켬).
+설정 위치는 [Settings → Advanced → Privacy](/docs/settings.md#개인정보-보호)의 **Privacy Mode**(개인정보 보호 모드, 기본값 켬).
 화면 공유·녹화를 감지하면 메뉴 막대의 사용량을 egasu 아이콘으로 대체.
 직접 시작한 화면 녹화도 감지 대상에 포함.
 캡처 종료를 감지하면 선택한 표시로 복귀.

@@ -53,7 +53,7 @@ final class TokscaleSettingsSectionTests: XCTestCase {
         return fields
     }
 
-    func testFinishedAndFailedResultsRenderAndCollapseAcrossAppearancesAndDensities() async throws {
+    func testFinishedAndFailedResultsRenderAndCollapseAcrossAppearances() async throws {
         let suite = "EgasuTests.Tokscale.ResultRendering.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -61,8 +61,7 @@ final class TokscaleSettingsSectionTests: XCTestCase {
         if let export { try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true) }
 
         for result in renderedResults {
-            for density in DensitySetting.allCases {
-                defaults.set(density.rawValue, forKey: DensitySetting.key)
+            do {
                 for appearance in [ColorScheme.light, .dark] {
                     let store = TokscaleSyncStore(
                         defaults: defaults,
@@ -70,7 +69,7 @@ final class TokscaleSettingsSectionTests: XCTestCase {
                         commandRunner: StubFinishedTokscaleRunner(result: result)
                     )
                     let outcome = result.exitCode == 0 ? "finished" : "failed"
-                    let variant = "\(outcome)-\(density.rawValue)-\(appearance)"
+                    let variant = "\(outcome)-\(appearance)"
                     let view = resultCard(store: store, defaults: defaults, appearance: appearance)
                     let idleHeight = try renderedSize(of: view).height
 
@@ -281,10 +280,9 @@ final class TokscaleSettingsSectionTests: XCTestCase {
         var defaultHeights: [String: CGFloat] = [:]
         for deviceName in deviceNames {
             if let deviceName { try store.saveDeviceName(deviceName) }
-            for density in DensitySetting.allCases {
-                defaults.set(density.rawValue, forKey: DensitySetting.key)
+            do {
                 for appearance in [ColorScheme.light, .dark] {
-                    let variant = "\(density.rawValue)-\(appearance)"
+                    let variant = "\(appearance)"
                     let view = TokscaleSettingsSection(store: store)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 12)

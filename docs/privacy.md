@@ -1,7 +1,7 @@
 # 개인정보 및 사용 데이터
 
 egasu는 앱이 어떻게 쓰이는지 파악하고 문제를 잡아내는 데 도움이 되도록 **익명** 사용 데이터를 공유할 수 있음.
-기본값은 꺼짐이며, **Settings → Privacy → Share Anonymous Usage**(설정 → 개인정보 → 익명 사용 데이터 공유)에서 언제든 켜기 가능.
+기본값은 꺼짐이며, **Settings → Advanced → Privacy → Share Anonymous Usage**(설정 → 개인정보 → 익명 사용 데이터 공유)에서 언제든 켜기 가능.
 
 ## 익명 분석에서 공유되는 항목
 
@@ -284,5 +284,5 @@ Tokscale 로그아웃·연결 해제·원격 데이터 삭제 UI는 제공하지
 
 ## 익명 분석 공유 설정
 
-**Settings → Privacy**를 열고 **Share Anonymous Usage**를 켜면 공유에 참여.
+**Settings → Advanced → Privacy**를 열고 **Share Anonymous Usage**를 켜면 공유에 참여.
 끄면 공유가 즉시 중단.
