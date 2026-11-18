@@ -33,10 +33,16 @@ final class HoverPopoverState {
     /// 표시 지연 400ms, 닫힘 유예 180ms — 행에서 팝오버로 포인터를 옮길 시간 확보, 테스트에서 주입 가능.
     private let revealDelay: Duration
     private let hideGrace: Duration
+    private let waitForPinRelease: @MainActor (Duration) async throws -> Void
 
-    init(revealDelay: Duration = .milliseconds(400), hideGrace: Duration = .milliseconds(180)) {
+    init(
+        revealDelay: Duration = .milliseconds(400),
+        hideGrace: Duration = .milliseconds(180),
+        waitForPinRelease: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    ) {
         self.revealDelay = revealDelay
         self.hideGrace = hideGrace
+        self.waitForPinRelease = waitForPinRelease
         Self.live.add(self)
     }
 
@@ -61,15 +67,17 @@ final class HoverPopoverState {
     }
 
     /// 포인터가 떠난 상태에서도 초기화권 사용 결과를 읽을 시간 확보.
-    func releasePin(after delay: Duration) {
-        guard pinned else { return }
+    @discardableResult
+    func releasePin(after delay: Duration) -> Task<Void, Never>? {
+        guard pinned else { return nil }
         releasePinTask?.cancel()
-        releasePinTask = Task { [weak self] in
-            try? await Task.sleep(for: delay)
+        releasePinTask = Task { [weak self, waitForPinRelease] in
+            try? await waitForPinRelease(delay)
             guard let self, !Task.isCancelled else { return }
             releasePinTask = nil
             setPinned(false)
         }
+        return releasePinTask
     }
 
     /// 클릭·Space로 즉시 열기 — 호버 대기와 포인터 이탈 닫기 생략.

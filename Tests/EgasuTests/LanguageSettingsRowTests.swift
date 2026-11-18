@@ -27,7 +27,8 @@ final class LanguageSettingsRowTests: XCTestCase {
         }
     }
 
-    func testFailedRestartStaysVisibleWhenTheLanguageRowIsRecreated() async throws {
+    func testFailedRestartSurvivesRowRemountAndClearsOnLanguageChange() async throws {
+        var selection = LanguageSetting.korean
         var attempts = 0
         let relauncher = AppRelauncher(
             scheduleRelaunch: {
@@ -39,11 +40,26 @@ final class LanguageSettingsRowTests: XCTestCase {
         L10n.withLanguage(.english) { relauncher.restart() }
 
         for _ in 0..<2 {
-            let text = try await recognizedText(selection: .korean, activeLanguage: .english, relauncher: relauncher)
+            let text = try await recognizedText(selection: selection, activeLanguage: .english, relauncher: relauncher)
             let letters = text.filter(\.isLetter).lowercased()
             XCTAssertTrue(letters.contains("couldntrestartegasuquitandreopentheapp"), text)
             XCTAssertTrue(text.contains("Restart Now"), text)
         }
+        let row = LanguageSettingsRow(
+            selection: Binding(get: { selection }, set: { selection = $0 }),
+            activeLanguage: .english,
+            relauncher: relauncher
+        )
+        row.pickerSelection.wrappedValue = .korean
+        XCTAssertNotNil(relauncher.errorMessage)
+
+        row.pickerSelection.wrappedValue = .english
+        XCTAssertEqual(selection, .english)
+        XCTAssertNil(relauncher.errorMessage)
+
+        row.pickerSelection.wrappedValue = .japanese
+        XCTAssertEqual(selection, .japanese)
+        XCTAssertNil(relauncher.errorMessage)
         XCTAssertEqual(attempts, 1)
     }
 

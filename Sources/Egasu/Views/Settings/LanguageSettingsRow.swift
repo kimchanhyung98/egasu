@@ -6,16 +6,24 @@ struct LanguageSettingsRow: View {
     var activeLanguage: LanguageSetting = .active
     let relauncher: AppRelauncher
 
+    var pickerSelection: Binding<LanguageSetting> {
+        Binding(
+            get: { selection },
+            set: { language in
+                guard language != selection else { return }
+                relauncher.clearError()
+                selection = language
+            }
+        )
+    }
+
     var body: some View {
-        Picker(L10n.settings("Language"), selection: $selection) {
+        Picker(L10n.settings("Language"), selection: pickerSelection) {
             ForEach(LanguageSetting.allCases, id: \.self) { language in
                 Text(language.nativeName).tag(language)
             }
         }
         .disabled(relauncher.isRestarting)
-        .onChange(of: selection) { _, selected in
-            LanguageSetting.update(to: selected)
-        }
 
         if selection != activeLanguage {
             VStack(alignment: .leading, spacing: 6) {

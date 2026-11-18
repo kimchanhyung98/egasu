@@ -25,6 +25,10 @@ final class AppRelauncher {
         self.terminate = terminate
     }
 
+    func clearError() {
+        errorMessage = nil
+    }
+
     func restart() {
         guard !isRestarting else { return }
         errorMessage = nil
