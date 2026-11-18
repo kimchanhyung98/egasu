@@ -27,19 +27,42 @@ final class LanguageSettingsRowTests: XCTestCase {
         }
     }
 
+    func testFailedRestartStaysVisibleWhenTheLanguageRowIsRecreated() async throws {
+        var attempts = 0
+        let relauncher = AppRelauncher(
+            scheduleRelaunch: {
+                attempts += 1
+                throw CocoaError(.fileNoSuchFile)
+            },
+            terminate: { XCTFail("The application must stay open when scheduling fails.") }
+        )
+        L10n.withLanguage(.english) { relauncher.restart() }
+
+        for _ in 0..<2 {
+            let text = try await recognizedText(selection: .korean, activeLanguage: .english, relauncher: relauncher)
+            let letters = text.filter(\.isLetter).lowercased()
+            XCTAssertTrue(letters.contains("couldntrestartegasuquitandreopentheapp"), text)
+            XCTAssertTrue(text.contains("Restart Now"), text)
+        }
+        XCTAssertEqual(attempts, 1)
+    }
+
     private func recognizedText(
-        selection: LanguageSetting, activeLanguage: LanguageSetting
+        selection: LanguageSetting, activeLanguage: LanguageSetting,
+        relauncher: AppRelauncher = AppRelauncher(scheduleRelaunch: {}, terminate: {})
     ) async throws -> String {
         let suite = "LanguageSettingsRowTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let image = try L10n.withLanguage(activeLanguage) {
-            let view = LanguageSettingsRow(selection: .constant(selection), activeLanguage: activeLanguage)
-                .frame(width: 292)
-                .padding(14)
-                .background(Color.white)
-                .environment(\.colorScheme, .light)
-                .defaultAppStorage(defaults)
+            let view = LanguageSettingsRow(
+                selection: .constant(selection), activeLanguage: activeLanguage, relauncher: relauncher
+            )
+            .frame(width: 292)
+            .padding(14)
+            .background(Color.white)
+            .environment(\.colorScheme, .light)
+            .defaultAppStorage(defaults)
             let hosting = NSHostingView(rootView: view)
             let window = NSWindow(
                 contentRect: .init(x: 0, y: 0, width: 320, height: 300),
@@ -57,7 +80,9 @@ final class LanguageSettingsRowTests: XCTestCase {
                     hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
             bitmap.size = hosting.bounds.size
             hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
-            if let path = ProcessInfo.processInfo.environment["EGASU_LANGUAGE_RESTART_SCREENSHOTS"] {
+            if relauncher.errorMessage == nil,
+                let path = ProcessInfo.processInfo.environment["EGASU_LANGUAGE_RESTART_SCREENSHOTS"]
+            {
                 let directory = URL(fileURLWithPath: path)
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                 let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))

@@ -7,6 +7,7 @@ struct SettingsScreen: View {
     @State private var commandLineTool = CommandLineToolInstaller()
     @State private var scrollPosition = ScrollPosition(edge: .top)
     @State private var launchAtLogin = LaunchAtLoginSetting()
+    @State private var relauncher = AppRelauncher()
 
     /// 그룹형 Form의 기본 카드 여백 — 패널 여백에 맞추도록 같은 크기 차감.
     private static let formRowInset: CGFloat = 20
@@ -14,7 +15,7 @@ struct SettingsScreen: View {
     var body: some View {
         Form {
             switch popover.settingsTab {
-            case .general: SettingsGeneralTab(launchAtLogin: launchAtLogin)
+            case .general: SettingsGeneralTab(launchAtLogin: launchAtLogin, relauncher: relauncher)
             case .display: SettingsDisplayTab()
             case .alerts: SettingsAlertsTab()
             case .advanced: SettingsAdvancedTab(commandLineTool: commandLineTool)

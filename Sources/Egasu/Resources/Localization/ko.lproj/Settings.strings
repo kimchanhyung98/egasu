@@ -165,7 +165,7 @@
 "Check Automatically" = "자동으로 확인";
 "Codex" = "Codex";
 "Combined spend across your providers at the top of the dashboard" = "대시보드 상단에 프로바이더 전체 지출 합계 표시";
-"Condition" = "항목";
+"Condition" = "조건";
 "Critical" = "위험";
 "Default Tab" = "기본 탭";
 "Hides dashboard account names and disables renaming. Dashboard account actions show masked emails. Accounts stays visible and editable. During screen sharing or recording, the menu bar shows only the egasu icon." = "대시보드의 계정 이름을 가리고 이름 변경을 막습니다. 대시보드의 계정 작업에는 일부를 가린 이메일을 표시합니다. 계정 화면에서는 확인과 편집이 가능합니다. 화면 공유·녹화 중에는 메뉴 막대에 egasu 아이콘만 표시합니다.";

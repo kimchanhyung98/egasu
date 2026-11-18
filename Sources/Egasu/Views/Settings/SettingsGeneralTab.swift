@@ -11,6 +11,7 @@ struct SettingsGeneralTab: View {
     @AppStorage(AppearanceSetting.key) private var appearance = AppearanceSetting.system
     @AppStorage(TimeFormatSetting.key) private var timeFormat = TimeFormatSetting.fallback
     let launchAtLogin: LaunchAtLoginSetting
+    let relauncher: AppRelauncher
 
     var body: some View {
         Section {
@@ -31,7 +32,7 @@ struct SettingsGeneralTab: View {
             } label: {
                 SettingsTitle(title: L10n.settings("Global Shortcut"), info: L10n.settings("Open egasu from anywhere"))
             }
-            LanguageSettingsRow(selection: $language)
+            LanguageSettingsRow(selection: $language, relauncher: relauncher)
         } footer: {
             if let errorMessage = launchAtLogin.errorMessage {
                 SettingsNote(errorMessage)

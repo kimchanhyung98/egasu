@@ -44,7 +44,9 @@ Esc, General 이탈, 패널 닫힘 또는 다른 창으로 포커스 이동 시 
 0.7 이전 에디션의 로그인 런처 파일이 남아 있으면 앱 실행 시 확인.
 현재 앱 번들 내부를 가리키는 파일만 자동 제거하며, 로그인 시 실행은 **Launch at Login**으로 관리.
 
-### Appearance
+### 화면 표시
+
+테마와 시간 형식은 General의 **Appearance**에서 변경.
 
 | 설정 | 옵션 | 동작 |
 |---|---|---|
@@ -77,9 +79,10 @@ Esc, General 이탈, 패널 닫힘 또는 다른 창으로 포커스 이동 시 
 
 ## Display
 
-### Menu Bar Icons
+### 메뉴 막대 아이콘
 
-섹션 맨 위 미리보기는 고른 스타일·개수와 추가 표시 설정을 반영한 예시 항목으로 메뉴 막대 모양 표시 — 지금 사용량과 무관.
+Display의 **Menu Bar Icons** 미리보기는 고른 스타일·개수와 추가 표시 설정을 예시 항목에 적용.
+현재 사용량은 미리보기에 반영하지 않음.
 
 | 설정 | 옵션 | 동작 |
 |---|---|---|
@@ -88,15 +91,17 @@ Esc, General 이탈, 패널 닫힘 또는 다른 창으로 포커스 이동 시 
 | Menu Bar Items(메뉴 막대 표시 항목) | Running Out / Priority / Pinned Only | 기본값 Running Out은 고정 여부와 관계없이 소진 임박 한도 표시.<br>Priority는 Pinned → Running Out → Use It or Lose It → Used Up 순서이며 고정한 지표는 소진 완료여도 앞쪽 고정 목록 유지.<br>Pinned Only는 직접 고정한 지표만 저장된 계정·지표 순서로 표시.<br>저장한 표시 기준이 있으면 유지.<br>저장값이 없고 이전 **Always Show In Menu Bar**가 켜져 있으면 Priority, 그 외 Running Out.<br>App Icon Only에서는 비활성.<br>[표시 기준](/docs/menu-bar.md#표시-항목) 참조. |
 | Show Extra Indicators(추가 표시) | 켜기 / 끄기 | 메뉴 막대의 생략된 항목 수(`+N`)와 업데이트 표시 제어.<br>기본값 켜기.<br>끄면 Bars는 막대 아이콘만 표시.<br>즉시 적용하고 재실행 뒤에도 유지.<br>macOS 알림·업데이트 확인·대시보드 안내와 독립. |
 
-### All Usage Layout
+### 전체 사용량 레이아웃
 
-Display의 Appearance 구역에서 선택.
+Display의 **Appearance** 구역에서 선택.
 
 | 설정 | 옵션 | 동작 |
 |---|---|---|
 | All Usage Layout(전체 사용량 레이아웃) | Minimal / Cards | All Usage의 미니멀 목록 또는 계정별 독립 카드 선택.<br>기본값은 Minimal.<br>즉시 적용하며 앱 재실행 뒤에도 선택 유지.<br>계정·지표 순서, 숨김·고정과 사용량은 두 방식에서 공유. |
 
-### Usage
+### 사용량
+
+Display의 **Usage**에서 사용량 값·초기화 시각·사용 속도·총 지출의 표시 방식 설정.
 
 | 설정 | 옵션 | 동작 |
 |---|---|---|
@@ -109,9 +114,9 @@ Display의 Appearance 구역에서 선택.
 
 ## Alerts
 
-### Thresholds
+### 경고 기준
 
-Priority 탭, 메뉴 막대, 막대·링 색, Warning·Critical 알림이 이 기준을 함께 사용.
+Alerts의 **Thresholds** 기준을 Priority 탭, 메뉴 막대, 막대·링 색, Warning·Critical 알림에 공통 적용.
 
 | 설정 | 옵션 | 동작 |
 |---|---|---|
@@ -121,7 +126,7 @@ Priority 탭, 메뉴 막대, 막대·링 색, Warning·Critical 알림이 이 �
 Warning과 Critical은 Show Usage As가 Used여도 항상 남은 비율 기준.
 Critical은 항상 Warning보다 낮음 — 한쪽을 다른 쪽과 겹치게 옮기면 다른 쪽이 5% 밀림.
 
-### Priority
+### 우선순위
 
 경고·위험·빠른 소진·초기화 전 사용을 한 행씩 표시.
 각 행의 열은 **Condition(항목)**, **Show in Priority(우선순위 표시)**, **Receive Alerts(알림 받기)**.
@@ -141,10 +146,10 @@ Critical은 항상 Warning보다 낮음 — 한쪽을 다른 쪽과 겹치게 �
 설정 행과 실제 macOS 알림 제목 모두 Burning Fast(빠른 소진)로 표시.
 초기화 시각이나 유효한 주기 정보가 없는 크레딧·한도는 완전 소진돼도 Burning Fast 알림에서 제외하며, 잔액 기준 Warning·Critical 알림은 유지.
 
-### Notifications
+### 알림
 
-사용량이 한도에 가까워지는 상태를 지켜보려고 팝오버를 계속 열어 둘 필요 없이, 지표 잔량이 부족해지거나 사용 속도가 나빠지면 egasu가 macOS 알림으로 통지.
-알림은 앱이 메뉴 막대에서 실행 중이면 동작하며, 팝오버가 닫혀 있어도 마찬가지.
+지표 잔량이 부족해지거나 소진 속도가 빨라지면 egasu가 macOS 알림으로 통지.
+앱이 메뉴 막대에서 실행 중이면 패널을 닫아도 알림 동작.
 
 | 설정 | 옵션 | 동작 |
 |---|---|---|
@@ -201,11 +206,11 @@ macOS에서 egasu 알림이 꺼져 있으면 토글 아래에 "Notifications are
 계정명 변경과 계정 전환은 이후 생성되는 알림에 반영.
 알림 조건을 충족하는 계정은 All Usage 레이아웃이나 새 터미널 세션용 계정 선택과 관계없이 알림 대상.
 Reset Watch의 부제목은 예측·예정 구분이며 계정명은 표시하지 않음.
-알림을 누르면 대시보드 화면으로 팝오버 열기.
+알림을 누르면 패널의 대시보드 열기.
 
 ## Advanced
 
-### Privacy
+### 개인정보 보호
 
 | 설정 | 옵션 | 동작 |
 |---|---|---|
@@ -314,7 +319,7 @@ Bun이 없을 때만 공식 [설치 프로그램](https://bun.com/docs/installat
 기존 설치 탐색은 심볼릭 링크나 사용자 홈 밖의 경로도 허용하며, 홈 경로 제한은 자동 설치에만 적용.
 Bun은 있지만 사용 가능한 `bunx`가 없으면 재설치하지 않고 오류 표시.
 
-### Soft Limit
+### 소프트 한도
 
 - **Enabled(활성화)**: 기본값 끄기, 활성화 전 확인 필요.
   지원 대상 진행 막대에 안내선 표시.
@@ -350,16 +355,16 @@ egasu가 명령을 대신 실행하거나 기존 세션을 재시작하지 않�
 
 이전에 안내선을 켠 설정만으로 자동 취소에 동의한 것으로 처리하지 않으며, 활성화 전 재확인 필요.
 
-### Command Line
+### 명령줄
 
-**Terminal Helper**의 **Install…**로 앱에 포함된 `egasu` 명령 연결.
+Advanced의 **Command Line**에서 **Terminal Helper**의 **Install…**로 앱에 포함된 `egasu` 명령 연결.
 이 앱이 만든 연결만 **Uninstall**로 제거.
 같은 경로에 다른 파일이 있으면 **Unavailable**로 표시하며 파일 유지.
 설치·제거가 실패하면 현재 설정 화면의 Advanced에 오류 표시.
 다른 탭에서 돌아와도 처리 결과 안내 유지.
 명령과 설치 조건은 [CLI](/docs/cli.md) 참조.
 
-### Debug
+### 디버그
 
 | 설정 | 옵션 | 동작 |
 |---|---|---|
@@ -367,14 +372,14 @@ egasu가 명령을 대신 실행하거나 기존 세션을 재시작하지 않�
 | Copy Log Path(로그 경로 복사) | 버튼 | 로그 파일 경로(`~/Library/Logs/egasu/egasu.log`)를 클립보드에 복사. |
 | Reveal in Finder(Finder에서 보기) | 버튼 | 로그 파일이 선택된 Finder 창 열기. |
 
-서브시스템 태그, 파일 크기 상한, 민감 정보 마스킹의 범위와 한계는 [로깅](/docs/logging.md) 참조.
+**Debug**에서 위치를 확인할 수 있는 로그의 서브시스템 태그, 파일 크기 상한, 민감 정보 마스킹 범위와 한계는 [로깅](/docs/logging.md) 참조.
 
 ## 버전
 
 앱 버전은 패널 푸터에 표시.
 
 업데이트 후 레이아웃, 고정, 환경 설정, 전역 단축키 보존.
-메뉴 막대 별표 설정이 남아 있으면 첫 실행에 한 번 Priority 고정으로 이전([메뉴 막대 § 고정과 이전 별표](/docs/menu-bar.md#고정과-이전-별표) 참조).
+Priority 고정 저장값이 없고 메뉴 막대의 사용자 지정 별표가 남아 있으면 첫 실행에 한 번 이전([메뉴 막대 § 고정과 이전 별표](/docs/menu-bar.md#고정과-이전-별표) 참조).
 업데이트로 설정 저장 방식이 바뀌면 실행 시 기존 설정을 제자리에서 업그레이드하고, 중간 버전을 몇 개 건너뛰었다면 해당 단계도 순서대로 적용.
 업데이트 시 전체 설정 초기화 없음.
 

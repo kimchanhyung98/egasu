@@ -67,7 +67,8 @@ struct PriorityIconsPreview: View {
     private static let samples: [(provider: String, badge: String?, label: String, value: String, fraction: Double)] = [
         ("claude", "P", "Weekly", "38%", 0.38), ("claude", "A1", "Session", "26%", 0.26),
         ("codex", nil, "Weekly", "31%", 0.31),
-        ("cursor", nil, "Extra", "$310", 0.62), ("antigravity", nil, "Gemini", "12%", 0.12),
+        ("cursor", nil, "Extra Usage", "$310", 0.62),
+        ("antigravity", nil, AntigravityMetric.sessionLabel, "12%", 0.12),
         ("grok", nil, "Weekly", "9%", 0.09),
         ("copilot", nil, "Credits", "7%", 0.07)
     ]
@@ -75,10 +76,12 @@ struct PriorityIconsPreview: View {
     static func sample(limit: MenuBarLimit) -> MenuBarContent {
         guard limit != .iconOnly else { return MenuBarContent(items: []) }
         let shown = samples.prefix(limit.count).enumerated().map { index, sample in
-            MenuBarContent.Item(
+            let label = L10n.metrics(sample.label)
+            return MenuBarContent.Item(
                 id: "sample.\(index)", icon: .providerMark(sample.provider), providerName: sample.provider,
-                badge: sample.badge, label: sample.label, shortLabel: sample.label, value: sample.value,
-                fraction: sample.fraction
+                badge: sample.badge, label: label,
+                shortLabel: MenuBarContentBuilder.shortLabel(label, metricLabel: sample.label),
+                value: sample.value, fraction: sample.fraction
             )
         }
         return MenuBarContent(items: shown, overflow: samples.count - shown.count)

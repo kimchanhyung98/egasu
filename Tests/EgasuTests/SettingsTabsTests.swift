@@ -129,6 +129,19 @@ final class SettingsTabsTests: XCTestCase {
         XCTAssertEqual(PriorityIconsPreview.sample(limit: .upToTwo).items.map(\.badge), ["P", "A1"], "계정 이니셜 배지 예시 포함")
     }
 
+    func testMenuBarPreviewUsesLocalizedStripLabels() {
+        let cases: [(LanguageSetting, [String])] = [
+            (.english, ["Weekly", "Session", "Weekly", "Extra", "Session"]),
+            (.korean, ["주간", "세션", "주간", "추가 사용량", "세션"]),
+            (.japanese, ["週間", "セッション", "週間", "追加使用量", "セッション"])
+        ]
+        for (language, expected) in cases {
+            L10n.withLanguage(language) {
+                XCTAssertEqual(PriorityIconsPreview.sample(limit: .upToFive).items.map(\.shortLabel), expected)
+            }
+        }
+    }
+
     func testPreviewStaysVisibleAtOneSizeAcrossStylesLimitsAndRowWidths() throws {
         let suite = "EgasuTests.MenuBarPreview.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

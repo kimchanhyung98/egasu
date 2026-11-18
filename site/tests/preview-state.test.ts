@@ -62,6 +62,31 @@ test('shared settings rows and all notification triggers keep their preview cont
   assert.ok(labels.has(resetWatchLabel));
 });
 
+test('Notifications, Soft Limit, and Tokscale expose their preview controls', () => {
+  const expectedRows = {
+    notifications: {
+      underTenPercent: 'toggle',
+      healthyToClose: 'toggle',
+      closeToRunningOut: 'toggle',
+      useItOrLoseIt: 'toggle',
+      codexResetWatch: 'toggle',
+    },
+    softLimit: { softLimitEnabled: 'toggle', softLimitWindow: 'picker', softLimitThreshold: 'number' },
+    tokscale: { usageSync: 'action' },
+  };
+  for (const [groupId, controls] of Object.entries(expectedRows)) {
+    const group = settingGroups.find((group) => group.id === groupId);
+    assert.ok(group, groupId);
+    for (const [id, kind] of Object.entries(controls)) {
+      assert.equal(group.rows.find((row) => row.id === id)?.control.kind, kind, id);
+    }
+  }
+  const softLimit = settingGroups.find((group) => group.id === 'softLimit');
+  for (const id of ['softLimitWindow', 'softLimitThreshold']) {
+    assert.equal(softLimit?.rows.find((row) => row.id === id)?.requires, 'softLimitEnabled', id);
+  }
+});
+
 test('native layout and terminal controls stay wired after moving the settings files', () => {
   const display = englishSource('Views/Settings/SettingsDisplayTab.swift');
   assert.match(display, /"All Usage Layout", selection: \$display\.dashboardLayout,\s*options: DashboardLayoutStyle\.allCases/);

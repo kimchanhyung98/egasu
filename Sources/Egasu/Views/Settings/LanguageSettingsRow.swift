@@ -4,7 +4,7 @@ import SwiftUI
 struct LanguageSettingsRow: View {
     @Binding var selection: LanguageSetting
     var activeLanguage: LanguageSetting = .active
-    @State private var relauncher = AppRelauncher()
+    let relauncher: AppRelauncher
 
     var body: some View {
         Picker(L10n.settings("Language"), selection: $selection) {
