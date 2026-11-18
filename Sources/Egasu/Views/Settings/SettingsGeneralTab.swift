@@ -27,7 +27,7 @@ struct SettingsGeneralTab: View {
             LabeledContent {
                 SettingsShortcutRecorder(name: .togglePopover)
                     .disabled(!popover.popoverShown || popover.screen != .settings)
-                    // Settings는 숨겨져도 유지 — 입력기를 분리해 라이브러리의 입력 종료 처리 실행.
+                    // 화면 이동이나 패널 닫힘 시 입력기를 교체해 녹화 종료 처리 실행.
                     .id(popover.popoverShown && popover.screen == .settings)
             } label: {
                 SettingsTitle(title: L10n.settings("Global Shortcut"), info: L10n.settings("Open egasu from anywhere"))

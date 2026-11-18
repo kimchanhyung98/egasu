@@ -184,4 +184,35 @@ final class SettingsTabsTests: XCTestCase {
         XCTAssertTrue(setting.isEnabled, "시스템 설정에서 켠 상태를 Settings에 들어올 때 반영")
     }
 
+    func testRecreatedSettingsKeepsAnUnresolvedLaunchAtLoginError() {
+        var systemEnabled = false
+        var requestedValues: [Bool] = []
+        let operations = SettingsOperations()
+        operations.launchAtLogin = LaunchAtLoginSetting(
+            currentStatus: { systemEnabled },
+            setEnabled: { enabled in
+                requestedValues.append(enabled)
+                throw CocoaError(.userCancelled)
+            }
+        )
+
+        do {
+            let initialScreen = SettingsScreen(operations: operations)
+            initialScreen.operations.launchAtLogin.update(to: true)
+            XCTAssertEqual(initialScreen.operations.launchAtLogin.errorMessage, LaunchAtLoginSetting.failureMessage)
+        }
+
+        let returnedScreen = SettingsScreen(operations: operations)
+        let setting = returnedScreen.operations.launchAtLogin
+        setting.refreshStatus()
+        XCTAssertFalse(setting.isEnabled)
+        XCTAssertEqual(setting.errorMessage, LaunchAtLoginSetting.failureMessage)
+
+        systemEnabled = true
+        setting.refreshStatus()
+        XCTAssertTrue(setting.isEnabled)
+        XCTAssertNil(setting.errorMessage)
+        XCTAssertEqual(requestedValues, [true])
+    }
+
 }
