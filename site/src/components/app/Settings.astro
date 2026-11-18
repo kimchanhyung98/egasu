@@ -18,6 +18,7 @@ const groups = settingGroups.map((group) => ({ ...group, rows: group.rows.map((r
   {
     groups.map((g) => (
       <div class="am-group" data-settings-group={g.id}>
+        {g.id === 'appearance' && <div class="am-menu-bar-preview" data-menu-bar-preview role="region" aria-label="Menu Bar Preview" />}
         <b>
           {g.title}
           {g.accessory === 'add' && <button type="button" class="am-icon-action" data-add-account data-native-action="Add and sign in to accounts in the Mac app." aria-label="Add Account"><Glyph name="plus" class="am-accessory" /></button>}

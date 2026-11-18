@@ -1,5 +1,6 @@
 import { tourCamera, tourGeometry } from '../data/tour';
 import type { Tab } from '../data/copy';
+import { setDashboardTab } from './dashboard';
 import { initTourScroll } from './tour-scroll';
 
 type Stage = Tab['id'];
@@ -74,16 +75,12 @@ export function initFeatureTour(): void {
     delete section.dataset.tourHighlight;
     terminal.hidden = true;
     mock.dataset.softLimit = 'off';
-    get('[data-card="codex"] .am-more').hidden = true;
-    get('[data-card="codex"] [data-expand]').setAttribute('aria-expanded', 'false');
-    get('[data-card="codex"] .am-reset-detail').hidden = true;
+    get('[data-card="codex-account-1"] .am-reset-detail').hidden = true;
   };
   const showDashboardFeature = (stage: Stage): void => {
     if (stage === 'soft-limit') mock.dataset.softLimit = 'Weekly';
-    if (stage === 'reset-watch') {
-      get('[data-card="codex"] .am-more').hidden = false;
-      get('[data-card="codex"] [data-expand]').setAttribute('aria-expanded', 'true');
-    }
+    const tab = stage === 'reset-watch' || stage === 'soft-limit' ? 'All Usage' : 'Priority';
+    setDashboardTab(mock, tab);
     if (stage === 'soft-limit' || stage === 'reset-watch') {
       const body = get('[data-scr="dashboard"] .am-body');
       body.scrollTop = body.scrollHeight;
@@ -155,6 +152,7 @@ export function initFeatureTour(): void {
       setPhase('integrations');
     } else {
       await openDashboard(signal);
+      showDashboardFeature(stage);
       if (stage === 'statistics') {
         setPhase('highlighting-statistics');
         // 같은 탭을 다시 눌러도 이전 하이라이트를 끝내고 처음부터 재생.
@@ -164,7 +162,6 @@ export function initFeatureTour(): void {
         delete section.dataset.tourHighlight;
         setPhase('statistics');
       } else if (stage === 'reset-watch' || stage === 'soft-limit') {
-        showDashboardFeature(stage);
         setPhase(stage);
       } else if (stage === 'accounts') {
         showAccount(false);

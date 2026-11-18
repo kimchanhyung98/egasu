@@ -65,13 +65,7 @@ function initNav(): void {
   }).observe(sentinel);
 }
 
-// 앱 재현 그래픽의 상호작용. 앱의 실제 동작만 옮김.
-// - 헤드라인 클릭 → meterStyle(used/left) 전역 전환. 막대가 반전되고 pace 눈금이 미러링됨. 색은 그대로.
-// - 리셋 라벨 클릭 → resetDisplayMode(Exact Time/Countdown) 전역 전환.
-// - caret 클릭 → 그 카드만 On Demand 행과 quick links를 펼침.
-// - Total Spend 기간·지표 → 미리 그려 둔 상태 중 하나를 보임.
-// - Customize 토글 → 그 행만 흐려짐.
-// 두 전역 상태는 앱이 UserDefaults에 남기므로 여기서도 localStorage에 남김.
+// 사용량·초기화 표시와 Total Spend 선택은 예시 화면 안에서만 적용.
 function initAppMock(): void {
   const roots = document.querySelectorAll<HTMLElement>('[data-mock]');
   if (!roots.length) return;
@@ -96,43 +90,16 @@ function initAppMock(): void {
       return;
     }
 
-    const caret = target.closest<HTMLButtonElement>('[data-expand]');
-    if (caret) {
-      const open = caret.getAttribute('aria-expanded') === 'true';
-      caret.setAttribute('aria-expanded', String(!open));
-      const panel = document.getElementById(caret.getAttribute('aria-controls') ?? '');
-      if (panel) panel.hidden = open;
-      return;
-    }
-
     const period = target.closest<HTMLButtonElement>('[data-period]');
     if (period) {
       selectSpend(period, 'period');
       return;
     }
 
-    const metric = target.closest<HTMLButtonElement>('[data-spend-metric]');
-    if (metric) {
-      const trigger = metric.closest('.am-spend-card')?.querySelector<HTMLButtonElement>('[data-metric-btn]');
-      selectSpend(metric, 'metric');
-      closeMetricMenus();
-      trigger?.focus({ preventScroll: true });
-      return;
-    }
-
-    const menuButton = target.closest<HTMLButtonElement>('[data-metric-btn]');
-    if (menuButton) {
-      const open = menuButton.getAttribute('aria-expanded') === 'true';
-      closeMetricMenus();
-      if (!open) openMetricMenu(menuButton);
-      return;
-    }
-
-    closeMetricMenus();
+    const cycle = target.closest<HTMLButtonElement>('[data-cycle-spend]');
+    if (cycle) { selectSpend(cycle, 'metric'); return; }
   });
-
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') closeMetricMenus();
     if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
     const period = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('[data-period]') : null;
     if (!period) return;
@@ -192,48 +159,50 @@ function initResetDetails(): void {
   });
 }
 
-// 카드가 여럿이라 document 전역에서 하나만 집으면 다른 카드의 메뉴가 열림.
-function openMetricMenu(button: HTMLButtonElement): void {
-  const list = button.closest('.am-spend-card')?.querySelector<HTMLElement>('.am-menu');
-  if (!list) return;
-  openMenu(list, button);
+const spendKey = 'openusage.site.spend.v1';
+const metrics = ['cost', 'costPerMtok', 'tokens'];
+const periods = ['today', 'yesterday', 'last30'];
+
+function renderSpend(card: HTMLElement): void {
+  const period = card.dataset.spendPeriod!;
+  const metric = card.dataset.spendMetric!;
+  card.querySelectorAll<HTMLButtonElement>('[data-period]').forEach((button) => {
+    const on = button.dataset.period === period;
+    button.setAttribute('aria-checked', String(on));
+    button.tabIndex = on ? 0 : -1;
+  });
+  card.querySelectorAll<HTMLElement>('[data-state]').forEach((state) => { state.hidden = state.dataset.state !== `${period}:${metric}`; });
 }
 
-function closeMetricMenus(): void {
-  document.querySelectorAll<HTMLElement>('.am-spend-card .am-menu').forEach((list) => {
-    closeMenu(list);
-  });
-  document.querySelectorAll<HTMLElement>('[data-metric-btn]').forEach((button) => {
-    button.setAttribute('aria-expanded', 'false');
-  });
+function restoreSpend(): void {
+  const card = document.querySelector<HTMLElement>('[data-mock] .am-spend-card');
+  if (!card) return;
+  try {
+    const raw = localStorage.getItem(spendKey);
+    if (!raw) return;
+    const stored = JSON.parse(raw);
+    if (!periods.includes(stored.period) || !metrics.includes(stored.metric)) throw new Error('Invalid saved spend selection');
+    card.dataset.spendPeriod = stored.period;
+    card.dataset.spendMetric = stored.metric;
+    renderSpend(card);
+  } catch (error) { console.warn('Saved spend selection could not be loaded', error); }
 }
 
-// 기간·지표 선택을 반영. 상태 조합은 빌드 시 전부 그려 두었으므로 보이기만 바꿈.
 function selectSpend(clicked: HTMLButtonElement, kind: 'period' | 'metric'): void {
   const card = clicked.closest<HTMLElement>('.am-spend-card');
   if (!card) return;
-
-  if (kind === 'period') {
-    card.querySelectorAll<HTMLElement>('[data-period]').forEach((b) => {
-      b.setAttribute('aria-checked', String(b === clicked));
-      b.tabIndex = b === clicked ? 0 : -1;
-    });
-  } else {
-    const id = clicked.dataset.spendMetric ?? '';
-    card.querySelectorAll<HTMLElement>('.am-menu [role="menuitemradio"]').forEach((option) => {
-      option.setAttribute('aria-checked', String(option === clicked));
-    });
-    card.querySelectorAll<HTMLElement>('[data-metric-label]').forEach((label) => {
-      label.hidden = label.dataset.metricLabel !== id;
-    });
+  if (kind === 'period') card.dataset.spendPeriod = clicked.dataset.period!;
+  else card.dataset.spendMetric = metrics[(metrics.indexOf(card.dataset.spendMetric!) + 1) % metrics.length];
+  renderSpend(card);
+  if (kind === 'metric') {
+    const state = card.querySelector<HTMLElement>('[data-state]:not([hidden])')!;
+    const provider = clicked.dataset.spendProvider;
+    const matchingProvider = provider ? state.querySelector<HTMLButtonElement>(`[data-spend-provider="${provider}"]`) : null;
+    const next = matchingProvider ?? state.querySelector<HTMLButtonElement>('[data-cycle-spend]:not([data-spend-provider])');
+    next?.focus({ preventScroll: true });
   }
-
-  const period = card.querySelector<HTMLElement>('[data-period][aria-checked="true"]')?.dataset.period;
-  const metric = card.querySelector<HTMLElement>('.am-menu [aria-checked="true"][data-spend-metric]')?.dataset.spendMetric;
-  if (!period || !metric) return;
-  card.querySelectorAll<HTMLElement>('[data-state]').forEach((state) => {
-    state.hidden = state.dataset.state !== `${period}:${metric}`;
-  });
+  try { localStorage.setItem(spendKey, JSON.stringify({ period: card.dataset.spendPeriod, metric: card.dataset.spendMetric })); }
+  catch (error) { console.warn('Spend selection could not be saved', error); }
 }
 
 interface FeedItem {
@@ -300,6 +269,7 @@ try {
   initMenus();
   initResetDetails();
   initAppMock();
+  restoreSpend();
   initPopoverNav();
 } catch (error) {
   document.documentElement.classList.remove('js');

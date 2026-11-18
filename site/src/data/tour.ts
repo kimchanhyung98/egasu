@@ -1,7 +1,7 @@
 export const tourGeometry = {
   width: 1280,
   height: 840,
-  panelWidth: 320,
+  panelWidth: 340,
   panelHeight: 610,
   focus: { x: 880, y: 0, width: 392, height: 684 },
 } as const;

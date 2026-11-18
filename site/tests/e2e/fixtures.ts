@@ -55,3 +55,11 @@ export async function chooseSetting(page: Page, label: string, value: string): P
   await app.getByRole('menuitemradio', { name: value, exact: true }).click();
   await expect(app.getByRole('button', { name: label, exact: true })).toBeFocused();
 }
+
+export async function allUsage(page: Page): Promise<void> {
+  await expect(page.locator('html')).toHaveAttribute('data-ready', '1');
+  const mock = page.locator('[data-mock]');
+  const tab = mock.locator('button[data-dashboard-tab="All Usage"][role="tab"]');
+  if (await tab.getAttribute('aria-selected') !== 'true') await tab.click();
+  await expect(mock.locator('[data-dashboard-panel="All Usage"]')).toBeVisible();
+}

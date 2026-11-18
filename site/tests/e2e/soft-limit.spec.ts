@@ -1,5 +1,5 @@
 import type { Locator } from '@playwright/test';
-import { test, expect, openHome, openSettings, chooseSetting } from './fixtures';
+import { test, expect, openHome, openSettings, chooseSetting, allUsage } from './fixtures';
 
 async function markerFraction(row: Locator): Promise<number> {
   return row.evaluate((element) => {
@@ -36,9 +36,9 @@ test('Soft Limit covers Fable and Antigravity model windows and mirrors them in 
   await openSettings(page);
   await app.getByRole('switch', { name: 'Enable Soft Limit' }).click();
   await app.getByRole('button', { name: 'Back', exact: true }).click();
+  await allUsage(page);
   const fable = app.locator('[data-card="claude-account-1"] [data-metric="claude.fable"]');
   const antigravity = app.locator('[data-card="antigravity"]');
-  await antigravity.getByRole('button', { name: 'Show more', exact: true }).click();
   const session = antigravity.locator('[data-metric="antigravity.claude"]');
   const weekly = antigravity.locator('[data-metric="antigravity.claudeWeekly"]');
 
@@ -67,18 +67,10 @@ test('Soft Limit does not add guides to supported metrics without data or the pu
   await app.getByRole('switch', { name: 'Enable Soft Limit' }).click();
   await app.getByRole('button', { name: 'Back', exact: true }).click();
 
-  for (const [provider, metric] of [['Claude', 'claude.sonnet'], ['Codex', 'codex.spark']]) {
-    await app.getByRole('button', { name: 'Options', exact: true }).click();
-    await app.getByRole('menuitem', { name: 'Customize', exact: true }).click();
-    await app.getByRole('button', { name: `Open ${provider}`, exact: true }).click();
-    await app.locator(`[data-metric-toggle="${metric}"]`).click();
-    await app.getByRole('button', { name: 'Back', exact: true }).click();
-    await app.getByRole('button', { name: 'Back', exact: true }).click();
-    const card = app.locator(`[data-card="${provider.toLowerCase()}-account-1"]`);
-    await card.getByRole('button', { name: 'Show more', exact: true }).click();
-    const row = card.locator(`[data-metric="${metric}"]`);
-    await expect(row).toBeVisible();
-    await expect(row).toContainText('No data');
+  await allUsage(page);
+  for (const [provider, metric] of [['claude', 'claude.sonnet'], ['codex', 'codex.spark']]) {
+    const row = app.locator(`[data-card="${provider}-account-1"] [data-metric="${metric}"]`);
+    await expect(row).toBeHidden();
     await expect(row.locator('.am-meter, .am-soft-marker')).toHaveCount(0);
   }
   const forecast = app.locator('[data-card="codex-account-1"] .am-forecast');

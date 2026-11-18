@@ -71,6 +71,7 @@ export const settingGroups: SettingGroup[] = [
       { id: 'iconStyle', label: 'Icon Style', control: { kind: 'picker', value: 'Bars', options: ['Text', 'Bars'] } },
       { id: 'theme', label: 'Theme', control: { kind: 'picker', value: 'System', options: ['System', 'Light', 'Dark'] } },
       { id: 'density', label: 'Density', control: { kind: 'picker', value: 'Compact', options: ['Default', 'Compact'] } },
+      { id: 'allUsageLayout', label: 'All Usage Layout', control: { kind: 'picker', value: 'Minimal', options: ['Minimal', 'Cards'] } },
       { id: 'timeFormat', label: 'Time Format', control: { kind: 'picker', value: '24-hour', options: ['Auto', '12-hour', '24-hour'] } },
       { id: 'increaseTransparency', label: 'Increase Transparency', control: { kind: 'toggle', on: false } },
     ],

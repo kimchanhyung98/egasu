@@ -1,4 +1,4 @@
-import { test, expect, openHome, openSettings, chooseSetting } from './fixtures';
+import { test, expect, openHome, openSettings, chooseSetting, allUsage } from './fixtures';
 
 test('dashboard account selection stays separate from confirmed active-account switching', async ({ page }) => {
   await openHome(page);
@@ -6,6 +6,7 @@ test('dashboard account selection stays separate from confirmed active-account s
   await openSettings(page);
   await chooseSetting(page, 'Usage Cards', 'Single Card');
   await app.getByRole('button', { name: 'Back', exact: true }).click();
+  await allUsage(page);
   await chooseSetting(page, 'Claude Account', 'Account 2');
   await expect(app.locator('[data-card="claude-account-2"]')).toBeVisible();
   await expect(app.locator('[data-card="claude-account-1"]')).toBeHidden();
@@ -24,6 +25,7 @@ test('dashboard account selection stays separate from confirmed active-account s
   await expect(second).toHaveAttribute('aria-checked', 'true');
   await expect(app.getByRole('switch', { name: 'Claude Account 1', exact: true })).toHaveAttribute('aria-checked', 'false');
   await page.reload();
+  await allUsage(page);
   await expect(app.locator('[data-card="claude-account-2"]')).toBeVisible();
   await openSettings(page);
   await expect(app.getByRole('switch', { name: 'Claude Account 2', exact: true })).toHaveAttribute('aria-checked', 'true');
@@ -41,6 +43,7 @@ test('display settings and separate account cards survive a reload', async ({ pa
   await chooseSetting(page, 'Reset Times', 'Countdown');
   await app.getByRole('switch', { name: 'Show Total Spend', exact: true }).click();
   await page.reload();
+  await allUsage(page);
   await expect(app).toHaveAttribute('data-theme', 'dark');
   await expect(app).toHaveAttribute('data-density', 'default');
   await expect(app).toHaveAttribute('data-mode', 'left');
@@ -65,6 +68,7 @@ test('settings saved before the egasu rename are restored and remain editable', 
   const app = page.locator('[data-mock]');
   await expect(app).toHaveAttribute('data-theme', 'dark');
   await expect(app).toHaveAttribute('data-mode', 'left');
+  await allUsage(page);
   await expect(app.locator('[data-card="claude-account-2"]')).toBeVisible();
   await expect(app.locator('[data-card="claude-account-1"]')).toBeHidden();
   await openSettings(page);
@@ -73,6 +77,7 @@ test('settings saved before the egasu rename are restored and remain editable', 
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('openusage.site.preview.v1')!).preferences))
     .toMatchObject({ theme: 'Light', showUsageAs: 'Left', usageCards: 'Single Card' });
   await page.reload();
+  await allUsage(page);
   await expect(app).toHaveAttribute('data-theme', 'light');
   await expect(app).toHaveAttribute('data-mode', 'left');
   await expect(app.locator('[data-card="claude-account-2"]')).toBeVisible();
@@ -95,6 +100,7 @@ test('invalid saved settings recover with defaults and a visible explanation', a
   const app = page.locator('[data-mock]');
   await expect(app).toHaveAttribute('data-mode', 'used');
   await expect(app.getByRole('status')).toContainText('Saved preview settings could not be loaded');
+  await allUsage(page);
   await expect(app.locator('[data-card="claude-account-1"]')).toBeVisible();
 });
 

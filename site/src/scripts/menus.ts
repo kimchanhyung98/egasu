@@ -50,7 +50,7 @@ export function openMenu(menu: HTMLElement, trigger: HTMLElement): void {
   if (trigger.hasAttribute('aria-expanded')) trigger.setAttribute('aria-expanded', 'true');
   active = { menu, trigger, openedAt: performance.now() };
   (menu.querySelector<HTMLElement>('[aria-checked="true"]:not(:disabled)')
-    ?? menu.querySelector<HTMLElement>('button[role^="menuitem"]:not(:disabled)'))?.focus({ preventScroll: true });
+    ?? menu.querySelector<HTMLElement>('[role^="menuitem"]:not([aria-disabled="true"]):not(:disabled):not(li[hidden] *)'))?.focus({ preventScroll: true });
 }
 
 export function initMenus(): void {
