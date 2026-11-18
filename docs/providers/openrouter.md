@@ -1,9 +1,9 @@
 # OpenRouter
 
+계정 API 키로 [OpenRouter](https://openrouter.ai) 크레딧 잔액과 사용액 추적.
+
 현행 Free·Standard·Business·Enterprise의 가격과 플랫폼 수수료는 [구독 요금제](/docs/pricing.md#구독-요금제) 참조.
 API 키의 무료 여부만으로 유료 계약 등급을 구분하지 않음.
-
-계정 API 키로 [OpenRouter](https://openrouter.ai) 크레딧 잔액과 사용액 추적.
 
 ## 추적 항목
 
@@ -34,7 +34,7 @@ Analytics의 `total_usage`는 OpenRouter 크레딧 사용액과 BYOK 추론 비�
 따라서 크레딧 잔액 감소분이나 일반 키의 기간 사용액과 비용 범위가 다름.
 
 관리 키로 조회하는 오늘·어제·최근 30일의 시작과 끝은 Mac의 현지 시간 기준.
-최근 30일은 기존 상단 통계와 같이 오늘 및 이전 30일을 포함.
+최근 30일은 오늘 및 이전 30일 포함.
 이번 주·이번 달도 Mac의 달력 기준으로 조회.
 UTC 일별 합계를 현지 날짜로 바꾸어 넣지 않고 각 기간의 시각 범위를 API에 전달.
 
@@ -44,10 +44,10 @@ Cost/MTok는 비용과 토큰이 모두 유효한 기간만 포함.
 선택한 지표가 0이거나 없으면 상단 통계에서 제외.
 일반 키의 기간 사용액은 계정 전체 통계와 범위가 달라 상단 합계에서 제외.
 
-조회 실패·잘린 응답은 0 사용으로 처리하지 않음.
-정상 조회된 잔액과 기간 값은 표시하고 실패한 기간은 경고와 함께 제외.
+상단 합계에서 조회 실패·잘린 응답은 0 사용으로 처리하지 않음.
+정상 조회된 잔액과 기간 값은 유지하고 실패한 기간은 경고와 함께 통계 집계에서 제외.
+카드의 미보고 기간 표시와 상단 집계는 아래 내부 동작 규칙에 따라 구분.
 계정 전체 값이므로 다른 Mac의 같은 계정 값과 다시 합산하지 않음.
-기존 카드의 지표 활성화·접힘·메뉴 바 고정·순서는 유지.
 
 ## 인증 정보 출처
 
@@ -58,34 +58,48 @@ egasu가 응답의 키 종류를 확인해 관리 키의 통계를 자동 조회
 앱은 관리 키로 잔액·등급·키 한도·사용 통계만 조회.
 다른 키의 생성·수정·삭제는 수행하지 않음.
 키의 만료 기간과 권한 범위는 [공식 관리 키 문서](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) 참조.
-Accounts의 **Add New Account**에서 **OpenRouter** 선택.
-키 입력.
-**Add Account** 선택.
-이미 추가한 계정은 상세의 **Add API Key…**·**Replace API Key…**에서 키 입력 후 **Save** 선택.
-운영 앱의 키는 `~/.config/egasu/openrouter.json`에 저장.
-표준 개발 빌드·사용자 지정 설정 도메인의 앱 전용 경로는 [CLI 문서](/docs/cli.md) 참조.
-입력란은 하나이며 교체 시 새 키를 사용.
-OpenRouter가 꺼져 있으면 Accounts의 **Add New Account**에서 추가.
+
+1. [Accounts](/docs/accounts.md)에서 **Add New Account** 선택.
+2. **OpenRouter** 선택.
+3. 키 입력.
+4. **Add Account** 선택.
+
+운영 앱은 `~/.config/egasu/openrouter.json`에 키를 저장.
+표준 개발 앱과 사용자 지정 설정 도메인은 [CLI 문서의 저장 위치 규칙](/docs/cli.md#path에-설치)에 따라 분리.
+저장 위치를 이전할 때는 새 경로에 파일이 없으면 `~/.config/openusage/openrouter.json`을 복사.
+이전 실패 시 다음 시작에서 재시도.
+이미 추가한 계정에 키를 등록하거나 바꾸려면 아래 순서로 진행.
+
+1. OpenRouter 계정 상세에서 **Add API Key…** 또는 **Replace API Key…** 선택.
+2. 새 키 입력.
+3. **Save** 선택.
 
 다음 방법으로 직접 키를 제공할 수도 있으며, 아래 순서에서 처음 찾은 키 사용:
 
-1. **설정 파일:** `~/.config/egasu/openrouter.json` — 운영 앱의 API Key 카드에서 저장하는 파일:
+1. **설정 파일** — 먼저 현재 앱의 `openrouter.json`, 다음으로 `~/.config/openrouter/key.json`에서 키 확인.
+   운영 앱의 첫 경로는 `~/.config/egasu/openrouter.json`.
 
    ```json
    { "apiKey": "sk-or-v1-..." }
    ```
 
-   키만 담긴 일반 텍스트 파일 또는 `~/.config/openrouter/key.json`도 사용 가능.
+   두 경로 모두 키만 담긴 일반 텍스트 파일도 지원.
 
-2. **환경 변수:** 셸 프로필(예: `~/.zshrc` 또는 `~/.zprofile`)에 `OPENROUTER_API_KEY` 내보내기 설정 추가.
+2. **환경 변수** — 셸 프로필(예: `~/.zshrc` 또는 `~/.zprofile`)에 `OPENROUTER_API_KEY` 내보내기 설정 추가.
+   `OPENROUTER_API_KEY`가 없으면 `OPENROUTER_KEY`도 지원.
    설정을 바꾼 뒤 egasu 종료 후 다시 실행.
    앱이 시작할 때 로그인 셸 환경을 읽으므로 Finder나 Dock에서 실행해도 해당 키 사용 가능.
    현재 터미널에서만 실행한 `export`는 이미 실행 중인 앱에 적용되지 않음.
-   환경 변수에서 키를 찾으면 API Key 카드에 읽기 전용("From environment")으로 표시.
-   별도 키를 저장하려면 "Override With a Custom Key" 선택.
+   이 키만 쓰려면 **Add New Account → OpenRouter**에서 입력란을 비워 둔 채 **Add Account** 선택.
+   환경 변수에서 키를 찾으면 계정 상세의 API 키 상태에 **From Your Environment** 표시.
+   별도 키를 저장하려면 **Replace API Key…** 선택.
 
-앱에서 저장한 키가 환경 변수 키보다 우선하며(설정 파일을 먼저 확인), 저장한 키를 제거하면 환경 변수 키로 대체하거나 해당 키도 없으면 키 없음 상태로 전환.
-앱에서 키를 저장하거나 삭제하면 적용 중인 키로 새로 조회하며, 이전 요청이 진행 중이면 완료를 기다리고 그 결과는 무시.
+앱은 설정 파일의 키를 환경 변수보다 먼저 사용.
+**Remove Account…**에서 제거를 확정하면 추적을 끔.
+설정 파일에서 키를 확인한 경우 현재 앱의 `openrouter.json`과 대체 경로 `~/.config/openrouter/key.json`도 삭제.
+키 파일 삭제에 실패하면 오류를 표시하고 추적을 유지.
+환경 변수 키를 다시 쓰려면 **Add New Account**에서 OpenRouter를 선택하고 입력란을 비워 둔 채 **Add Account** 선택.
+앱에서 키를 저장하면 적용 중인 키로 새로 조회하며, 이전 요청이 진행 중이면 완료를 기다리고 그 결과는 무시.
 이전 요청이 대기 한도보다 오래 걸리면 다음 주기 새로 고침에서 현재 키로 재시도.
 비활성 프로바이더는 다시 활성화될 때 조회.
 새 요청이 진행 중이거나 조회 전체가 실패하면 이전에 표시하던 마지막 정상 값 유지.
@@ -95,9 +109,9 @@ OpenRouter가 꺼져 있으면 Accounts의 **Add New Account**에서 추가.
 
 ## 문제 해결
 
-- **"No OpenRouter API key"** — Accounts의 **Add New Account**에서 OpenRouter 키 추가, 또는 계정 상세에서 **Add API Key…** 선택.
+- **"No OpenRouter API key"** — **Add New Account**에서 OpenRouter 키를 추가하거나 기존 계정 상세의 **Add API Key…** 사용.
   환경 변수를 사용하면 위 설정 절차에 따라 앱 재실행.
-- **"API key invalid"** — 키 거부(401/403).
+- **"API key invalid"** — 잔액과 키 정보 조회가 모두 401/403으로 거부된 상태.
   openrouter.ai/keys에서 확인하거나 다시 생성.
 - **"Key Limit is unavailable"** — 키 한도의 잔여액을 확인할 수 없는 상태.
   Key Limit을 생략하고 조회에 성공한 잔액·기간 사용액은 계속 표시하며, 다음 정상 조회에서 경고 해제.
@@ -121,7 +135,10 @@ OpenRouter가 꺼져 있으면 Accounts의 **Add New Account**에서 추가.
   조회 범위가 같은 기간은 한 번만 요청.
   관리 키의 기간 값은 Analytics 결과만 사용하며 `/key`의 사용액으로 대체하지 않음.
 
-기간 사용액 `$0.00`은 "No data"가 아니라 API에서 직접 반환한 실제 측정값 0으로 표시.
+일반 키의 기간 사용액은 API가 반환한 유효한 숫자를 사용하며 음수는 0으로 제한.
+비용이 0으로 보고된 기간의 비용 행은 `$0.00` 표시.
+요청에 실패했거나 유효한 비용값이 없는 기간의 비용 행은 **No data** 표시.
+관리 키가 해당 기간에 토큰만 보고하면 상단의 Tokens에 보고된 토큰 반영.
 Key Limit은 [키의 한도와 잔여 크레딧](https://openrouter.ai/docs/api_reference/limits)의 차이로 계산하며, 전체 기간 누적 사용액은 사용하지 않음.
 현재 한도 기간의 초기화 이후에도 남은 한도에 맞는 사용액 표시.
 상한이 있는데 잔여액이 누락되거나 유효하지 않으면 0 사용 또는 소진 상태로 추정하지 않음.

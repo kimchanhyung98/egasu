@@ -133,7 +133,7 @@ enum LocalLimitsAPI {
         }
 
         /// descriptor는 안정적 resource 이름과 value row용 fallback unit 제공.
-        /// progress row는 실제 runtime unit 보유 — plan별 상이 가능(e.g. Cursor Total Usage는 개인 plan에서 percent, Enterprise에서 requests).
+        /// 진행 행은 실제 지표 단위 사용. Cursor Total Usage는 응답에 따라 백분율·요청 수·달러.
         private static func progressUnit(_ line: MetricLine) -> String? {
             guard case .progress(_, _, _, let format, _, _, _) = line else { return nil }
             switch format {

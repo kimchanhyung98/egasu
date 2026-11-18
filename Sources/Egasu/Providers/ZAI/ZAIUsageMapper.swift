@@ -9,7 +9,7 @@ enum ZAIUsageMapper {
     static let monthlyPeriodMs = 30 * 24 * 60 * 60 * 1000
 
     /// quota + subscription payload에서 `(plan, lines)` 생성.
-    /// `subscription`은 `nil` 가능(best-effort), `limits`는 1~3개 — 존재하는 것만 매핑해 web search 없는 plan도 session meter 표시.
+    /// 구독 응답은 선택 사항. 한도 배열에서 지원하는 지표만 생성.
     static func map(quotaBody: Data, subscriptionBody: Data?) throws -> (plan: String?, lines: [MetricLine]) {
         let lines = try mapQuota(quotaBody)
         let level = (ProviderParse.jsonObject(quotaBody)?["data"] as? [String: Any])?["level"] as? String
@@ -96,7 +96,7 @@ enum ZAIUsageMapper {
         return lines
     }
 
-    /// 첫 유효 subscription entry의 `productName` (예: "GLM Coding Max").
+    /// 첫 구독 항목의 비어 있지 않은 `productName` 추출.
     static func planName(from body: Data) -> String? {
         guard let root = ProviderParse.jsonObject(body),
               let list = root["data"] as? [[String: Any]],
@@ -111,7 +111,7 @@ enum ZAIUsageMapper {
     // MARK: - Private
 
     /// credit/token quota의 window가 매핑되는 meter 구분.
-    /// window는 `(unit, number)` 쌍으로 인코딩(`unit: 3` 시간, `unit: 6` 주, `unit: 5` 월) — sub-daily는 session, multi-day는 weekly.
+    /// `unit`과 `number`에서 기간 계산. 단위는 3 시간, 4 일, 5 월, 6 주. 하루 미만은 Session, 하루 이상은 Weekly.
     /// 미지의 unit은 무시 — 새 Z.ai window가 이해 가능한 unit의 meter를 가리지 못하게 함.
     private enum TokenWindow {
         case session(periodMs: Int)

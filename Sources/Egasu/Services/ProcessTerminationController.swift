@@ -51,7 +51,7 @@ final class ProcessTerminationController: @unchecked Sendable {
         forceCleanup()
     }
 
-    /// leader reap 전 lock 안에서 signal과 소유권 해제를 완료해 동시 cancel의 PID 재사용 방지.
+    /// 리더 프로세스 회수 전에 잠금 안에서 종료 신호 전송과 그룹 ID 해제를 처리. 동시 취소가 재사용된 ID로 신호를 보내는 상황 방지.
     private func terminateLocked() {
         guard !completed, let processGroupID else { return }
         if Darwin.kill(-processGroupID, SIGKILL) != 0, errno != ESRCH {

@@ -1,7 +1,7 @@
 import Foundation
 
-/// 대시보드 footer와 About 탭에 표시되는 앱 버전의 단일 소스.
-/// `CFBundleShortVersionString`은 pre-release suffix까지 포함한 전체 버전; fallback은 Info.plist가 없는 실행(`swift run`) 대비.
+/// 대시보드 푸터, 로그, 사용 통계에 사용하는 앱 버전.
+/// `CFBundleShortVersionString`을 그대로 읽음. 버전이 없으면 `0.0.0-dev` 사용.
 enum AppInfo {
     static var version: String {
         (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.0.0-dev"

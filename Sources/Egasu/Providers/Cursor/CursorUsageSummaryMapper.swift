@@ -1,6 +1,6 @@
 import Foundation
 
-/// Cursor Enterprise/team dashboard가 쓰는 두 REST payload 결합. request endpoint는 포함 request allowance, usage-summary는 구조화 percentage·user 단위 on-demand spend·정확한 billing-cycle 경계 — 어느 한쪽만으로는 불충분.
+/// Enterprise·팀 사용량 결합 — 요청 응답의 포함 한도와 요약 응답의 사용률·추가 지출·청구 기간 사용.
 enum CursorUsageSummaryMapper {
     static func hasUsableSummaryPayload(_ summary: [String: Any]) -> Bool {
         let start = (summary["billingCycleStart"] as? String).flatMap(EgasuISO8601.date(from:))
@@ -55,7 +55,7 @@ enum CursorUsageSummaryMapper {
         )
     }
 
-    /// request 기반 Enterprise plan에서 기본 Total Usage 위젯이 포함 allowance를 실어야 함. legacy Requests line도 유지 — 그 optional 위젯을 수동으로 켠 사용자가 업그레이드 후 잃지 않도록.
+    /// 포함 요청 한도를 Total Usage·Requests 두 지표 행으로 생성하여 저장된 지표 선택을 보존.
     private static func appendRequests(
         _ usage: [String: Any]?,
         cycle: BillingCycle,
@@ -86,7 +86,8 @@ enum CursorUsageSummaryMapper {
         return true
     }
 
-    /// live `individualUsage.plan` 형태와 다른 Enterprise 계정의 pooled/overall variant 모두 지원. request allowance가 우선 — dashboard의 포함 cap이기 때문.
+    /// 유효한 요청 한도가 없을 때 요약 사용량으로 대체.
+    /// `limitType`이 `team`이면 유효한 팀 `pooled` 우선. 그 외에는 개인 `plan`, 개인 `overall`, 팀 `pooled` 순으로 선택.
     private static func appendSummaryTotal(
         _ summary: [String: Any]?,
         cycle: BillingCycle,
@@ -139,7 +140,7 @@ enum CursorUsageSummaryMapper {
         }
     }
 
-    /// dashboard의 대표 On-Demand 카드는 user 단위. organization 집계는 Cursor가 그 계정 형태에서 individual bucket을 생략할 때만 사용.
+    /// 개인 추가 지출 우선. 표시 가능한 개인 지표가 없을 때만 팀 집계 사용.
     private static func appendOnDemand(
         _ summary: [String: Any]?,
         cycle: BillingCycle,
@@ -153,7 +154,7 @@ enum CursorUsageSummaryMapper {
         _ = appendOnDemandBucket(team?["onDemand"], cycle: cycle, to: &lines)
     }
 
-    /// 쓸 만한 행을 냈는지 반환. Enterprise 응답은 유효한 team bucket 옆에 individual placeholder bucket(`enabled: false` 또는 0 limit)을 실을 수 있음 — individual dictionary 발견만으로 fallback을 억제하면 안 됨.
+    /// 비활성 항목, 유효한 상한과 양수 사용액이 모두 없는 항목은 건너뜀. 지표 추가 여부로 팀 집계 전환 판단.
     private static func appendOnDemandBucket(
         _ value: Any?,
         cycle: BillingCycle,

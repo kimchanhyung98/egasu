@@ -1,32 +1,32 @@
 import Foundation
 
-/// model 1개의 per-million-token USD rates + 선택적 long-context tier·fast-variant multiplier.
-/// 모든 spend imputation (Claude, Codex, Cursor, Grok)의 공용 가격 기준.
+/// 모델의 백만 토큰당 USD 요율과 선택적 긴 문맥 요율·Fast 배율.
+/// 토큰 기반 비용 추정의 공통 가격 자료.
 struct ModelRates: Sendable, Equatable {
     var inputPerMillion: Double
     var outputPerMillion: Double
-    /// 5분 ephemeral cache write (Anthropic식) — 별도 cache-write 가격 없는 provider는 input rate와 동일.
+    /// 5분 임시 캐시 쓰기 요율 — 별도 단가가 없으면 입력 요율 사용.
     var cacheWritePerMillion: Double
     var cacheReadPerMillion: Double
 
-    /// prompt가 long-context threshold를 넘는 request의 rates — request 전체를 상위 tier로 과금.
-    /// field명은 catalog 관례 `above_200k` 유지, 실제 경계는 `longContextThresholdTokens`가 결정.
+    /// 프롬프트가 긴 문맥 기준을 초과하면 요청 전체에 적용하는 요율.
+    /// 필드 이름은 above_200k 관례 유지 — 실제 기준은 longContextThresholdTokens.
     var inputAbove200kPerMillion: Double?
     var outputAbove200kPerMillion: Double?
     var cacheWriteAbove200kPerMillion: Double?
     var cacheReadAbove200kPerMillion: Double?
 
-    /// pricing source의 cache-read rate 명시 발행 여부.
-    /// codec은 일반 추정용으로 input 10% fallback을 합성 — Codex는 discount 미발행 시 full input 과금 필수.
+    /// 가격 출처의 캐시 읽기 요율 명시 여부.
+    /// 일반 추정용 기본값은 입력 요율의 10% — Codex는 미명시 상태에서 입력 요율 전액 사용.
     var cacheReadIsExplicit: Bool = true
 
-    /// 선택적 long-context rates가 적용되는 prompt-token threshold.
+    /// 긴 문맥 요율 적용을 시작하는 프롬프트 토큰 기준.
     var longContextThresholdTokens: Int = 200_000
 
-    /// "fast" variant의 rate multiplier (variant 없으면 1).
+    /// Fast 변형의 요율 배율 — 기본값은 1.
     var fastMultiplier: Double = 1
 
-    /// 모든 dollar 수치에 배율 적용한 동일 rates — `-fast` slug를 base entry로 가격 산정할 때 사용.
+    /// 모든 금액 요율에 배율 적용 — Fast 모델을 기본 항목으로 계산할 때 사용.
     func scaled(by factor: Double) -> ModelRates {
         ModelRates(
             inputPerMillion: inputPerMillion * factor,
@@ -44,30 +44,30 @@ struct ModelRates: Sendable, Equatable {
     }
 }
 
-/// 가격이 다르게 매겨지는 bucket별 token count — 모든 scanner의 정규화 대상.
+/// 요율이 다른 분류별 토큰 수 — 수집기가 전달하는 정규화된 입력.
 struct TokenBreakdown: Codable, Sendable, Equatable {
-    /// cache 미사용 일반 input rate 과금 token.
+    /// 캐시를 사용하지 않은 일반 입력 토큰.
     var input: Int = 0
-    /// 5분 ephemeral cache에 기록된 input token.
+    /// 5분 임시 캐시에 기록한 입력 토큰.
     var cacheWrite5m: Int = 0
-    /// 1시간 ephemeral cache에 기록된 input token — input 2배 과금.
+    /// 1시간 임시 캐시에 기록한 입력 토큰 — 입력 요율의 두 배 적용.
     var cacheWrite1h: Int = 0
     var cacheRead: Int = 0
     var output: Int = 0
-    /// request가 "fast" variant로 실행됨 (Claude log의 `speed` field).
+    /// 요청 단위 Fast 실행 여부 — Claude 로그의 speed 필드 등에서 확인.
     var isFast: Bool = false
 
-    /// long-context threshold 판정 대상 input — output은 tier 선택에 미관여하나 선택된 tier로 과금.
+    /// 긴 문맥 판정에 쓰는 입력 토큰 합계 — 출력은 판정에서 제외하고 선택된 요율로 계산.
     var promptTokens: Int { input + cacheWrite5m + cacheWrite1h + cacheRead }
     var totalTokens: Int { input + cacheWrite5m + cacheWrite1h + cacheRead + output }
 }
 
 extension ModelRates {
-    /// 1시간 cache write는 input rate 2배 과금 (ccusage 규칙 — LiteLLM 명시 `above_1hr` field와 일치).
+    /// 1시간 캐시 쓰기는 선택된 입력 요율의 두 배 적용.
     private static let cacheWrite1hInputMultiplier = 2.0
 
-    /// 이 rates 기준 request 1건의 dollar cost — request 전체 long-context tier와 fast multiplier 적용.
-    /// request 경계를 보존하지 않는 집계 source는 long-context 적용 opt-out 가능.
+    /// 요청 한 건의 USD 비용 — 요청 전체의 긴 문맥 요율과 Fast 배율 반영.
+    /// 요청 경계가 없는 집계 자료는 긴 문맥 요율 적용 생략 가능.
     func costDollars(for tokens: TokenBreakdown, applyLongContextRates: Bool = true) -> Double {
         let multiplier = tokens.isFast ? fastMultiplier : 1
         let useLongContextRates = applyLongContextRates && tokens.promptTokens > longContextThresholdTokens

@@ -1,7 +1,7 @@
 import Foundation
 
-/// Claude·Codex·pi 로그 scanner가 공유하는 incremental scan actor: `*.jsonl` 중 변경된 파일만 재파싱(path+size+mtime key의 per-file cache)해 파일 순서대로 반환.
-/// provider는 discovery·per-file parser·후처리 dedup만 제공. actor라 parse cache가 refresh 주기 사이에 main actor 밖에서 유지 — parser당 하나를 scanner 인스턴스들이 공유, `Item`은 그 parser의 row.
+/// 여러 로그 수집기가 공유하는 파일별 파싱 캐시.
+/// 호출자가 파일 탐색·파싱·중복 제거를 담당하며, 스캔 결과는 입력 경로 순서로 반환.
 actor IncrementalJSONLScanner<Item: Codable & Sendable> {
     private typealias CachedFile = JSONLScanCachedFile<Item>
 
@@ -54,10 +54,7 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
         }
     }
 
-    /// window 안 파일 재파싱(path+size+mtime 불변이면 cache 재사용) 후 입력 순서대로 이어붙여 반환 — 호출자가 경로 정렬 목록을 넘겨 keep-first dedup 유지.
-    /// mtime이 `since` 이전인 파일은 skip, 읽기 실패 파일은 cache에 남기지 않아 일시적 오류가 고착되지 않음.
-    /// 디스크에서 복원한 파일을 실제 재사용할 때만 `onDiskCacheHit` 1회 호출 — 반복 메모리 hit·다른 카드 조회는 재보고하지 않음.
-    /// `nil`은 취소를 의미 — 완료된 scan의 빈 결과는 `[]`이므로 취소와 "정말 빈 데이터"가 섞이지 않음.
+    /// 수집한 기록, 파싱 완료 파일 수, 읽기·파싱 실패 경로.
     struct ScanResult: Sendable {
         var items: [Item]
         var completedFiles: Int
@@ -77,7 +74,9 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
         )?.items
     }
 
-    /// 파일 메타데이터와 읽기·파싱 실패를 필요한 수집 호출자에게 함께 반환.
+    /// 수정 시각이 `since` 이상인 파일 수집. 경로·크기·수정 시각이 같고 호출자가 허용하면 캐시 재사용.
+    /// 디스크에서 복원한 파일을 처음 재사용할 때 `onDiskCacheHit` 호출.
+    /// 취소는 `nil`, 정상 빈 결과는 빈 `items`.
     func scan(
         from files: [JSONLScanning.DiscoveredFile],
         since: Date,

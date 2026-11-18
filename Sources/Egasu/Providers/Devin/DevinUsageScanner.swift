@@ -190,7 +190,7 @@ actor DevinUsageScanner {
                 parsed.invalidRows += 1
                 continue
             }
-            // 한 노드의 append 갱신은 마지막 상태만 사용. 분기에서 사라진 과거 요청도 실제 소비 이력.
+            // 한 노드에 누적된 변경은 마지막 상태 사용. 분기에서 사라진 과거 요청도 소비 이력으로 보존.
             nodes[id] = (node, object["at"])
         }
         for (id, value) in nodes.sorted(by: { $0.key < $1.key }) {
@@ -287,7 +287,7 @@ actor DevinUsageScanner {
         }
     }
 
-    /// 대화 본문 대신 집계에 필요한 메타데이터만 조회. 읽기 전용 accessor 사용.
+    /// 대화 본문 대신 집계 메타데이터만 읽기 전용으로 조회.
     static let dataSQL = """
         SELECT json_group_array(CASE WHEN json_valid(chat_message) THEN json_array(
             session_id, node_id, created_at,

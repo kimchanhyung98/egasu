@@ -36,8 +36,7 @@ struct GrokUsageClient: Sendable {
     static let refreshURL = URL(string: "https://auth.x.ai/oauth2/token")!
     static let tokenAuthHeader = "xai-grok-cli"
 
-    /// weekly shared-pool 데이터 endpoint — `GetGrokCreditsConfig` 메시지를 JSON으로 반환.
-    /// Grok CLI(`billing.rs`)가 호출하는 URL과 동일 — CLI의 안정성 보장·auth header·token-refresh 경로 공유.
+    /// Grok CLI와 같은 공유 한도 API. `GetGrokCreditsConfig`의 JSON 응답 사용.
     static let creditsConfigURL = URL(string: "https://cli-chat-proxy.grok.com/v1/billing?format=credits")!
 
     var httpClient: HTTPClient

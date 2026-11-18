@@ -1,8 +1,8 @@
 import Foundation
 
-/// Codex native·Pi 요청의 정규화 토큰에 같은 장문·cache 할인·priority 규칙 적용.
+/// Codex·Pi 요청의 정규화 토큰에 같은 장문·캐시 할인·서비스 등급 요율 적용.
 enum CodexUsagePricing {
-    /// 한 집계의 가격 snapshot에서 모델 해석 결과만 재사용. 요청별 토큰·장문 구간은 매번 계산.
+    /// 한 집계에서 같은 가격 스냅샷 사용. 모델과 Ultrafast 여부별로 단가 조회 결과 재사용.
     struct Resolver {
         private let pricing: ModelPricing
         private var cache: [Key: Resolution?] = [:]
@@ -18,7 +18,7 @@ enum CodexUsagePricing {
                 resolution = cached
             } else {
                 resolution = CodexUsagePricing.resolve(model: model, pricing: pricing, isUltrafast: isUltrafast)
-                // 미가격 결과도 저장해 같은 모델의 반복 조회 방지.
+                // 단가를 찾지 못한 결과도 저장해 같은 모델의 반복 조회 방지.
                 cache.updateValue(resolution, forKey: key)
             }
             return resolution?.cost(for: tokens)
@@ -95,7 +95,7 @@ enum CodexUsagePricing {
             ?? resolveRates(model: rateModel, pricing: pricing)
         guard let rates = baseRates ?? resolveRates(model: model, pricing: pricing) else { return nil }
 
-        // fast-only catalog는 이미 배율 반영된 단가 — base가 있을 때만 Codex 배율 추가.
+        // 저장된 배율이 1이면 보충표의 모델별 배율 확인. Fast 별칭은 기본 모델 단가를 찾았을 때 배율 적용.
         var effectiveRates = rates
         if rates.fastMultiplier == 1, let multiplier = pricing.supplement.fastMultiplier(for: rateModel) {
             effectiveRates.fastMultiplier = multiplier
@@ -157,7 +157,7 @@ enum CodexUsagePricing {
     }
 
     private static func resolveRates(model: String, pricing: ModelPricing) -> ModelRates? {
-        // 원래 이름 우선, 미가격일 때만 접두사·날짜를 제거한 보충 가격표·별칭으로 재조회.
+        // 원래 이름 우선. 단가가 없을 때만 공급자 접두사·날짜를 제거해 재조회.
         pricing.resolve(model: model) ?? pricing.resolve(model: withoutProviderPrefix(model))
             ?? pricing.resolve(model: datedBaseModel(model))
     }

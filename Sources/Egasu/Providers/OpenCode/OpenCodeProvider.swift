@@ -43,7 +43,7 @@ final class OpenCodeProvider: ProviderRuntime {
     /// 이 머신의 원본 기록 범위. OpenCode가 기록한 비용도 카탈로그 추정값일 수 있음.
     private let sourceNote = "From your OpenCode logs and local tools"
 
-    /// auth 읽기 실패 로그의 edge-trigger — 지속적으로 읽기 불가한 `auth.json`은 5분 refresh마다가 아닌 실행당 1회만 경고.
+    /// 인증 파일 읽기가 연속으로 실패하면 한 번만 경고. 읽기 성공 뒤의 새 실패는 다시 기록.
     private var loggedAuthReadFailure = false
 
     init(
@@ -59,8 +59,8 @@ final class OpenCodeProvider: ProviderRuntime {
     }
 
     var widgetDescriptors: [WidgetDescriptor] {
-        // Go plan cap은 로컬 `opencode-go` spend에서 계산(Session/Weekly는 상단 노출, Monthly는 on demand)
-        // 하단 spend tile + trend는 OpenCode-hosted(Go + Zen) 합산 spend
+        // Go 한도는 로컬 `opencode-go` 사용액에서 계산.
+        // 지출·사용 추이는 OpenCode 로컬 DB와 공유 도구의 기록을 합산.
         [
             .boundedDollars(id: "opencode.session", provider: provider, title: "Session", limit: OpenCodeUsageMapper.sessionCap)
                 .supportingSoftLimit(.fiveHours)

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Customize ▸ API Key 섹션에 표시되는 user-supplied API key의 현재 상태.
+/// Accounts의 계정 상세에서 관리하는 사용자 입력 API 키의 현재 상태.
 /// auth store의 우선순위(config file > env)가 saved key를 자동으로 override로 만드는 구조 — 이 타입은 어떤 조합이 있는지만 보고.
 enum APIKeyStatus: Sendable, Equatable {
     case notSet
@@ -15,7 +15,7 @@ enum APIKeyStatus: Sendable, Equatable {
 protocol APIKeyManaging: ProviderRuntime {
     /// 환경 변수 + 저장된 config file로 계산한 실시간 key 상태.
     var apiKeyStatus: APIKeyStatus { get }
-    /// 현재 사용 중인 유효 key (config > env). reveal 토글에서만 노출, 없으면 nil.
+    /// 현재 적용되는 키 — 설정 파일이 환경 변수보다 우선. 둘 다 없으면 nil.
     func currentAPIKey() -> String?
     /// auth store가 읽는 config file에 key 저장 — 저장된 key는 env var보다 우선.
     func saveAPIKey(_ key: String) throws

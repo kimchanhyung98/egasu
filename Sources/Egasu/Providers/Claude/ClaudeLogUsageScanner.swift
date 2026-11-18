@@ -15,7 +15,7 @@ actor ClaudeLogUsageScanner {
     private let rootsOverride: [URL]?
     /// DEFAULT 카드의 표준 root에 덧붙는 같은 계정 커스텀 config dir — side home의 자기 spend 집계용.
     private let additionalRoots: [URL]
-    /// 관리 전환이 `~/.claude` 소유 시 true — 기본 카드 스캔은 ambient `CLAUDE_CONFIG_DIR`를 무시하고 공유 home만 walk.
+    /// 관리형 계정 전환 중 기본 경로를 탐색할 때 `CLAUDE_CONFIG_DIR` 무시.
     nonisolated let pinsSharedHome: Bool
 
     /// 파싱된 usage 라인 1건 — 토큰은 `TokenBreakdown`으로 정규화, dedup 필드 동반(캐시된 entry 위에서 dedup 실행).
@@ -34,9 +34,7 @@ actor ClaudeLogUsageScanner {
         var invalidNumericValues = false
     }
 
-    /// 같은 Claude home을 읽는 카드들의 공유 actor — 첫 스캔이 캐시를 채우고 나머지는 재사용.
-    /// 테스트는 격리된 메모리 전용 scanner 주입.
-    /// 도구 인자의 null·compaction 사용량을 누락하던 이전 parse cache의 재사용 방지.
+    /// 사용량 파싱 형식 버전. 이전 형식의 디스크 캐시 재사용 방지.
     static let cacheSchemaVersion = 5
 
     private static let sharedScanner = IncrementalJSONLScanner<Entry>(
@@ -69,8 +67,8 @@ actor ClaudeLogUsageScanner {
         self.pinsSharedHome = pinsSharedHome
     }
 
-    /// 최근 `daysBack`일의 Claude 로그 스캔 — 데이터 dir/로그 파일 부재 시 `nil`("No data" 렌더),
-    /// 로그는 있으나 window 내 usage 없음이면 빈 series.
+    /// 최근 `daysBack`일 로그 스캔. 발견 오류 없이 로그가 없으면 `nil`.
+    /// 발견·읽기 실패는 결과에 포함하며 정상 수집에서 사용량이 없으면 빈 이력 반환.
     func scan(daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing) async -> LogUsageScan? {
         let since = JSONLScanning.sinceDate(daysBack: daysBack, now: now)
         let cacheIdentity = parseCacheIdentity()
@@ -133,8 +131,8 @@ actor ClaudeLogUsageScanner {
 
     // MARK: - Root and file discovery
 
-    /// Claude config dir 후보 목록 — `CLAUDE_CONFIG_DIR` 단일 경로 우선,
-    /// 없으면 `$XDG_CONFIG_HOME/claude`·`~/.claude`; Cowork 세션 sandbox는 항상 추가.
+    /// `rootsOverride`가 있으면 이 목록만 탐색.
+    /// 기본 카드 탐색은 기본 설정 경로와 Cowork, 같은 계정의 추가 경로를 포함.
     private func claudeRoots() -> (urls: [URL], failures: Int) {
         var roots: [URL] = []
         var seen: Set<String> = []

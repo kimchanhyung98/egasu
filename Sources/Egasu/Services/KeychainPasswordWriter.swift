@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 protocol GenericPasswordWriting: Sendable {
-    /// `account == nil`은 기존 service-only 항목 하나를 정확히 찾아 갱신하고, 부재 시 빈 account로 생성.
+    /// `account`가 nil이면 서비스명으로 검색. 한 항목만 찾으면 갱신하고, 없으면 빈 계정명으로 생성. 여러 항목이 일치하면 실패.
     func write(service: String, account: String?, value: Data) throws
 }
 

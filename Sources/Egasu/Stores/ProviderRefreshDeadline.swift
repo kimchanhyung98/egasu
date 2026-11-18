@@ -1,6 +1,7 @@
 import Foundation
 
-/// 취소에 협조하지 않는 provider도 호출자의 대기는 종료 — 실제 작업 종료와 결과 게시를 분리.
+/// 프로바이더가 `MainActor` 실행권을 양보하면 취소에 응답하지 않아도 호출자 대기 종료 가능.
+/// `MainActor`가 막히면 시간 초과·취소 처리가 지연되며, 제한 시간 이후 반환한 결과는 폐기.
 @MainActor
 enum ProviderRefreshDeadline {
     enum Result: Sendable {
@@ -9,7 +10,7 @@ enum ProviderRefreshDeadline {
         case cancelled
     }
 
-    /// 대기 시간은 store의 경과 측정과 같은 suspending 기준 — 시스템 잠자기 동안은 흐르지 않음.
+    /// 저장소의 경과 측정과 같은 SuspendingClock 기준 — 시스템 잠자기 동안 대기 시간 정지.
     /// ContinuousClock을 쓰면 잠자기에서 깨자마자 정상 조회가 시간 초과로 폐기됨.
     static func run(
         timeout: Duration,
@@ -37,7 +38,7 @@ enum ProviderRefreshDeadline {
                     race.finish(clock.now >= deadline ? .timedOut : .snapshot(snapshot))
                 }
                 race.timer = Task {
-                    // provider의 동기 구간과 timer 실행 대기도 최초 호출의 제한 시간에 포함.
+                    // 프로바이더의 동기 실행 구간과 타이머 실행 대기도 최초 호출의 제한 시간에 포함.
                     let remaining = max(.zero, clock.now.duration(to: deadline))
                     do { try await sleep(remaining) }
                     catch { return }

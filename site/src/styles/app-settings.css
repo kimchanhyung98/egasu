@@ -191,7 +191,7 @@ button.am-toggle { cursor: pointer; }
   gap: 5px;
 }
 
-/* Global Shortcut의 ShortcutRecorderField — 이 화면의 유일한 전용 컨트롤. */
+/* Global Shortcut 등 웹 미리보기 작업 버튼의 공통 스타일. */
 .am-chip {
   padding: 4px 10px;
   border-radius: 6px;

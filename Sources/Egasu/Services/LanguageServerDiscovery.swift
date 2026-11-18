@@ -1,14 +1,15 @@
 import Darwin
 import Foundation
 
-/// 실행 중인 Codeium 계열 language server(Antigravity 번들 `language_server`, `agy` CLI) 탐지 — 로컬 Connect-RPC 호출용 CSRF token + listening port 반환.
-/// Tauri 호스트 `ls.discover`의 Swift port — `ps` 스캔, 이름+marker flag 매칭, argv에서 flag 추출, `lsof`로 port read.
+/// 실행 중인 Codeium 계열 언어 서버 탐지. 로컬 Connect-RPC에 사용할 포트와 확인한 CSRF 토큰을 반환.
+/// 프로세스 이름과 구분 인자로 후보를 찾고, 실행 인자의 토큰·대체 포트와 `lsof`의 수신 포트를 확인.
 /// 전부 blocking subprocess I/O — `discover`는 main actor 밖에서 호출.
 struct LanguageServerDiscovery: Sendable {
     struct Options: Sendable {
         /// 매칭할 실행 파일 이름 (e.g. `language_server`, `agy`).
         var processName: String
-        /// `--app_data_dir`/`--ide_name`/`--override_ide_name`에 정확 매칭하는 소문자 marker — 실패 시 `/marker/` 경로 substring fallback, 빈 배열은 "아무 인스턴스나 매칭".
+        /// `--app_data_dir`, `--ide_name`, `--override_ide_name` 값과 대소문자 구분 없이 비교.
+        /// 세 인자의 값을 하나도 찾을 수 없을 때만 `/marker/` 경로를 확인. 빈 목록은 모든 인스턴스 허용.
         var markers: [String]
         /// CSRF token 값을 담는 flag (e.g. `--csrf_token`) — 빈 값은 token 없음.
         var csrfFlag: String
@@ -134,7 +135,7 @@ struct LanguageServerDiscovery: Sendable {
         return nil
     }
 
-    /// marker 매칭 우선순위 — 정확한 `--ide_name`/`--override_ide_name`/`--app_data_dir` 값은 rank 0("antigravity"의 "antigravity-next" 오매칭 방지), `/marker/` 경로 substring은 rank 1.
+    /// 구분 인자 값이 정확히 일치하면 순위 0. 비교할 인자 값이 없고 `/marker/` 경로가 일치하면 순위 1.
     /// marker 없음은 rank 0(모든 인스턴스 매칭), 무매칭은 nil.
     static func markerRank(command: String, markersLower: [String]) -> Int? {
         if markersLower.isEmpty { return 0 }

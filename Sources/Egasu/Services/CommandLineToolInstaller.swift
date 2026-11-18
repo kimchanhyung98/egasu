@@ -2,8 +2,8 @@ import AppKit
 import Foundation
 import Observation
 
-/// 번들된 one-shot CLI를 앱 밖 복사 없이 macOS 기본 PATH에 설치.
-/// symlink는 대상 경로가 안정적이라 in-place Sparkle 업데이트에도 생존.
+/// 번들 CLI를 가리키는 심볼릭 링크를 설치. 기본 경로는 `/usr/local/bin/egasu`.
+/// 안정된 앱 내부 경로를 가리키는 심볼릭 링크로 Sparkle 업데이트 후에도 연결 유지.
 @MainActor
 @Observable
 final class CommandLineToolInstaller {
@@ -112,7 +112,7 @@ final class CommandLineToolInstaller {
         guard let target = try? fileManager.destinationOfSymbolicLink(atPath: destinationPath) else {
             return fileManager.fileExists(atPath: destinationPath) ? .conflict : .notInstalled
         }
-        // installer는 항상 이 정확한 절대 target 기록, uninstall도 privilege 하에 같은 문자열 재검사 — 수동 생성된 상대/동등 링크는 외부 링크로 간주.
+        // 설치한 링크는 정확한 절대 경로로 식별. 관리자 권한으로 제거하기 직전 같은 경로인지 재확인.
         return target == sourcePath ? .installed : .conflict
     }
 

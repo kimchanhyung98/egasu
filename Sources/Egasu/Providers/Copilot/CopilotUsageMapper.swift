@@ -108,7 +108,7 @@ enum CopilotUsageMapper {
         )
     }
 
-    /// "Extra Usage" — 포함 Credits pool 초과로 소비한 premium interaction. 추가(overage) 지출 활성화(`overage_permitted`) 시에만 표시 — 그때는 실제 0도 "0"으로 표시(show-real-zeros 규칙), 비활성화면 진짜 N/A → nil("No data").
+    /// "Extra Usage" — Credits 지표가 있고 `overage_permitted`가 참이면 초과 사용량 표시. 0도 포함.
     /// endpoint가 spending cap을 노출하지 않아 meter가 아닌 unbounded count.
     private static func overageLine(_ raw: Any?) -> MetricLine? {
         guard let snapshot = raw as? [String: Any],

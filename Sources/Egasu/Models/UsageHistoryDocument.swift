@@ -1,9 +1,9 @@
 import Foundation
 
-/// private iCloud container에 저장되는 Mac 1대의 presentation 무관 usage history.
+/// 비공개 iCloud 컨테이너에 저장하는 Mac 한 대의 사용 이력 — 화면 표시 방식과 독립.
 struct UsageHistoryDocument: Hashable, Sendable, Codable, Identifiable {
-    /// v2: account 카드(`claude@ab12cd34`)와 `identities` map 추가 — peer 간 카드 id 대신 ACCOUNT 기준 history 매칭.
-    /// v1 문서는 계속 판독 가능(identities 없음 → legacy same-card-id merge), v1 reader는 v2 문서를 "update OpenUsage" 메시지로 거부.
+    /// v2는 계정 카드와 identities를 지원하여 Mac 사이의 이력을 계정 식별자로 연결.
+    /// v1 문서는 같은 카드 ID 기준으로 합산 가능 — v1 전용 앱은 v2 문서 미지원.
     static let currentSchema = "openusage.history.v2"
     static let legacySchemaV1 = "openusage.history.v1"
 
@@ -12,8 +12,8 @@ struct UsageHistoryDocument: Hashable, Sendable, Codable, Identifiable {
     var deviceName: String
     var updatedAt: Date
     var providers: [String: ProviderUsageHistory]
-    /// 카드 id → 안정적 account identity key (`ProviderAccountID` 참조) — v1 문서에는 부재.
-    /// email·이름 미포함 — identity key는 불투명한 account/organization 식별자.
+    /// 카드 ID별 안정적인 계정 식별자 — v1 문서에는 없음.
+    /// 이메일·이름 없이 불투명한 계정·조직 식별자만 보관.
     var identities: [String: String]?
 
     var id: String { deviceID }
@@ -33,7 +33,7 @@ struct UsageHistoryDocument: Hashable, Sendable, Codable, Identifiable {
         guard schema == Self.currentSchema || schema == Self.legacySchemaV1 else {
             throw UsageHistoryDocumentError.unsupportedSchema
         }
-        // v1 카드 id는 bare provider id, v2는 account 카드(`claude@ab12cd34`)까지 허용.
+        // v1은 프로바이더 ID만 허용, v2는 claude@ab12cd34 형태의 계정 카드 ID도 허용.
         let idPattern = schema == Self.legacySchemaV1
             ? #"^[a-z0-9][a-z0-9-]*$"#
             : #"^[a-z0-9][a-z0-9@-]*$"#

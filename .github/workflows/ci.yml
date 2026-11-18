@@ -1,7 +1,7 @@
 name: CI
 
 on:
-  # The Swift edition ships from `main`. The frozen Tauri edition is preserved on `tauri-legacy`.
+  # Swift 판 검증은 main에서 진행. 이전 Tauri 판은 tauri-legacy에 보관.
   push:
     branches: [main]
   pull_request:

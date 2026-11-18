@@ -1,18 +1,18 @@
 import Foundation
 
-/// egasu 자체 pricing feed — 공개 catalog에 없는 model, catalog이 생략한 fast multiplier, log/CSV slug → canonical key alias 규칙.
-/// `pricing_supplement.json`으로 bundled, gh-pages에서 refresh — 앱 release 없이 entry 갱신.
+/// egasu 가격 보충표 — 추가 모델·Fast 배율·기록의 모델명과 정규 가격 키를 연결하는 별칭 규칙.
+/// pricing_supplement.json을 번들에 포함하고 게시된 피드에서 갱신 — 앱 릴리스 없이 가격 반영.
 struct PricingSupplement: Sendable {
-    /// supplement가 직접 가격 매기는 model — 최우선 source.
+    /// 보충표가 직접 제공하는 모델 가격 — 다른 출처보다 우선.
     let pricing: [String: ModelRates]
-    /// fast variant·request 수준 fast 신호용 base-model multiplier.
+    /// Fast 모델명·요청별 Fast 신호에 적용하는 기본 모델 배율.
     let fastMultipliers: [String: Double]
-    /// 새 배율은 정확 모델·등록 별칭·날짜 변형에만 적용 — 구버전 decoder는 이 필드 무시.
+    /// 정확 모델·등록 별칭·날짜 변형만 허용하는 배율 — 구버전 앱은 이 필드 무시.
     let exactFastMultipliers: [String: Double]
     let aliasRules: [AliasRule]
     let updatedAt: String?
 
-    /// regex slug → canonical pricing key. 규칙 순서 적용 — 첫 일치 승리.
+    /// 모델명 정규식을 정규 가격 키로 연결 — 먼저 일치한 규칙 사용. JSON의 V2 규칙은 기존 규칙 앞에 배치.
     struct AliasRule: @unchecked Sendable {
         let pattern: NSRegularExpression
         let canonical: String
@@ -32,7 +32,7 @@ struct PricingSupplement: Sendable {
         self.updatedAt = updatedAt
     }
 
-    /// alias 규칙 기준 `model`의 canonical pricing key — 일치 규칙 없으면 nil.
+    /// 별칭 규칙에 따른 정규 가격 키 — 일치 규칙이 없으면 nil.
     func canonicalName(for model: String) -> String? {
         let range = NSRange(model.startIndex..., in: model)
         for rule in aliasRules where rule.pattern.firstMatch(in: model, range: range) != nil {
@@ -41,13 +41,13 @@ struct PricingSupplement: Sendable {
         return nil
     }
 
-    /// base model의 Fast 배율 — 정확 key 우선, 접두사·날짜가 있으면 가장 구체적인 모델명 우선.
+    /// 기본 모델의 Fast 배율 — 정확한 키 우선, 접두사·날짜 변형은 긴 모델명 우선.
     func fastMultiplier(for model: String) -> Double? {
         if let exact = exactFastMultipliers[model] ?? fastMultipliers[model] { return exact }
         return exactFastMultiplier(for: model) ?? legacyFastMultiplier(for: model)
     }
 
-    /// 기존 피드의 넓은 모델명 매칭을 유지하는 Fast 배율.
+    /// 구형 피드의 넓은 모델명 일치를 지원하는 Fast 배율.
     func legacyFastMultiplier(for model: String) -> Double? {
         if let exact = fastMultipliers[model] { return exact }
         let normalized = PricingCatalog.normalizedKey(model)
@@ -64,7 +64,7 @@ struct PricingSupplement: Sendable {
         return nil
     }
 
-    /// 등록 모델·별칭·날짜에 한정한 신규 Fast 배율.
+    /// 등록 모델·별칭·날짜 변형에만 적용하는 Fast 배율.
     func exactFastMultiplier(for model: String) -> Double? {
         if let exact = exactFastMultipliers[model] { return exact }
         let canonical = canonicalName(for: model) ?? model
@@ -85,7 +85,7 @@ struct PricingSupplement: Sendable {
         return nil
     }
 
-    /// `part` 안 `base` 뒤가 비어 있거나 `-` separator로 이어지는 경우만 일치.
+    /// part에서 base 뒤가 비어 있거나 하이픈으로 이어질 때만 일치.
     private static func matchesModelSuffix(part: String, base: String) -> Bool {
         guard let range = part.range(of: base, options: .backwards) else { return false }
         let suffix = part[range.upperBound...]
@@ -96,7 +96,7 @@ struct PricingSupplement: Sendable {
 // MARK: - JSON decoding
 
 extension PricingSupplement {
-    /// supplement JSON decode (bundled resource 또는 gh-pages feed) — 불량 JSON은 throw, 개별 불량 alias pattern은 log 후 skip.
+    /// 번들·피드의 보충표 JSON 해석 — 잘못된 JSON은 오류, 잘못된 별칭 정규식은 로그 후 제외.
     static func decode(from data: Data) throws -> PricingSupplement {
         let file = try JSONDecoder().decode(SupplementFile.self, from: data)
         var pricing: [String: ModelRates] = [:]
@@ -114,7 +114,7 @@ extension PricingSupplement {
                 cacheReadAbove200kPerMillion: entry.longContext?.cacheReadPerMillion,
                 cacheReadIsExplicit: entry.cacheReadPerMillion != nil,
                 longContextThresholdTokens: entry.longContext?.thresholdTokens ?? 200_000,
-                // Claude `speed` field 같은 request 수준 fast 신호 보존.
+                // Claude speed 필드 등 요청별 Fast 신호에 사용할 배율 보존.
                 fastMultiplier: file.exactFastMultipliers?[model] ?? file.fastMultipliers?[model] ?? 1
             )
         }

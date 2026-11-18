@@ -1,6 +1,6 @@
 import KeyboardShortcuts
 
 extension KeyboardShortcuts.Name {
-    /// 어디서든 menu-bar popover를 토글하는 단축키. 기본 combo 없음 — Settings 화면에서 사용자가 직접 기록.
+    /// 어디서든 메뉴 막대 팝오버를 여닫는 단축키 — 기본 조합 없이 Settings에서 직접 지정.
     static let togglePopover = Self("togglePopover")
 }

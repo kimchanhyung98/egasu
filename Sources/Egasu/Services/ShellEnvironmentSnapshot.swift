@@ -1,7 +1,7 @@
 import Foundation
 
-/// identity 해석이 의존하는 login-shell 사실(provider home override·OAuth endpoint 스위치) — 성공한 shell 캡처마다 영속화.
-/// `ProcessEnvironmentReader`가 세션 내내 이 키를 persisted 사실에 고정 — 느린 shell이 export된 override를 "미설정"으로 오독하는 일 방지, 변경된 export는 다음 launch부터 적용.
+/// 계정 식별에 필요한 프로바이더 홈과 OAuth 등 로그인 셸 환경을 저장.
+/// 프로세스 환경 변수가 우선하며, 저장본의 고정 대상 셸 값은 실행 동안 유지.
 struct ShellEnvironmentSnapshot: Codable, Equatable, Sendable {
     /// identity 관련 non-secret 설정 변수 — secret(API 키·token) 추가 금지, snapshot은 UserDefaults에 평문 저장.
     static let capturedKeys = [
@@ -48,8 +48,7 @@ struct ShellEnvironmentSnapshot: Codable, Equatable, Sendable {
             ?? Set(Self.capturedKeys)
     }
 
-    /// warm login-shell 레이어 기준 캡처 키 전체 값 — 캡처 실패 시 `nil`.
-    /// 빈 캡처는 spawn/parse 실패 — 그 "사실"의 영속화 금지.
+    /// 로그인 셸 캡처에 실패하면 nil 반환. 성공하면 대상 키의 값이 없어도 저장 가능.
     static func current(
         shellEnvironment: LoginShellEnvironment = .shared,
         capturedAt: Date = Date()
@@ -68,8 +67,7 @@ final class ShellEnvironmentSnapshotStore: @unchecked Sendable {
     static let storageKey = "openusage.shellEnvSnapshot.v2"
     static let previousStorageKey = "openusage.shellEnvSnapshot.v1"
 
-    /// 프로세스 시작 시점 snapshot — 1회 decode·memoize(`static let`은 thread-safe lazy), identity-key read마다 UserDefaults 재조회 금지.
-    /// 프로세스 수명 동안 의도적 동결 — 이 동결이 곧 세션 pin; refresh task의 새 사실은 다음 launch부터 적용.
+    /// 처음 필요할 때 저장 환경을 한 번 읽고 실행 동안 유지. 새로 캡처한 값은 다음 실행부터 적용.
     static let launchSnapshot: ShellEnvironmentSnapshot? =
         ShellEnvironmentSnapshotStore(defaults: .standard).load()
 
@@ -114,8 +112,7 @@ final class ShellEnvironmentSnapshotStore: @unchecked Sendable {
         defaults.removeObject(forKey: Self.previousStorageKey)
     }
 
-    /// `prewarm()`이 시작한 login-shell 캡처를 off-main에서 대기(캡처 자체 timeout 한도) 후 최신 snapshot 영속화.
-    /// 캡처 실패 시 영속화 없음 — 이전 snapshot 사실 유지. caller가 task 보유, teardown 시 취소.
+    /// 백그라운드에서 로그인 셸 캡처 결과를 저장. 캡처가 아직 시작되지 않았으면 시작하고, 실패하면 기존 저장값 유지.
     func startRefreshTask(shellEnvironment: LoginShellEnvironment = .shared) -> Task<Void, Never> {
         Task.detached(priority: .utility) { [self] in
             guard shellEnvironment.ensureCaptured(),

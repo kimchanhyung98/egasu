@@ -7,7 +7,7 @@ struct OpenCodeUsageScan: Sendable {
     var goWindows: OpenCodeGoWindows?
 }
 
-/// OpenCode 로컬 SQLite 로그(`opencode*.db`, 전체 release channel)에서 provider가 렌더링할 usage 생성.
+/// OpenCode 로컬 SQLite 사용량 집계. `OPENCODE_DB` 지정 시 해당 파일, 기본값은 데이터 디렉터리의 모든 `opencode*.db`.
 /// OpenCode가 기록한 비용을 재가격 없이 합산. 원본의 카탈로그 추정 비용도 포함 가능.
 /// nonisolated async `Sendable` struct — `@MainActor` provider가 `await`하면 SQLite 읽기는 main actor 밖에서 수행.
 struct OpenCodeUsageScanner: Sendable {
@@ -40,7 +40,7 @@ struct OpenCodeUsageScanner: Sendable {
         )
     }
 
-    /// 최근 `daysBack`일 scan — database가 전혀 없을 때만 `nil`("No data" 표시), 있으나 비어 있으면 빈 scan.
+    /// 최근 `daysBack`일 집계. DB 부재는 `nil`, 정상 빈 DB는 빈 집계 결과.
     /// database가 존재하는데 하나도 못 읽으면 `databaseUnreadable` throw — 전부 실패한 refresh를 0 사용량으로 렌더링 금지.
     /// 기본 33일은 가장 넓은 meter window(anchored month)+여유분 — tile/trend는 아래에서 31일로 재제한.
     func scan(now: Date, daysBack: Int = 33, hasGoKey: Bool = false) async throws -> OpenCodeUsageScan? {
@@ -140,8 +140,8 @@ struct OpenCodeUsageScanner: Sendable {
             rejectedNumericRows: rejectedNumericRows, source: "opencode", readFailureCount: failures.count
         )
 
-        // Go 전용 window → Session/Weekly/Monthly cap, 현재 Go 신호(`hasGoKey` 또는 window 내 Go spend)일 때만 표시
-        // 과거 사용의 stale anchor가 해지·Zen 전용 사용자에게 cap이나 "Go" plan을 되살리면 안 됨 — anchor는 monthly cycle 경계 설정에만 사용
+        // Go 키 또는 집계에 포함된 Go 기록이 있으면 한도 생성.
+        // 최초 사용 시각은 월간 경계 계산에만 사용.
         let goWindows: OpenCodeGoWindows? = (hasGoKey || !goCosts.isEmpty)
             ? OpenCodeGoWindowMath.compute(costs: goCosts, anchorMs: anchorMs, now: now)
             : nil
@@ -150,7 +150,7 @@ struct OpenCodeUsageScanner: Sendable {
     }
 
     /// `hasLocalCredentials()`용 저비용 로컬 probe — 추적 database에 numeric cost의 hosted assistant 행 존재 여부 확인.
-    /// read-only·network 없음. first-run/new-provider 감지에서만 실행되므로 실패는 throttle 없이 로그.
+    /// 읽기 전용이며 네트워크에 접속하지 않음. 감지 실패는 로그로 보고.
     /// 읽기 불가 data directory도 OpenCode 흔적으로 취급 — `refresh()`가 실제 에러를 노출하게 함.
     func hasHostedUsage() -> Bool {
         let paths: [String]

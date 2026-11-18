@@ -1,7 +1,7 @@
 import AppKit
 
-/// 선택 시 closure를 실행하는 `NSMenuItem`.
-/// `keyEquivalent` 지정 시 ⌘ modifier 적용.
+/// 선택 시 클로저를 실행하는 NSMenuItem.
+/// `keyEquivalent` 지정 시 Command 보조 키 적용.
 @MainActor
 final class ClosureMenuItem: NSMenuItem {
     private let handler: () -> Void

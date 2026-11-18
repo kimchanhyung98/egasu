@@ -66,7 +66,7 @@ actor CodexLogUsageScanner {
         self.additionalRoots = additionalRoots
     }
 
-    /// 최근 `daysBack`일의 Codex rollout 스캔 — Codex home 또는 session 파일이 없으면 `nil` (spend tile은 "No data").
+    /// 최근 `daysBack`일의 Codex 세션 원장 스캔. 발견 오류 없이 원장이 없으면 `nil`.
     func scan(daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing, includeSharedHomes: Bool = false) async -> LogUsageScan? {
         let homes = rootsOverride ?? codexHomes() + additionalRoots
         let sharedRoots = includeSharedHomes && rootsOverride == nil

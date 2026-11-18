@@ -1,8 +1,7 @@
 import Foundation
 
-/// 커스텀 config dir(기본 home 외 `CLAUDE_CONFIG_DIR` 대상)의 추가 Claude 로그인 launch-time 스캔.
-/// keychain secret 미조회(파일 존재 + attributes-only probe) — 권한 dialog·launch 블로킹 금지.
-/// 후보는 `~`의 dot-dir와 `~/.config` 하위로 한정; identity 추출 성공이 곧 검증(이름 매칭 아님).
+/// 추가 Claude 로그인 경로 탐색. 계정 신원과 자격 증명 흔적이 모두 있는 경로만 채택.
+/// 인증 파일이나 Keychain 메타데이터를 확인하며 Keychain 비밀값은 읽지 않음.
 struct ClaudeConfigDirDiscovery {
     /// 승인된 커스텀 config-dir 로그인 1건 — 카드화/기존 계정 귀속 판단은 assembly 소관.
     struct Finding: Equatable, Sendable {
@@ -25,7 +24,7 @@ struct ClaudeConfigDirDiscovery {
     var keychain: KeychainAccessing
     var homeDirectory: @Sendable () -> URL
     var listSubdirectories: @Sendable (URL) -> [URL]
-    /// wall-clock 예산 — 초과 시 부분 결과 반환, 다음 launch에서 재개.
+    /// 탐색 시간 제한. 초과 시 확인한 결과만 반환.
     var timeBudget: TimeInterval
     var now: @Sendable () -> Date
 

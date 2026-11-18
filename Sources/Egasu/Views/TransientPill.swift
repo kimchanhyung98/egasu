@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// 자동 소멸형 확인/알림 캡슐 (공유 "Copied" 필, Customize 액션 알림 공용).
+/// 공유 이미지 복사 등 일시적인 작업 결과를 표시하는 캡슐.
 struct TransientPill: View {
     let systemImage: String
     let text: String
     let tint: AnyShapeStyle
-    /// 재표시마다 caller가 증가시키는 카운터. `.id` 변경으로 transition 재생.
+    /// 재표시마다 호출자가 증가시키는 값 — id 변경으로 전환 효과 재생.
     let trigger: Int
     var showsShadow = true
 

@@ -1,7 +1,8 @@
 import CryptoKit
 import Foundation
 
-/// Unix socket용 RFC 6455 framing — 확장·압축 없이 text JSON만 허용.
+/// Unix 소켓용 RFC 6455 텍스트·제어 프레임 처리. 확장과 압축을 사용하지 않음.
+/// JSON은 제어 연결에서 해석.
 struct CodexWebSocketCodec {
     enum Event { case ready, message(Data), ping(Data), closed }
     static let maximumBytes = 1_048_576

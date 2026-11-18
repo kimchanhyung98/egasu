@@ -10,7 +10,7 @@ OUT="${1:-$ROOT/.build/site-preview}"
 STAMP="${2:-$(git -C "$ROOT" rev-parse --short=8 HEAD 2>/dev/null || echo local)}"
 DATE="$(date -u +%Y-%m-%d)"
 FEED_NAMES=(appcast.xml pricing_supplement.json CNAME .nojekyll)
-# v0.11.0에서 Reset Watch·Tokscale이 출시되어 금지 목록에서 뺌. 미출시 기능이 생기면 다시 추가.
+# 지원하지 않는 배포 경로·공식성·개인정보 보호 주장 검출.
 FORBIDDEN='official|brew|Homebrew|openusage\.ai|robinebers|truly yours|beautiful|no telemetry|never leaves|App Store'
 
 # 0. 경로 별칭을 해소한 뒤 소스·상위 폴더·무관한 기존 작업 보호.

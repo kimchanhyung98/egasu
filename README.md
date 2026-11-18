@@ -1,8 +1,9 @@
 # egasu
 
-Track your AI coding subscriptions from the macOS menu bar — native Swift edition.
+macOS 메뉴 막대에서 AI 코딩 구독 사용량을 확인하는 Swift 앱.
 
-egasu shows how much of your AI coding plans you've used: session and weekly limits, credits, and spend, all in one popover. Pin your most important metrics straight into the menu bar.
+세션·주간 한도, 크레딧과 지출을 한 패널에서 확인.
+메뉴 막대에는 소진 임박, Priority, 직접 고정한 지표 중 선택한 기준으로 표시.
 
 | Minimal | Cards |
 |---|---|
@@ -26,17 +27,21 @@ The app updates itself in place via signed, notarized [Sparkle](docs/updates.md)
 - **[Grok](docs/providers/grok.md)** — weekly shared pool, pay-as-you-go, local daily spend
 - **[Kimi](/docs/providers/kimi.md)** — 5시간·주간·월간 총한도, 추가 지출·잔액.
 - **[Kiro](docs/providers/kiro.md)** — coding credits and subscription plan
-- **[OpenCode](docs/providers/opencode.md)** — Go session/weekly/monthly caps, Zen spend, local daily spend
+- **[OpenCode](/docs/providers/opencode.md)** — Go의 세션·주간·월간 한도 추정치, Console과 Go의 로컬 지출·토큰.
+  과거 Zen 기록도 Console 집계에 포함.
 - **[OpenRouter](docs/providers/openrouter.md)** — credit balance, daily/weekly/monthly spend (API key)
 - **[Z.ai](docs/providers/zai.md)** — session, weekly, web-search quotas (GLM Coding Plan, API key)
 
-Most providers read the credentials already on your machine (keychain, auth files, app state) — no extra login. OpenRouter and Z.ai are the exceptions: they have no local credential to reuse, so you supply an API key (see [OpenRouter setup](docs/providers/openrouter.md) or [Z.ai setup](docs/providers/zai.md)). Credentials are used only for the corresponding provider requests. egasu's separate anonymous summaries and public pricing downloads are documented under [Privacy & usage data](docs/privacy.md).
+대부분의 프로바이더는 Mac의 Keychain, 인증 파일 또는 앱에 저장된 로그인 정보 재사용.
+[OpenRouter](/docs/providers/openrouter.md)와 [Z.ai](/docs/providers/zai.md)는 앱에 저장하거나 지원 환경 변수로 제공한 API 키 사용.
+인증 정보는 해당 프로바이더 요청에만 사용.
+익명 요약과 공개 가격표 다운로드는 [개인정보 및 사용 데이터](/docs/privacy.md) 참조.
 
 ## Features
 
 - **[메뉴 막대](/docs/menu-bar.md).** 소진 임박·Priority·직접 고정한 항목 중 표시 기준 선택.
   텍스트 또는 막대로 최대 5개 표시.
-- **Priority.** 고정한 한도, 소진 임박·소진 완료 한도와 확인이 필요한 계정 표시.
+- **[Priority](/docs/dashboard.md#priority).** 고정한 지표, 소진 임박·초기화 전 사용·소진 완료에 해당하는 한도, 확인이 필요한 계정 표시.
 - **[All Usage](/docs/dashboard.md#all-usage).** 등록 계정별 사용량·초기화 시각·사용 속도 표시.
   Minimal은 프로바이더별 계정 묶음, Cards는 계정별 독립 카드.
   행 우클릭으로 지표 숨기기·Priority 고정·새로 고침·Accounts 관리 연결.
@@ -48,7 +53,7 @@ Most providers read the credentials already on your machine (keychain, auth file
   계정·풀·기간별 전송 상한과 기록은 앱 재시작 뒤에도 유지.
 - **[알림](/docs/settings.md#alerts).** 잔량 부족·빠른 소진·기간 종료 전 남은 할당량과 Codex Reset Watch 통지.
   다섯 조건을 개별 선택하며 기본값은 꺼짐.
-- **Global shortcut.** Toggle the popover from anywhere — record any combo in Settings.
+- **[전역 단축키](/docs/settings.md#general).** Settings → General에서 지정한 키 조합으로 패널 열기·닫기.
 - **Accounts.** 계정 추가·전환·재로그인·API 키와 계정별 지표 표시·순서 관리.
   숨긴 계정 복원과 이름 변경·중단된 Claude 전환 복구 지원.
 - **Stale-while-revalidate.** Cached values display instantly at launch; refresh runs every 5 minutes (15 minutes for Claude).
@@ -67,7 +72,7 @@ Most providers read the credentials already on your machine (keychain, auth file
 
 ## Documentation
 
-Behavior docs live in [docs/](docs/README.md): the [dashboard](docs/dashboard.md), [menu bar pins](docs/menu-bar.md), [settings](docs/settings.md), [refresh & caching](docs/refreshing.md), the [CLI](docs/cli.md), the [local HTTP API](docs/local-http-api.md), the [proxy](docs/proxy.md), and one page per provider.
+Behavior docs live in [docs/](docs/README.md): the [dashboard](docs/dashboard.md), [menu bar display](/docs/menu-bar.md), [settings](docs/settings.md), [refresh & caching](docs/refreshing.md), the [CLI](docs/cli.md), the [local HTTP API](docs/local-http-api.md), the [proxy](docs/proxy.md), and one page per provider.
 
 For working on the code, see the developer docs: [architecture](docs/architecture.md), [adding a provider](docs/adding-a-provider.md), and [debugging & capturing logs](docs/debugging.md).
 
@@ -76,7 +81,8 @@ For working on the code, see the developer docs: [architecture](docs/architectur
 - macOS 15 (Sequoia) or later
 - Universal binary — runs natively on both Apple Silicon and Intel Macs
 
-Today·Yesterday·Last 30 Days는 로컬 CLI 기록(Claude·Codex·Grok) 또는 Cursor 사용 이벤트에서 집계.
+비용·토큰의 기간별 집계는 프로바이더마다 로컬 기록 또는 서버 사용량을 사용.
+[집계 범위](/docs/dashboard.md#총-지출) 참조.
 Cursor 비용은 서버가 보고한 추가 과금액 사용.
 로컬 토큰 기반 비용은 [동적으로 갱신되는 모델 가격](/docs/pricing.md)으로 추정.
 
@@ -97,7 +103,10 @@ swift test             # run the test suite
 
 ## Architecture
 
-SwiftPM package, SwiftUI content hosted in an AppKit-owned `NSStatusItem` + custom key-capable `NSPanel`, Swift 6 strict concurrency. The app and CLI share one module: providers implement a small `ProviderRuntime` protocol (auth store → usage client → mapper → `ProviderSnapshot`), and both surfaces read the same normalized data — see the [architecture overview](docs/architecture.md) for how the pieces fit together and [AGENTS.md](AGENTS.md) for engineering conventions.
+앱과 CLI는 SwiftPM의 `Egasu` 모듈과 Swift 6 strict concurrency 사용.
+메뉴 막대는 AppKit의 `NSStatusItem`, 패널 화면은 키 입력을 받는 `NSPanel`의 SwiftUI 콘텐츠로 구성.
+각 프로바이더는 `ProviderRuntime`을 구현하고 인증 정보로 조회한 데이터를 `ProviderSnapshot`으로 변환.
+[아키텍처](/docs/architecture.md)와 [AGENTS.md](AGENTS.md) 참조.
 
 사용량 갱신은 큐·실제 작업 수명·예약·계정별 캐시·표시 데이터 변환 모듈로 분리.
 화면과 로컬 API는 `WidgetDataStore`를 통해 같은 결과 사용.
@@ -105,7 +114,9 @@ SwiftPM package, SwiftUI content hosted in an AppKit-owned `NSStatusItem` + cust
 
 ## Releasing
 
-Releases are automated: pushing a `v*` tag on `main` builds, signs, notarizes, and publishes a new version. A plain tag (`v0.10.0`) ships to everyone; a pre-release suffix (`v0.10.0-beta.1`) ships to the beta channel. The pipeline lives in [.github/workflows/release.yml](.github/workflows/release.yml), and the step-by-step is in the `release-swift` skill.
+앱 릴리스는 [.github/workflows/release.yml](.github/workflows/release.yml)에서 빌드·서명·공증 후 게시.
+일반 태그(`v0.10.0`)는 정식 채널, `-beta.N` 접미사 태그(`v0.10.0-beta.1`)는 베타 채널로 배포.
+배포 절차는 `release-swift` 스킬 참조.
 
 앱·사이트·가격표는 `main` 이력에 포함된 버전 태그를 기준으로 게시.
 `main` 푸시는 CI 검증만 수행하며, 수동 게시에도 대상 태그 필수.
@@ -131,7 +142,11 @@ The release workflow needs these repository secrets (Settings → Secrets and va
 | `POSTHOG_CLI_PROJECT_ID`     | numeric PostHog project ID the dSYMs upload to                        |
 
 
-Export the Developer ID Application cert (with its private key) from Keychain Access as a `.p12`, then `base64 -i DeveloperID.p12 | pbcopy`. App-specific passwords come from appleid.apple.com → Sign-In and Security → App-Specific Passwords. Generate the Sparkle EdDSA key pair once with Sparkle's `generate_keys` tool; the public and private values must be a matching pair or signing is silently skipped.
+Export the Developer ID Application cert (with its private key) from Keychain Access as a `.p12`, then `base64 -i DeveloperID.p12 | pbcopy`. App-specific passwords come from appleid.apple.com → Sign-In and Security → App-Specific Passwords. Generate the Sparkle EdDSA key pair once with Sparkle's `generate_keys` tool.
+
+워크플로는 GitHub Release에 DMG를 먼저 게시하고, 해당 DMG의 appcast 항목에 `sparkle:edSignature` 속성이 있는지 확인.
+검사에 실패하면 Pages의 appcast는 갱신되지 않으며, 이미 게시된 GitHub Release와 DMG는 공개 상태로 유지.
+GitHub Release와 DMG를 확인한 뒤 서명 설정이 원인이면 수정하고 같은 태그로 릴리스 워크플로를 다시 실행.
 
 For iCloud Sync, store the original development and Developer ID provisioning profiles in 1Password as secure documents. Install the development profile on each registered Mac; base64-encode the Developer ID profile and store it only in the `APPLE_DEVELOPER_ID_ICLOUD_PROFILE` Actions secret. See [iCloud Sync](/docs/icloud-sync.md#개발-및-릴리스-설정) for the container identifiers, build command, and file-inspection command.
 

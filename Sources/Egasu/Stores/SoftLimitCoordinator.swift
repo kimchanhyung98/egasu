@@ -139,7 +139,7 @@ final class SoftLimitCoordinator {
         return statuses[providerID] ?? .init(phase: .waiting, message: L10n.errors("Waiting for the next successful quota refresh."))
     }
 
-    /// 한 번의 제어 조회 — GUI timer와 fresh-success callback만 호출.
+    /// 주기마다 저장된 한도 관측을 평가. 새 정상 관측은 해당 프로바이더만 즉시 검사.
     func check() async {
         for providerID in observations.keys.sorted() {
             await check(providerID: providerID)
