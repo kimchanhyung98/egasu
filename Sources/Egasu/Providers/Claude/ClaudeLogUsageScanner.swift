@@ -131,7 +131,7 @@ actor ClaudeLogUsageScanner {
 
     // MARK: - Root and file discovery
 
-    /// 지정 경로가 있으면 그 경로만 사용.
+    /// `rootsOverride`가 있으면 이 목록만 탐색.
     /// 기본 카드 탐색은 기본 설정 경로와 Cowork, 같은 계정의 추가 경로를 포함.
     private func claudeRoots() -> (urls: [URL], failures: Int) {
         var roots: [URL] = []

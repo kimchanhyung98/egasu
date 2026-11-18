@@ -7,7 +7,7 @@ struct OpenCodeUsageScan: Sendable {
     var goWindows: OpenCodeGoWindows?
 }
 
-/// 선택한 OpenCode 로컬 SQLite DB에서 사용량 집계.
+/// OpenCode 로컬 SQLite 사용량 집계. `OPENCODE_DB` 지정 시 해당 파일, 기본값은 데이터 디렉터리의 모든 `opencode*.db`.
 /// OpenCode가 기록한 비용을 재가격 없이 합산. 원본의 카탈로그 추정 비용도 포함 가능.
 /// nonisolated async `Sendable` struct — `@MainActor` provider가 `await`하면 SQLite 읽기는 main actor 밖에서 수행.
 struct OpenCodeUsageScanner: Sendable {

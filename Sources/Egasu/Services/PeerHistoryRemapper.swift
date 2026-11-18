@@ -54,7 +54,8 @@ enum PeerHistoryRemapper {
                     if let localCard = localCardByIdentity[identity] {
                         result.histories.append((localCard, history))
                     } else if !ProviderAccountID.isAccountCard(peerCardID), localIdentityByCardID[peerCardID] == nil {
-                        // 이 Mac의 기본 카드 식별자가 없으면 카드 ID로 병합. 계정 식별자를 확인한 뒤 다른 계정이면 분리.
+                        // 로컬 기본 카드의 계정이 미확인이면 카드 ID로 병합해 같은 계정의 이력 분리를 방지.
+                        // 로컬 계정이 확인되면 계정 식별자로 다시 대조.
                         result.histories.append((peerCardID, history))
                     } else {
                         collectRemoteOnly(
