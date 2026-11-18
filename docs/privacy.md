@@ -147,7 +147,7 @@ Claude의 계정별 429 대기 시각·연속 제한 횟수·마지막 정상 �
 ## Share Screenshot
 
 **Share Screenshot**을 직접 실행한 경우에만 선택한 카드를 PNG로 클립보드에 복사.
-**Separate Cards**의 이미지 제목에는 `Claude: Account 1` 같은 계정 별명 포함.
+계정 줄에서 복사하거나 푸터에서 **Separate Cards**를 사용하면 이미지 제목에 `Claude: Account 1` 같은 계정 별명 포함.
 계정명에 로그인 이메일이 포함되어 있으면 프로바이더 이름만 표시.
 따라서 이미지를 공유하면 받는 사람에게 계정 별명이 노출될 수 있음.
 

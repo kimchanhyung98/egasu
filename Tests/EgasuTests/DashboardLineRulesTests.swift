@@ -85,7 +85,7 @@ final class DashboardLineRulesTests: XCTestCase {
 
         func account(_ data: WidgetData, retaining: [String: CodexResetClaimBinding]) -> DashboardAccount {
             DashboardAccount(
-                provider: provider, providerName: "Codex", name: "Work",
+                provider: provider, providerName: "Codex", name: "Work", email: "work@example.com",
                 lines: [.init(descriptor: descriptor, data: data)], retainingResetClaims: retaining
             )
         }
@@ -99,6 +99,10 @@ final class DashboardLineRulesTests: XCTestCase {
         let after = try XCTUnwrap(during.lines.first)
         XCTAssertEqual(after.id, before.id)
         XCTAssertEqual(after.data.resetCreditCount, 0)
+        XCTAssertEqual(during.showingEmail.name, "work@example.com")
+        XCTAssertEqual(during.showingEmail.lines.map(\.id), [after.id])
+        XCTAssertNil(during.showingEmail.hidingEmail.name)
+        XCTAssertEqual(during.showingEmail.hidingEmail.lines.map(\.id), [after.id])
         for style in DashboardLayoutStyle.allCases {
             let original = DashboardLiveRow(line: before, layoutStyle: style)
             let updated = DashboardLiveRow(line: after, layoutStyle: style, retainsResetClaimRow: true)
