@@ -591,9 +591,7 @@ extension WidgetData {
 }
 
 extension WidgetData {
-    /// neighbor 기반 condensing 규칙의 단일 정의 — 한 run 안에서 text-only row(`!isBounded`) 바로 아래의 text-only row offset.
-    /// run은 expand caret을 넘지 않음 — caller가 경계에서 분할해 segment별 scan.
-    /// dashboard는 offset을 descriptor ID로, share-card export는 flat index로 매핑.
+    /// 공유 이미지에서 연속되는 텍스트 지표 사이의 여백을 줄일 행 위치.
     static func condensedTextRowOffsets(in rows: [WidgetData]) -> Set<Int> {
         var offsets = Set<Int>()
         for index in rows.indices.dropFirst() where !rows[index - 1].isBounded && !rows[index].isBounded {

@@ -50,7 +50,7 @@
 |---|---|---|
 | Icon Style(아이콘 스타일) | Text / Bars | 별표한 지표를 메뉴 막대에 그리는 방식.<br>기본값은 Bars.<br>[메뉴 막대](/docs/menu-bar.md) 참조. |
 | Theme(테마) | System / Light / Dark | 팝오버에 적용할 앱 전체 화면 스타일 재정의. |
-| Density(밀도) | Default / Compact | 새로 설치하면 Compact가 기본값.<br>Default는 여백이 넓고, Compact는 정보 밀도가 높은 모드 — 글자가 한 단계 작아지고, 행과 프로바이더 섹션 간격이 줄며, 기존 Settings 행도 함께 축소.<br>두 모드 모두 연속된 한 줄 지표(Today / Yesterday / …) 간격이 줄며, Compact에서 더 촘촘하게 표시. |
+| All Usage Layout | Minimal / Cards | Minimal은 프로바이더 안 계정 묶음(기본값), Cards는 계정별 독립 카드.<br>선택은 즉시 적용하며 앱 재실행 후에도 유지. |
 | Time Format(시간 형식) | Auto / 12-hour / 24-hour | 정확한 시각을 읽는 방식(예: "Resets today at 6:38 PM" 대 "18:38").<br>기본값은 24-hour, Auto는 시스템을 따름. |
 
 ## 사용량 표시

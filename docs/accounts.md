@@ -57,7 +57,7 @@ Claude·Codex 계정의 추가·전환·재로그인 동작은 [Claude와 Codex 
   대시보드의 공통 이력 배치는 [계정 카드](/docs/dashboard.md#계정-카드) 참조.
 - 지표 순서는 각 설정 카드 안에서 변경.
   VoiceOver의 **Move Up**·**Move Down** 동작으로도 순서 변경 가능.
-  순서를 바꿔도 기존 대시보드의 Always Visible·On Demand 소속은 유지.
+  바꾼 순서는 대시보드 지표와 공유 이미지에 반영.
   표시 스위치와 메뉴 막대 고정은 독립 — 숨긴 지표도 메뉴 막대에 고정 가능.
 - Claude·Codex 등록 계정: 상태 배지, **Use This Account**, **Sign In Again…**, 중단된 전환 복구, **Remove Account…**.
   저장 로그인을 Keychain에서 읽지 못하면 **Sign In Again…** 대신 **Allow Keychain Access…** 표시 — macOS 승인 창을 띄워 다시 읽고, 성공하면 그 계정 사용량을 새로 조회.

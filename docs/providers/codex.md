@@ -436,7 +436,8 @@ Codex 행은 별도의 "Not started" 상태를 추정하지 않고 일반 재설
 
 "Rate Limit Resets" 행에는 온디맨드 재설정 크레딧 개수(예: `2 available`)와 가장 빠른 만료의 색상 점 표시 — 1주 초과는 파랑, 1주 이내는 노랑, 48시간 이내는 빨강.
 egasu는 크레딧별 만료를 나열하는 전용 엔드포인트 `GET https://chatgpt.com/backend-api/wham/rate-limit-reset-credits`도 가능한 범위에서 호출하며, 값에 마우스를 올리면 팝오버에 가장 빠른 순서대로 각 재설정의 타임라인 표시 — 번호가 붙은 색상 점, 정확한 만료 시각(`Jul 12 at 5:30 PM`), 오른쪽 끝의 카운트다운(`12d 18h`).
-사용 가능한 크레딧이 없으면 `0 available`, 팝오버에는 `You have no rate limit resets` 표시.
+사용 가능한 크레딧이 없으면 All Usage에서 해당 행 숨김.
+마지막 크레딧을 사용하는 동안에는 상세 팝오버를 닫기 전까지 `0 available` 행과 사용 결과를 확인 가능.
 전용 호출 실패 시 사용량 본문의 개수(`rate_limit_reset_credits.available_count`)로 대체; 본문에는 크레딧별 만료 정보가 없으므로, 팝오버에 개수(`N available`)와 만료 시각을 알 수 없다는 안내를 표시해 크레딧이 없는 것으로 오해하지 않도록 처리.
 
 ### 팝오버에서 재설정 사용

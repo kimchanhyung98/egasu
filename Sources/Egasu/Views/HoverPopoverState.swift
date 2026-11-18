@@ -26,6 +26,7 @@ final class HoverPopoverState {
     var isPinned: Bool { pinned }
     @ObservationIgnored private var showTask: Task<Void, Never>?
     @ObservationIgnored private var hideTask: Task<Void, Never>?
+    @ObservationIgnored private var releasePinTask: Task<Void, Never>?
 
     /// 400ms 노출은 hover-tooltip dwell과 동일, 180ms grace는 행→팝오버 커서 이동 허용. 테스트 주입용.
     private let revealDelay: Duration
@@ -50,15 +51,31 @@ final class HoverPopoverState {
 
     /// 팝오버 pin/unpin. pin은 대기 중 hide 취소, unpin은 hover-out grace 재가동.
     func setPinned(_ active: Bool) {
+        releasePinTask?.cancel()
+        releasePinTask = nil
         guard pinned != active else { return }
         pinned = active
         if active { hideTask?.cancel(); hideTask = nil } else { scheduleHide() }
+    }
+
+    /// 포인터가 떠난 상태에서도 초기화권 사용 결과를 읽을 시간 확보.
+    func releasePin(after delay: Duration) {
+        guard pinned else { return }
+        releasePinTask?.cancel()
+        releasePinTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard let self, !Task.isCancelled else { return }
+            releasePinTask = nil
+            setPinned(false)
+        }
     }
 
     /// 강제 닫기 (팝오버/대시보드 teardown) — 화면 orphan 방지.
     func dismiss() {
         showTask?.cancel(); showTask = nil
         hideTask?.cancel(); hideTask = nil
+        releasePinTask?.cancel()
+        releasePinTask = nil
         overInline = false
         overDetail = false
         pinned = false

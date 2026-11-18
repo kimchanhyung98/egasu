@@ -43,35 +43,28 @@ extension AppContainer {
         )
     }
 
-    /// Dashboard·Share가 동일한 최종 카드 목록을 사용하며 선택 fallback은 기존 규칙 유지.
-    func presentedAccountGroups(selectionByFamily: [String: String]? = nil) -> [ProviderGroup] {
+    /// 푸터 공유 대상 — 표시 중인 계정에 저장된 계정 선택·표시 모드 적용.
+    func presentedShareAccounts() -> [DashboardAccount] {
         _ = accountSelectionRevision
-        let selections = selectionByFamily ?? DashboardUsageAccountSelection.storedSelections()
-        let groups = layout.displayGroups
-        let rawIDs = groups.map(\.provider.id)
+        let selections = DashboardUsageAccountSelection.storedSelections()
+        let accounts = dashboardAccounts()
+        let cardIDs = accounts.map(\.id)
         let selectedIDs = Dictionary(uniqueKeysWithValues: AccountProfilesStore.supportedFamilies.compactMap { family in
             visibleAccountCardID(
                 for: family,
-                among: accountCardIDs(for: family, among: rawIDs),
+                among: accountCardIDs(for: family, among: cardIDs),
                 stored: selections[family] ?? ""
             ).map { (family, $0) }
         })
         let modes = Dictionary(uniqueKeysWithValues: AccountProfilesStore.supportedFamilies.map {
             ($0, accountCardDisplayMode(for: $0))
         })
-        let presentedIDs = AccountCardPresentationPlanner.presentedCardIDs(
-            orderedCardIDs: orderedAccountCardIDs(rawIDs),
+        let presentedIDs = Set(AccountCardPresentationPlanner.presentedCardIDs(
+            orderedCardIDs: cardIDs,
             modesByFamily: modes,
             selectedCardIDsByFamily: selectedIDs
-        )
-        let groupsByID = Dictionary(uniqueKeysWithValues: groups.map { ($0.provider.id, $0) })
-        return presentedIDs.compactMap { cardID in
-            guard let group = groupsByID[cardID] else { return nil }
-            return AccountCardPresentationPlanner.presentedGroup(
-                group,
-                mode: modes[ProviderAccountID.family(of: cardID)] ?? .singleCard
-            )
-        }
+        ))
+        return accounts.filter { presentedIDs.contains($0.id) }
     }
 
     func accountCardTitle(for provider: Provider) -> String {

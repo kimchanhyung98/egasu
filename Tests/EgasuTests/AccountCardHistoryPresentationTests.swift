@@ -66,60 +66,111 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
         }
     }
 
-    func testResetWatchShareRenderingFollowsMainCardAndCaretState() throws {
+    func testShareCopiesVisibleAccountRowsInSavedOrderEvenWhenCollapsed() throws {
         let layout = makeLayout()
-        for suffix in ["trend", "rateLimitResets", "today", "yesterday"] {
-            layout.setMetricEnabled("codex.\(suffix)", false)
-        }
-        layout.setMetricEnabled("codex.resetWatch", true)
-        layout.expandedMetricIDs = ["codex.resetWatch"]
-        let suite = "EgasuTests.ResetWatchShare.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let dataStore = WidgetDataStore(
-            registry: layout.registry,
-            providers: [],
-            cache: ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots"),
-            defaults: defaults
-        )
-        dataStore.setCodexResetWatch(.init(chancePercent: 75, deadline: .distantFuture, communityYesPercent: 60))
-        let export = ProcessInfo.processInfo.environment["EGASU_RESET_WATCH_RENDER_DIR"]
-            .map { URL(fileURLWithPath: $0) }
-        if let export { try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true) }
+        defer { layout.clearShareConfirmation() }
+        let pasteboard = NSPasteboard(name: .init("EgasuTests.ShareAccount.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "EgasuTests.ShareAccount.\(UUID().uuidString)"))
+        defaults.set(DensitySetting.regular.rawValue, forKey: DensitySetting.key)
+        defer { defaults.removeObject(forKey: DensitySetting.key) }
 
-        for cardID in ["codex", "codex@profile-account-2"] {
-            let raw = try XCTUnwrap(layout.displayGroups.first { $0.id == cardID })
-            let group = try XCTUnwrap(AccountCardPresentationPlanner.presentedGroup(raw, mode: .separateCards))
-            var heights: [CGFloat] = []
-            for expanded in [false, true] {
-                layout.setProviderExpanded(expanded, for: cardID)
-                let widgets = layout.isProviderExpanded(cardID) ? group.widgets : group.alwaysShownWidgets
-                let rows = try widgets.map { dataStore.data(for: try XCTUnwrap(layout.descriptor(for: $0))) }
-                XCTAssertEqual(rows.filter(\.isForecast).count, cardID == "codex" && expanded ? 1 : 0)
-                let title = cardID == "codex" ? "Codex: Account 1" : "Codex: Account 2"
-                let card = ShareCardView(
-                    provider: group.provider,
-                    plan: nil,
-                    rows: rows,
-                    appearance: .light,
-                    expandBoundaryIndex: expanded ? group.alwaysShownWidgets.count : nil,
-                    displayNameOverride: title
-                ).defaultAppStorage(defaults)
-                let image = try XCTUnwrap(ShareCardRenderer.image(for: card))
-                XCTAssertEqual(image.size.width, ShareCardView.width)
-                heights.append(image.size.height)
-                if let export {
-                    let png = try XCTUnwrap(ShareCardRenderer.pngData(from: image))
-                    let name = "\(cardID)-\(expanded ? "expanded" : "collapsed").png"
-                    try png.write(to: export.appendingPathComponent(name))
-                }
-            }
-            if cardID == "codex" {
-                XCTAssertGreaterThan(heights[1], heights[0])
-            } else {
-                XCTAssertEqual(heights[1], heights[0])
-            }
+        let provider = try XCTUnwrap(layout.provider(id: "codex"))
+        let expectedIDs = ["codex.today", "codex.weekly", "codex.trend"]
+        for descriptor in layout.orderedSupportedMetrics(for: provider.id) {
+            layout.setMetricEnabled(descriptor.id, expectedIDs.contains(descriptor.id))
         }
+        layout.expandedMetricIDs = ["codex.today", "codex.trend"]
+        XCTAssertTrue(layout.reorderMetric(
+            dragged: "codex.today", target: "codex.weekly", in: provider.id, preservingExpandedMembership: true
+        ))
+        var today = WidgetData(title: "Today", icon: provider.icon, kind: .dollars, used: 3, limit: nil)
+        today.isUsagePeriod = true
+        let weekly = WidgetData(title: "Weekly", icon: provider.icon, kind: .percent, used: 42, limit: 100)
+        var trend = WidgetData(title: "Usage Trend", icon: provider.icon, kind: .count, used: 0, limit: nil)
+        trend.isChart = true
+        trend.chartPoints = [MetricChartPoint(value: 120, label: "Monday", valueLabel: "120")]
+        let dataByID = ["codex.today": today, "codex.weekly": weekly, "codex.trend": trend]
+        let lines = layout.orderedSupportedMetrics(for: provider.id).compactMap { descriptor -> DashboardLine? in
+            guard layout.isMetricEnabled(descriptor.id), let data = dataByID[descriptor.id] else { return nil }
+            return DashboardLine(descriptor: descriptor, data: data)
+        }
+        let account = DashboardAccount(provider: provider, providerName: "Codex", name: "Work", lines: lines)
+        XCTAssertEqual(account.lines.map(\.id), expectedIDs)
+        let visibleRows = [today, weekly, trend]
+        let expected = try sharePixels(
+            provider: provider, rows: visibleRows, title: "Codex: Work", defaults: defaults
+        )
+        let weeklyOnly = try sharePixels(provider: provider, rows: [weekly], title: "Codex: Work", defaults: defaults)
+        XCTAssertGreaterThan(expected.count, weeklyOnly.count)
+
+        for expanded in [false, true] {
+            layout.setProviderExpanded(expanded, for: provider.id)
+            XCTAssertEqual(layout.isProviderExpanded(provider.id), expanded)
+            guard ShareCardRenderer.share(
+                account: account, plan: "Plus", layout: layout, appearance: .light,
+                displayName: "Codex: Work", pasteboard: pasteboard
+            ) else { throw XCTSkip("The macOS pasteboard service is unavailable in this test host.") }
+            let png = try XCTUnwrap(pasteboard.data(forType: .png))
+            assertSharePixels(try sharePixels(png: png), match: expected)
+            XCTAssertTrue(layout.shareConfirmation)
+        }
+    }
+
+    func testShareScreenshotOmitsEmailAndOrganizationFromTheAccountTitle() throws {
+        let layout = makeLayout()
+        defer { layout.clearShareConfirmation() }
+        let pasteboard = NSPasteboard(name: .init("EgasuTests.ShareEmail.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "EgasuTests.ShareEmail.\(UUID().uuidString)"))
+        defaults.set(DensitySetting.regular.rawValue, forKey: DensitySetting.key)
+        defer { defaults.removeObject(forKey: DensitySetting.key) }
+        let cardID = "codex@profile-account-2"
+        let provider = try XCTUnwrap(layout.provider(id: cardID))
+        let descriptor = try XCTUnwrap(layout.orderedSupportedMetrics(for: cardID).first { $0.id == "\(cardID).weekly" })
+        let weekly = WidgetData(title: "Weekly", icon: provider.icon, kind: .percent, used: 17, limit: 100)
+        let expected = try sharePixels(provider: provider, rows: [weekly], title: "Codex", defaults: defaults)
+
+        for name in ["work@example.com", "work@example.com (Example Org)"] {
+            let account = DashboardAccount(
+                provider: provider, providerName: "Codex", name: name,
+                lines: [DashboardLine(descriptor: descriptor, data: weekly)]
+            )
+            guard ShareCardRenderer.share(
+                account: account, plan: "Plus", layout: layout, appearance: .light,
+                displayName: "Codex: \(name)", pasteboard: pasteboard
+            ) else { throw XCTSkip("The macOS pasteboard service is unavailable in this test host.") }
+            let png = try XCTUnwrap(pasteboard.data(forType: .png))
+            assertSharePixels(try sharePixels(png: png), match: expected)
+        }
+    }
+
+    private func sharePixels(
+        provider: Provider, rows: [WidgetData], title: String, defaults: UserDefaults
+    ) throws -> Data {
+        let card = ShareCardView(
+            provider: provider, plan: "Plus", rows: rows, appearance: .light,
+            displayNameOverride: title
+        ).defaultAppStorage(defaults)
+        let image = try XCTUnwrap(ShareCardRenderer.image(for: card))
+        return try sharePixels(png: XCTUnwrap(ShareCardRenderer.pngData(from: image)))
+    }
+
+    private func sharePixels(png: Data) throws -> Data {
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: png))
+        let pixels = try XCTUnwrap(bitmap.bitmapData)
+        return Data(bytes: pixels, count: bitmap.bytesPerRow * bitmap.pixelsHigh)
+    }
+
+    private func assertSharePixels(
+        _ actual: Data, match expected: Data, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        XCTAssertEqual(actual.count, expected.count, file: file, line: line)
+        var largestDifference = 0
+        for (actualByte, expectedByte) in zip(actual, expected) {
+            largestDifference = max(largestDifference, abs(Int(actualByte) - Int(expectedByte)))
+        }
+        XCTAssertLessThanOrEqual(largestDifference, 1, file: file, line: line)
     }
 
     func testSingleCardKeepsTheSelectedSnapshotHistoryRows() throws {

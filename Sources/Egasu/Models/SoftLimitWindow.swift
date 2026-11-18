@@ -28,8 +28,9 @@ extension WidgetDescriptor {
 
 extension WidgetData {
     var softLimitMarkerFraction: Double? {
-        guard hasData, let limit, limit > 0, let softLimitUsedFraction else { return nil }
-        return displayMode == .remaining ? 1 - softLimitUsedFraction : softLimitUsedFraction
+        guard isQuotaMeter, hasData, let limit, limit > 0, let softLimitUsedFraction else { return nil }
+        let used = min(max(softLimitUsedFraction, 0), 1)
+        return displayMode == .remaining ? 1 - used : used
     }
 
     func meterTooltip(for state: MeterState) -> String? {

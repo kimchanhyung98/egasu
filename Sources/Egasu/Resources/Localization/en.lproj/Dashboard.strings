@@ -93,3 +93,20 @@
 "Open Accounts to choose what to show." = "Open Accounts to choose what to show.";
 "Priority" = "Priority";
 "Report an Issue…" = "Report an Issue…";
+
+"Add an Account" = "Add an Account";
+"Edit Account…" = "Edit Account…";
+"Every metric is hidden. Turn them back on in Accounts." = "Every metric is hidden. Turn them back on in Accounts.";
+"Manage Accounts…" = "Manage Accounts…";
+"Pin" = "Pin";
+"Refresh" = "Refresh";
+"Rename" = "Rename";
+"Unpin" = "Unpin";
+"Waiting for Usage" = "Waiting for Usage";
+"a reset expires within 48 hours" = "a reset expires within 48 hours";
+"a reset expires within 7 days" = "a reset expires within 7 days";
+"egasu shows the AI tools you're signed in to on this Mac. Add an account to track more, even several of the same provider." = "egasu shows the AI tools you're signed in to on this Mac. Add an account to track more, even several of the same provider.";
+
+"No usage to show. Check visible metrics in Accounts." = "No usage to show. Check visible metrics in Accounts.";
+
+"%d days, %@ to %@, peak %@." = "%d days, %@ to %@, peak %@.";

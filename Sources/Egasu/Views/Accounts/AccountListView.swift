@@ -163,7 +163,7 @@ struct AccountListRow<Grip: View>: View {
                 }
                 Spacer(minLength: 0)
                 if isInUse {
-                    ProviderPlanBadge(plan: L10n.accounts("In Use"))
+                    PlanBadge(plan: L10n.accounts("In Use"))
                 }
             }
             .lineLimit(1)

@@ -1,10 +1,23 @@
 import Foundation
 import Observation
 
+enum DashboardLayoutStyle: String, CaseIterable, Sendable {
+    case minimal
+    case cards
+
+    var label: String {
+        switch self {
+        case .minimal: L10n.settings("Minimal")
+        case .cards: L10n.settings("Cards")
+        }
+    }
+}
+
 /// 대시보드·메뉴 막대 표시 설정 — 막대 색, Priority 탭, 메뉴 막대, 알림이 같은 임계값을 공유.
 @MainActor
 @Observable
 final class DisplaySettingsStore {
+    static let dashboardLayoutKey = "allUsageLayout"
     static let priorityWarningKey = "priorityWarning"
     static let priorityCriticalKey = "priorityCritical"
     static let priorityBurningFastKey = "priorityBurningFast"
@@ -14,6 +27,10 @@ final class DisplaySettingsStore {
     static let legacyAlwaysShowPacingKey = "alwaysShowPacing"
 
     @ObservationIgnored private let defaults: UserDefaults
+
+    var dashboardLayout: DashboardLayoutStyle {
+        didSet { defaults.set(dashboardLayout.rawValue, forKey: Self.dashboardLayoutKey) }
+    }
 
     var priorityLimits: PriorityLimits {
         didSet {
@@ -36,6 +53,7 @@ final class DisplaySettingsStore {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        dashboardLayout = defaults.enumValue(forKey: Self.dashboardLayoutKey, default: .minimal)
         priorityLimits = PriorityLimits(
             warning: defaults.object(forKey: Self.priorityWarningKey) as? Int ?? PriorityLimits.standard.warning,
             critical: defaults.object(forKey: Self.priorityCriticalKey) as? Int ?? PriorityLimits.standard.critical

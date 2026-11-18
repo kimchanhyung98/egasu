@@ -93,3 +93,20 @@
 "Open Accounts to choose what to show." = "계정에서 표시할 항목을 선택하세요.";
 "Priority" = "우선순위";
 "Report an Issue…" = "문제 신고…";
+
+"Add an Account" = "계정 추가";
+"Edit Account…" = "계정 편집…";
+"Every metric is hidden. Turn them back on in Accounts." = "모든 지표가 숨겨져 있습니다. 계정에서 다시 켜세요.";
+"Manage Accounts…" = "계정 관리…";
+"Pin" = "고정";
+"Refresh" = "새로고침";
+"Rename" = "이름 변경";
+"Unpin" = "고정 해제";
+"Waiting for Usage" = "사용량 대기 중";
+"a reset expires within 48 hours" = "48시간 이내에 만료되는 초기화권 있음";
+"a reset expires within 7 days" = "7일 이내에 만료되는 초기화권 있음";
+"egasu shows the AI tools you're signed in to on this Mac. Add an account to track more, even several of the same provider." = "egasu는 이 Mac에 로그인된 AI 도구를 보여 줍니다. 계정을 추가해 더 많이 추적하세요. 같은 공급자의 계정도 여러 개 추가할 수 있습니다.";
+
+"No usage to show. Check visible metrics in Accounts." = "표시할 사용량이 없습니다. 계정에서 표시할 지표를 확인하세요.";
+
+"%d days, %@ to %@, peak %@." = "%2$@부터 %3$@까지 %1$d일, 최대 %4$@.";

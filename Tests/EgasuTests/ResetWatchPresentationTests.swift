@@ -18,7 +18,7 @@ final class ResetWatchPresentationTests: XCTestCase {
             XCTAssertEqual(data.boundedTrailingText(now: now), absolute)
 
             data.resetDisplayMode.toggle()
-            XCTAssertEqual(data.boundedTrailingText(now: now), scheduled ? "Scheduled in 5d 0h" : "Within 5d 0h")
+            XCTAssertEqual(data.boundedTrailingText(now: now), scheduled ? "Scheduled in 5d" : "Within 5d")
             XCTAssertEqual(data.boundedTrailingText(now: now.addingTimeInterval(3_600)),
                            scheduled ? "Scheduled in 4d 23h" : "Within 4d 23h")
             XCTAssertEqual(data.resetTooltip(now: now), absolute)
@@ -107,7 +107,7 @@ final class ResetWatchPresentationTests: XCTestCase {
         XCTAssertFalse(data.hasMeterStyleToggle)
         XCTAssertNil(data.meterStyleTooltip)
         XCTAssertTrue(data.hasResetLabel(now: now))
-        XCTAssertEqual(data.resetTooltip(now: now), "Resets in 1d 0h")
+        XCTAssertEqual(data.resetTooltip(now: now), "Resets in 1d")
         XCTAssertNil(data.paceTick(for: state, now: now))
         XCTAssertNil(state.tooltip)
     }
@@ -123,7 +123,7 @@ final class ResetWatchPresentationTests: XCTestCase {
             var data = forecast(chance: scheduled ? 99 : 75, deadline: deadline)
             data.forecast?.isScheduled = scheduled
             XCTAssertEqual(data.resetTooltip(now: now), quota.resetTooltip(now: now))
-            XCTAssertEqual(data.resetTooltip(now: now), "Resets in 5d 0h")
+            XCTAssertEqual(data.resetTooltip(now: now), "Resets in 5d")
             XCTAssertEqual(data.resetTooltip(now: now.addingTimeInterval(3_600)), "Resets in 4d 23h")
             XCTAssertEqual(data.resetTooltip(now: deadline.addingTimeInterval(-300)), "Resets soon")
         }

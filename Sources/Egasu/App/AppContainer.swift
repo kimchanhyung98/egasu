@@ -279,11 +279,9 @@ final class AppContainer {
         }
         resetWatchCoordinator.observeActivity { [layout, resetWatchNotifications] in
             resetWatchNotifications.configurationDidChange()
-            let notificationsEnabled = resetWatchNotifications.isEnabled()
-            let metricEnabled = layout.orderedRefreshDescriptors().contains {
-                ProviderAccountID.canonicalMetricID($0.id) == "codex.resetWatch"
-            }
-            return metricEnabled || notificationsEnabled
+            return Self.needsResetWatch(
+                layout: layout, notificationsEnabled: resetWatchNotifications.isEnabled()
+            )
         }
         self.refreshTask.task = AppRefreshLoop.start(
             dataStore: dataStore,

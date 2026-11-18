@@ -9,7 +9,7 @@ struct DashboardFamily: Identifiable {
     var accounts: [DashboardAccount]
 
     func isVisible(headerNotice: (String) -> String?) -> Bool {
-        accounts.contains { !$0.lines.isEmpty || !$0.waitingMetricIDs.isEmpty || headerNotice($0.id) != nil }
+        accounts.contains { $0.isVisible(headerNotice: headerNotice) }
     }
 
     /// 이메일 계정명을 뺀 사본 — Privacy Mode가 꺼진 공유 이미지용.
@@ -24,7 +24,7 @@ struct DashboardAccount: Identifiable {
     /// 프로바이더 표시명 — 계정명이 없을 때 대신 보이는 이름.
     let providerName: String
     /// 캡션·Priority 둘째 줄 계정명 — nil이면 생략.
-    let name: String?
+    private(set) var name: String?
     /// 계정명을 눌러 바꿔 보는 로그인 이메일 — 계정명과 다를 때만, 공유 이미지에서는 제외.
     var email: String? = nil
     var isInUse = false
@@ -35,18 +35,29 @@ struct DashboardAccount: Identifiable {
     /// 모든 표시 경로에서 데이터 없는 한도·값 행을 제외하고 나머지 순서 유지.
     init(
         provider: Provider, providerName: String, name: String?, email: String? = nil,
-        isInUse: Bool = false, lines: [DashboardLine], waitingMetricIDs: [String] = []
+        isInUse: Bool = false, lines: [DashboardLine], waitingMetricIDs: [String] = [],
+        retainingResetClaims: [String: CodexResetClaimBinding] = [:]
     ) {
         self.provider = provider
         self.providerName = providerName
         self.name = name
         self.email = email
         self.isInUse = isInUse
-        self.lines = lines.filter(\.isVisible)
+        self.lines = lines.filter { line in
+            if line.isVisible { return true }
+            guard line.data.showsResetExpiries, line.data.hasData,
+                let binding = retainingResetClaims[line.id]
+            else { return false }
+            return binding == line.data.codexResetClaimBinding
+        }
         self.waitingMetricIDs = waitingMetricIDs
     }
 
     var id: String { provider.id }
+    func isVisible(headerNotice: (String) -> String?) -> Bool {
+        !lines.isEmpty || !waitingMetricIDs.isEmpty || headerNotice(id) != nil
+    }
+
     var isNamedByEmail: Bool { name?.contains("@") ?? false }
     /// Priority 둘째 줄 — 계정명, 없으면 프로바이더 표시명.
     var subtitle: String { name ?? providerName }
@@ -54,19 +65,18 @@ struct DashboardAccount: Identifiable {
     var fullName: String { name.map { "\(providerName) — \($0)" } ?? providerName }
 
     var hidingEmail: DashboardAccount {
-        DashboardAccount(
-            provider: provider, providerName: providerName, name: isNamedByEmail ? nil : name,
-            isInUse: isInUse, lines: lines, waitingMetricIDs: waitingMetricIDs
-        )
+        var copy = self
+        copy.email = nil
+        if isNamedByEmail { copy.name = nil }
+        return copy
     }
 
     /// 이메일 보기 — 계정명 자리에 로그인 이메일, 이메일이 없으면 그대로.
     var showingEmail: DashboardAccount {
         guard let email else { return self }
-        return DashboardAccount(
-            provider: provider, providerName: providerName, name: email, email: email,
-            isInUse: isInUse, lines: lines, waitingMetricIDs: waitingMetricIDs
-        )
+        var copy = self
+        copy.name = email
+        return copy
     }
 }
 

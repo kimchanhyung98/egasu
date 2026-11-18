@@ -47,7 +47,7 @@ test('Settings includes normal native rows and notification triggers', () => {
   assert.ok(nativeRows.includes('Language'), 'The native row extractor must find the Language picker');
   assert.ok(nativeRows.includes('Show Total Spend'), 'The native row extractor must keep existing rows');
   for (const label of nativeRows) {
-    if (!hiddenEasterEggs.has(label)) assert.ok(labels.has(label), label);
+    if (label !== 'All Usage Layout' && !hiddenEasterEggs.has(label)) assert.ok(labels.has(label), label);
   }
   const milestones = englishSource('Support/PaceNotificationLogic.swift').split('var settingLabel: String')[1].split('var notificationTitle')[0];
   const milestoneLabels = [...milestones.matchAll(/(?:return|case \.\w+:)\s*"([^"]+)"/g)].map((match) => match[1]);
@@ -57,6 +57,14 @@ test('Settings includes normal native rows and notification triggers', () => {
   const resetWatchLabel = resetWatch.match(/static var settingLabel: String \{ "([^"]+)" \}/)?.[1];
   assert.ok(resetWatchLabel, 'The native Reset Watch notification label must be checked');
   assert.ok(labels.has(resetWatchLabel));
+});
+
+test('native All Usage layout is wired while the web keeps its current Density control', () => {
+  const native = englishSource('Views/SettingsScreen.swift');
+  assert.match(native, /row\("All Usage Layout"\)\s*\{\s*picker\(\$display\.dashboardLayout, options: DashboardLayoutStyle\.allCases/);
+  assert.doesNotMatch(native, /row\("Density"\)/);
+  const preview = settingGroups.flatMap((group) => group.rows).find((row) => row.id === 'density')?.control;
+  assert.ok(preview && preview.kind === 'picker');
 });
 
 test('Soft Limit preserves its threshold, rejects invalid percentages, and defaults to off', () => {

@@ -263,9 +263,9 @@ final class ResetDisplayTests: XCTestCase {
         XCTAssertTrue(RateLimitResetsDetail.entries(from: [], now: Date()).isEmpty)
     }
 
-    func testCompactDurationAlwaysShowsHoursAtDayScale() {
-        XCTAssertEqual(Formatters.compactDuration(4 * 24 * 3600 + 52 * 60), "4d 0h")
-        XCTAssertEqual(Formatters.compactDuration(7 * 24 * 3600), "7d 0h")
+    func testCompactDurationOmitsZeroTrailingHours() {
+        XCTAssertEqual(Formatters.compactDuration(4 * 24 * 3600 + 52 * 60), "4d")
+        XCTAssertEqual(Formatters.compactDuration(7 * 24 * 3600), "7d")
         XCTAssertEqual(Formatters.compactDuration(9 * 24 * 3600 + 21 * 3600), "9d 21h")
         XCTAssertEqual(Formatters.compactDuration(5 * 3600), "5h")
         XCTAssertEqual(Formatters.compactDuration(52 * 60), "52m")
@@ -366,6 +366,7 @@ final class ResetDisplayTests: XCTestCase {
             XCTAssertEqual(data.valueText, "100%", "표시만 정수 %로 반올림")
             XCTAssertFalse(data.isFreshSessionWindow(now: now))
             XCTAssertEqual(data.boundedTrailingText(now: now), "Resets in 2h")
+            XCTAssertEqual(data.compactResetText(now: now), "2h")
         }
     }
 
@@ -373,10 +374,12 @@ final class ResetDisplayTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let untouched = antigravitySession(fraction: 1, now: now)
         XCTAssertTrue(untouched.isFreshSessionWindow(now: now))
+        XCTAssertNil(untouched.compactResetText(now: now))
         L10n.withLanguage(.english) { XCTAssertEqual(untouched.boundedTrailingText(now: now), "Not started") }
 
         let exhausted = antigravitySession(fraction: 0, now: now)
         XCTAssertFalse(exhausted.isFreshSessionWindow(now: now))
+        L10n.withLanguage(.english) { XCTAssertEqual(exhausted.compactResetText(now: now), "2h") }
         L10n.withLanguage(.english) { XCTAssertEqual(exhausted.boundedTrailingText(now: now), "Resets in 2h") }
 
         for (fraction, expected) in [(1.5, 0.0), (-0.5, 100.0)] {
@@ -401,4 +404,97 @@ final class ResetDisplayTests: XCTestCase {
         data.displayMode = .remaining
         XCTAssertEqual(data.valueText, "97%")
     }
+    func testCountdownShowsCalendarMonthsAndDaysFromAMonthOut() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Seoul")!
+        let start = calendar.date(from: DateComponents(year: 2026, month: 11, day: 10, hour: 9))!
+        func countdown(_ components: DateComponents) -> String? {
+            Formatters.countdown(to: calendar.date(byAdding: components, to: start)!, now: start, calendar: calendar)
+        }
+        L10n.withLanguage(.english) {
+            XCTAssertEqual(countdown(DateComponents(day: 29, hour: 23)), "29d 23h", "한 달 미만은 일·시간 유지")
+            XCTAssertEqual(countdown(DateComponents(month: 1)), "1mo", "11월 10일 → 12월 10일은 달력 기준 한 달")
+            XCTAssertEqual(countdown(DateComponents(day: 30)), "1mo")
+            XCTAssertEqual(countdown(DateComponents(month: 3, day: 27, hour: 2)), "3mo 27d")
+            XCTAssertEqual(countdown(DateComponents(year: 1, month: 2, day: 5)), "1y 2mo")
+            XCTAssertEqual(countdown(DateComponents(hour: 2, minute: 6)), "2h 6m")
+            XCTAssertNil(Formatters.countdown(to: start.addingTimeInterval(-60), now: start, calendar: calendar))
+            XCTAssertEqual(
+                Formatters.whenLabel(at: calendar.date(byAdding: .month, value: 4, to: start)!, mode: .relative,
+                                     now: start, calendar: calendar),
+                "4mo", "초기화권 팝오버·툴팁의 카운트다운"
+            )
+        }
+        L10n.withLanguage(.korean) { XCTAssertEqual(countdown(DateComponents(month: 3, day: 27)), "3개월 27일") }
+        L10n.withLanguage(.japanese) { XCTAssertEqual(countdown(DateComponents(month: 3, day: 27)), "3か月 27日") }
+    }
+
+    func testResetColumnUsesMonthsAndDaysForLongCountdowns() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var data = WidgetData(title: "Monthly", icon: .providerMark("codex"), kind: .percent, used: 10, limit: 100)
+        data.resetsAt = Calendar.current.date(byAdding: .month, value: 4, to: now)
+        data.resetDisplayMode = .relative
+        L10n.withLanguage(.english) { XCTAssertEqual(data.compactResetText(now: now), "4mo") }
+    }
+
+    func testLocalizedDurationUnitsAndZeroTails() {
+        let calendar = utcCalendar()
+        let now = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1, hour: 12))!
+        let examples: [(LanguageSetting, [String])] = [
+            (.english, ["1mo", "11mo 30d", "1y", "1y 2mo", "4d", "1m"]),
+            (.korean, ["1개월", "11개월 30일", "1년", "1년 2개월", "4일", "1분"]),
+            (.japanese, ["1か月", "11か月 30日", "1年", "1年 2か月", "4日", "1分"])
+        ]
+        for (language, expected) in examples {
+            L10n.withLanguage(language) {
+                let components = [DateComponents(month: 1), DateComponents(month: 11, day: 30),
+                                  DateComponents(year: 1, day: 5), DateComponents(year: 1, month: 2, day: 5)]
+                let actual = components.map {
+                    Formatters.countdown(to: calendar.date(byAdding: $0, to: now)!, now: now, calendar: calendar)!
+                } + [Formatters.compactDuration(4 * 86_400)!, Formatters.compactDuration(60)!]
+                XCTAssertEqual(actual, expected)
+            }
+        }
+    }
+
+    func testCompactClockChangesFromTimeToWeekdayAndThenMonthDayAtTheDayBoundaries() {
+        let calendar = utcCalendar()
+        let now = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1, hour: 12))!
+        for language in LanguageSetting.allCases {
+            L10n.withLanguage(language) {
+                for days in [0, 1, 6, 7, 8] {
+                    let date = calendar.date(byAdding: .day, value: days, to: now)!
+                    let text = Formatters.compactClock(date, now: now, calendar: calendar)
+                    if days == 0 {
+                        XCTAssertEqual(text, TimeFormatSetting.current.shortTime(date))
+                    } else if days < 7 {
+                        XCTAssertEqual(text, TimeFormatSetting.current.weekdayTime(date))
+                    } else {
+                        XCTAssertEqual(text, Formatters.monthDayLabel(date))
+                    }
+                }
+            }
+        }
+    }
+
+    func testCountdownUsesLocalCalendarAcrossMonthEndLeapDayAndDST() {
+        for zone in ["Asia/Seoul", "America/Los_Angeles"] {
+            var calendar = utcCalendar()
+            calendar.timeZone = TimeZone(identifier: zone)!
+            L10n.withLanguage(.english) {
+                for start in [DateComponents(year: 2026, month: 1, day: 31, hour: 12),
+                              DateComponents(year: 2024, month: 2, day: 29, hour: 12),
+                              DateComponents(year: 2026, month: 2, day: 8, hour: 12)] {
+                    let now = calendar.date(from: start)!
+                    let end = calendar.date(byAdding: .month, value: 1, to: now)!
+                    XCTAssertEqual(Formatters.countdown(to: end, now: now, calendar: calendar), "1mo", zone)
+                }
+                let now = calendar.date(from: DateComponents(year: 2026, month: 3, day: 7, hour: 12))!
+                let end = calendar.date(byAdding: .day, value: 1, to: now)!
+                XCTAssertEqual(Formatters.countdown(to: end, now: now, calendar: calendar),
+                               zone == "America/Los_Angeles" ? "23h" : "1d", "짧은 기간은 실제 남은 시간")
+            }
+        }
+    }
+
 }

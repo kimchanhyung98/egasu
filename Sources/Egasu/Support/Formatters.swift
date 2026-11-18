@@ -64,7 +64,7 @@ enum Formatters {
         case .relative:
             let seconds = date.timeIntervalSince(now)
             if seconds <= 5 * 60 { return imminent }
-            return compactDuration(seconds)
+            return countdown(to: date, now: now, calendar: calendar)
         case .absolute:
             guard date.timeIntervalSince(now) > 0 else { return imminent }
             let dayDiff = calendar.dateComponents(
@@ -91,8 +91,32 @@ enum Formatters {
         deadlineLabel("Resets", at: resetsAt, mode: .absolute, now: now, calendar: calendar)
     }
 
+    /// 초기화 열의 시각 — 오늘은 시각, 일주일 안은 요일·시각, 이후는 월·일.
+    static func compactClock(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+        let days = calendar.dateComponents(
+            [.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: date)
+        ).day ?? 0
+        if days <= 0 { return TimeFormatSetting.current.shortTime(date, base: L10n.locale) }
+        if days < 7 { return TimeFormatSetting.current.weekdayTime(date) }
+        return monthDayLabel(date)
+    }
+
+    /// 달력 기준 남은 기간 — 큰 두 단위까지 표시하고 0인 끝 단위 생략.
+    static func countdown(to date: Date, now: Date = Date(), calendar: Calendar = .current) -> String? {
+        let left = calendar.dateComponents([.year, .month, .day], from: now, to: date)
+        if let years = left.year, years >= 1 {
+            let months = left.month ?? 0
+            return months > 0 ? L10n.metrics("%lldy %lldmo", years, months) : L10n.metrics("%lldy", years)
+        }
+        if let months = left.month, months >= 1 {
+            let days = left.day ?? 0
+            return days > 0 ? L10n.metrics("%lldmo %lldd", months, days) : L10n.metrics("%lldmo", months)
+        }
+        return compactDuration(date.timeIntervalSince(now))
+    }
+
     /// compact duration 표기 — "Xd Yh" / "Xh Ym" / "Xm".
-    /// day 단위에서는 hours가 0이어도 항상 두 단위 표기("4d 0h"), minutes는 생략.
+    /// 큰 두 단위까지 표시하고 0인 끝 단위 생략.
     static func compactDuration(_ seconds: TimeInterval) -> String? {
         guard seconds.isFinite, seconds > 0 else { return nil }
         let totalMinutes = max(1, Int((seconds / 60).rounded(.up)))
@@ -101,7 +125,7 @@ enum Formatters {
         let minutes = totalMinutes % 60
 
         if days > 0 {
-            return L10n.metrics("%lldd %lldh", days, hours)
+            return hours > 0 ? L10n.metrics("%lldd %lldh", days, hours) : L10n.metrics("%lldd", days)
         }
         if hours > 0 {
             return minutes > 0 ? L10n.metrics("%lldh %lldm", hours, minutes) : L10n.metrics("%lldh", hours)

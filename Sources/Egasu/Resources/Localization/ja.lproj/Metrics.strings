@@ -191,3 +191,12 @@
 "Over 50% left, resets in under 24 hours." = "50%以上残っていて、24時間以内にリセットされます。";
 "Use It or Lose It" = "リセット前に使用";
 "Warning" = "警告";
+
+"%lldd" = "%lld日";
+"%lldmo" = "%lldか月";
+"%lldmo %lldd" = "%lldか月 %lld日";
+"%lldy" = "%lld年";
+"%lldy %lldmo" = "%lld年 %lldか月";
+"Soft limit at %lld%%" = "ソフト上限 %lld%%";
+
+"Failed" = "更新失敗";

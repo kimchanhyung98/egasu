@@ -28,6 +28,48 @@ final class AccountNamePrivacyRenderingTests: XCTestCase {
         try export(host, name: "accounts-privacy-on")
     }
 
+    func testEnablingPrivacyClosesTheDashboardEditorWithoutSavingItsDraft() async throws {
+        var savedName = "Private Alias"
+        let renaming = AccountRenameStore(profileID: { $0 }, label: { _ in savedName }, rename: { _, name in savedName = name })
+        renaming.begin("codex")
+        let host = NSHostingView(rootView: caption(renaming: renaming, concealed: false))
+        let window = makeWindow(host: host)
+        defer { window.close() }
+        try await settle(host)
+        XCTAssertFalse(editableFields(in: host).isEmpty)
+
+        renaming.draft = "Uncommitted Name"
+        host.rootView = caption(renaming: renaming, concealed: true)
+        try await settle(host)
+
+        XCTAssertNil(renaming.edit)
+        XCTAssertEqual(savedName, "Private Alias")
+        XCTAssertTrue(editableFields(in: host).isEmpty)
+        try export(host, name: "dashboard-privacy-on", renderSwiftUIEffects: true)
+    }
+
+    func testDashboardDoesNotRenderAnEditorWhilePrivacyIsAlreadyEnabled() async throws {
+        let renaming = AccountRenameStore(profileID: { $0 }, label: { _ in "Private Alias" }, rename: { _, _ in })
+        renaming.begin("codex")
+        let host = NSHostingView(rootView: caption(renaming: renaming, concealed: true))
+        let window = makeWindow(host: host)
+        defer { window.close() }
+        try await settle(host)
+
+        XCTAssertTrue(editableFields(in: host).isEmpty)
+    }
+
+    private func caption(renaming: AccountRenameStore, concealed: Bool) -> some View {
+        DashboardAccountCaption(
+            account: DashboardAccount(provider: MockData.codex, providerName: "Codex", name: "Private Alias", lines: []),
+            plan: "Pro"
+        )
+        .environment(renaming)
+        .environment(\.concealsAccountNames, concealed)
+        .padding(16)
+        .frame(width: 340, height: 80)
+    }
+
     private func makeWindow<Content: View>(host: NSHostingView<Content>) -> NSWindow {
         host.sizingOptions = []
         host.frame = NSRect(x: 0, y: 0, width: 340, height: 80)

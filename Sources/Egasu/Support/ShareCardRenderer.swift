@@ -49,39 +49,29 @@ enum ShareCardRenderer {
         return true
     }
 
-    /// Share Screenshot 액션의 end-to-end 오케스트레이션: 표시 중인 row 해석 → 카드 빌드 → 렌더 → clipboard 복사.
-    /// row는 대시보드 표시와 동일(always-shown + caret이 열린 경우 expanded)해 export가 화면과 일치.
-    /// `displayName`은 live 카드 제목(세션 중 리네임 반영); `nil`이면 launch 시 baked된 이름 사용.
+    /// 대시보드 계정에 표시되는 지표를 같은 순서로 PNG에 렌더해 클립보드에 복사.
     @discardableResult
     static func share(
-        group: ProviderGroup,
-        dataStore: WidgetDataStore,
+        account: DashboardAccount,
+        plan: String?,
         layout: LayoutStore,
         appearance: ColorScheme,
-        displayName: String? = nil
+        displayName: String? = nil,
+        pasteboard: NSPasteboard = .general
     ) -> Bool {
-        let isExpanded = layout.isProviderExpanded(group.provider.id)
-        let alwaysRows = group.alwaysShownWidgets.compactMap { widget -> WidgetData? in
-            guard let descriptor = layout.descriptor(for: widget) else { return nil }
-            return dataStore.data(for: descriptor)
-        }
-        let expandedRows = group.expandedWidgets.compactMap { widget -> WidgetData? in
-            guard let descriptor = layout.descriptor(for: widget) else { return nil }
-            return dataStore.data(for: descriptor)
-        }
-        let rows = isExpanded ? alwaysRows + expandedRows : alwaysRows
+        let title = displayName ?? account.provider.displayName
+        let fallback = account.providerName.contains("@") ? L10n.dashboard("Account") : account.providerName
         let view = ShareCardView(
-            provider: group.provider,
-            plan: dataStore.plan(for: group.provider.id),
-            rows: rows,
+            provider: account.provider,
+            plan: plan,
+            rows: account.lines.map(\.data),
             appearance: appearance,
-            expandBoundaryIndex: isExpanded ? alwaysRows.count : nil,
-            displayNameOverride: displayName
+            displayNameOverride: title.contains("@") ? fallback : title
         )
-        return renderAndCopy(view, layout: layout)
+        return renderAndCopy(view, layout: layout, pasteboard: pasteboard)
     }
 
-    /// `share(group:…)`의 Total Spend 대응 — 선택된 period·metric의 aggregate ring 카드를 렌더해 clipboard 복사.
+    /// 선택한 기간·단위의 Total Spend 링을 PNG로 복사.
     /// `total`은 이미 집계된 값이라 export가 화면 ring과 어긋날 수 없음; pasteboard 기록 성공 여부 반환.
     @discardableResult
     static func shareTotalSpend(
@@ -103,7 +93,9 @@ enum ShareCardRenderer {
     /// 렌더 동안 저장된 density를 `.regular`로 교체 후 복원해 export가 popover density slider를 무시; 성공 시 "Copied to clipboard" pill 표시.
     /// 실패 시 beep + 처리 단계 로그로 조용한 실패 방지; pasteboard 기록 여부 반환.
     @discardableResult
-    private static func renderAndCopy<Card: View>(_ view: Card, layout: LayoutStore) -> Bool {
+    private static func renderAndCopy<Card: View>(
+        _ view: Card, layout: LayoutStore, pasteboard: NSPasteboard = .general
+    ) -> Bool {
         let densityKey = DensitySetting.key
         let savedDensity = UserDefaults.standard.string(forKey: densityKey)
         UserDefaults.standard.set(DensitySetting.regular.rawValue, forKey: densityKey)
@@ -120,7 +112,7 @@ enum ShareCardRenderer {
             NSSound.beep()
             return false
         }
-        guard copyToPasteboard(image) else { return false }
+        guard copyToPasteboard(image, pasteboard: pasteboard) else { return false }
         layout.presentShareConfirmation()
         return true
     }

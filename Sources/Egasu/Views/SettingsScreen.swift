@@ -43,6 +43,7 @@ struct SettingsScreen: View {
 
     private var content: some View {
         @Bindable var store = container.dataStore
+        @Bindable var display = container.dataStore.displaySettings
         @Bindable var layout = container.layout
         @Bindable var updater = updater
         @Bindable var privacy = container.privacy
@@ -82,8 +83,8 @@ struct SettingsScreen: View {
                             AppearanceSetting.applyCurrent()
                         }
                 }
-                row(L10n.settings("Density")) {
-                    picker($density, options: DensitySetting.allCases, label: \.label)
+                row(L10n.settings("All Usage Layout")) {
+                    picker($display.dashboardLayout, options: DashboardLayoutStyle.allCases, label: \.label)
                 }
                 row(L10n.settings("Time Format")) {
                     picker($timeFormat, options: TimeFormatSetting.allCases, label: \.label)

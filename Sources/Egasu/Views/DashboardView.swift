@@ -4,7 +4,6 @@ import SwiftUI
 struct DashboardView: View {
     @Environment(AppContainer.self) private var container
     @Environment(LayoutStore.self) private var layout
-    @Environment(UpdaterController.self) private var updater
     @Environment(PopoverState.self) private var popover
     @Environment(AccountRenameStore.self) private var renaming
     @Environment(\.reduceAnimations) private var reduceAnimations
@@ -226,12 +225,7 @@ struct DashboardView: View {
         switch screen {
         case .dashboard:
             DashboardContentView(
-                container: container,
-                layout: layout,
-                updater: updater,
                 reorderSpaceName: Self.reorderSpace,
-                horizontalPadding: PanelMetrics.margin,
-                bottomGap: PanelMetrics.margin,
                 reorderLift: $reorderLift,
                 scrollPosition: $dashboardScrollPosition
             )

@@ -104,7 +104,9 @@ Settings의 로그인·전환·제거 작업은 같은 계정 확인 처리를 �
 따라서 앱 재시작 없이 카드에 계정 변경 반영.
 등록하지 않은 설정 디렉터리에서 Claude 로그인을 발견하면 다른 로그인이 있다는 사실만 기록.
 이 로그인에 대한 카드나 레지스트리 레코드는 만들지 않음.
-대시보드는 공통 **Usage Cards** 설정에 따라 프로바이더마다 선택 계정 하나 또는 개별 계정 카드 표시.
+All Usage는 등록 계정별 사용량을 프로바이더 아래 표시.
+`AppContainer+DashboardFamilies`가 등록 계정 연결·표시 순서·공통 이력과 조회 상태를 `DashboardFamily`로 조립.
+`DashboardProviderSection`과 `DashboardGrid`는 같은 데이터를 Minimal·Cards 배치로 표시.
 등록 계정이 있는 프로바이더는 등록 계정에 연결되지 않은 실행 인스턴스를 대시보드 표시 대상에서 제외.
 표시 대상에서 제외해도 런타임 카탈로그·인증·CLI·로컬 API는 유지.
 공유 pi 로그는 어느 Claude 로그인이 만들었는지 식별할 수 없음.
@@ -281,7 +283,10 @@ Reset Watch 평가기의 입력은 조회 결과인 `receive`와 설정 변경�
 
 프로바이더 순서와 계정 순서는 각각 별도 관리.
 Accounts는 레이아웃의 프로바이더 계열 순서와 계열 내부 관리형 계정 순서 편집.
-표시 계층은 두 순서와 표시 모드를 합성하며, Dashboard와 Share Screenshot은 같은 최종 카드 목록과 제목 사용.
+All Usage는 두 순서를 합성해 등록 계정별 행과 현재 계정명 표시.
+메뉴 막대는 계정 표시 모드와 관계없이 프로바이더별 선택 계정 하나 사용.
+푸터의 Share Screenshot 선택기는 저장된 계정 표시 모드 사용.
+계정 줄의 Share Screenshot은 지정한 계정을 Separate Cards 방식으로 렌더링.
 제품 동작은 [대시보드](/docs/dashboard.md)와 [계정](/docs/accounts.md) 참조.
 
 ## 프로세스 실행과 Codex 자동화
