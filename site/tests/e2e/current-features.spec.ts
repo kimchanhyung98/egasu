@@ -23,6 +23,38 @@ test('Settings information is named and opens while the info button has focus', 
   await expect(tooltip).toBeVisible();
 });
 
+test('settings tooltips stay open while the mouse moves from the info button onto the text', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Mouse travel requires a hover pointer');
+  await openHome(page);
+  await openSettings(page);
+  const app = page.locator('[data-mock]');
+  const alerts = app.getByRole('tab', { name: 'Alerts', exact: true });
+  await alerts.click();
+  for (const [name, edge] of [
+    ['When a limit turns into a priority', 'left'],
+    ['Alert when Reset Watch expects Codex limits to reset soon', 'right'],
+  ]) {
+    const button = app.getByRole('button', { name, exact: true });
+    const tooltip = button.locator('[role="tooltip"]');
+    await button.hover();
+    await expect(button).not.toBeFocused();
+    await expect(tooltip).toBeVisible();
+    const bounds = (await tooltip.boundingBox())!;
+    const x = edge === 'left' ? bounds.x + 4 : bounds.x + bounds.width - 4;
+    await page.mouse.move(x, bounds.y + bounds.height / 2, { steps: 20 });
+    await expect(tooltip).toBeVisible();
+    await expect(button).not.toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(tooltip).toBeHidden();
+    await expect(button).not.toBeFocused();
+    await alerts.hover();
+    await button.hover();
+    await expect(tooltip).toBeVisible();
+    await alerts.hover();
+    await expect(tooltip).toBeHidden();
+  }
+});
+
 test('settings tooltips stay inside the popover near its left and bottom edges', async ({ page }) => {
   await openHome(page);
   await openSettings(page);

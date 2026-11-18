@@ -28,23 +28,46 @@ test('Settings follows the native tab order and covers its named sections', () =
   assert.ok(!settingGroups.some((group) => group.id === 'accounts'));
 });
 
-test('Settings covers native controls and the four alert conditions', () => {
-  const labels = new Set(settingGroups.flatMap((group) => group.rows.map((row) => row.label)));
-  const files = settingsTabs.map((tab) => `Views/Settings/Settings${tab}Tab.swift`);
-  const native = files.flatMap((file) => [...englishSource(file).matchAll(/(?:Toggle|SettingsPicker)\(\s*"([^"]+)"|SettingsTitle\(\s*title:\s*"([^"]+)"/g)].map((match) => match[1] ?? match[2]));
-  assert.ok(native.includes('Default Tab'));
-  assert.ok(native.includes('Show Total Spend'));
-  for (const label of native.filter((label) => !label.includes('\\(') && label !== 'Terminal Helper')) assert.ok(labels.has(label), label);
+test('Settings matches native control names within each tab', () => {
+  const controlsIn = (view: string) => [...englishSource(`Views/Settings/${view}.swift`)
+    .matchAll(/\b(?:Toggle|Picker|SettingsPicker|LabeledContent|levelPicker)\(\s*"([^"]+)"|SettingsTitle\(\s*title:\s*"([^"]+)"/g)]
+    .map((match) => match[1] ?? match[2])
+    .filter((label) => !label.includes('\\('));
+  const sectionsByTab = {
+    General: ['LanguageSettingsRow', 'ICloudSyncSettingsSection'],
+    Display: [],
+    Alerts: [],
+    Advanced: ['SoftLimitSettingsSection', 'SoftLimitThresholdField'],
+  };
   const alerts = englishSource('Views/Settings/SettingsAlertsTab.swift');
-  for (const { label } of alertConditions) assert.ok(alerts.includes(`"${label}"`), label);
-  assert.deepEqual(alertConditions.map((condition) => condition.label), ['Warning', 'Critical', 'Burning Fast', 'Use It or Lose It']);
-  assert.ok(labels.has('Language'));
-  assert.ok(labels.has('Codex Reset Watch'));
+  const conditions = [...alerts.matchAll(/\bconditionRow\(\s*"([^"]+)",\s*info:\s*"[^"]+",\s*shown:\s*(nil|\$[\w.]+),/g)];
+  assert.deepEqual(conditions.map(([, name]) => name), ['Warning', 'Critical', 'Burning Fast', 'Use It or Lose It']);
+  assert.deepEqual(conditions.map(([, name]) => name), alertConditions.map((condition) => condition.label));
+  const resetWatchLabel = englishSource('Stores/CodexResetWatchNotificationEvaluator.swift')
+    .match(/settingLabel:\s*String\s*\{\s*"([^"]+)"/)?.[1];
+  assert.ok(resetWatchLabel);
+  assert.match(englishSource('Views/Settings/TokscaleSettingsSection.swift'), /Text\(\s*"Usage Sync"\s*\)/);
+  for (const tab of settingsTabs) {
+    const native = controlsIn(`Settings${tab}Tab`).concat(sectionsByTab[tab].flatMap(controlsIn))
+      .filter((label) => !(tab === 'General' && label === 'iCloud Sync') && !(tab === 'Advanced' && label === 'Terminal Helper'));
+    if (tab === 'Alerts') {
+      native.push(resetWatchLabel, ...conditions.flatMap(([, name, shown]) => [
+        ...(shown === 'nil' ? [] : [`${name}, Show in Priority`]), `${name}, Receive Alerts`,
+      ]));
+    }
+    if (tab === 'Advanced') native.push('Usage Sync');
+    const preview = settingGroups.filter((group) => group.tab === tab)
+      .flatMap((group) => group.rows.map((row) => row.label)).filter(Boolean);
+    assert.deepEqual(preview.sort(), native.sort(), tab);
+  }
 });
 
 test('native Advanced Settings keeps Terminal Helper install, uninstall and conflict controls', () => {
-  const advanced = englishSource('Views/Settings/SettingsAdvancedTab.swift');
-  assert.match(advanced, /^\s+commandLineSection$/m);
+  const advanced = englishSource('Views/Settings/SettingsAdvancedTab.swift')
+    .replace(/"(?:\\.|[^"\\])*"|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (token) => token.startsWith('"') ? token : '');
+  const body = advanced.match(/^ {4}var body:\s*some View\s*\{([\s\S]*?)^ {4}\}/m)?.[1];
+  assert.ok(body);
+  assert.match(body, /^[ \t]+commandLineSection[ \t]*$/m);
   const helper = advanced.match(/private var commandLineSection:[\s\S]*?(?=private var debugSection:)/)?.[0];
   assert.ok(helper);
   assert.match(helper, /SettingsTitle\(\s*title:\s*"Terminal Helper"/);

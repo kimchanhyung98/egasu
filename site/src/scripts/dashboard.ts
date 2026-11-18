@@ -144,17 +144,23 @@ function renderAccountSettings(mock: HTMLElement, state: PreviewState): void {
 }
 
 function renderAccountNames(mock: HTMLElement, state: PreviewState): void {
+  const showEmails = mock.dataset.showEmails === 'true';
+  const privacyMode = state.preferences.privacyMode === true;
+  const action = mock.querySelector<HTMLElement>('[data-account-display-description]')!;
+  action.textContent = privacyMode ? 'Privacy Mode keeps names and email addresses masked.'
+    : showEmails ? 'Show account names on the dashboard.' : 'Show example email addresses on the dashboard.';
   mock.querySelectorAll<HTMLElement>('[data-account-name]').forEach((element) => {
     const family = element.dataset.accountName!;
     const id = element.dataset.accountId!;
     const dashboard = element.closest('[data-scr="dashboard"]') !== null;
-    const masked = dashboard && state.preferences.privacyMode === true;
-    const showEmail = dashboard && mock.dataset.showEmails === 'true';
+    const masked = dashboard && privacyMode;
+    const showEmail = dashboard && showEmails;
     const { name, literal } = masked || showEmail
       ? { name: accountEmail(family, id), literal: true }
       : previewAccountDisplayName(state, family, id);
     element.toggleAttribute('data-preview-literal', literal);
     element.textContent = masked ? name.replace(/^[^@]+/, '••••') : name;
+    if (element.hasAttribute('data-toggle-account-name')) element.setAttribute('aria-describedby', action.id);
     element.classList.toggle('is-in-use', state.activeAccounts[family] === id);
   });
   mock.querySelectorAll<HTMLElement>('[data-in-use]').forEach((badge) => { badge.hidden = state.activeAccounts[badge.dataset.inUse!] !== badge.dataset.accountId; });

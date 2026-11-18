@@ -160,6 +160,7 @@ export function applySettingsToMock(mock: HTMLElement): void {
     } else {
       button.classList.toggle('is-on', on);
       button.setAttribute('aria-checked', String(on));
+      button.setAttribute('aria-disabled', String(on || !ready));
     }
   });
   const hour12 = new Intl.DateTimeFormat(undefined, { hour: 'numeric' }).resolvedOptions().hour12 === true;
@@ -212,12 +213,16 @@ export function initPreviewSettings(refresh: () => void, showNotice: typeof noti
   });
   document.querySelectorAll<HTMLElement>('[data-mock] [data-scr="settings"] .am-body').forEach((body) => {
     const place = (button: HTMLButtonElement): void => {
-      const tooltipHeight = button.querySelector('[role="tooltip"]')!.getBoundingClientRect().height;
+      const tooltip = button.querySelector('[role="tooltip"]')!.getBoundingClientRect();
+      const trigger = button.getBoundingClientRect();
       const row = button.closest('.am-item')!.getBoundingClientRect();
       const viewport = body.getBoundingClientRect();
       const spaceBelow = viewport.bottom - row.bottom;
       const spaceAbove = row.top - viewport.top;
-      button.toggleAttribute('data-tooltip-above', spaceBelow < tooltipHeight && spaceAbove > spaceBelow);
+      button.toggleAttribute('data-tooltip-above', spaceBelow < tooltip.height && spaceAbove > spaceBelow);
+      const x = (edge: number): string => `${100 * (edge - row.left) / row.width}%`;
+      button.style.setProperty('--am-info-hover-bridge',
+        `polygon(${x(trigger.left)} 0, ${x(trigger.right)} 0, ${x(tooltip.right)} 100%, ${x(tooltip.left)} 100%)`);
     };
     body.querySelectorAll<HTMLButtonElement>('.am-setting-info').forEach((button) => {
       const reveal = (): void => { delete button.dataset.tooltipDismissed; place(button); };

@@ -9,7 +9,9 @@ test('account metrics hide independently and pin once in Priority', async ({ pag
   await detail.locator('[data-metric-toggle="claude.session"]').click();
   await app.locator('.am-scr:not([hidden]) .am-back').click();
   await app.locator('.am-scr:not([hidden]) .am-back').click();
-  await expect(app.locator('[data-priority-group="pinned"] [data-line-id="claude.weekly"]')).toHaveCount(1);
+  const pinned = app.locator('[data-priority-group="pinned"]');
+  await expect(pinned.locator('[data-line-id="claude.weekly"]')).toHaveCount(1);
+  await expect(pinned.locator('[data-priority-key="claude.weekly@account-1"]')).toBeVisible();
   await expect(app.locator('[data-priority-group="runningOut"] [data-priority-key="claude.weekly@account-1"]')).toHaveCount(0);
   await allUsage(page);
   await expect(app.locator('[data-card="claude-account-1"] [data-row="claude.session"]')).toBeHidden();
@@ -362,5 +364,6 @@ test('metric drag only accepts targets in the same visible list', async ({ page 
   await expect(privateRows.first()).toHaveAttribute('data-metric-setting', 'claude.weekly');
   await yesterday.dragTo(today);
   const shared = await sharedRows.evaluateAll((rows) => rows.map((row) => row.getAttribute('data-metric-setting')));
-  expect(shared.indexOf('claude.yesterday')).toBeLessThan(shared.indexOf('claude.today'));
+  expect(shared.filter((metric) => metric === 'claude.yesterday' || metric === 'claude.today'))
+    .toEqual(['claude.yesterday', 'claude.today']);
 });

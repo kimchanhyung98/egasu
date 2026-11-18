@@ -42,6 +42,7 @@ const optionItems = [
 <div class="am" lang="en" role="group" aria-label={label} aria-hidden={demonstration ? 'true' : undefined} inert={demonstration} data-mock={demonstration ? undefined : true} data-tour-mock={demonstration ? true : undefined} data-mode="used" data-reset="absolute" data-layout="minimal" data-dashboard-tab={initialDashboardTab} data-settings-tab="General" data-screen={start}>
   {has('dashboard') && <div class="am-scr" data-scr="dashboard" hidden={start !== 'dashboard'}>
     <div class="am-body"><div class="am-content">
+      <span id={`${uid}-account-display-description`} data-account-display-description hidden />
       {parts.includes('spend') && <SpendCard uid={uid} />}
       <div class="am-dashboard-tabs" role="tablist" aria-label="Dashboard">
         {['Priority', 'All Usage'].map((tab) => <button type="button" role="tab" aria-selected={tab === initialDashboardTab} tabindex={tab === initialDashboardTab ? 0 : -1} aria-controls={`${uid}-${tab === 'Priority' ? 'priority' : 'all-usage'}`} data-dashboard-tab={tab}>{tab}</button>)}

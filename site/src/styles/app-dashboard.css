@@ -116,6 +116,14 @@ button.am-account-label { cursor: pointer; }
 .am-setting-info [role='tooltip'] { display: none; position: absolute; inset-inline-start: 8px; top: 100%; z-index: 10; width: 220px; max-width: calc(100% - 16px); padding: 8px; border: 1px solid var(--am-sep); border-radius: 6px; background: var(--am-tray); color: var(--am-primary); white-space: normal; text-align: start; font-size: 11px; }
 .am-setting-info[data-tooltip-above] [role='tooltip'] { top: auto; bottom: 100%; }
 .am-setting-info:not([data-tooltip-dismissed]):is(:hover, :focus) [role='tooltip'] { display: block; }
+.am-setting-info:not([data-tooltip-dismissed]):hover::before {
+  content: '';
+  position: absolute;
+  inset: 50% 0 -2px;
+  z-index: 10;
+  clip-path: var(--am-info-hover-bridge, inset(50%));
+}
+.am-setting-info[data-tooltip-above]:hover::before { inset-block: -2px 50%; transform: scaleY(-1); }
 .am-alert-columns { display: grid; grid-template-columns: 1fr 72px 72px; align-items: center; gap: 5px; padding: 9px 10px; }
 .am-alert-columns > :not(:first-child) { justify-self: center; text-align: center; font-size: 10px; padding: 0; }
 .am-menu-bar-preview { padding: 10px; display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 30px; }

@@ -141,3 +141,66 @@ test('blocked storage reports unsaved changes while the current preview still wo
   await page.reload();
   await expect(app).toHaveAttribute('data-theme', 'light');
 });
+
+test('active account switch announces unavailability and keeps focus after switching', async ({ page }) => {
+  await openHome(page);
+  const app = page.locator('[data-mock]');
+  await accountDetail(page, 'claude');
+  const firstDetail = app.locator('[data-scr="account:claude:account-1"]');
+  const first = firstDetail.getByRole('switch', { name: 'Use This Account' });
+  const second = app.locator('[data-scr="account:claude:account-2"] [data-account-switch]');
+  const dialog = app.locator('[data-account-dialog]');
+  await expect(first).toHaveAttribute('aria-disabled', 'true');
+  await expect(first).toHaveJSProperty('disabled', false);
+  await first.press('Enter');
+  await expect(first).toBeFocused();
+  await expect(dialog).toBeHidden();
+
+  await firstDetail.locator('.am-back').click();
+  await app.locator('[data-account-list] .am-open[data-go="account:claude:account-2"]').click();
+  await expect(second).toHaveAttribute('aria-disabled', 'false');
+  await second.click();
+  await dialog.getByRole('button', { name: 'Switch Account', exact: true }).click();
+  await expect(second).toHaveAttribute('aria-checked', 'true');
+  await expect(second).toHaveAttribute('aria-disabled', 'true');
+  await expect(second).toHaveJSProperty('disabled', false);
+  await expect(second).toBeFocused();
+  await expect(firstDetail.locator('[data-account-switch]')).toHaveAttribute('aria-disabled', 'false');
+});
+
+test('dashboard account display describes its localized action while preserving the visible accessible name', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('openusage.site.preview.v1', JSON.stringify({
+    preferences: { language: '한국어' }, activeAccounts: {},
+  })));
+  await openHome(page);
+  await allUsage(page);
+  const app = page.locator('[data-mock]');
+  const cardName = app.locator('[data-card="claude-account-1"] [data-toggle-account-name]');
+  const priorityName = app.locator('[data-priority-key="claude.weekly@account-1"] [data-toggle-account-name]');
+  const showEmails = '대시보드에 예시 이메일 주소를 표시합니다.';
+  const showNames = '대시보드에 계정 이름을 표시합니다.';
+  const masked = 'Privacy Mode에서는 이름과 이메일 주소가 가려집니다.';
+  await expect(cardName).toHaveAccessibleDescription(showEmails);
+  await expect(cardName).toHaveAccessibleName((await cardName.textContent())!.trim());
+  await cardName.press('Enter');
+  await expect(cardName).toHaveAccessibleName('claude.account-1@example.com');
+  await expect(cardName).toHaveAccessibleDescription(showNames);
+  await expect(cardName).toBeFocused();
+
+  await app.locator('button[role="tab"][data-dashboard-tab="Priority"]').click();
+  await expect(priorityName).toHaveAccessibleDescription(showNames);
+  await priorityName.press('Enter');
+  await expect(priorityName).toHaveAccessibleDescription(showEmails);
+  await expect(priorityName).toBeFocused();
+
+  await app.locator('[data-options]').click();
+  await app.locator('.am-optmenu [data-go="settings"]').click();
+  await app.locator('button[data-settings-tab="Advanced"]').click();
+  await app.locator('[data-setting="privacyMode"]').click();
+  await app.locator('[data-scr="settings"] .am-back').click();
+  await expect(priorityName).toHaveAccessibleName('••••@example.com');
+  await expect(priorityName).toHaveAccessibleDescription(masked);
+  await allUsage(page);
+  await expect(cardName).toHaveAccessibleName('••••@example.com');
+  await expect(cardName).toHaveAccessibleDescription(masked);
+});

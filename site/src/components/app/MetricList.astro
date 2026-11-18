@@ -30,7 +30,7 @@ const rows = providerMetrics[provider].rows;
     <div class="am-item"><span>Status</span><span class="am-item-ctl am-badge">{profile?.status ?? (needsConnection ? 'Sign-In Needed' : 'Detected Locally')}</span></div>
     {needsConnection && <p class="am-note">Add and sign in to accounts in the Mac app.</p>}
     {profile && <>
-      <div class="am-item"><span>Use This Account</span><span class="am-item-ctl"><button type="button" class:list={['am-toggle', { 'is-on': family?.activeAccount === accountID }]} role="switch" aria-checked={family?.activeAccount === accountID} aria-label="Use This Account" data-account-switch={provider} data-account-id={accountID} disabled={profile.status !== 'Ready'} /></span></div>
+      <div class="am-item"><span>Use This Account</span><span class="am-item-ctl"><button type="button" class:list={['am-toggle', { 'is-on': family?.activeAccount === accountID }]} role="switch" aria-checked={family?.activeAccount === accountID} aria-disabled={family?.activeAccount === accountID || profile.status !== 'Ready'} aria-label="Use This Account" data-account-switch={provider} data-account-id={accountID} disabled={profile.status !== 'Ready'} /></span></div>
       <button type="button" class="am-account-action" data-native-action="Sign in again in the Mac app. This preview does not access your credentials.">Sign In Again…</button>
     </>}
     {needsConnection
