@@ -46,7 +46,11 @@ test('Settings matches native control names within each tab', () => {
   const resetWatchLabel = englishSource('Stores/CodexResetWatchNotificationEvaluator.swift')
     .match(/settingLabel:\s*String\s*\{\s*"([^"]+)"/)?.[1];
   assert.ok(resetWatchLabel);
-  assert.match(englishSource('Views/Settings/TokscaleSettingsSection.swift'), /Text\(\s*"Usage Sync"\s*\)/);
+  assert.match(alerts,
+    /Toggle\(isOn:\s*\$notifications\.codexResetWatch\)\s*\{\s*SettingsTitle\(\s*title:\s*CodexResetWatchNotificationEvaluator\.settingLabel\b/);
+  const tokscale = englishSource('Views/Settings/TokscaleSettingsSection.swift');
+  assert.match(tokscale, /Text\(\s*"Usage Sync"\s*\)/);
+  assert.match(tokscale, /Button\(\s*"Sync"\s*\)\s*\{\s*store\.startSubmit\(\)/);
   for (const tab of settingsTabs) {
     const native = controlsIn(`Settings${tab}Tab`).concat(sectionsByTab[tab].flatMap(controlsIn))
       .filter((label) => !(tab === 'General' && label === 'iCloud Sync') && !(tab === 'Advanced' && label === 'Terminal Helper'));
