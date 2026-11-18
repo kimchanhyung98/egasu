@@ -282,6 +282,8 @@ final class DashboardLineRulesTests: XCTestCase {
         let hold = Duration.milliseconds(80)
         let resultHold = expectation(description: "Result pin waits for the hold duration")
         let dismissedHold = expectation(description: "Old result pin waits before dismissal")
+        let cancelledHold = expectation(description: "Dismissing cancels the old result hold")
+        let resumedHold = expectation(description: "Old result hold resumes after reopening")
         var scheduledHold = resultHold
         var pendingWait: CheckedContinuation<Void, Never>?
         let state = HoverPopoverState(
@@ -289,10 +291,16 @@ final class DashboardLineRulesTests: XCTestCase {
             waitForPinRelease: { delay in
                 XCTAssertEqual(delay, hold)
                 guard !Task.isCancelled else { return }
-                await withCheckedContinuation {
-                    pendingWait = $0
-                    scheduledHold.fulfill()
+                let isOldHold = scheduledHold === dismissedHold
+                await withTaskCancellationHandler {
+                    await withCheckedContinuation {
+                        pendingWait = $0
+                        scheduledHold.fulfill()
+                    }
+                } onCancel: {
+                    if isOldHold { cancelledHold.fulfill() }
                 }
+                if isOldHold { resumedHold.fulfill() }
             })
         defer {
             state.dismiss()
@@ -302,7 +310,7 @@ final class DashboardLineRulesTests: XCTestCase {
         state.isPresented = true
         state.setPinned(true)
         state.detailHover(false)
-        let release = try XCTUnwrap(state.releasePin(after: hold))
+        state.releasePin(after: hold)
         await fulfillment(of: [resultHold], timeout: 3)
         XCTAssertTrue(state.isPresented)
         XCTAssertTrue(state.isPinned)
@@ -315,26 +323,25 @@ final class DashboardLineRulesTests: XCTestCase {
         }
         try XCTUnwrap(pendingWait).resume()
         pendingWait = nil
-        await release.value
-        XCTAssertFalse(state.isPinned)
         await fulfillment(of: [closed], timeout: 3)
+        XCTAssertFalse(state.isPinned)
         XCTAssertFalse(state.isPresented, "결과를 읽을 시간 뒤에는 포인터 이탈 닫기 복귀")
 
         scheduledHold = dismissedHold
         state.isPresented = true
         state.setPinned(true)
-        let oldRelease = try XCTUnwrap(state.releasePin(after: hold))
+        state.releasePin(after: hold)
         await fulfillment(of: [dismissedHold], timeout: 3)
         state.dismiss()
         XCTAssertFalse(state.isPresented)
         XCTAssertFalse(state.isPinned)
-        XCTAssertTrue(oldRelease.isCancelled)
+        await fulfillment(of: [cancelledHold], timeout: 3)
 
         state.isPresented = true
         state.setPinned(true)
         try XCTUnwrap(pendingWait).resume()
         pendingWait = nil
-        await oldRelease.value
+        await fulfillment(of: [resumedHold], timeout: 3)
         XCTAssertTrue(state.isPinned, "이전 결과의 예약이 새 확인의 고정을 풀지 않음")
     }
 

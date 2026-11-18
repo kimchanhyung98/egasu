@@ -67,9 +67,8 @@ final class HoverPopoverState {
     }
 
     /// 포인터가 떠난 상태에서도 초기화권 사용 결과를 읽을 시간 확보.
-    @discardableResult
-    func releasePin(after delay: Duration) -> Task<Void, Never>? {
-        guard pinned else { return nil }
+    func releasePin(after delay: Duration) {
+        guard pinned else { return }
         releasePinTask?.cancel()
         releasePinTask = Task { [weak self, waitForPinRelease] in
             try? await waitForPinRelease(delay)
@@ -77,7 +76,6 @@ final class HoverPopoverState {
             releasePinTask = nil
             setPinned(false)
         }
-        return releasePinTask
     }
 
     /// 클릭·Space로 즉시 열기 — 호버 대기와 포인터 이탈 닫기 생략.
