@@ -7,6 +7,7 @@ struct DashboardView: View {
     @Environment(PopoverState.self) private var popover
     @Environment(AccountRenameStore.self) private var renaming
     @Environment(\.reduceAnimations) private var reduceAnimations
+    @State private var settingsOperations: SettingsOperations
     @State private var reorderLift: ReorderLift?
     /// SwiftUI가 구동하는 패널 높이 — 0이면 첫 측정 전까지 패널 제어기가 정한 크기 유지.
     @State private var animatedHeight: CGFloat = 0
@@ -20,6 +21,10 @@ struct DashboardView: View {
     @State private var settledSlideID = 0
     @State private var dashboardScrollPosition = ScrollPosition(edge: .top)
     private static let reorderSpace = "popoverReorderSpace"
+
+    init(settingsOperations: SettingsOperations = SettingsOperations()) {
+        _settingsOperations = State(initialValue: settingsOperations)
+    }
 
     var body: some View {
         modeBody
@@ -235,7 +240,8 @@ struct DashboardView: View {
                 reorderLift: $reorderLift
             )
         case .settings:
-            SettingsScreen()
+            SettingsScreen(operations: settingsOperations)
+                .environment(container.iCloudSync)
         }
     }
 }

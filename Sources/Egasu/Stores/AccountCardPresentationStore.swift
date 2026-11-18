@@ -13,22 +13,48 @@ enum AccountCardDisplayMode: String, CaseIterable, Sendable {
     }
 }
 
-/// 공통 계정 카드 표시 모드·family별 stable profile 순서 — 인증·계정 registry·layout과 독립.
+/// 등록 계정의 프로바이더별 표시 순서 — 인증·계정 목록·레이아웃과 독립.
 @MainActor
 @Observable
 final class AccountCardPresentationStore {
     static let storageKey = "openusage.accountCardPresentation.v1"
-    static let displayModeKey = "openusage.accountCardDisplayMode.v1"
 
     private struct Settings: Codable, Equatable {
-        var modesByFamily: [String: String] = [:]
         var profileOrderByFamily: [String: [String]] = [:]
+        // 이전 버전도 이 JSON을 읽을 수 있도록 구형 카드 모드 필드의 저장 형식을 유지.
+        private var legacyModesByFamily: [String: String] = [:]
+
+        private enum CodingKeys: String, CodingKey {
+            case profileOrderByFamily
+            case legacyModesByFamily = "modesByFamily"
+        }
+
+        private struct FamilyKey: CodingKey {
+            let stringValue: String
+            var intValue: Int? { nil }
+
+            init(stringValue: String) {
+                self.stringValue = stringValue
+            }
+
+            init?(intValue: Int) { return nil }
+        }
+
+        init() {}
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            profileOrderByFamily = try values.decode([String: [String]].self, forKey: .profileOrderByFamily)
+            if let modes = try? values.nestedContainer(keyedBy: FamilyKey.self, forKey: .legacyModesByFamily) {
+                for key in modes.allKeys {
+                    legacyModesByFamily[key.stringValue] = try? modes.decode(String.self, forKey: key)
+                }
+            }
+        }
     }
 
     private let defaults: UserDefaults
     private var settings = Settings()
-    private var storedMode: String?
-    private var hasInvalidModeType = false
     private var hasUnreadableSettings = false
     private(set) var errorMessage: String?
 
@@ -40,52 +66,12 @@ final class AccountCardPresentationStore {
                 settings = try JSONDecoder().decode(Settings.self, from: data)
             } catch {
                 hasUnreadableSettings = true
+                errorMessage = L10n.errors(
+                    "egasu couldn't read the saved account display settings. They were left unchanged. Restart egasu and check the log before trying again."
+                )
                 AppLog.error(.config, "account-card presentation was unreadable; preserving it and blocking writes: \(error.localizedDescription)")
             }
         }
-        if let raw = defaults.object(forKey: Self.displayModeKey) {
-            storedMode = raw as? String
-            hasInvalidModeType = storedMode == nil
-        }
-        updateErrorMessage()
-        if hasUnsupportedMode {
-            AppLog.error(.config, "account-card presentation contains an unsupported display mode; preserving the saved value")
-        }
-    }
-
-    /// 초기 family별 저장 형식(modesByFamily)의 읽기 호환 — 공통 설정이 없을 때 Separate 선택 하나라도 유지.
-    var mode: AccountCardDisplayMode {
-        guard !hasInvalidModeType else { return .singleCard }
-        if let storedMode { return AccountCardDisplayMode(rawValue: storedMode) ?? .singleCard }
-        return AccountProfilesStore.supportedFamilies.contains {
-            settings.modesByFamily[$0] == AccountCardDisplayMode.separateCards.rawValue
-        } ? .separateCards : .singleCard
-    }
-
-    func setMode(_ mode: AccountCardDisplayMode) {
-        guard !hasUnreadableSettings, self.mode != mode || hasUnsupportedMode else { return }
-        // family별 JSON을 쓰는 초기 구현이 계정 순서를 저장해도 공통 모드가 소실되지 않도록 별도 key 사용.
-        defaults.set(mode.rawValue, forKey: Self.displayModeKey)
-        storedMode = mode.rawValue
-        hasInvalidModeType = false
-        updateErrorMessage()
-    }
-
-    func shouldShowDisplayMode(profiles: [AccountProfile], registryReadable: Bool) -> Bool {
-        guard registryReadable else { return false }
-        return AccountProfilesStore.supportedFamilies.contains { family in
-            profiles.filter { $0.family == family && !$0.isArchived }.count >= 2
-        }
-    }
-
-    func effectiveMode(
-        for family: String,
-        profiles: [AccountProfile],
-        registryReadable: Bool
-    ) -> AccountCardDisplayMode {
-        guard registryReadable, AccountProfilesStore.isSupportedFamily(family),
-              profiles.contains(where: { $0.family == family && !$0.isArchived }) else { return .singleCard }
-        return mode
     }
 
     /// 읽기는 저장 순서를 정리하지 않음 — 일시적 registry·runtime 누락 뒤에도 기존 순서 복원.
@@ -123,30 +109,12 @@ final class AccountCardPresentationStore {
             let data = try JSONEncoder().encode(updated)
             defaults.set(data, forKey: Self.storageKey)
             settings = updated
-            updateErrorMessage()
+            errorMessage = nil
             return true
         } catch {
             errorMessage = L10n.errors("egasu couldn't save the account display settings. Try again and check the app log.")
             AppLog.error(.config, "failed to encode account-card presentation: \(error.localizedDescription)")
             return false
         }
-    }
-
-    private var hasUnsupportedMode: Bool {
-        if hasInvalidModeType { return true }
-        if let storedMode { return AccountCardDisplayMode(rawValue: storedMode) == nil }
-        return AccountProfilesStore.supportedFamilies.contains { family in
-            settings.modesByFamily[family].map { AccountCardDisplayMode(rawValue: $0) == nil } ?? false
-        }
-    }
-
-    private func updateErrorMessage() {
-        if hasUnreadableSettings {
-            errorMessage = L10n.errors("egasu couldn't read the saved account display settings. They were left unchanged. Restart egasu and check the log before trying again.")
-            return
-        }
-        errorMessage = hasUnsupportedMode
-            ? L10n.errors("A saved account display mode isn't supported by this version. Choose Single Card or Separate Cards to update the display setting.")
-            : nil
     }
 }

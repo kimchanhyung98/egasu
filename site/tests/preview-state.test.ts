@@ -12,7 +12,7 @@ const englishSource = (path: string): string => source(path)
 
 test('Settings follows the native tab order and covers its named sections', () => {
   const screen = englishSource('Views/Settings/SettingsScreen.swift');
-  const tabs = [...screen.matchAll(/case \.\w+: Settings(\w+)Tab\(/g)].map((match) => match[1]);
+  const tabs = [...screen.matchAll(/case \.\w+:\s+Settings(\w+)Tab\(/g)].map((match) => match[1]);
   assert.deepEqual(settingsTabs, tabs);
   for (const tab of settingsTabs) {
     const body = englishSource(`Views/Settings/Settings${tab}Tab.swift`);

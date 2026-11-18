@@ -4,7 +4,7 @@ import SwiftUI
 
 /// General 탭 — 앱 기본 동작·언어·모양, iCloud 동기화, 업데이트.
 struct SettingsGeneralTab: View {
-    @Environment(AppContainer.self) private var container
+    @Environment(ICloudUsageSyncStore.self) private var iCloudSync
     @Environment(PopoverState.self) private var popover
     @AppStorage(DashboardTab.defaultKey) private var defaultTab = DashboardTab.priority
     @AppStorage(LanguageSetting.key) private var language = LanguageSetting.current
@@ -27,7 +27,7 @@ struct SettingsGeneralTab: View {
             LabeledContent {
                 SettingsShortcutRecorder(name: .togglePopover)
                     .disabled(!popover.popoverShown || popover.screen != .settings)
-                    // Settings는 숨겨져도 유지 — 입력기를 분리해 라이브러리의 입력 종료 처리 실행.
+                    // 화면 이동이나 패널 닫힘 시 입력기를 교체해 녹화 종료 처리 실행.
                     .id(popover.popoverShown && popover.screen == .settings)
             } label: {
                 SettingsTitle(title: L10n.settings("Global Shortcut"), info: L10n.settings("Open egasu from anywhere"))
@@ -53,7 +53,7 @@ struct SettingsGeneralTab: View {
                 $0.label
             }
         }
-        ICloudSyncSettingsSection(sync: container.iCloudSync)
+        ICloudSyncSettingsSection(sync: iCloudSync)
         SettingsUpdatesSection()
     }
 }

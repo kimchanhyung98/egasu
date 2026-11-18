@@ -1,13 +1,19 @@
 import SwiftUI
 
+/// 화면 이동 중에도 실패한 작업의 안내를 유지 — 각 객체는 해당 탭을 처음 열 때 생성.
+@MainActor
+final class SettingsOperations {
+    lazy var launchAtLogin = LaunchAtLoginSetting()
+    lazy var commandLineTool = CommandLineToolInstaller()
+    lazy var relauncher = AppRelauncher()
+}
+
 /// General·Display·Alerts·Advanced 탭으로 구성한 Settings — 그룹형 Form 사용.
 /// 탭을 바꾸거나 Settings에 들어오면 맨 위로.
 struct SettingsScreen: View {
     @Environment(PopoverState.self) private var popover
-    @State private var commandLineTool = CommandLineToolInstaller()
+    let operations: SettingsOperations
     @State private var scrollPosition = ScrollPosition(edge: .top)
-    @State private var launchAtLogin = LaunchAtLoginSetting()
-    @State private var relauncher = AppRelauncher()
 
     /// 그룹형 Form의 기본 카드 여백 — 패널 여백에 맞추도록 같은 크기 차감.
     private static let formRowInset: CGFloat = 20
@@ -15,10 +21,11 @@ struct SettingsScreen: View {
     var body: some View {
         Form {
             switch popover.settingsTab {
-            case .general: SettingsGeneralTab(launchAtLogin: launchAtLogin, relauncher: relauncher)
+            case .general:
+                SettingsGeneralTab(launchAtLogin: operations.launchAtLogin, relauncher: operations.relauncher)
             case .display: SettingsDisplayTab()
             case .alerts: SettingsAlertsTab()
-            case .advanced: SettingsAdvancedTab(commandLineTool: commandLineTool)
+            case .advanced: SettingsAdvancedTab(commandLineTool: operations.commandLineTool)
             }
         }
         .formStyle(.grouped)

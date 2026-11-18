@@ -36,15 +36,7 @@ final class SettingsTabsTests: XCTestCase {
                     window.contentView = host
                     defer { window.close() }
                     window.setContentSize(host.fittingSize)
-                    host.layoutSubtreeIfNeeded()
-                    let bitmap = try XCTUnwrap(
-                        NSBitmapImageRep(
-                            bitmapDataPlanes: nil, pixelsWide: Int(ceil(host.bounds.width * 2)),
-                            pixelsHigh: Int(ceil(host.bounds.height * 2)), bitsPerSample: 8, samplesPerPixel: 4,
-                            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
-                        ))
-                    bitmap.size = host.bounds.size
-                    host.cacheDisplay(in: host.bounds, to: bitmap)
+                    let bitmap = try settingsBitmap(in: host)
                     if let path = ProcessInfo.processInfo.environment["EGASU_UPDATES_RENDER_DIR"] {
                         let directory = URL(fileURLWithPath: path)
                         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -182,6 +174,146 @@ final class SettingsTabsTests: XCTestCase {
         systemEnabled = true
         setting.refreshStatus()
         XCTAssertTrue(setting.isEnabled, "시스템 설정에서 켠 상태를 Settings에 들어올 때 반영")
+    }
+
+    func testRenderedSettingsRefreshesAndRetainsTheFailedLoginRequestAcrossRoutes() async throws {
+        let suite = "EgasuTests.SettingsRoute.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let dataStore = WidgetDataStore(
+            registry: .mock, providers: [], cache: ProviderSnapshotCache(userDefaults: defaults), defaults: defaults
+        )
+        let iCloudSync = ICloudUsageSyncStore(
+            dataStore: dataStore, defaults: defaults, fileStore: ICloudUsageHistoryFileStore(containerURL: { nil }),
+            deviceIDStore: SettingsTestDeviceID(), observesMetadataChanges: false
+        )
+        var systemEnabled = false
+        var requestedValues: [Bool] = []
+        let operations = SettingsOperations()
+        operations.launchAtLogin = LaunchAtLoginSetting(
+            currentStatus: { systemEnabled },
+            setEnabled: { enabled in
+                requestedValues.append(enabled)
+                throw CocoaError(.userCancelled)
+            }
+        )
+
+        var appearances = 0
+        var departures = 0
+        let popover = PopoverState(defaults: defaults)
+        popover.toggle(.settings)
+        let size = NSSize(width: PanelMetrics.width, height: 550)
+        let host = NSHostingView(
+            rootView: SettingsRouteHost(
+                operations: operations,
+                onAppear: { appearances += 1 },
+                onDisappear: { departures += 1 }
+            )
+            .frame(width: size.width, height: size.height)
+            .background(Color.white)
+            .environment(popover)
+            .environment(iCloudSync)
+            .environment(UpdaterController())
+            .environment(\.colorScheme, .light)
+            .defaultAppStorage(defaults)
+            .transaction { $0.animation = nil }
+        )
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: .borderless, backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: .aqua)
+        window.contentView = host
+        window.setContentSize(host.fittingSize)
+        window.setFrameOrigin(NSPoint(x: (NSScreen.screens.map(\.frame.maxX).max() ?? 0) + 1_000, y: 0))
+        window.orderBack(nil)
+        defer { window.close() }
+
+        try await waitForSettingsLayout(in: host) { appearances == 1 }
+        operations.launchAtLogin.update(to: true)
+        let failed = try await renderedSettingsText(in: host)
+        XCTAssertTrue(failed.contains("wouldntupdatelaunchatlogin"), failed)
+        XCTAssertEqual(requestedValues, [true])
+        XCTAssertFalse(operations.launchAtLogin.isEnabled)
+
+        XCTAssertTrue(popover.back())
+        try await waitForSettingsLayout(in: host) { departures == 1 }
+        popover.toggle(.settings)
+        try await waitForSettingsLayout(in: host) { appearances == 2 }
+        let returned = try await renderedSettingsText(in: host)
+        XCTAssertTrue(returned.contains("wouldntupdatelaunchatlogin"), "Settings lost the login warning: \(returned)")
+        XCTAssertFalse(operations.launchAtLogin.isEnabled)
+
+        XCTAssertTrue(popover.back())
+        try await waitForSettingsLayout(in: host) { departures == 2 }
+        systemEnabled = true
+        popover.toggle(.settings)
+        try await waitForSettingsLayout(in: host) { appearances == 3 && operations.launchAtLogin.isEnabled }
+        let resolved = try await renderedSettingsText(in: host)
+        XCTAssertTrue(resolved.contains("launchatlogin"), resolved)
+        XCTAssertFalse(resolved.contains("wouldntupdatelaunchatlogin"), resolved)
+        XCTAssertEqual(requestedValues, [true])
+    }
+
+    private func waitForSettingsLayout(in host: NSView, condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now + .seconds(3)
+        while ContinuousClock.now < deadline {
+            host.layoutSubtreeIfNeeded()
+            if condition() { return }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(condition(), "Expected a Settings mount, unmount, or system status refresh")
+    }
+
+    private func renderedSettingsText(in host: NSView) async throws -> String {
+        try await Task.sleep(for: .milliseconds(30))
+        let bitmap = try settingsBitmap(in: host)
+        let image = try XCTUnwrap(bitmap.cgImage)
+        return try await Task.detached {
+            let request = VNRecognizeTextRequest()
+            request.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: image).perform([request])
+            return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                .joined().filter(\.isLetter).lowercased()
+        }.value
+    }
+
+    private func settingsBitmap(in host: NSView) throws -> NSBitmapImageRep {
+        host.layoutSubtreeIfNeeded()
+        let bounds = host.bounds
+        let bitmap = try XCTUnwrap(
+            NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: Int(ceil(bounds.width * 2)),
+                pixelsHigh: Int(ceil(bounds.height * 2)),
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+            ))
+        bitmap.size = bounds.size
+        host.cacheDisplay(in: bounds, to: bitmap)
+        return bitmap
+    }
+
+    private struct SettingsRouteHost: View {
+        @Environment(PopoverState.self) private var popover
+        let operations: SettingsOperations
+        let onAppear: () -> Void
+        let onDisappear: () -> Void
+
+        var body: some View {
+            if popover.screen == .settings {
+                SettingsScreen(operations: operations)
+                    .onAppear(perform: onAppear)
+                    .onDisappear(perform: onDisappear)
+            } else {
+                Color.clear
+            }
+        }
+    }
+
+    private struct SettingsTestDeviceID: ICloudDeviceIDStoring {
+        func readDeviceID() throws -> String? { "00000000-0000-4000-8000-000000000001" }
+        func writeDeviceID(_ deviceID: String) throws { throw ICloudUsageSyncError.unavailable }
     }
 
 }
