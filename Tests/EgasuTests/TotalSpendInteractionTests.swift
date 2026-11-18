@@ -24,7 +24,7 @@ final class TotalSpendInteractionTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(100))
 
         let outside = [
-            CGPoint(x: 24, y: 24), CGPoint(x: 81, y: 38),
+            CGPoint(x: 24, y: 24), CGPoint(x: 78, y: 26),
             CGPoint(x: 52, y: 10), CGPoint(x: 10, y: 52)
         ]
         for point in outside {

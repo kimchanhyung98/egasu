@@ -78,7 +78,11 @@ final class DashboardSnapshotTests: XCTestCase {
                     var heights: [DashboardLayoutStyle: CGFloat] = [:]
                     for style in DashboardLayoutStyle.allCases {
                         let view = DashboardProviderSection(family: codexFamily(), layoutStyle: style) { account in
-                            DashboardAccountRows(account: account, plan: account.name == "Account 1" ? "Pro" : "Plus", layoutStyle: style)
+                            DashboardAccountRows(
+                                account: account,
+                                plan: account.name == "Account 1" ? "Pro" : "Plus",
+                                layoutStyle: style
+                            )
                         }
                         let variant = "\(style.rawValue)-\(language.rawValue)-\(appearance)"
                         let image = try render(view, appearance: appearance, name: "layout-\(variant)")
@@ -399,7 +403,10 @@ final class DashboardSnapshotTests: XCTestCase {
             totalTokens: 1_200_000, totalCostUSD: 4.08, models: models, sourceNote: "Estimated from local logs on this Mac."
         ))
         for appearance in [ColorScheme.light, .dark] {
-            let detail = UsageBreakdownContent(usage: usage, providerName: "Claude", icon: .providerMark("claude"), figure: .cost, onPickFigure: { _ in })
+            let detail = UsageBreakdownContent(
+                usage: usage, providerName: "Claude", icon: .providerMark("claude"), figure: .cost,
+                figureSelection: .constant(.cost)
+            )
                 .padding(UsageBreakdownDetail.padding)
                 .frame(width: UsageBreakdownDetail.width, alignment: .leading)
                 .background(Theme.panelBody)
@@ -458,9 +465,11 @@ final class DashboardSnapshotTests: XCTestCase {
         defaults.removePersistentDomain(forName: name)
         let registry = WidgetRegistry.from(ProviderCatalog.make())
         let store = WidgetDataStore(registry: registry, providers: [], defaults: defaults)
-        store.snapshots["claude"] = .init(providerID: "claude", displayName: "Claude", lines: [
-            .progress(label: "Weekly", used: 30, limit: 100, format: .percent, periodDurationMs: MetricPeriod.weekMs)
-        ])
+        store.snapshots["claude"] = .init(
+            providerID: "claude", displayName: "Claude",
+            lines: [.progress(label: "Weekly", used: 30, limit: 100, format: .percent, periodDurationMs: MetricPeriod.weekMs)],
+            usageHistory: .init(series: .init(daily: []))
+        )
         let today = store.data(for: try XCTUnwrap(registry.descriptor(id: "claude.today")))
         XCTAssertNil(today.rowDetail(reportsModels: true))
         guard case .value(let value, _, _) = today.dashboardRow().mark else { return XCTFail("값 행이어야 함") }

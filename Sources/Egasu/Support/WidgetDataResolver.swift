@@ -35,8 +35,11 @@ enum WidgetDataResolver {
                 result.valueTextOverride = message.localized
             }
             result.codexResetClaimBinding = snapshot.codexResetClaimBinding
-        } else if let snapshot, snapshot.refreshFailure == nil,
-                  descriptor.sample.isUsagePeriod {
+        } else if let snapshot, descriptor.sample.isUsagePeriod,
+            snapshot.usageHistory != nil, snapshot.refreshFailure == nil,
+            snapshot.warning == nil, snapshot.isDegraded != true
+        {
+            // 정상 수집된 사용 이력의 빈 기간만 0 — 한도 응답만으로 이력의 부재를 판정할 수 없음.
             result = Self.unreportedPeriod(descriptor)
         } else {
             // 실제 지표 행이 없으면 데이터 없음 처리 — 표시 기본값의 숫자는 사용하지 않음.

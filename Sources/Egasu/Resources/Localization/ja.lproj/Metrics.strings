@@ -78,10 +78,7 @@
 "M" = "30日";
 "MTok" = "MTok";
 "Monthly" = "月次";
-"No cost data for this period" = "この期間の費用データはありません";
-"No cost-per-token data for this period" = "この期間のトークン単価データはありません";
 "No data" = "データなし";
-"No token data for this period" = "この期間のトークンデータはありません";
 "No usage data" = "使用量データなし";
 "No usage in this period" = "この期間の使用量はありません";
 "Not available" = "利用不可";

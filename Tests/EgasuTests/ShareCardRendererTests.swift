@@ -43,12 +43,19 @@ final class ShareCardRendererTests: XCTestCase {
         XCTAssertNotNil(NSImage(data: png))
     }
 
-    func testRendersEmptyProviderWithoutCrashing() throws {
-        let card = ShareCardView(family: family(MockData.cursor, rows: []), appearance: .dark)
+    func testEmptyProviderShareAddsAnEmptyMessage() throws {
+        let fixture = family(MockData.cursor, rows: [])
+        let blankCard = ShareCardFrame(appearance: .dark) {
+            DashboardProviderSection(family: fixture) { account in
+                DashboardAccountRows(account: account)
+            }
+        }
+        let blankImage = try XCTUnwrap(ShareCardRenderer.image(for: blankCard))
+        let card = ShareCardView(family: fixture, appearance: .dark)
         let image = try XCTUnwrap(ShareCardRenderer.image(for: card))
         let rep = try XCTUnwrap(image.representations.first)
         XCTAssertEqual(rep.pixelsWide % Int(ShareCardView.width), 0)
-        XCTAssertGreaterThan(rep.pixelsHigh, 0)
+        XCTAssertGreaterThan(image.size.height, blankImage.size.height)
     }
 
     func testRendersSoftLimitAndResetWatchInBothDisplayModes() throws {
@@ -168,9 +175,9 @@ final class ShareCardRendererTests: XCTestCase {
     func testCopyToPasteboardWritesPNGAndReturnsTrueForValidImage() throws {
         let image = try XCTUnwrap(ShareCardRenderer.image(for: sampleCard()))
         let pasteboard = NSPasteboard(name: .init("EgasuTests.ShareCard.\(UUID().uuidString)"))
-        guard ShareCardRenderer.copyToPasteboard(image, pasteboard: pasteboard) else {
-            throw XCTSkip("The macOS pasteboard service is unavailable in this test host.")
-        }
+        defer { pasteboard.releaseGlobally() }
+        try requirePasteboardService(pasteboard)
+        XCTAssertTrue(ShareCardRenderer.copyToPasteboard(image, pasteboard: pasteboard))
 
         let png = try XCTUnwrap(pasteboard.data(forType: .png))
         XCTAssertFalse(png.isEmpty)
@@ -221,6 +228,7 @@ extension ShareCardRendererTests {
         let collapsed = familyShareFixture(provider: provider, name: "Work", rows: [weekly])
         let pasteboard = NSPasteboard(name: .init("EgasuTests.FamilyShare.\(UUID().uuidString)"))
         defer { pasteboard.releaseGlobally() }
+        try requirePasteboardService(pasteboard)
 
         for style in [DashboardLayoutStyle.minimal, .cards] {
             let expectedPixels = try familySharePixels(expected, style: style)
@@ -238,6 +246,7 @@ extension ShareCardRendererTests {
         let emailFree = familyShareFixture(provider: provider, name: nil, rows: [weekly])
         let pasteboard = NSPasteboard(name: .init("EgasuTests.FamilyShareEmail.\(UUID().uuidString)"))
         defer { pasteboard.releaseGlobally() }
+        try requirePasteboardService(pasteboard)
 
         for style in [DashboardLayoutStyle.minimal, .cards] {
             for privacyMode in [false, true] {
@@ -250,6 +259,35 @@ extension ShareCardRendererTests {
                     assertFamilySharePixels(actual, match: expected)
                 }
             }
+        }
+    }
+
+    func testFamilyShareOmitsTheResetClaimAnchorWithoutRemovingTheAccount() throws {
+        let provider = MockData.codex
+        let descriptor = WidgetDescriptor.values(
+            id: "codex.rateLimitResets", provider: provider, title: "Rate Limit Resets", showsResetExpiries: true
+        )
+        let auth = CodexAuth(tokens: CodexTokens(accessToken: "fixture-token"))
+        let binding = try XCTUnwrap(CodexResetClaimBinding(authState: .init(auth: auth, source: .keychain)))
+        var data = descriptor.sample
+        data.hasData = true
+        data.values = [.init(number: 0, kind: .count, label: "available")]
+        data.codexResetClaimBinding = binding
+        let retained = DashboardAccount(
+            provider: provider, providerName: provider.displayName, name: "Work",
+            lines: [DashboardLine(descriptor: descriptor, data: data)],
+            retainingResetClaims: [descriptor.id: binding]
+        )
+        let retainedFamily = DashboardFamily(
+            id: provider.id, provider: provider, displayName: provider.displayName, accounts: [retained]
+        )
+        let emptyFamily = familyShareFixture(provider: provider, name: "Work", rows: [])
+        XCTAssertEqual(retained.lines.map(\.id), [descriptor.id])
+
+        for style in DashboardLayoutStyle.allCases {
+            let actual = try familySharePixels(retainedFamily, style: style)
+            let expected = try familySharePixels(emptyFamily, style: style)
+            assertFamilySharePixels(actual, match: expected)
         }
     }
 
@@ -266,16 +304,23 @@ extension ShareCardRendererTests {
         return DashboardFamily(id: provider.id, provider: provider, displayName: provider.displayName, accounts: [account])
     }
 
+    private func requirePasteboardService(_ pasteboard: NSPasteboard) throws {
+        let probe = "EgasuTests pasteboard probe"
+        pasteboard.clearContents()
+        guard pasteboard.setString(probe, forType: .string), pasteboard.string(forType: .string) == probe else {
+            throw XCTSkip("The macOS pasteboard service is unavailable in this test host.")
+        }
+    }
+
     private func copiedFamilySharePixels(
         _ family: DashboardFamily, style: DashboardLayoutStyle, pasteboard: NSPasteboard,
         privacyMode: Bool = false
     ) throws -> Data {
-        guard
-            ShareCardRenderer.share(
-                family: family, plans: [family.id: "Plus"], appearance: .light, blursAccountNames: privacyMode,
-                layoutStyle: style, pasteboard: pasteboard
-            )
-        else { throw XCTSkip("The macOS pasteboard service is unavailable in this test host.") }
+        let copied = ShareCardRenderer.share(
+            family: family, plans: [family.id: "Plus"], appearance: .light, blursAccountNames: privacyMode,
+            layoutStyle: style, pasteboard: pasteboard
+        )
+        XCTAssertTrue(copied, "The share action must render, encode, and copy a PNG")
         return try familySharePixels(png: XCTUnwrap(pasteboard.data(forType: .png)))
     }
 

@@ -317,7 +317,9 @@ final class SoftLimitWidgetDataStoreTests: XCTestCase {
         let originalPlaced = layout.placed
         let originalPins = layout.priorityPinIDs
 
-        for group in layout.displayGroups where cardIDs.contains(group.id) {
+        let groups = layout.displayGroups
+        XCTAssertEqual(groups.map(\.id).sorted(), cardIDs.sorted())
+        for group in groups {
             // 추가 계정 카드는 공유 홈 전용 행(Reset Watch 등)을 숨김 — 대시보드 계정 섹션과 같은 규칙.
             let widgets = group.widgets.filter { !AppContainer.hidesMetric($0.descriptorID, onCard: group.id) }
             for display in [WidgetDisplayMode.used, .remaining] {

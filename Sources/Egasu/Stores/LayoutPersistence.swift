@@ -49,7 +49,9 @@ final class LayoutPersistence {
     func loadExpandOnEnable() -> [String]? { defaults.stringArray(forKey: keys.expandOnEnable) }
 
     var hasOnDemandState: Bool {
-        [keys.expandedMetrics, keys.expandOnEnable, keys.expandedProviders].contains { defaults.object(forKey: $0) != nil }
+        [keys.expandedMetrics, keys.expandOnEnable, keys.expandedProviders].contains {
+            defaults.object(forKey: $0) != nil
+        }
     }
 
     func savePlaced(_ value: [PlacedWidget]) { encode(value, forKey: keys.placed) }
@@ -61,8 +63,7 @@ final class LayoutPersistence {
 
     func savePriorityPins(_ value: Set<String>) { defaults.set(Array(value).sorted(), forKey: keys.priorityPins) }
 
-
-    /// 이전 접기 영역의 순서를 저장한 뒤 관련 키만 제거.
+    /// 레거시 On Demand 키 제거. 호출 전에 변환한 지표 순서 저장.
     func clearOnDemandState() {
         for key in [keys.expandedMetrics, keys.expandOnEnable, keys.expandedProviders] {
             defaults.removeObject(forKey: key)

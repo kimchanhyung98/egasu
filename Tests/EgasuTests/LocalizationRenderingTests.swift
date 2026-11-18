@@ -13,6 +13,7 @@ final class LocalizationRenderingTests: XCTestCase {
         row.isUsagePeriod = true
         for layoutStyle in DashboardLayoutStyle.allCases {
             for appearance in [ColorScheme.light, .dark] {
+                let variant = "\(layoutStyle.rawValue)-\(appearance)"
                 var rasters: [Raster] = []
                 for models in [[], ["unpriced-model"]] as [[String]] {
                     row.unknownModels = models
@@ -22,9 +23,9 @@ final class LocalizationRenderingTests: XCTestCase {
                         .environment(\.colorScheme, appearance)
                         .environment(\.hoverTooltipsDisabled, true)
                         .defaultAppStorage(defaults)
-                    rasters.append(try rasterize(view, width: 320, name: "\(appearance)", export: nil))
+                    rasters.append(try rasterize(view, width: 320, name: variant, export: nil))
                 }
-                XCTAssertFalse(visiblyDiffers(rasters[0], rasters[1]), "\(appearance)")
+                XCTAssertFalse(visiblyDiffers(rasters[0], rasters[1]), variant)
             }
         }
     }

@@ -139,7 +139,7 @@ extension WidgetData {
         guard isUsagePeriod else { return nil }
         if hasModelBreakdown { return .breakdown }
         if !hasData { return .empty }
-        if isZeroUsage && values.allSatisfy({ $0.number == 0 }) { return nil }
+        if isEmptyUsagePeriod { return nil }
         return reportsModels ? .saved : nil
     }
 }

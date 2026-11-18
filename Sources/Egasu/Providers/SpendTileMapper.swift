@@ -169,8 +169,6 @@ enum SpendTileMapper {
         return values
     }
 
-    private static let namedModelCap = 5
-
     /// case-fold된 한 이름의 표기들을 추적해 tokens를 가장 많이 실은 표기 선출(동률은 소문자, 다음 알파벳순) — `GLM-5.2`와 `glm-5.2`가 우세한 표기 제목의 한 행으로 병합.
     private struct SpellingVote {
         private var tokensBySpelling: [String: Int] = [:]
@@ -209,13 +207,6 @@ enum SpendTileMapper {
             for variant in entry.variants ?? [ModelUsageVariant(model: name, totalTokens: entry.totalTokens, costUSD: entry.costUSD)] {
                 mergeVariant(variant.model, tokens: variant.totalTokens, costUSD: variant.costUSD)
             }
-        }
-
-        /// 다른 모델을 이 accumulator(Other 행)로 흡수 — 흡수된 모델당 variant 하나, tooltip은 raw effort slug가 아닌 모델명 나열. Other 행 이름은 고정이라 흡수된 표기는 variant line 안에서만 투표.
-        mutating func fold(_ entry: ModelUsageEntry) {
-            tokens += entry.totalTokens
-            cost.add(entry.costUSD)
-            mergeVariant(entry.model, tokens: entry.totalTokens, costUSD: entry.costUSD)
         }
 
         private mutating func addTotals(of entry: ModelUsageEntry, spelledAs name: String) {
@@ -277,12 +268,11 @@ enum SpendTileMapper {
 
         let sorted = byModel.map { key, accumulator in accumulator.entry(model: accumulator.displayName ?? key) }
             .sorted(by: modelSortPrecedes)
-        let folded = foldModelList(sorted)
-        guard !folded.isEmpty else { return nil }
+        guard !sorted.isEmpty else { return nil }
         return ModelUsageBreakdown(
             totalTokens: totalTokens,
             totalCostUSD: totalCostUSD,
-            models: folded,
+            models: sorted,
             sourceNote: sourceNote,
             period: period
         )
@@ -299,46 +289,6 @@ enum SpendTileMapper {
         if lhsCost != rhsCost { return lhsCost > rhsCost }
         if lhs.totalTokens != rhs.totalTokens { return lhs.totalTokens > rhs.totalTokens }
         return lhs.model.localizedStandardCompare(rhs.model) == .orderedAscending
-    }
-
-    /// 기간 내 이 비중 미만 모델은 순위와 무관하게 Other로 흡수 — 5% 미만 조각 더미는 노이즈, Other tooltip이 이름은 유지.
-    private static let minVisibleShare = 0.05
-
-    private static func foldModelList(_ entries: [ModelUsageEntry]) -> [ModelUsageEntry] {
-        // threshold는 패널 percent 라벨과 같은 기준 사용(전 모델 priced면 cost 비중, 아니면 token 비중 — `ModelUsageDetail.share`) — 아니면 5%+로 표시될 모델이 접힐 수 있음.
-        let allPriced = entries.allSatisfy { $0.costUSD != nil }
-        let costTotal = entries.reduce(0.0) { $0 + ($1.costUSD ?? 0) }
-        let tokenTotal = entries.reduce(0) { $0 + $1.totalTokens }
-        func share(_ entry: ModelUsageEntry) -> Double {
-            if allPriced, costTotal > 0 { return (entry.costUSD ?? 0) / costTotal }
-            guard tokenTotal > 0 else { return 0 }
-            return Double(entry.totalTokens) / Double(tokenTotal)
-        }
-
-        var visible: [ModelUsageEntry] = []
-        var other = ModelAccumulator()
-        var namedCount = 0
-
-        for entry in entries {
-            // 로그가 모델에 귀속 못 한 tokens(Grok)는 "Unattributed" 행 대신 크기와 무관하게 Other로 — 패널은 회계 장부가 아니라 인사이트.
-            let isUnattributed = entry.model.caseInsensitiveCompare(ModelUsageEntry.unattributedModelName) == .orderedSame
-            if isUnattributed || share(entry) < minVisibleShare {
-                other.fold(entry)
-            } else if entry.costUSD == nil {
-                visible.append(entry)
-                namedCount += 1
-            } else if namedCount < namedModelCap {
-                visible.append(entry)
-                namedCount += 1
-            } else {
-                other.fold(entry)
-            }
-        }
-
-        if other.tokens > 0 || (other.costUSD ?? 0) > 0 {
-            visible.append(other.entry(model: ModelUsageEntry.otherModelName))
-        }
-        return visible
     }
 
     private static func roundToCents(_ value: Double) -> Double {

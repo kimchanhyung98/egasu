@@ -190,6 +190,7 @@ final class ProviderSnapshotStore {
            let descriptor = registry.historyDescriptorsByProvider[providerID]
         {
             degraded = true
+            snapshot.isDegraded = true
             snapshot.usageHistory = history
             snapshot = UsageHistorySnapshotRenderer.render(
                 local: snapshot,

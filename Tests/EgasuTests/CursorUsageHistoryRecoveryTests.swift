@@ -45,6 +45,11 @@ final class CursorUsageHistoryRecoveryTests: XCTestCase {
         XCTAssertNil(snapshot.line(label: "Usage Trend"))
         XCTAssertNotNil(snapshot.line(label: "Total usage"))
         XCTAssertEqual(fixture.cache.loadSnapshots(providerIDs: ["cursor"])["cursor"]?.usageHistory?.series.daily, [])
+        for descriptor in CursorProvider().widgetDescriptors.filter(\.isSpendTile) {
+            let data = fixture.store.data(for: descriptor)
+            XCTAssertTrue(data.hasData, descriptor.id)
+            XCTAssertTrue(data.isZeroUsage, descriptor.id)
+        }
     }
 
     func testMixedValidAndInvalidPagePreservesEntirePreviousHistory() async throws {
@@ -80,6 +85,11 @@ final class CursorUsageHistoryRecoveryTests: XCTestCase {
         XCTAssertNotNil(snapshot.warning)
         XCTAssertNil(fixture.cache.loadSnapshots(providerIDs: ["cursor"])["cursor"]?.usageHistory)
         XCTAssertEqual(fixture.cache.producedByIdentityKey(providerID: "cursor"), "different-account")
+        for descriptor in CursorProvider().widgetDescriptors.filter(\.isSpendTile) {
+            let data = fixture.store.data(for: descriptor)
+            XCTAssertFalse(data.hasData, descriptor.id)
+            XCTAssertTrue(data.selectedValues.isEmpty, descriptor.id)
+        }
 
         await fixture.http.setFailure(nil)
         await fixture.http.setBody(try body(tokens: [200]))

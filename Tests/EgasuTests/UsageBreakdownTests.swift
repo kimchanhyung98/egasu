@@ -20,12 +20,55 @@ final class UsageBreakdownTests: XCTestCase {
         XCTAssertEqual(byTokens.last?.number, 300)
     }
 
+    func testMappedAndCachedBreakdownRanksTokensBeforeFoldingOther() throws {
+        let asOf = try XCTUnwrap(Calendar.current.date(from: DateComponents(year: 2026, month: 11, day: 9, hour: 12)))
+        let variants = [
+            ModelUsageVariant(model: "m6-high", totalTokens: 500, costUSD: 3),
+            ModelUsageVariant(model: "m6-low", totalTokens: 400, costUSD: 2)
+        ]
+        let models = [
+            ModelUsageEntry(model: "m1", totalTokens: 100, costUSD: 10),
+            ModelUsageEntry(model: "m2", totalTokens: 200, costUSD: 9),
+            ModelUsageEntry(model: "m3", totalTokens: 300, costUSD: 8),
+            ModelUsageEntry(model: "m4", totalTokens: 400, costUSD: 7),
+            ModelUsageEntry(model: "m5", totalTokens: 500, costUSD: 6),
+            ModelUsageEntry(model: "m6", totalTokens: 900, costUSD: 5, variants: variants),
+            ModelUsageEntry(model: "m7", totalTokens: 600, costUSD: 1)
+        ]
+        let date = "2026-11-09"
+        let daily = DailyUsageSeries(daily: [DailyUsageEntry(date: date, totalTokens: 3_000, costUSD: 46)])
+        let modelUsage = ModelUsageSeries(daily: [DailyModelUsageEntry(date: date, models: models)])
+        var lines: [MetricLine] = []
+        SpendTileMapper.appendTokenUsage(
+            daily, to: &lines, now: asOf, modelUsage: modelUsage, modelSourceNote: "From logs")
+        let snapshot = ProviderSnapshot(providerID: "codex", displayName: "Codex", lines: lines)
+        let restored = try JSONDecoder().decode(ProviderSnapshot.self, from: JSONEncoder().encode(snapshot))
+        guard case .values(_, _, _, _, _, let storedDetail) = restored.line(label: "Today") else {
+            return XCTFail("Expected Today usage detail")
+        }
+        let breakdown = try XCTUnwrap(storedDetail)
+        XCTAssertEqual(breakdown.totalTokens, 3_000)
+        XCTAssertEqual(breakdown.totalCostUSD, 46)
+        let detail = UsageBreakdown(title: "Today", breakdown: breakdown)
+        let other = L10n.metrics(ModelUsageEntry.otherModelName)
+        let byCost = detail.rows(by: .cost)
+        XCTAssertEqual(byCost.map(\.name), ["m1", "m2", "m3", "m4", "m5", other])
+        XCTAssertEqual(byCost.last?.number, 6)
+        XCTAssertEqual(byCost.last?.variants.map(\.model), ["m6", "m7"])
+
+        let byTokens = detail.rows(by: .tokens)
+        XCTAssertEqual(byTokens.map(\.name), ["m6", "m7", "m5", "m4", "m3", other])
+        XCTAssertEqual(byTokens.first?.variants, variants)
+        XCTAssertEqual(byTokens.last?.number, 300)
+        XCTAssertEqual(byTokens.last?.variants.map(\.model), ["m2", "m1"])
+    }
+
     func testUnpricedModelsSitLastWithoutAPartialOtherCost() {
         let models =
             [
                 ModelUsageEntry(model: "unpriced", totalTokens: 900, costUSD: nil),
                 ModelUsageEntry(model: "priced", totalTokens: 100, costUSD: 2)
-            ] + (1...5).map { ModelUsageEntry(model: "tiny\($0)", totalTokens: 1, costUSD: 0.01) }
+            ] + (1...5).map { ModelUsageEntry(model: "extra\($0)", totalTokens: 100, costUSD: 0.01) }
         let rows = usage(models).rows(by: .cost)
         XCTAssertEqual(rows.first?.name, "priced")
         XCTAssertEqual(rows.last?.name, "Other")
@@ -50,7 +93,8 @@ final class UsageBreakdownTests: XCTestCase {
     func testUnattributedAndOtherNamesAreLocalized() {
         let rows = usage([ModelUsageEntry(model: ModelUsageEntry.unattributedModelName, totalTokens: 10, costUSD: nil)])
             .rows(by: .tokens)
-        XCTAssertEqual(rows.map(\.name), [L10n.metrics(ModelUsageEntry.unattributedModelName)])
+        XCTAssertEqual(rows.map(\.name), [L10n.metrics(ModelUsageEntry.otherModelName)])
+        XCTAssertEqual(rows.first?.variants.map(\.model), [ModelUsageEntry.unattributedModelName])
     }
 
     func testVariantTooltipKeepsExactCostAndTokensWithoutShares() throws {
@@ -159,5 +203,17 @@ final class UsageBreakdownTests: XCTestCase {
         let breakdown = try JSONDecoder().decode(ModelUsageBreakdown.self, from: json)
         XCTAssertEqual(UsageBreakdown(title: "Today", breakdown: breakdown).displayTitle(at: .distantFuture), "Today")
         XCTAssertEqual(breakdown.models.first?.model, "old")
+    }
+
+    func testOldBreakdownCacheKeepsOtherWhenSourceEntriesAreMissing() throws {
+        let json = Data(
+            #"{"totalTokens":100,"totalCostUSD":1,"models":[{"model":"old","totalTokens":60,"costUSD":0.6},{"model":"Other","totalTokens":40,"costUSD":0.4}],"sourceNote":"From logs"}"#
+                .utf8)
+        let breakdown = try JSONDecoder().decode(ModelUsageBreakdown.self, from: json)
+        let detail = UsageBreakdown(title: "Today", breakdown: breakdown)
+        let rows = detail.rows(by: .tokens)
+        XCTAssertEqual(rows.map(\.name), ["old", L10n.metrics(ModelUsageEntry.otherModelName)])
+        XCTAssertEqual(rows.last?.number, 40)
+        XCTAssertNil(rows.last?.variantTooltip)
     }
 }

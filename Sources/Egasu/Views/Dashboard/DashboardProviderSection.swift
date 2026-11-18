@@ -45,8 +45,14 @@ struct DashboardProviderSection<Header: View, Account: View>: View {
 }
 
 extension DashboardProviderSection where Header == DashboardProviderHeader {
-    init(family: DashboardFamily, layoutStyle: DashboardLayoutStyle = .minimal, @ViewBuilder account: @escaping (DashboardAccount) -> Account) {
-        self.init(family: family, layoutStyle: layoutStyle, header: { _ in DashboardProviderHeader(family: family) }, account: account)
+    init(
+        family: DashboardFamily, layoutStyle: DashboardLayoutStyle = .minimal,
+        @ViewBuilder account: @escaping (DashboardAccount) -> Account
+    ) {
+        self.init(
+            family: family, layoutStyle: layoutStyle,
+            header: { _ in DashboardProviderHeader(family: family) }, account: account
+        )
     }
 }
 
@@ -210,12 +216,23 @@ struct DashboardAccountRows: View {
     let account: DashboardAccount
     var plan: String?
     var layoutStyle = DashboardLayoutStyle.minimal
+    var showsEmptyMessage = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             DashboardAccountCaption(account: account, plan: plan)
-            DashboardLineStack(account: account, layoutStyle: layoutStyle) { line in
-                DashboardMetricRow(model: line.data.dashboardRow(), chartPoints: line.data.chartPoints, layoutStyle: layoutStyle, valueTooltip: line.data.isChart ? line.data.chartNote : nil)
+            if showsEmptyMessage && account.lines.isEmpty && account.waitingMetricIDs.isEmpty {
+                Text(L10n.dashboard("No metrics to show"))
+                    .font(DashboardMetricRow.font)
+                    .foregroundStyle(.secondary)
+                    .frame(minHeight: DashboardGrid.rowHeight, alignment: .leading)
+            } else {
+                DashboardLineStack(account: account, layoutStyle: layoutStyle) { line in
+                    DashboardMetricRow(
+                        model: line.data.dashboardRow(), chartPoints: line.data.chartPoints, layoutStyle: layoutStyle,
+                        valueTooltip: line.data.isChart ? line.data.chartNote : nil
+                    )
+                }
             }
         }
     }

@@ -18,7 +18,7 @@ struct UsageBreakdownDetail: View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             UsageBreakdownContent(
                 usage: usage, providerName: providerName, icon: icon, figure: figure,
-                onPickFigure: { figure = $0 }, animates: !reduceAnimations, now: context.date
+                figureSelection: $figure, animates: !reduceAnimations, now: context.date
             )
             .padding(Self.padding)
             .frame(width: Self.width, alignment: .leading)
@@ -111,13 +111,13 @@ enum UsageBreakdownSavedState {
     }
 }
 
-/// 상세와 공유 이미지가 함께 쓰는 본문 — `onPickFigure`가 없으면(이미지) 수치 전환을 그리지 않음.
+/// 상세와 공유 이미지가 함께 쓰는 본문 — 수치 선택 바인딩이 있을 때 전환 표시.
 struct UsageBreakdownContent: View {
     let usage: UsageBreakdown
     let providerName: String
     let icon: IconSource
     let figure: ModelFigure
-    var onPickFigure: (@MainActor (ModelFigure) -> Void)?
+    var figureSelection: Binding<ModelFigure>?
     var animates = false
     var now = Date()
 
@@ -205,10 +205,10 @@ struct UsageBreakdownContent: View {
                     .foregroundStyle(.secondary)
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 0)
-                if let onPickFigure, usage.modelFigures.count > 1 {
+                if let figureSelection, usage.modelFigures.count > 1 {
                     CapsuleSegments(
                         options: usage.modelFigures.map { ($0, $0.label) },
-                        selection: Binding(get: { shownFigure }, set: onPickFigure),
+                        selection: figureSelection,
                         height: 22,
                         fontSize: 11,
                         segmentWidth: 52
@@ -232,7 +232,7 @@ struct UsageBreakdownContent: View {
                     .font(.system(size: 12))
                     .frame(minHeight: 18)
                     .accessibilityElement(children: .combine)
-                    .hoverTooltip(onPickFigure == nil ? nil : row.variantTooltip)
+                    .hoverTooltip(figureSelection == nil ? nil : row.variantTooltip)
                 }
             }
         }

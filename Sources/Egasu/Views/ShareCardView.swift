@@ -15,8 +15,10 @@ struct ShareCardView: View {
 
     var body: some View {
         ShareCardFrame(appearance: appearance, blursAccountNames: blursAccountNames) {
-            DashboardProviderSection(family: family.hidingEmails, layoutStyle: layoutStyle) { account in
-                DashboardAccountRows(account: account, plan: plans[account.id], layoutStyle: layoutStyle)
+            DashboardProviderSection(family: family.forSharing, layoutStyle: layoutStyle) { account in
+                DashboardAccountRows(
+                    account: account, plan: plans[account.id], layoutStyle: layoutStyle, showsEmptyMessage: true
+                )
             }
         }
     }

@@ -387,7 +387,7 @@ struct WidgetData: Hashable {
     var unboundedValueTooltip: String? {
         // reset-credit row는 expiry breakdown 우선 — 작은 count라 figures tooltip 없음.
         if let expiry = expiryTooltip { return expiry }
-        if isUsagePeriod && !hasModelBreakdown && isZeroUsage && values.allSatisfy({ $0.number == 0 }) { return nil }
+        if isEmptyUsagePeriod { return nil }
         if let figures = unboundedTooltip {
             return ([figures] + [unboundedTooltipNote].compactMap { $0 }).joined(separator: "\n")
         }
@@ -404,6 +404,10 @@ struct WidgetData: Hashable {
         guard hasData else { return false }
         let selected = selectedValues
         return !selected.isEmpty && selected.allSatisfy { $0.number == 0 }
+    }
+
+    var isEmptyUsagePeriod: Bool {
+        isUsagePeriod && !hasModelBreakdown && isZeroUsage && values.allSatisfy { $0.number == 0 }
     }
 
     var resetLabel: String? {

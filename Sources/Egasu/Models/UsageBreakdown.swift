@@ -46,6 +46,7 @@ struct UsageBreakdown: Equatable {
     let breakdown: ModelUsageBreakdown
 
     static let topCount = 5
+    private static let minVisibleShare = 0.05
 
     /// 집계 기준일이 지난 상세·공유 제목 — 기준일 없는 이전 캐시는 원래 제목 유지.
     func displayTitle(at now: Date = Date()) -> String {
@@ -90,7 +91,7 @@ struct UsageBreakdown: Equatable {
         return breakdown.models.contains { $0.costUSD != nil } ? [.cost, .tokens] : [.tokens]
     }
 
-    /// 수치가 큰 순 상위 5개 + 나머지를 합친 Other — 가격 없는 모델은 Cost 보기에서 끝에 "—".
+    /// 선택한 수치의 상위 5개 + Other — 5% 미만과 귀속되지 않은 사용량은 Other에 포함.
     /// 하나라도 가격이 없는 묶음의 비용은 합치지 않음(부분 비용을 합계로 보이지 않는 규칙).
     func rows(by figure: ModelFigure) -> [Row] {
         func value(_ model: ModelUsageEntry) -> Double? {
@@ -98,19 +99,38 @@ struct UsageBreakdown: Equatable {
         }
         let named = breakdown.models.filter { $0.model != ModelUsageEntry.otherModelName }
         let sorted = named.enumerated().sorted { lhs, rhs in
-            switch (value(lhs.element), value(rhs.element)) {
+            if figure == .tokens {
+                let left = lhs.element.totalTokens
+                let right = rhs.element.totalTokens
+                return left != right ? left > right : lhs.offset < rhs.offset
+            }
+            switch (lhs.element.costUSD, rhs.element.costUSD) {
             case let (left?, right?): return left != right ? left > right : lhs.offset < rhs.offset
             case (.some, nil): return true
             case (nil, .some): return false
             case (nil, nil): return lhs.offset < rhs.offset
             }
         }.map(\.element)
-        var rows = sorted.prefix(Self.topCount).map {
-            Row(name: Self.displayName($0.model), number: value($0), variants: $0.variants ?? [])
+        let costTotal =
+            figure == .cost && breakdown.models.allSatisfy { $0.costUSD != nil }
+            ? breakdown.models.reduce(0.0) { $0 + ($1.costUSD ?? 0) } : 0
+        let shareTotal = costTotal > 0 ? costTotal : breakdown.models.reduce(0.0) { $0 + Double($1.totalTokens) }
+        var rows: [Row] = []
+        var rest: [ModelUsageEntry] = []
+        for model in sorted {
+            let shareValue = costTotal > 0 ? (model.costUSD ?? 0) : Double(model.totalTokens)
+            let isUnattributed =
+                model.model.caseInsensitiveCompare(ModelUsageEntry.unattributedModelName) == .orderedSame
+            if rows.count < Self.topCount, !isUnattributed, shareTotal > 0,
+                shareValue / shareTotal >= Self.minVisibleShare
+            {
+                rows.append(
+                    Row(name: Self.displayName(model.model), number: value(model), variants: model.variants ?? []))
+            } else {
+                rest.append(model)
+            }
         }
-        let rest =
-            Array(sorted.dropFirst(Self.topCount))
-            + breakdown.models.filter { $0.model == ModelUsageEntry.otherModelName }
+        rest += breakdown.models.filter { $0.model == ModelUsageEntry.otherModelName }
         if !rest.isEmpty {
             let numbers = rest.map(value)
             let total = numbers.contains { $0 == nil } ? nil : numbers.compactMap { $0 }.reduce(0, +)

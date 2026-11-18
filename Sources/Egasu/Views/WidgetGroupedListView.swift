@@ -65,7 +65,7 @@ struct WidgetGroupedListView: View {
                 family: family,
                 serviceIssue: container.providerStatus.status(for: family.provider.id).issue,
                 isRevealed: isHovered,
-                onCopyScreenshot: { shareScreenshot(family.accounts.map(\.id)) }
+                onCopyScreenshot: { shareScreenshot(family.id) }
             )
             .highPriorityGesture(familyDragGesture(for: family))
         } account: { account in
@@ -190,18 +190,22 @@ struct WidgetGroupedListView: View {
     }
 
     @discardableResult
-    private func shareScreenshot(_ accountIDs: [String]) -> Bool {
-        guard let live = container.dashboardFamilies().first(where: { $0.accounts.contains { accountIDs.contains($0.id) } }) else { return false }
-        var family = live
-        family.accounts = live.accounts.filter { accountIDs.contains($0.id) }
-        let plans = Dictionary(uniqueKeysWithValues: family.accounts.compactMap { account in
-            dataStore.plan(for: account.id).map { (account.id, $0) }
-        })
-        guard ShareCardRenderer.share(
-            family: family, plans: plans, appearance: colorScheme,
-            blursAccountNames: container.privacy.hideUsageWhileScreenSharing,
-            layoutStyle: layoutStyle
-        ) else { return false }
+    private func shareScreenshot(_ familyID: String) -> Bool {
+        guard
+            let family = container.dashboardFamilies(retainingResetClaims: retainedResetClaims)
+                .first(where: { $0.id == familyID })
+        else { return false }
+        let plans = Dictionary(
+            uniqueKeysWithValues: family.accounts.compactMap { account in
+                dataStore.plan(for: account.id).map { (account.id, $0) }
+            })
+        guard
+            ShareCardRenderer.share(
+                family: family, plans: plans, appearance: colorScheme,
+                blursAccountNames: container.privacy.hideUsageWhileScreenSharing,
+                layoutStyle: layoutStyle
+            )
+        else { return false }
         popover.shareNotice.present(true)
         return true
     }

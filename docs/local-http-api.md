@@ -207,7 +207,7 @@ Claude의 이전 한도를 재사용한 경우, 마지막 정상 한도 조회 �
 지출 행은 계속 동일한 `text` 행으로 직렬화되므로 기존 로컬 연동의 현재 형태 유지.
 
 두 응답 형식 모두에서 Claude·Codex의 `displayName`은 `Claude`·`Codex` 같은 프로바이더명 유지.
-All Usage 레이아웃과 관계없이 같은 `displayName` 사용.
+All Usage 레이아웃과 관계없이 루프백 HTTP 응답에 계정명이나 대시보드의 `{Provider}: {name}` 제목을 포함하지 않음.
 신뢰된 1회 실행 CLI는 같은 스키마를 사용하지만 `displayName`에 해석된 Claude·Codex 계정명을 유지할 수 있음.
 매칭은 이름이 아니라 `providerId`(또는 응답 객체의 키) 기준.
 

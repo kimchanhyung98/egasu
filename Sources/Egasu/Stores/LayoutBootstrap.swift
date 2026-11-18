@@ -33,8 +33,10 @@ enum LayoutBootstrap {
             .union(knownCardIDs).union(legacyCards ?? [])
         var order = copiesFamily
             ? LayoutOrdering.normalizedMetricOrder(savedOrder, registry: registry) : savedOrder
-        if let expanded = persistence.loadExpandedMetrics() {
-            let onDemand = LayoutOrdering.foldingExpansion(expanded)
+        let hasOnDemandState = persistence.hasOnDemandState
+        // Priority 도입 버전은 단일 목록을 표시하므로 저장된 순서 유지.
+        if hasOnDemandState && !persistence.hasStoredPriorityPins {
+            let onDemand = LayoutOrdering.foldingExpansion(persistence.loadExpandedMetrics() ?? [])
                 .union(LayoutOrdering.foldingExpansion(persistence.loadExpandOnEnable() ?? []))
             order = LayoutOrdering.flatteningOnDemand(order, onDemand: onDemand)
         }
@@ -101,7 +103,7 @@ enum LayoutBootstrap {
             placed: placed, providerOrder: providerOrder, metricOrderByProvider: order,
             disabledMetricIDs: disabled, shouldPersistVisibility: mayPersist,
             shouldPersistMetricOrder: order != savedOrder,
-            shouldClearOnDemandState: persistence.hasOnDemandState
+            shouldClearOnDemandState: hasOnDemandState
         )
     }
 }

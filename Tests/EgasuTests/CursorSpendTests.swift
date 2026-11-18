@@ -101,8 +101,10 @@ final class CursorSpendRangeTests: XCTestCase {
         XCTAssertEqual(history.estimatedCost, false)
         let breakdown = try XCTUnwrap(modelBreakdown(lines, "Today"))
         XCTAssertEqual(breakdown.sourceNote, WidgetData.cursorUsageHistoryNote)
-        XCTAssertEqual(Set(breakdown.models.map(\.model)), ["composer-1", "new-model", "Other"])
-        XCTAssertEqual(breakdown.models.first { $0.model == "Other" }?.costUSD, 3)
+        let costRows = UsageBreakdown(title: "Today", breakdown: breakdown).rows(by: .cost)
+        let other = L10n.metrics(ModelUsageEntry.otherModelName)
+        XCTAssertEqual(Set(costRows.map(\.name)), ["composer-1", "new-model", other])
+        XCTAssertEqual(costRows.first { $0.name == other }?.number, 3)
     }
 
     func testModelBreakdownGroupsThinkingEffortSlugsIntoFamilies() throws {

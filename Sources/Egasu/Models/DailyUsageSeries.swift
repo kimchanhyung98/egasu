@@ -76,7 +76,6 @@ struct ProviderUsageHistory: Hashable, Sendable, Codable {
     }
 }
 
-/// spend row와 같은 `.values` line에 붙는 기간 단위 UI용 model breakdown.
 /// 집계 당시 기준일·달력 — 한도 조회의 갱신 시각과 별개로 보관 제목 계산에 사용.
 struct ModelUsagePeriod: Hashable, Sendable, Codable {
     var window: TotalSpendPeriod
@@ -84,7 +83,8 @@ struct ModelUsagePeriod: Hashable, Sendable, Codable {
     var calendar: Calendar
 }
 
-/// header 합계는 해당 row 값과 동일, 개별 model cost는 이 표시 경계에서 반올림.
+/// 지출 행의 `.values`에 연결된 기간별 모델 내역.
+/// 헤더 합계는 지출 행과 같으며 개별 모델 비용은 표시할 때 반올림.
 struct ModelUsageBreakdown: Hashable, Sendable, Codable {
     var totalTokens: Int
     var totalCostUSD: Double?
