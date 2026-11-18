@@ -5,7 +5,6 @@
 "'%@' matches multiple accounts. Use its id from 'egasu account list --json'." = "'%@' matches multiple accounts. Use its id from 'egasu account list --json'.";
 "5 Hours" = "5 Hours";
 "A private workspace for the Bun installer could not be created." = "A private workspace for the Bun installer could not be created.";
-"A saved account display mode isn't supported by this version. Choose Single Card or Separate Cards to update the display setting." = "A saved account display mode isn't supported by this version. Choose Single Card or Separate Cards to update the display setting.";
 "Account scope is not verified. Automatic cancellation is unavailable." = "Account scope is not verified. Automatic cancellation is unavailable.";
 "Account switching is not supported for %@." = "Account switching is not supported for %@.";
 "All %@ account slots are in use. Remove an account first." = "All %@ account slots are in use. Remove an account first.";

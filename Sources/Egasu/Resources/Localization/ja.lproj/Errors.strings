@@ -5,7 +5,6 @@
 "'%@' matches multiple accounts. Use its id from 'egasu account list --json'." = "'%@' に一致するアカウントが複数あります。'egasu account list --json' でアカウントの ID を確認して指定してください。";
 "5 Hours" = "5時間";
 "A private workspace for the Bun installer could not be created." = "Bun インストーラ専用の作業領域を作成できませんでした。";
-"A saved account display mode isn't supported by this version. Choose Single Card or Separate Cards to update the display setting." = "保存されたアカウントの表示方式はこのバージョンではサポートされていません。1 枚のカードまたはアカウント別のカードを選択して設定を更新してください。";
 "Account scope is not verified. Automatic cancellation is unavailable." = "アカウントの範囲が確認されていません。自動キャンセルを利用できません。";
 "Account switching is not supported for %@." = "%@ ではアカウントの切り替えに対応していません。";
 "All %@ account slots are in use. Remove an account first." = "%@ 個のアカウント枠をすべて使用しています。先にアカウントを削除してください。";
