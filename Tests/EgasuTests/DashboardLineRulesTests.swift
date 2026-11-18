@@ -282,13 +282,18 @@ final class DashboardLineRulesTests: XCTestCase {
         state.isPresented = true
         state.setPinned(true)
         state.detailHover(false)
-        state.releasePin(after: .milliseconds(80))
-        try await Task.sleep(for: .milliseconds(15))
+        let hold = Duration.milliseconds(80)
+        let earliestRelease = ContinuousClock.now + hold
+        state.releasePin(after: hold)
         XCTAssertTrue(state.isPresented)
         XCTAssertTrue(state.isPinned)
 
-        let deadline = ContinuousClock.now + .seconds(2)
-        while state.isPresented && ContinuousClock.now < deadline {
+        for _ in 0..<200 where state.isPinned {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(state.isPinned)
+        XCTAssertGreaterThanOrEqual(ContinuousClock.now, earliestRelease)
+        for _ in 0..<200 where state.isPresented {
             try await Task.sleep(for: .milliseconds(10))
         }
         XCTAssertFalse(state.isPresented, "결과를 읽을 시간 뒤에는 포인터 이탈 닫기 복귀")
@@ -298,6 +303,7 @@ final class DashboardLineRulesTests: XCTestCase {
         state.releasePin(after: .milliseconds(30))
         state.dismiss()
         XCTAssertFalse(state.isPresented)
+        XCTAssertFalse(state.isPinned)
         state.isPresented = true
         state.setPinned(true)
         try await Task.sleep(for: .milliseconds(70))
