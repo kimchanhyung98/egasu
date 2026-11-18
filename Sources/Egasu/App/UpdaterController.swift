@@ -4,43 +4,47 @@ import Foundation
 import Observation
 import Sparkle
 
-/// Sparkle standard updater의 wrapper — 앱의 나머지는 Sparkle 비의존 유지.
-/// `SUFeedURL`을 선언한 패키지 bundle에서만 동작 — signed release build 한정, `swift run`·dev build는 dormant.
+/// Sparkle 표준 업데이터 연결 — 앱의 다른 영역은 Sparkle에 의존하지 않음.
+/// SUFeedURL이 있는 패키지 번들에서만 동작 — swift run·개발 빌드는 비활성.
 @MainActor
 @Observable
 final class UpdaterController {
-    /// beta 채널 opt-in의 `UserDefaults` key. SwiftUI 토글과 Sparkle channel delegate가 함께 읽는 단일 source of truth.
+    /// 베타 채널 참여 설정 키 — SwiftUI 토글과 Sparkle 채널 선택이 공유하는 단일 값.
     static let betaChannelDefaultsKey = "betaUpdatesEnabled"
 
-    // delegate 2개 분리 필수 — SPUUpdaterDelegate는 main-actor, SPUStandardUserDriverDelegate는 nonisolated;
-    // 한 클래스 겸용 시 Swift 6에서 한쪽 conformance 파손.
+    // SPUUpdaterDelegate는 MainActor, SPUStandardUserDriverDelegate는 nonisolated이므로 별도 객체 사용.
+    // 두 프로토콜을 한 클래스에서 구현하면 Swift 6 격리 규칙 충돌.
     private let channelDelegate = UpdaterChannelDelegate()
-    private let userDriverDelegate = UpdaterUserDriverDelegate()
+    private var userDriverDelegate: UpdaterUserDriverDelegate?
     private let presentationController: UpdaterPresentationController
-    private var controller: SPUStandardUpdaterController?
+    private var updater: SPUUpdater?
+    private var userDriver: BannerUpdateUserDriver?
     private var canCheckObservation: AnyCancellable?
 
-    /// 실제 updater 동작 여부 (feed 있는 release build). Settings의 Updates 섹션 표시 여부 결정.
+    /// 업데이트 피드가 있는 빌드에서의 활성 상태 — 자동 확인 설정의 활성화 조건.
     private(set) var isActive = false
-    /// Sparkle KVO `canCheckForUpdates`의 미러 — "Check for Updates…" 버튼 활성 상태 주도.
+    /// Sparkle KVO의 canCheckForUpdates 반영 — "Check for Updates…" 버튼 활성화 조건.
     private(set) var canCheckForUpdates = false
-    /// scheduled check가 찾은 업데이트의 표시 버전, 없으면 `nil`.
-    /// Sparkle window 대신 dashboard 배너로 노출 — dockless 앱에서 window가 뒤로 밀리는 문제 회피.
+    /// 자동 확인에서 발견한 업데이트 버전 — 없으면 nil.
+    /// Dock 없는 앱의 창이 뒤에 열리는 문제를 피하도록 대시보드 배너 표시.
     private(set) var availableUpdateVersion: String?
 
-    /// "Beta Updates" 토글 backing. `UserDefaults` 영속; flip 시 update cycle reset — 새 채널이 다음 check에 즉시 반영.
+    /// "Beta Updates" 설정 저장 — 변경 시 확인 주기를 재설정하여 다음 확인부터 새 채널 적용.
     var betaChannelEnabled: Bool {
         didSet {
             UserDefaults.standard.set(betaChannelEnabled, forKey: Self.betaChannelDefaultsKey)
-            controller?.updater.resetUpdateCycle()
+            if userDriver?.dismissDisallowedUpdate() == true {
+                availableUpdateVersion = nil
+            }
+            updater?.resetUpdateCycle()
             AppLog.info(.updates, "channel set to \(self.betaChannelEnabled ? "early access" : "stable")")
         }
     }
 
-    /// "Update Automatically" 토글 backing. Sparkle이 자체 영속 — shadow preference 아닌 pass-through.
+    /// "Update Automatically" 설정 — 별도 사본 없이 Sparkle의 저장값에 직접 연결.
     var automaticallyChecksForUpdates: Bool {
-        get { controller?.updater.automaticallyChecksForUpdates ?? false }
-        set { controller?.updater.automaticallyChecksForUpdates = newValue }
+        get { updater?.automaticallyChecksForUpdates ?? false }
+        set { updater?.automaticallyChecksForUpdates = newValue }
     }
 
     init(presentationController: UpdaterPresentationController = UpdaterPresentationController()) {
@@ -48,14 +52,15 @@ final class UpdaterController {
         self.betaChannelEnabled = UserDefaults.standard.bool(forKey: Self.betaChannelDefaultsKey)
     }
 
-    /// appcast feed가 있는 build에서만 updater 시작. 런치 시 1회 호출 안전.
+    /// 업데이트 피드가 있는 빌드에서만 업데이터 시작 — 중복 호출 무시.
     func start() {
-        guard controller == nil else { return }
+        guard updater == nil else { return }
         guard Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil else {
             AppLog.info(.updates, "disabled: no SUFeedURL (unbundled or dev build)")
             return
         }
-        // driver delegate는 nonisolated, callback은 main thread — hop으로 배너 상태를 이 controller에 publish.
+        let userDriverDelegate = UpdaterUserDriverDelegate()
+        // nonisolated 델리게이트의 메인 스레드 콜백을 메인 액터로 연결하여 배너 상태 반영.
         userDriverDelegate.onUpdateFound = { [weak self] version in
             self?.availableUpdateVersion = version
             AppLog.info(.updates, "scheduled check found \(version); showing in-app banner")
@@ -69,16 +74,47 @@ final class UpdaterController {
         userDriverDelegate.onUpdateSessionFinished = { [weak self] in
             self?.presentationController.returnToMenuBar()
         }
-        let controller = SPUStandardUpdaterController(
-            startingUpdater: true,
-            updaterDelegate: channelDelegate,
-            userDriverDelegate: userDriverDelegate
+        channelDelegate.isCurrentUpdater = { [weak self] updater in self?.updater === updater }
+        channelDelegate.onUpdateCycleFinished = { [weak self] in
+            guard let self, self.userDriver?.requiresFreshUpdater == true else { return }
+            self.canCheckObservation = nil
+            self.updater = nil
+            self.userDriver = nil
+            self.userDriverDelegate = nil
+            self.isActive = false
+            self.canCheckForUpdates = false
+            self.start()
+        }
+        let userDriver = BannerUpdateUserDriver(
+            standardDriver: SPUStandardUserDriver(hostBundle: .main, delegate: userDriverDelegate),
+            isBetaChannelEnabled: { [weak self] in self?.betaChannelEnabled ?? false }
         )
-        self.controller = controller
+        userDriverDelegate.isPendingScheduledUpdate = { [weak self, weak userDriver] itemID in
+            guard let userDriver, self?.userDriver === userDriver else { return false }
+            return userDriver.isPendingScheduledUpdate(itemID)
+        }
+        let updater = SPUUpdater(
+            hostBundle: .main, applicationBundle: .main,
+            userDriver: userDriver, delegate: channelDelegate
+        )
+        self.userDriverDelegate = userDriverDelegate
+        do {
+            try updater.start()
+        } catch {
+            AppDiagnostics.failure(.updateCheck, error: error, localContext: "Updater failed to start")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                guard let self else { return }
+                self.presentationController.bringToFront(reason: "updater failed to start")
+                userDriver.showUpdaterError(error) { userDriver.dismissUpdateInstallation() }
+            }
+            return
+        }
+        self.updater = updater
+        self.userDriver = userDriver
         isActive = true
-        // Sparkle KVO를 `@Observable` 상태로 bridge. main queue 강제 delivery — 아래 main-actor 변경이 항상 유효.
-        canCheckForUpdates = controller.updater.canCheckForUpdates
-        canCheckObservation = controller.updater.publisher(for: \.canCheckForUpdates)
+        // Sparkle KVO를 Observable 상태로 연결 — 메인 큐 전달로 메인 액터 변경 보장.
+        canCheckForUpdates = updater.canCheckForUpdates
+        canCheckObservation = updater.publisher(for: \.canCheckForUpdates)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] value in
                 MainActor.assumeIsolated { self?.canCheckForUpdates = value }
@@ -86,18 +122,18 @@ final class UpdaterController {
         AppLog.info(.updates, "started (feed present)")
     }
 
-    /// 사용자 시작 check — Sparkle 표준 UI 표시.
+    /// 사용자의 업데이트 확인 요청 — Sparkle 표준 화면 표시.
     func checkForUpdates() {
-        guard let controller else { return }
-        // Sparkle에 제어를 넘기기 전 선-foreground — activation-policy 전환이 checking window를 뒤에 남기지 않도록.
-        // 다음 run loop로 넘겨 activation-policy 전환 직후 checking window가 뒤에 남는 문제 회피.
+        guard let updater else { return }
+        // Sparkle에 제어를 넘기기 전에 앱을 전면으로 전환.
+        // 다음 실행 루프에서 확인 창 표시 — 앱 활성화 정책 변경 직후 창이 뒤에 열리는 현상 방지.
         presentationController.bringToFront(reason: "user initiated check")
         DispatchQueue.main.async {
-            controller.checkForUpdates(nil)
+            updater.checkForUpdates()
         }
     }
 
-    /// 배너의 install 액션 — 사용자 시작 check로 라우팅, 업데이트가 유효하면 Sparkle이 frontmost로 재표시.
+    /// 배너의 설치 요청을 사용자 확인 경로로 전달 — 유효한 업데이트는 Sparkle이 전면 표시.
     func installAvailableUpdate() {
         checkForUpdates()
     }
@@ -137,15 +173,17 @@ final class UpdaterController {
         return nil
     }
 
-    /// 배너 dismiss — snooze 성격. 다음 scheduled check가 재노출 (영구 skip은 Sparkle window 담당).
+    /// 배너 닫기는 일시 보류 응답 — 세션 종료 뒤 Sparkle의 다음 자동 확인에서 다시 알림.
     func dismissAvailableUpdate() {
+        guard availableUpdateVersion != nil else { return }
         availableUpdateVersion = nil
+        userDriver?.dismissPendingUpdate()
     }
 }
 
-/// dockless 메뉴 바 앱에서 Sparkle 표시에 필요한 좁은 AppKit 경계 소유.
-/// `NSApplication.activate()`는 다른 앱이 활성화된 상태의 dockless 앱에서 불안정해 `ignoringOtherApps` API 사용.
-/// 주입 closure로 macOS focus 자동화 없이 단위 테스트 가능.
+/// Dock 없는 메뉴 막대 앱의 Sparkle 창 표시를 위한 AppKit 제어.
+/// 다른 앱이 활성화된 상태에서도 전면 표시하도록 ignoringOtherApps 사용.
+/// 주입된 클로저로 macOS 포커스 자동화 없이 동작 검증.
 @MainActor
 final class UpdaterPresentationController {
     private let activationPolicy: @MainActor () -> NSApplication.ActivationPolicy
@@ -197,37 +235,52 @@ final class UpdaterPresentationController {
     }
 }
 
-/// 채널 선택 delegate. `SPUUpdaterDelegate`가 Sparkle에서 main-actor라 이 delegate도 main-actor — defaults key 직접 접근 가능.
+/// Sparkle의 MainActor 채널 선택 델리게이트 — 설정 키에 직접 접근.
 @MainActor
-private final class UpdaterChannelDelegate: NSObject, SPUUpdaterDelegate {
-    /// 기본은 stable 채널. `["beta"]` 반환은 pre-release 추가 opt-in — Sparkle이 기본 채널을 항상 포함해 stable 릴리스 미차단.
+final class UpdaterChannelDelegate: NSObject, SPUUpdaterDelegate {
+    var isCurrentUpdater: (SPUUpdater) -> Bool = { _ in true }
+    var onUpdateCycleFinished: (() -> Void)?
+
+    func updater(_ updater: SPUUpdater, mayPerform updateCheck: SPUUpdateCheck) throws {
+        guard isCurrentUpdater(updater) else {
+            throw NSError(
+                domain: SUSparkleErrorDomain, code: Int(SUError.installationCanceledError.rawValue),
+                userInfo: [NSLocalizedDescriptionKey: "The update session was replaced."]
+            )
+        }
+    }
+
+    /// 기본은 정식 채널 — beta 반환 시 베타를 추가하며 정식 릴리스도 계속 포함.
     func allowedChannels(for updater: SPUUpdater) -> Set<String> {
         UserDefaults.standard.bool(forKey: UpdaterController.betaChannelDefaultsKey) ? ["beta"] : []
     }
 
-    /// update cycle 결과 기록 — 업데이트 없음·사용자 취소는 INFO, 실패는 공통 진단 기록.
+    /// 업데이트 확인 결과 기록 — 업데이트 없음·사용자 취소는 INFO, 실패는 공통 진단 기록.
     func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: Error?) {
+        guard isCurrentUpdater(updater) else { return }
         UpdaterController.recordUpdateCycle(error: error)
+        onUpdateCycleFinished?()
     }
 }
 
-/// accessory 앱 activation 처리 delegate. `SPUStandardUserDriverDelegate`가 Sparkle에서 nonisolated —
-/// callback은 main thread라 `NSApp` 접근에 main-actor assume.
+/// 메뉴 막대 앱의 활성화 처리 델리게이트 — Sparkle 프로토콜은 nonisolated.
+/// 콜백은 메인 스레드에서 실행되므로 NSApp 접근 시 MainActor.assumeIsolated 사용.
 final class UpdaterUserDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
-    /// scheduled check의 발견 버전을 `UpdaterController`(main actor)에 publish — dashboard 배너로 렌더.
+    /// 자동 확인에서 발견한 버전을 메인 액터의 UpdaterController에 전달하여 배너 표시.
     var onUpdateFound: (@MainActor @Sendable (String) -> Void)?
+    var isPendingScheduledUpdate: (@MainActor @Sendable (ObjectIdentifier) -> Bool)?
     /// 배너 해제 — 사용자가 업데이트에 주의를 주었거나 세션 종료.
     var onUpdateResolved: (@MainActor @Sendable () -> Void)?
-    /// Sparkle의 update UI 표시 직전 foreground 재확보.
+    /// Sparkle 업데이트 화면 표시 직전에 전면 위치 확보.
     var onUpdateWillShow: (@MainActor @Sendable () -> Void)?
-    /// 세션 종료 후 dockless activation policy 복원.
+    /// 세션 종료 후 Dock 없는 앱 활성화 정책 복원.
     var onUpdateSessionFinished: (@MainActor @Sendable () -> Void)?
 
-    /// "gentle" reminder opt-in — scheduled check에서 Sparkle의 focus 탈취 alert 방지.
+    /// 자동 확인 알림이 포커스를 가져가지 않도록 조용한 알림 사용.
     var supportsGentleScheduledUpdateReminders: Bool { true }
 
-    /// scheduled update 표시를 전면 인수 — dockless 앱은 Sparkle window가 뒤로 밀리므로 `onUpdateFound` 경유 in-popover 배너로 대체.
-    /// 사용자 시작 check는 이 메서드 미경유 — Sparkle이 직접 전면 표시.
+    /// 자동 업데이트 알림을 onUpdateFound 경유 패널 배너로 표시 — Dock 없는 앱에서 창이 뒤에 열리는 현상 방지.
+    /// 사용자가 시작한 확인은 이 메서드를 거치지 않고 Sparkle이 직접 전면 표시.
     func standardUserDriverShouldHandleShowingScheduledUpdate(
         _ update: SUAppcastItem,
         andInImmediateFocus immediateFocus: Bool
@@ -235,28 +288,31 @@ final class UpdaterUserDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
         false
     }
 
-    /// update UI 표시 동안만 regular 앱 전환 — accessory 앱은 Sparkle window가 focus 없이 뒤에 열림.
-    /// Sparkle이 실제 window를 보일 때(`handleShowingUpdate`)만 전환 — 거절된 scheduled update는 배너 publish만
-    /// (그때 `.regular` 전환은 빈 Dock icon flash).
+    /// 업데이트 화면을 표시하는 동안만 일반 앱으로 전환 — accessory 상태의 창 포커스 문제 방지.
+    /// handleShowingUpdate가 true여서 실제 창을 표시할 때만 전환.
+    /// 배너만 표시할 때는 Dock 아이콘이 잠깐 나타나지 않도록 기존 정책 유지.
     func standardUserDriverWillHandleShowingUpdate(
         _ handleShowingUpdate: Bool,
         forUpdate update: SUAppcastItem,
         state: SPUUserUpdateState
     ) {
         let version = update.displayVersionString
-        // main-actor closure가 nonisolated `self` 대신 Sendable callback만 캡처하도록 hoist (Swift 6 region isolation).
+        let itemID = ObjectIdentifier(update)
+        // Swift 6 격리 규칙 준수 — 메인 액터 클로저에는 nonisolated self 대신 Sendable 콜백만 캡처.
         let onUpdateFound = onUpdateFound
+        let isPendingScheduledUpdate = isPendingScheduledUpdate
         let onUpdateWillShow = onUpdateWillShow
         MainActor.assumeIsolated {
             guard handleShowingUpdate else {
-                onUpdateFound?(version)
+                // Sparkle이 알림을 다음 실행 루프로 전달하므로 그 사이 철회된 제안은 표시하지 않음.
+                if isPendingScheduledUpdate?(itemID) == true { onUpdateFound?(version) }
                 return
             }
             onUpdateWillShow?()
         }
     }
 
-    /// 사용자가 이 업데이트의 Sparkle window에 도달 — 배너 임무 완료, 해제.
+    /// 사용자가 Sparkle 업데이트 창을 확인하면 배너 해제.
     func standardUserDriverDidReceiveUserAttention(forUpdate update: SUAppcastItem) {
         let onUpdateResolved = onUpdateResolved
         MainActor.assumeIsolated { () -> Void in
@@ -264,7 +320,7 @@ final class UpdaterUserDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
         }
     }
 
-    /// update 세션 종료 시 메뉴 바 전용 앱으로 복귀 + 잔여 in-app indicator 해제.
+    /// 업데이트 세션 종료 시 메뉴 막대 전용 상태 복원과 남은 앱 내 표시 해제.
     func standardUserDriverWillFinishUpdateSession() {
         let onUpdateResolved = onUpdateResolved
         let onUpdateSessionFinished = onUpdateSessionFinished

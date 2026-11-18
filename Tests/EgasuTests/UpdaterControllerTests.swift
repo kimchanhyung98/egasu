@@ -65,6 +65,48 @@ final class UpdaterUserDriverDelegateTests: XCTestCase {
 }
 
 @MainActor
+final class UpdaterChannelDelegateTests: XCTestCase {
+    func testReplacedUpdaterCannotStartChecksOrFinishTheCurrentCycle() throws {
+        let delegate = UpdaterChannelDelegate()
+        let old = makeUpdater(delegate: delegate)
+        let current = makeUpdater(delegate: delegate)
+        delegate.isCurrentUpdater = { $0 === current }
+        var finishedCount = 0
+        delegate.onUpdateCycleFinished = { finishedCount += 1 }
+
+        XCTAssertThrowsError(try delegate.updater(old, mayPerform: .updatesInBackground)) { error in
+            XCTAssertEqual((error as NSError).domain, SUSparkleErrorDomain)
+            XCTAssertEqual((error as NSError).code, Int(SUError.installationCanceledError.rawValue))
+        }
+        XCTAssertNoThrow(try delegate.updater(current, mayPerform: .updatesInBackground))
+        delegate.updater(old, didFinishUpdateCycleFor: .updatesInBackground, error: nil)
+        XCTAssertEqual(finishedCount, 0)
+        delegate.updater(current, didFinishUpdateCycleFor: .updatesInBackground, error: nil)
+        XCTAssertEqual(finishedCount, 1)
+    }
+
+    func testReplacingTheStandardDelegateReleasesOldPresentationCallbacks() {
+        weak var oldDelegate: UpdaterUserDriverDelegate?
+        var standard: SPUStandardUserDriver?
+        do {
+            let delegate = UpdaterUserDriverDelegate()
+            oldDelegate = delegate
+            delegate.onUpdateResolved = { XCTFail("A replaced delegate must not clear the current banner") }
+            standard = SPUStandardUserDriver(hostBundle: .main, delegate: delegate)
+        }
+
+        XCTAssertNil(oldDelegate)
+        standard?.dismissUpdateInstallation()
+    }
+
+    private func makeUpdater(delegate: UpdaterChannelDelegate) -> SPUUpdater {
+        SPUUpdater(
+            hostBundle: .main, applicationBundle: .main,
+            userDriver: SPUStandardUserDriver(hostBundle: .main, delegate: nil), delegate: delegate)
+    }
+}
+
+@MainActor
 final class UpdaterCycleDiagnosticsTests: XCTestCase {
     func testWrappedDownloadCancellationsRemainCancelled() {
         let diagnostics = DiagnosticEventRecorder()
