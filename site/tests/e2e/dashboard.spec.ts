@@ -253,6 +253,30 @@ test('a saved dashboard without providers only shows its provider empty state', 
   await expect(app.locator('[data-priority-copy]')).toBeHidden();
 });
 
+test('the single-card account picker stays available when all its metrics are hidden', async ({ page }) => {
+  await openHome(page);
+  await allUsage(page);
+  await openSettings(page);
+  await chooseSetting(page, 'Usage Cards', 'Single Card');
+  const app = page.locator('[data-mock]');
+  const back = app.getByRole('button', { name: 'Back', exact: true });
+  await back.click();
+  const first = app.locator('[data-card="claude-account-1"]');
+  const actions = app.getByRole('menu', { name: 'Metric Actions' });
+  const visible = await first.locator('[data-row]:visible')
+    .evaluateAll((rows) => rows.map((row) => row.getAttribute('data-row')));
+  expect(visible.length).toBeGreaterThan(0);
+  for (const id of visible) {
+    await first.locator(`[data-row="${id}"]`).click({ button: 'right' });
+    await actions.getByRole('menuitem', { name: 'Hide', exact: true }).click();
+  }
+  await expect(first.getByText('No metrics to show', { exact: true })).toBeVisible();
+  await first.getByRole('button', { name: 'Claude Account', exact: true }).click();
+  await first.getByRole('menuitemradio', { name: 'Account 2', exact: true }).click();
+  await expect(first).toBeHidden();
+  await expect(app.locator('[data-card="claude-account-2"] [data-metric="claude.weekly"]')).toBeVisible();
+});
+
 test('keyboard unpinning restores focus when the Priority row disappears', async ({ page }) => {
   await openHome(page);
   await allUsage(page);
@@ -270,4 +294,79 @@ test('keyboard unpinning restores focus when the Priority row disappears', async
   await menu.getByRole('menuitem', { name: 'Unpin', exact: true }).press('Enter');
   await expect(row).toBeHidden();
   await expect(priority).toBeFocused();
+});
+
+test('the saved default tab applies on load and ordinary tab changes remain temporary', async ({ page }) => {
+  await page.addInitScript(() => {
+    const key = 'openusage.site.preview.v1';
+    if (!localStorage.getItem(key)) {
+      localStorage.setItem(key, JSON.stringify({
+        preferences: { defaultTab: 'All Usage' }, activeAccounts: {}, viewedAccounts: {},
+      }));
+    }
+  });
+  await openHome(page);
+  const app = page.locator('[data-mock]');
+  const usage = app.getByRole('tab', { name: 'All Usage', exact: true });
+  const priority = app.getByRole('tab', { name: 'Priority', exact: true });
+  await expect(usage).toHaveAttribute('aria-selected', 'true');
+
+  await priority.click();
+  await app.locator('[data-priority-key="codex.weekly@account-1"] [data-toggle-meter]').click();
+  await expect(priority).toHaveAttribute('aria-selected', 'true');
+  await page.reload();
+  await expect(usage).toHaveAttribute('aria-selected', 'true');
+});
+
+for (const period of ['yesterday', 'last30']) {
+  test(`spend focus falls back to the center when Cursor leaves ${period}`, async ({ page }) => {
+    await openHome(page);
+    const card = page.locator('[data-mock] .am-spend-card');
+    await card.locator(`[data-period="${period}"]`).click();
+    const cursor = card.locator(`[data-state="${period}:cost"] [data-spend-provider="cursor"]`);
+    await expect(cursor).toBeVisible();
+    await cursor.press('Enter');
+
+    const costPerMtok = card.locator(`[data-state="${period}:costPerMtok"]`);
+    await expect(costPerMtok).toBeVisible();
+    await expect(costPerMtok.locator('[data-spend-provider="cursor"]')).toHaveCount(0);
+    await expect(costPerMtok.locator('.am-ring-center')).toBeFocused();
+
+    await page.keyboard.press('Space');
+    await expect(card.locator(`[data-state="${period}:tokens"] .am-ring-center`)).toBeFocused();
+  });
+}
+
+test('account Actions reports its menu state and preserves the active account history', async ({ page }) => {
+  await openHome(page);
+  await allUsage(page);
+  const app = page.locator('[data-mock]');
+  await expect(app.locator('[data-family="antigravity"]')).toBeVisible();
+  const first = app.locator('[data-card="codex-account-1"]');
+  const second = app.locator('[data-card="codex-account-2"]');
+  const more = second.getByRole('button', { name: 'Codex Actions', exact: true });
+  const menu = second.locator('.am-account-actions');
+  const history = ['codex.trend', 'codex.today', 'codex.yesterday', 'codex.last30'];
+  for (const id of history) {
+    await expect(first.locator(`[data-row="${id}"]`)).toBeVisible();
+    await expect(second.locator(`[data-row="${id}"]`)).toBeHidden();
+  }
+  await expect(more).toHaveAttribute('aria-haspopup', 'menu');
+  await expect(more).toHaveAttribute('aria-expanded', 'false');
+  await expect(more).toHaveAttribute('aria-controls', (await menu.getAttribute('id'))!);
+  await more.click();
+  await expect(menu).toBeVisible();
+  await expect(more).toHaveAttribute('aria-expanded', 'true');
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(more).toHaveAttribute('aria-expanded', 'false');
+  await expect(more).toBeFocused();
+  await second.locator('.am-account-caption').press('Shift+F10');
+  await expect(more).toHaveAttribute('aria-expanded', 'true');
+  await menu.getByRole('menuitem', { name: 'Use Codex: Account 2', exact: true }).click();
+  await app.getByRole('dialog').getByRole('button', { name: 'Switch Account', exact: true }).click();
+  for (const id of history) {
+    await expect(first.locator(`[data-row="${id}"]`)).toBeHidden();
+    await expect(second.locator(`[data-row="${id}"]`)).toBeVisible();
+  }
 });

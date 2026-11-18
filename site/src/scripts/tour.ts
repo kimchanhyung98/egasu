@@ -1,5 +1,6 @@
 import { tourCamera, tourGeometry } from '../data/tour';
 import type { Tab } from '../data/copy';
+import { setDashboardTab } from './dashboard';
 import { initTourScroll } from './tour-scroll';
 
 type Stage = Tab['id'];
@@ -79,9 +80,7 @@ export function initFeatureTour(): void {
   const showDashboardFeature = (stage: Stage): void => {
     if (stage === 'soft-limit') mock.dataset.softLimit = 'Weekly';
     const tab = stage === 'reset-watch' || stage === 'soft-limit' ? 'All Usage' : 'Priority';
-    mock.dataset.dashboardTab = tab;
-    mock.querySelectorAll<HTMLElement>('[data-dashboard-panel]').forEach((panel) => { panel.hidden = panel.dataset.dashboardPanel !== tab; });
-    mock.querySelectorAll<HTMLElement>('button[data-dashboard-tab][role="tab"]').forEach((button) => { button.setAttribute('aria-selected', String(button.dataset.dashboardTab === tab)); });
+    setDashboardTab(mock, tab);
     if (stage === 'soft-limit' || stage === 'reset-watch') {
       const body = get('[data-scr="dashboard"] .am-body');
       body.scrollTop = body.scrollHeight;
@@ -163,7 +162,6 @@ export function initFeatureTour(): void {
         delete section.dataset.tourHighlight;
         setPhase('statistics');
       } else if (stage === 'reset-watch' || stage === 'soft-limit') {
-        showDashboardFeature(stage);
         setPhase(stage);
       } else if (stage === 'accounts') {
         showAccount(false);

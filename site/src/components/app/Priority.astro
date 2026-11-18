@@ -3,7 +3,10 @@ import { initialPreviewState } from '../../data/preview-state';
 import { priorityBoard, dashboardLines } from '../../data/preview-dashboard';
 import { providers } from '../../data/providers';
 import { accountFamilies } from '../../data/accounts';
+interface Props { providerIDs: string[] }
+const { providerIDs } = Astro.props;
 const state = initialPreviewState();
+state.enabledProviders = state.enabledProviders.filter((provider) => providerIDs.includes(provider));
 const board = priorityBoard(state);
 const lines = dashboardLines(state).filter((line) => line.row.kind !== 'trend');
 const groups = [

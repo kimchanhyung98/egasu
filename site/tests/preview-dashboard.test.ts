@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { initialPreviewState, setMetric, activateAccount, changePreference, restorePreviewState, moveMetric, orderedMetrics, selectDashboardAccount, setCustomizeMetric, customizeMetricStatus, setProviderEnabled } from '../src/data/preview-state.ts';
+import { initialPreviewState, setMetric, activateAccount, changePreference, restorePreviewState, selectDashboardAccount, setCustomizeMetric, customizeMetricStatus, setProviderEnabled } from '../src/data/preview-state.ts';
 import { cards } from '../src/data/dashboard.ts';
 import { metricID } from '../src/data/metrics.ts';
 import { priorityBoard, dashboardLines, menuBarItems } from '../src/data/preview-dashboard.ts';
@@ -19,6 +19,22 @@ test('Priority separates low and spent limits and keeps pinned limits in one sec
   assert.ok(!board.runningOut.some((line) => line.key === 'codex.weekly@account-1'));
   assert.ok(!board.usedUp.some((line) => line.key === 'claude.fable@account-1'));
   assert.equal(board.allClear, false, 'Pinned warnings still suppress All Clear');
+});
+
+test('Priority distinguishes hidden limits from providers with no reported limits', () => {
+  let state = initialPreviewState();
+  for (const line of dashboardLines(state)) {
+    if (line.row.kind === 'bounded') state = setMetric(state, line.id, line.accountID, 'hide');
+  }
+  assert.ok(!dashboardLines(state).some((line) => line.row.kind === 'bounded'));
+  assert.equal(priorityBoard(state).allClear, false);
+  assert.equal(priorityBoard(state).noLimits, false);
+
+  for (const provider of state.enabledProviders) state = setProviderEnabled(state, provider, false);
+  assert.equal(priorityBoard(state).noLimits, true);
+  const pending = priorityBoard(setProviderEnabled(state, 'cursor', true));
+  assert.deepEqual(pending.pending, ['cursor']);
+  assert.equal(pending.noLimits, false);
 });
 
 test('hiding a metric unpins only that account while shared settings survive switching', () => {
@@ -88,13 +104,21 @@ test('thresholds remain ordered and update Priority without changing sample valu
   assert.ok(!priorityBoard(state).runningOut.some((line) => line.key === 'claude.weekly@account-1'));
 });
 
-test('metric ordering stays scoped and cannot move account rows into shared rows', () => {
-  let state = moveMetric(initialPreviewState(), 'claude', 'account-1', 'claude.weekly', 'claude.session');
-  assert.equal(orderedMetrics(state, 'claude', 'account-1')[0].id, 'claude.weekly');
-  assert.equal(orderedMetrics(state, 'claude', 'account-2')[0].id, 'claude.session');
-  assert.equal(moveMetric(state, 'claude', 'account-1', 'claude.weekly', 'claude.today'), state);
-  state = activateAccount(state, 'claude', 'account-2');
-  assert.equal(orderedMetrics(state, 'claude', 'account-1')[0].id, 'claude.weekly');
+test('restored metric order is applied to the saved account and keeps shared slots', () => {
+  const initial = initialPreviewState();
+  const state = restorePreviewState({
+    ...initial,
+    metricOrder: { 'claude:account-1': ['claude.weekly'] },
+  });
+  const accountOrder = (preview: typeof initial, accountID: string) => dashboardLines(preview)
+    .filter((line) => line.provider === 'claude' && line.accountID === accountID).map((line) => line.id);
+  const original = accountOrder(initial, 'account-1');
+  assert.deepEqual(accountOrder(state, 'account-1'), ['claude.weekly', 'claude.session', ...original.slice(2)]);
+  assert.deepEqual(accountOrder(state, 'account-2'), accountOrder(initial, 'account-2'));
+  assert.throws(() => restorePreviewState({
+    ...initial,
+    metricOrder: { 'claude:account-1': ['claude.today'] },
+  }));
 });
 
 
@@ -116,12 +140,19 @@ test('retained single-card choices only change the viewed account and keep the s
   state = selectDashboardAccount(state, 'codex', 'account-2');
   const viewed = dashboardLines(state).filter((line) => line.provider === 'codex');
   assert.deepEqual([...new Set(viewed.map((line) => line.accountID))], ['account-2']);
-  assert.equal(viewed.find((line) => line.id === 'codex.resetWatch')?.accountID, 'account-2');
+  const viewedForecast = viewed.find((line) => line.id === 'codex.resetWatch');
+  assert.equal(viewedForecast?.accountID, 'account-2');
+  assert.deepEqual(viewedForecast?.row, {
+    kind: 'forecast', label: 'Reset Watch', probability: 65, voteShare: 72,
+    resetAbsolute: 'By Oct 27 at 10:00', resetRelative: 'Within 18h 30m',
+  });
   assert.equal(state.activeAccounts.codex, 'account-1');
   state = changePreference(state, 'usageCards', 'Separate Cards');
   const separate = dashboardLines(state).filter((line) => line.provider === 'codex');
   assert.deepEqual([...new Set(separate.map((line) => line.accountID))], ['account-1', 'account-2']);
-  assert.equal(separate.find((line) => line.id === 'codex.resetWatch')?.accountID, 'account-1');
+  const activeForecast = separate.find((line) => line.id === 'codex.resetWatch');
+  assert.equal(activeForecast?.accountID, 'account-1');
+  assert.deepEqual(activeForecast?.row, viewedForecast?.row);
 });
 
 test('legacy Customize still hides both account rows and restores their actual Priority eligibility', () => {
@@ -131,8 +162,12 @@ test('legacy Customize still hides both account rows and restores their actual P
   assert.deepEqual(customizeMetricStatus(state, 'codex.weekly'), { shown: false, pinned: false });
   assert.ok(!dashboardLines(state).some((line) => line.id === 'codex.weekly'));
   assert.ok(!priorityBoard(state).pinned.some((line) => line.id === 'codex.weekly'));
+  assert.ok(!priorityBoard(state).runningOut.some((line) => line.id === 'codex.weekly'));
   state = setCustomizeMetric(state, 'codex.weekly', 'show');
   assert.equal(dashboardLines(state).filter((line) => line.id === 'codex.weekly').length, 2);
+  const shown = priorityBoard(state);
+  assert.deepEqual(shown.runningOut.filter((line) => line.id === 'codex.weekly').map((line) => line.key), ['codex.weekly@account-1']);
+  assert.ok(!shown.pinned.some((line) => line.id === 'codex.weekly'));
   const disabled = setProviderEnabled(state, 'codex', false);
   assert.ok(!dashboardLines(disabled).some((line) => line.provider === 'codex'));
   assert.ok(priorityBoard(setProviderEnabled(disabled, 'cursor', true)).pending.includes('cursor'));

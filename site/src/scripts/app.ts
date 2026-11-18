@@ -196,9 +196,10 @@ function selectSpend(clicked: HTMLButtonElement, kind: 'period' | 'metric'): voi
   renderSpend(card);
   if (kind === 'metric') {
     const state = card.querySelector<HTMLElement>('[data-state]:not([hidden])')!;
-    (clicked.dataset.spendProvider
-      ? state.querySelector<HTMLElement>(`[data-spend-provider="${clicked.dataset.spendProvider}"]`)
-      : state.querySelector<HTMLElement>('[data-cycle-spend]'))?.focus({ preventScroll: true });
+    const provider = clicked.dataset.spendProvider;
+    const matchingProvider = provider ? state.querySelector<HTMLButtonElement>(`[data-spend-provider="${provider}"]`) : null;
+    const next = matchingProvider ?? state.querySelector<HTMLButtonElement>('[data-cycle-spend]:not([data-spend-provider])');
+    next?.focus({ preventScroll: true });
   }
   try { localStorage.setItem(spendKey, JSON.stringify({ period: card.dataset.spendPeriod, metric: card.dataset.spendMetric })); }
   catch (error) { console.warn('Spend selection could not be saved', error); }

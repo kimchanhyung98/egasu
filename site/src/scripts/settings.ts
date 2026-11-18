@@ -211,6 +211,9 @@ export function initPreviewSettings(refresh: () => void, showNotice: typeof noti
   } catch (error) {
     report(error, 'Saved preview settings could not be loaded. This page is using the demo defaults.');
   }
+  document.querySelectorAll<HTMLElement>('[data-mock]').forEach((mock) => {
+    mock.dataset.dashboardTab = String(state.preferences.defaultTab);
+  });
   document.querySelectorAll<HTMLDialogElement>('[data-account-dialog]').forEach((dialog) => {
     dialog.addEventListener('cancel', (event) => {
       event.preventDefault();

@@ -125,15 +125,14 @@ const rowSelections = new WeakMap<HTMLElement, RowSelection>();
 function openContext(target: Element, event: Event): void {
   const mock = root(target);
   if (!mock) return;
-  const provider = target.closest<HTMLElement>('[data-provider-header]');
-  const account = target.closest<HTMLElement>('[data-account-actions-trigger]');
-  if (provider || account) {
-    const trigger = (provider ?? account)!;
-    const id = trigger.getAttribute('aria-controls');
+  const menuTrigger = target.closest<HTMLElement>('[data-provider-header]')
+    ?? target.closest('.am-account-caption')?.querySelector<HTMLButtonElement>('[data-account-actions-trigger]');
+  if (menuTrigger) {
+    const id = menuTrigger.getAttribute('aria-controls');
     const menu = id && mock.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
     if (!menu) return;
     event.preventDefault();
-    openMenu(menu, trigger);
+    openMenu(menu, menuTrigger);
     return;
   }
   const row = target.closest<HTMLElement>('[data-row], [data-line-id]');

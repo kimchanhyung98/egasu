@@ -21,14 +21,20 @@ export function renderDashboard(mock: HTMLElement, state: PreviewState): void {
       if (line) row.querySelector<HTMLElement>('[data-severity]')?.setAttribute('data-severity', line.severity);
       content.append(row);
     });
-    section.hidden = !state.enabledProviders.includes(family) || !own.length;
+    const canSwitchAccount = state.preferences.usageCards === 'Single Card'
+      && state.viewedAccounts[family] === accountID
+      && section.querySelector('[data-account-selector]') !== null;
+    section.hidden = !state.enabledProviders.includes(family) || (!own.length && !canSwitchAccount);
+    content.hidden = !own.length;
+    const empty = section.querySelector<HTMLElement>('[data-account-empty]');
+    if (empty) empty.hidden = own.length !== 0;
     section.dataset.inactiveAccount = String(accountID !== 'default' && state.activeAccounts[family] !== accountID);
   });
   mock.querySelectorAll<HTMLElement>('[data-family]').forEach((family) => {
     const id = family.dataset.family!;
-    const hasData = lines.some((line) => line.provider === id);
+    const hasVisibleAccount = family.querySelector('.am-account-section:not([hidden])') !== null;
     const pending = board.pending.includes(id);
-    family.hidden = !state.enabledProviders.includes(id) || (!hasData && !pending);
+    family.hidden = !state.enabledProviders.includes(id) || (!hasVisibleAccount && !pending);
     family.querySelector<HTMLElement>('[data-family-notice]')!.hidden = !pending;
     const container = family.querySelector<HTMLElement>('.am-family-accounts')!;
     const order = state.accountOrder[id] ?? ['default'];

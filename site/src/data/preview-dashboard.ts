@@ -23,6 +23,10 @@ export function quotaSeverity(row: BoundedRow, preferences: PreviewState['prefer
     : left <= parseInt(String(preferences.warning)) ? 'warning' : 'normal';
 }
 
+function reportsLimit(row: Row): row is BoundedRow {
+  return row.kind === 'bounded' && row.limit > 0 && !row.noData;
+}
+
 /** 공개 예시만 계산. 프로바이더 API·로컬 인증을 읽지 않음. */
 export function dashboardLines(state: PreviewState, input: Card[] = cards.flatMap(accountCardVariants)): DashboardLine[] {
   return state.providerOrder.flatMap((provider) => {
@@ -42,7 +46,7 @@ export function dashboardLines(state: PreviewState, input: Card[] = cards.flatMa
         if ((row.kind === 'text' && row.values.includes('No data')) || (row.kind === 'bounded' && row.noData)) return [];
         const line: DashboardLine = { id, key, cardID: card.id, provider, accountID, row,
           pinned: state.pinnedMetrics.includes(key), severity: 'normal', rank: Infinity };
-        if (row.kind === 'bounded' && row.limit > 0) {
+        if (reportsLimit(row)) {
           line.severity = quotaSeverity(row, state.preferences);
           const fraction = row.used / row.limit;
           const period = softLimitWindows[id] === 'Weekly' ? 168 : 5;
@@ -64,16 +68,19 @@ export function dashboardLines(state: PreviewState, input: Card[] = cards.flatMa
 export function priorityBoard(state: PreviewState) {
   const lines = dashboardLines(state);
   const ranked = [...lines].sort((a, b) => a.rank - b.rank);
-  const pending = state.enabledProviders.filter((provider) => !cards.some((card) => card.provider === provider));
+  const enabledCards = cards.filter((card) => state.enabledProviders.includes(card.provider));
+  const pending = state.enabledProviders.filter((provider) => !enabledCards.some((card) => card.provider === provider));
   const warnings = ranked.filter((line) => line.group === 'runningOut');
+  const hasShownLimits = lines.some((line) => reportsLimit(line.row));
+  const hasReportedLimits = enabledCards.some((card) => cardRows(card).some(reportsLimit));
   return {
     pinned: lines.filter((line) => line.pinned),
     runningOut: warnings.filter((line) => !line.pinned),
     useItOrLoseIt: ranked.filter((line) => line.group === 'useItOrLoseIt' && !line.pinned),
     usedUp: ranked.filter((line) => line.group === 'usedUp' && !line.pinned),
     pending,
-    allClear: !pending.length && !warnings.length && lines.some((line) => line.row.kind === 'bounded'),
-    noLimits: !pending.length && !lines.some((line) => line.row.kind === 'bounded'),
+    allClear: !pending.length && !warnings.length && hasShownLimits,
+    noLimits: !pending.length && !hasReportedLimits,
   };
 }
 

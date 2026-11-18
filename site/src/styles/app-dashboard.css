@@ -1,5 +1,6 @@
 /* 현재 앱의 340pt 패널, Priority·All Usage와 계정별 지표. */
-.am { width: 340px; min-width: 340px; --am-warning: #ff9f0a; --am-control-pad: 9px; --am-section-gap: 14px; }
+.am { width: 340px; min-width: 340px; --am-warning: #ff9f0a; }
+.am [data-scr='dashboard'] { --am-section-gap: 14px; }
 .am button:disabled { opacity: .45; cursor: default; }
 .am [hidden] { display: none !important; }
 .am-content { padding: 14px; }
@@ -18,7 +19,8 @@
 .am-account-section:first-child { margin-top: 0; }
 .am-account-section .am-card { background: none; }
 .am-account-caption { display: flex; align-items: center; gap: 6px; min-height: 20px; }
-.am-account-label { padding: 0; border: 0; background: none; color: var(--am-secondary); font: 600 11px var(--am-font); cursor: pointer; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.am-account-label { padding: 0; border: 0; background: none; color: var(--am-secondary); font: 600 11px var(--am-font); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.am-account-label { cursor: pointer; }
 .am-account-label.is-in-use { color: var(--am-normal); }
 .am-caption-menu { margin-left: auto; opacity: .5; }
 .am-plan { padding: 2px 5px; border-radius: 5px; background: var(--am-quinary); }

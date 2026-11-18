@@ -134,17 +134,6 @@ export function orderedMetrics(state: PreviewState, family: string, accountID: s
   return rows.map((row) => (row.shared ? sharedRows : privateRows).next().value!);
 }
 
-export function moveMetric(state: PreviewState, family: string, accountID: string, id: string, target: string): PreviewState {
-  const rows = orderedMetrics(state, family, accountID);
-  const from = rows.find((row) => row.id === id);
-  const to = rows.find((row) => row.id === target);
-  if (!from || !to || from.shared !== to.shared) return state;
-  const group = rows.filter((row) => row.shared === from.shared).map((row) => row.id);
-  group.splice(group.indexOf(id), 1);
-  group.splice(rows.filter((row) => row.shared === from.shared).findIndex((row) => row.id === target), 0, id);
-  return { ...state, metricOrder: { ...state.metricOrder, [`${family}:${from.shared ? 'shared' : accountID}`]: group } };
-}
-
 /** 기존 Customize의 지표 한 행은 프로바이더 전체에 적용. */
 export function setCustomizeMetric(state: PreviewState, id: string, action: MetricAction): PreviewState {
   const family = id.split('.')[0];

@@ -4,12 +4,13 @@ import { metricID, isSharedMetric } from '../../data/metrics';
 import Meter from './Meter.astro';
 import Forecast from './Forecast.astro';
 import ResetCredits from './ResetCredits.astro';
-interface Props { r: Row; provider: string; accountID: string; uid: string }
-const { r, provider, accountID } = Astro.props;
+interface Props { r: Row; provider: string; accountID: string; uid: string; inactive?: boolean }
+const { r, provider, accountID, inactive = false } = Astro.props;
 const metric = metricID(provider, r.label)!;
+const shared = isSharedMetric(metric);
 const noData = (r.kind === 'text' && r.values.includes('No data')) || (r.kind === 'bounded' && r.noData);
 ---
-<div class="am-metric-wrap" data-row={metric} data-account-id={accountID} data-provider={provider} data-shared={String(isSharedMetric(metric))} data-no-data={String(Boolean(noData))} hidden={noData}>
+<div class="am-metric-wrap" data-row={metric} data-account-id={accountID} data-provider={provider} data-shared={String(shared)} data-no-data={String(Boolean(noData))} hidden={noData || (inactive && shared)}>
   {r.kind === 'bounded' && <Meter r={r} metric={metric} />}
   {r.kind === 'forecast' && <Forecast r={r} metric={metric} />}
   {r.kind === 'text' && metric === 'codex.rateLimitResets' && <ResetCredits metric={metric} />}
