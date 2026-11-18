@@ -413,8 +413,7 @@ extension CodexLogUsageScanner {
                 && reasoning >= other.reasoning && total >= other.total
         }
 
-        /// 누적 totals에서 turn delta 복원 (`last_token_usage` 부재 시 사용).
-        /// 양쪽 모두 검증된 비음수라 차이는 overflow 불가 — 손상 표시만 전파.
+        /// 누적 토큰에서 증가분을 계산. 음수 차이는 0으로 제한하고 손상 상태 전파.
         func subtracting(_ previous: RawUsage?) -> RawUsage {
             RawUsage(
                 input: max(0, input - (previous?.input ?? 0)),

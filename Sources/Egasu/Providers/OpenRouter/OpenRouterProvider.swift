@@ -151,7 +151,7 @@ final class OpenRouterProvider: ProviderRuntime {
         }
 
         // 사용 가능한 응답 전무 — 두 endpoint 모두 401/403일 때만 invalid key 판정
-        // 한쪽만 403이면 key 타입별 gate일 뿐 유효한 key — invalid 처리 금지
+        // 한쪽의 권한 오류만으로 키 전체를 무효 처리하지 않음.
         if credits.isAuthFailure && key.isAuthFailure {
             return ProviderSnapshot.error(provider: provider, error: OpenRouterAuthError.invalidKey)
         }
@@ -208,7 +208,7 @@ final class OpenRouterProvider: ProviderRuntime {
         }
     }
 
-    /// endpoint 호출 1회 실행 후 결과 분류 — 2xx는 parse된 data object, 401/403은 auth failure, 그 외는 typed failure.
+    /// 요청 결과를 정상 데이터 객체·인증 실패·기타 오류로 구분.
     private func load(_ call: () async throws -> HTTPResponse) async -> EndpointResult {
         do {
             let response = try await call()

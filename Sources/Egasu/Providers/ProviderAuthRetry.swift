@@ -4,7 +4,7 @@ import Foundation
 /// `refreshAccessToken` closure가 provider별 refresh 전부(refresh token 로드, token endpoint 호출, body 해석, rotated credential 저장)를 소유. Devin은 의도적 미사용 — 401/403 시 token refresh가 아니라 auth source 전환.
 @MainActor
 enum ProviderAuthRetry {
-    /// "요청 실패"가 아니라 "token 불량"을 뜻하는 status.
+    /// 토큰 갱신 대상으로 분류하는 HTTP 인증 오류.
     nonisolated static func isAuthFailure(_ response: HTTPResponse) -> Bool {
         response.statusCode == 401 || response.statusCode == 403
     }

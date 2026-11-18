@@ -1,7 +1,7 @@
 import Foundation
 
 /// configuration home이 아닌 계정 credential snapshot 기반 read-only usage 카드.
-/// 터미널은 shared home 계속 사용 — 이 카드는 현재 비활성 profile의 대시보드용 안정 소스만 제공.
+/// 터미널은 공유 홈을 계속 사용. 이 카드는 해당 프로필의 대시보드 조회에만 사용.
 struct AccountUsageSnapshotCard: Equatable, Sendable {
     let id: String
     let profileID: String

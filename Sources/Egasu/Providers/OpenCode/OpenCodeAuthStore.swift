@@ -1,7 +1,7 @@
 import Foundation
 
-/// 머신에 이미 있는 OpenCode Go/Zen credential 읽기 — local 전용, network 접근 없음.
-/// `opencode-go` key는 first-run 감지 신호이자 (향후 `/zen/go/v1/usage` API의) Bearer token — 단일 loader로 관리.
+/// 기기에 저장된 OpenCode Go 자격 증명 조회. 네트워크 접근 없음.
+/// `opencode-go` 키로 로컬 로그인 감지와 Go 기간 표시 여부 판단.
 struct OpenCodeAuthStore: Sendable {
     var files: TextFileAccessing
     var environment: EnvironmentReading

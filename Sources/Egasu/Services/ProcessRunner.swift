@@ -97,7 +97,7 @@ struct SystemProcessRunner: ProcessRunning {
             process.standardInput = stdinPipe
         }
 
-        // 두 pipe를 child 실행 전 background queue에서 drain 시작 — OS pipe buffer(~64KB) 초과 출력 child의 write blocking·timeout 오작동 방지, exit 후 read는 deadlock.
+        // 출력이 파이프 버퍼를 채워 자식 프로세스가 멈추지 않도록 실행 전에 두 파이프를 백그라운드에서 읽기 시작.
         let output = SubprocessOutput()
         let drained = DispatchGroup()
         let deadline = DispatchTime.now() + timeout
@@ -112,7 +112,7 @@ struct SystemProcessRunner: ProcessRunning {
         drain(stderrPipe.fileHandleForReading, into: output, isStdout: false, group: drained,
               deadline: deadline, timeoutError: timeoutError)
 
-        // 50ms poll loop 대신 kernel-level wait 1회 — termination handler를 `run()` 전에 등록해 즉시 종료 child와의 race 차단, `wait`는 exit 또는 deadline까지 1회 blocking.
+        // 즉시 종료를 놓치지 않도록 `run()` 전에 종료 처리기를 등록. 실행 후 종료 또는 기한까지 대기.
         let exited = DispatchGroup()
         exited.enter()
         process.terminationHandler = { _ in exited.leave() }

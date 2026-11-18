@@ -90,7 +90,7 @@ struct UserAPIKeyStore: Sendable {
             return nil
         }
 
-        // JSON 아님 — 빈 줄 무시하고 plain-text key 파일로 취급.
+        // 앞뒤 공백을 제거한 텍스트를 키 원문으로 해석. 빈 문자열이나 여는 중괄호가 있으면 거부.
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty || trimmed.contains("{") ? nil : trimmed
     }

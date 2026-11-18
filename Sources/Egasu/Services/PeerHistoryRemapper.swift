@@ -1,7 +1,7 @@
 import Foundation
 
-/// 동기화된 peer history를 카드 id가 아닌 계정 identity로 이 Mac의 카드에 매칭.
-/// 같은 계정이 Mac마다 default/추가 카드로 달라 카드 id는 이동 불가 — v2 문서는 카드별 identity map으로 정확 매칭, v1 문서는 bare id에 legacy same-card-id merge 유지.
+/// 다른 Mac의 동기화 이력을 계정 식별자로 이 Mac의 카드에 연결.
+/// 식별 정보가 부족한 기본 카드와 식별자가 없는 추가 카드는 카드 ID로 대조.
 /// 이 Mac에 카드 없는 peer 계정은 `remoteOnly` — Total Spend에만 표시, ghost 카드 금지.
 enum PeerHistoryRemapper {
     struct Remapped {
@@ -14,7 +14,7 @@ enum PeerHistoryRemapper {
     struct RemoteOnlyHistory {
         var identityKey: String
         var family: String
-        /// 계정의 identity 파생 카드 id (`claude@ab12cd34`) — 어느 Mac에서든 동일.
+        /// 계정 식별자로 생성한 ID 또는 원격 카드 ID.
         /// Total Spend slice 이름 — 출처 Mac은 의도적 미포함(합계에 무관).
         var cardID: String
         var histories: [ProviderUsageHistory]
@@ -54,8 +54,7 @@ enum PeerHistoryRemapper {
                     if let localCard = localCardByIdentity[identity] {
                         result.histories.append((localCard, history))
                     } else if !ProviderAccountID.isAccountCard(peerCardID), localIdentityByCardID[peerCardID] == nil {
-                        // peer는 bare 카드 계정을 특정했으나 이 Mac의 bare 카드 identity는 이번 launch 미해석 — mismatch 증명 불가.
-                        // legacy same-card-id merge 유지 — 같은 계정일 공산이 큰 history의 Total Spend 분리 방지; 실제 다른 계정은 identity 해석되는 다음 launch에 분리.
+                        // 이 Mac의 기본 카드 식별자가 없으면 카드 ID로 병합. 계정 식별자를 확인한 뒤 다른 계정이면 분리.
                         result.histories.append((peerCardID, history))
                     } else {
                         collectRemoteOnly(
@@ -68,7 +67,7 @@ enum PeerHistoryRemapper {
                     continue
                 }
                 // identity 미기록(v1 문서, 또는 peer가 미식별한 카드): bare id는 legacy same-card-id merge, account-card id는 이 Mac에 같은 id 있으면 매칭, 없으면 remote-only.
-                // peer의 카드 id가 grouping 키 겸 표시 id — peer에서 발급된 identity 파생 id.
+                // 이 경우 원격 카드 ID를 그룹과 표시 식별자로 사용.
                 if !ProviderAccountID.isAccountCard(peerCardID) || localIdentityByCardID[peerCardID] != nil {
                     result.histories.append((peerCardID, history))
                 } else {

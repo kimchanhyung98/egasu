@@ -14,7 +14,7 @@ enum MenuBarIcon {
     private static func render() -> NSImage? {
         guard let mark = ProviderMarks.mark(for: "egasu") else { return nil }
         let renderer = ImageRenderer(
-            // provider 기본값보다 작은 inset — 원본 viewBox에 이미 ~8% 여백이 있어 기존 menu-bar 크기 유지.
+            // 메뉴 막대 기호는 프로바이더 타일보다 작은 여백을 사용.
             content: ProviderIconShape(pathData: mark.path, inset: 0.08)
                 .fill(Color.black)
                 .frame(width: side, height: side)

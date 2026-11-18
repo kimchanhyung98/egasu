@@ -1,8 +1,8 @@
 import Foundation
 import Egasu
 
-/// 공유 profile registry에 대한 read-only `egasu account` 명령 실행 — 앱과 같은 UserDefaults domain이라 Settings 전환과 항상 일치.
-/// CLI는 credential·Keychain·shell setup에 접근 금지.
+/// 앱과 같은 UserDefaults 도메인에서 저장한 프로필을 읽는 `egasu account` 명령.
+/// 계정 명령은 자격 증명·Keychain·셸 설정에 접근하지 않음.
 @MainActor
 struct AccountCommandRunner {
     private let store: AccountProfilesStore
@@ -82,7 +82,7 @@ struct AccountCommandRunner {
     }
 }
 
-/// store 에러의 사용자용 한 줄 메시지 (exit 2 — 시스템이 아닌 요청 오류).
+/// 계정 저장소 오류의 사용자용 안내. 종료 코드는 CLI 진입점에서 오류 유형에 따라 결정.
 func accountErrorMessage(_ error: AccountProfileError) -> String {
     error.userMessage
 }

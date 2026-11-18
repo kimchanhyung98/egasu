@@ -3,9 +3,9 @@ import Darwin
 import Foundation
 import os
 
-/// "지금 화면을 관찰 중인가" 판정 — 메뉴바 Hide From Screen Share 설정(`MenuBarPrivacyStore`)의 live 신호.
+/// 메뉴 막대 개인정보 보호에 사용하는 화면 캡처 상태 조회와 변경 알림.
 /// macOS는 공개 "capturing" API 부재 — window server의 watcher flag를 `dlsym`으로 runtime 해석(SkyLight `SLSIsScreenWatcherPresent`, 구 `CGS` 철자 fallback).
-/// symbol 부재 시 crash 대신 degrade — 공백 1회 loud 로깅 후 공개 세션 dictionary fallback(원격 세션만 보고, in-app 캡처 미보고).
+/// 조회 심볼이 없으면 공개 세션 정보로 원격 공유만 확인. 첫 알림 등록 시 오류를 한 번 기록.
 enum ScreenCaptureProbe {
     /// `SLSIsScreenWatcherPresent()` — 화면 capture stream 보유 프로세스 존재 시 true.
     private typealias IsWatcherPresent = @convention(c) () -> Bool
@@ -17,8 +17,7 @@ enum ScreenCaptureProbe {
         UnsafeMutableRawPointer?
     ) -> Int32
 
-    /// screen watcher attach/detach의 window-server notification id — private이나 장기 안정.
-    /// 탐지를 빠르게만 할 뿐 정확성은 store poll이 보장 — 값이 조용히 바뀌어도 기능 불파손.
+    /// 화면 감시자 연결·해제의 비공개 알림 ID. 알림 누락은 별도의 정기 조회로 보완.
     private static let watcherAttachedEvent: UInt32 = 1502
     private static let watcherDetachedEvent: UInt32 = 1503
 
@@ -42,8 +41,8 @@ enum ScreenCaptureProbe {
         return sessionReportsSharedScreen()
     }
 
-    /// screen watcher attach/detach 시 `handler` 실행 등록 — poll tick 대기 없이 공유 시작 즉시 메뉴바 전환.
-    /// best-effort — 등록 실패·symbol 소실은 로깅 후 poll만으로 탐지 지속.
+    /// 화면 감시자 연결·해제 시 처리기를 호출해 다음 정기 조회 전 상태 확인.
+    /// 알림 등록 결과를 로그에 기록하며, 실패해도 정기 조회 유지.
     @MainActor
     static func installChangeNotifications(_ handler: @escaping @Sendable () -> Void) {
         changeHandler.withLock { $0 = handler }

@@ -160,7 +160,7 @@ final class CopilotProvider: ProviderRuntime {
 
     // MARK: - Org billing lookup
 
-    /// org 관리 seat의 org 단위 Copilot billing line. cached org 우선, 다음 사용자의 모든 org를 probe해 Copilot credit usage를 실은 첫 org 기억.
+    /// 저장된 조직 우선 조회. 이후 반환된 조직 목록에서 크레딧 사용량이 있는 첫 조직을 저장.
     /// 아무것도 못 읽으면 `[]` — 일반 org member의 403은 기대된 결과라 provider 오류 없이 기존 개인 행·plan 유지.
     private func orgBillingLines(token: String) async -> [MetricLine] {
         if let cached = defaults.string(forKey: Self.billingOrgDefaultsKey) {
@@ -181,7 +181,7 @@ final class CopilotProvider: ProviderRuntime {
         do {
             let response = try await orgBillingClient.fetchUserOrgs(token: token)
             guard response.statusCode == 200 else {
-                // 여기의 403은 token에 `read:org` 부재(에디터 플러그인 token 가능) — 기대된 상태, 오류 아님. 그 외도 진단 로그만, 카드 실패는 없음.
+                // 조직 목록 조회 실패는 진단을 기록하고 개인 지표는 유지.
                 AppLog.info(LogTag.plugin("copilot"), "org list HTTP \(response.statusCode); skipping org billing lookup")
                 return []
             }
