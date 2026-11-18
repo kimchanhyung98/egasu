@@ -133,6 +133,12 @@ extension AppContainer {
             && isSharedHomeOnlyMetric(metricID, cardID: cardID)
     }
 
+    /// 대시보드와 공유 이미지에 표시할 지표를 계정의 저장 순서로 조회.
+    static func dashboardMetricDescriptors(for cardID: String, in layout: LayoutStore) -> [WidgetDescriptor] {
+        layout.orderedSupportedMetrics(for: cardID)
+            .filter { layout.isMetricEnabled($0.id) && !hidesMetric($0.id, onCard: cardID) }
+    }
+
     private func isAccountInUse(_ cardID: String) -> Bool {
         AccountCardPresentationPlanner.isInUse(
             cardID: cardID,
@@ -145,9 +151,7 @@ extension AppContainer {
         for group: ProviderGroup, retainingResetClaims: [String: CodexResetClaimBinding]
     ) -> DashboardAccount {
         let cardID = group.provider.id
-        // 대시보드와 공유 이미지에 계정의 저장된 행 순서 사용.
-        let descriptors = layout.orderedSupportedMetrics(for: cardID)
-            .filter { layout.isMetricEnabled($0.id) && !Self.hidesMetric($0.id, onCard: cardID) }
+        let descriptors = Self.dashboardMetricDescriptors(for: cardID, in: layout)
         let providerName = ProviderAccountID.cardTitle(providerID: cardID, fallback: group.provider.displayName)
         if dataStore.isWaitingForFirstReading(cardID) {
             return DashboardAccount(

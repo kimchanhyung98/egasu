@@ -44,7 +44,7 @@ final class WidgetUsagePeriodTests: XCTestCase {
         XCTAssertTrue(row.isZeroUsage && row.isUsagePeriod)
     }
 
-    func testZeroSpendPeriodWithSourceNoteKeepsTheNoUsageTooltip() {
+    func testZeroSpendPeriodWithSourceNoteOnlyShowsItsValues() {
         var row = WidgetData(title: "Last 30 Days", icon: .providerMark("cursor"), kind: .dollars, used: 0,
                              limit: nil,
                              values: [MetricValue(number: 0, kind: .dollars),
@@ -53,6 +53,7 @@ final class WidgetUsagePeriodTests: XCTestCase {
         row.valueTooltipNote = WidgetData.cursorUsageHistoryNote
 
         XCTAssertEqual(row.unboundedDetail, "$0.00 · 0 tokens")
-        XCTAssertEqual(row.unboundedValueTooltip, "No usage in this period\n\(WidgetData.cursorUsageHistoryNote)")
+        XCTAssertNil(row.unboundedValueTooltip)
+        XCTAssertNil(row.rowDetail(reportsModels: true))
     }
 }

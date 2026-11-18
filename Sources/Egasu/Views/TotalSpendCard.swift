@@ -1,19 +1,19 @@
 import AppKit
 import SwiftUI
 
-/// 교차 프로바이더 Total Spend 카드 — 데이터 없는 조합은 empty state로 유지.
+/// 여러 프로바이더의 Total Spend 카드 — 데이터 없는 조합은 빈 상태 표시.
 struct TotalSpendCard: View {
     @Environment(LayoutStore.self) private var layout
     @Environment(WidgetDataStore.self) private var dataStore
     @Environment(AppContainer.self) private var container
+    @Environment(PopoverState.self) private var popover
     @Environment(\.colorScheme) private var colorScheme
     @Namespace private var pickerNamespace
 
     /// 선택 기간 — 팝오버 닫힘·재실행에도 유지.
     @AppStorage("openusage.totalSpend.period") private var periodRawValue = TotalSpendPeriod.today.rawValue
-    /// 선택 메트릭 — 동일하게 유지.
+    /// 선택 지표 — 팝오버 닫힘·재실행에도 유지.
     @AppStorage("openusage.totalSpend.metric") private var metricRawValue = TotalSpendMetric.cost.rawValue
-    @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
 
     private var period: TotalSpendPeriod {
         TotalSpendPeriod(rawValue: periodRawValue) ?? .today
@@ -23,21 +23,21 @@ struct TotalSpendCard: View {
         TotalSpendMetric(rawValue: metricRawValue) ?? .cost
     }
 
-    /// 집계 대상 — capability 기반 (`LayoutStore.spendCapableProviders`).
-    /// Customize에서 행을 숨겨도 포함 유지, 유사 달러 행만 있는 프로바이더는 제외.
+    /// 기간별 지출 집계를 지원하는 프로바이더만 합산.
+    /// 지표 행을 숨겨도 집계 대상에 포함, 달러 단위의 유사 지표만 있는 프로바이더는 제외.
     private var providers: [Provider] {
         layout.spendCapableProviders
     }
 
     private var total: TotalSpend {
-        // 다른 Mac에만 있는 동기화 계정도 합계·legend에 포함 — 이 기기 로그인 여부와 무관하게 전체 합 유지
+        // 다른 Mac에만 있는 동기화 계정도 합계·범례에 포함 — 현재 기기의 로그인 여부와 무관.
         var aggregatedProviders = providers
         var aggregatedSnapshots = dataStore.snapshots
         for entry in dataStore.remoteOnlySpend {
             aggregatedProviders.append(entry.provider)
             aggregatedSnapshots[entry.provider.id] = entry.snapshot
         }
-        // 제목은 registry 접근 가능한 이곳에서 해석 — legend와 share export 모두 라이브 rename 반영
+        // 현재 계정 목록에서 제목을 해석하여 범례·공유 이미지에도 이름 변경 즉시 반영.
         return TotalSpendAggregator.total(
             for: period,
             providers: aggregatedProviders,
@@ -51,104 +51,42 @@ struct TotalSpendCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
-            header
-            card
-        }
-    }
-
-    // MARK: - Header
-
-    private var header: some View {
-        HStack(spacing: 5) {
-            metricMenu
-            Image(systemName: "info.circle")
-                .imageScale(.small)
-                .foregroundStyle(.secondary)
-                .hoverTooltip(infoTooltip)
-            Spacer(minLength: 8)
-            shareButton
-        }
-        .padding(.leading, 4)
-        .padding(.trailing, 4)
-        .padding(.vertical, 2)
-    }
-
-    private var metricMenu: some View {
-        Menu {
-            ForEach(TotalSpendMetric.allCases) { option in
+        card
+            .contextMenu {
                 Button {
-                    metricRawValue = option.rawValue
+                    guard ShareCardRenderer.shareTotalSpend(
+                        total: total, metric: metric, appearance: colorScheme
+                    ) else { return }
+                    popover.shareNotice.present(true)
                 } label: {
-                    if option == metric {
-                        Label(option.title, systemImage: "checkmark")
-                    } else {
-                        Text(option.title)
-                    }
+                    Label(L10n.dashboard("Share Screenshot"), systemImage: "square.and.arrow.up")
                 }
+                .disabled(projection.isEmpty)
             }
-        } label: {
-            HStack(spacing: 4) {
-                Text(metric.title)
-                    .font(.system(size: density.headerPointSize, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .accessibilityLabel(L10n.dashboard("Total Spend Metric"))
-        .accessibilityValue(metric.title)
     }
 
-    /// 링에 실제 반영되는 프로바이더 목록 표기 — 하드코딩 목록 금지, tooltip의 거짓 방지.
-    private var infoTooltip: String {
-        var seen = Set<String>()
-        let names = providers.map { container.displayName(for: $0) }.filter { seen.insert($0).inserted }
-        return L10n.dashboard("Only includes %@.", names.formatted(.list(type: .and).locale(L10n.locale)))
-    }
-
-    private var shareButton: some View {
-        CopyFeedbackButton(accessibilityLabel: L10n.dashboard("Copy %@ Screenshot", metric.title)) {
-            ShareCardRenderer.shareTotalSpend(
-                total: total,
-                metric: metric,
-                appearance: colorScheme,
-                layout: layout
-            )
-        }
+    private func cycleMetric() {
+        metricRawValue = metric.next.rawValue
     }
 
     // MARK: - Card
 
     private var card: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             periodPicker
             if projection.isEmpty {
                 emptyState
             } else {
-                TotalSpendRingContent(projection: projection)
+                TotalSpendRingContent(projection: projection, onCycleMetric: cycleMetric)
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 14)
         .frame(maxWidth: .infinity)
         .cardSurface()
         .animation(Motion.spring, value: periodRawValue)
         .animation(Motion.spring, value: metricRawValue)
-        .contextMenu {
-            Button(L10n.dashboard("Share Screenshot")) {
-                ShareCardRenderer.shareTotalSpend(
-                    total: total,
-                    metric: metric,
-                    appearance: colorScheme,
-                    layout: layout
-                )
-            }
-        }
     }
 
     private var periodPicker: some View {
@@ -187,24 +125,25 @@ struct TotalSpendCard: View {
         .animation(Motion.spring, value: periodRawValue)
     }
 
-    /// 표시할 데이터 없는 조합은 spend 타일의 "No data" 규칙 준수 — 0 링 조작 금지.
+    /// 표시할 데이터가 없으면 빈 상태 표시 — 사용량 0의 링으로 대체하지 않음.
     private var emptyState: some View {
         Text(metric.emptyMessage)
-            .font(.system(size: density.supportingPointSize))
+            .font(.system(size: 11))
             .foregroundStyle(.secondary)
+            .modifier(TotalSpendMetricSwitch(metric: metric, action: cycleMetric))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 18)
     }
 }
 
-/// 라이브 카드와 share export가 공유하는 링 본체.
-/// 프로바이더 ID로 섹터 identity를 고정해 기간 전환 때 각도만 애니메이션.
+/// 대시보드와 공유 이미지가 사용하는 공통 링.
+/// 프로바이더 ID로 조각을 식별하여 기간 전환 시 각도만 변경.
 struct TotalSpendRingContent: View {
     let projection: TotalSpendProjection
-
-    @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
+    var onCycleMetric: (() -> Void)?
 
     private static let ringDiameter: CGFloat = 104
+    private static let innerRadiusRatio: CGFloat = 0.618
 
     var body: some View {
         HStack(spacing: 18) {
@@ -215,21 +154,20 @@ struct TotalSpendRingContent: View {
 
     // MARK: - Ring
 
-    /// 슬라이스 최소 점유율 — 극소 프로바이더도 sliver 유지. 표시 전용, legend·중앙 값은 실제 금액.
+    /// 아주 작은 사용량도 보이도록 최소 조각 비율 적용 — 범례·중앙 수치는 실제 값 유지.
     private static let minimumSliceShare = 0.025
 
     private var ring: some View {
         ZStack {
-            // identity는 프로바이더 ID — 양쪽 상태에 존재하면 arc 각도만 애니메이션, 입·퇴장은 fade
+            // 프로바이더 ID가 유지되면 각도만 변경 — 추가·제거는 불투명도로 전환.
             ForEach(arcs) { arc in
-                RingSectorShape(startFraction: arc.start, endFraction: arc.end)
+                RingSectorShape(startFraction: arc.start, endFraction: arc.end, innerRadiusRatio: Self.innerRadiusRatio)
                     .fill(TotalSpendPalette.color(for: arc.providerID))
+                    .accessibilityHidden(true)
             }
             centerLabel
         }
         .frame(width: Self.ringDiameter, height: Self.ringDiameter)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityLabel)
     }
 
     private var accessibilityLabel: String {
@@ -252,7 +190,7 @@ struct TotalSpendRingContent: View {
         var id: String { providerID }
     }
 
-    /// 누적 링 fraction으로 변환한 순위 슬라이스 — 최소 점유율 적용 후 재정규화로 링 폐합 보장.
+    /// 최소 점유율 적용 후 합계가 1이 되도록 다시 정규화한 링 구간.
     private var arcs: [RingArc] {
         let totalDisplay = projection.slices.reduce(0) { $0 + $1.displayAmount }
         guard totalDisplay > 0 else { return [] }
@@ -283,6 +221,10 @@ struct TotalSpendRingContent: View {
                 .lineLimit(1)
         }
         .padding(.horizontal, 10)
+        .frame(width: Self.ringDiameter * Self.innerRadiusRatio, height: Self.ringDiameter * Self.innerRadiusRatio)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+        .modifier(TotalSpendMetricSwitch(metric: projection.metric, action: onCycleMetric, circular: true))
         .hoverTooltip(centerTooltip)
     }
 
@@ -311,17 +253,19 @@ struct TotalSpendRingContent: View {
                 .fill(TotalSpendPalette.color(for: slice.provider.id))
                 .frame(width: 8, height: 8)
             Text(slice.title)
-                .font(.system(size: density.supportingPointSize))
+                .font(.system(size: 11))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
             Spacer(minLength: 8)
-            // 토큰은 legend에서 항상 축약 (`.full`은 자릿수 넘침), cost 모드는 센트 유지
+            // 토큰 범례는 자릿수 넘침을 피하도록 축약 — 비용은 센트 단위 유지.
             Text(formatValue(slice.displayAmount, style: legendValueStyle))
-                .font(.system(size: density.supportingPointSize, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
+                .accessibilityLabel("\(slice.title), \(formatValue(slice.displayAmount, style: legendValueStyle))")
+                .modifier(TotalSpendMetricSwitch(metric: projection.metric, action: onCycleMetric))
         }
     }
 
@@ -344,8 +288,42 @@ struct TotalSpendRingContent: View {
     }
 }
 
+/// 클릭 가능한 통계 값 — 공유 이미지에서는 동작 없이 원래 내용만 표시.
+private struct TotalSpendMetricSwitch: ViewModifier {
+    let metric: TotalSpendMetric
+    let action: (() -> Void)?
+    var circular = false
+    @State private var isHovered = false
+
+    private var hitShape: AnyShape { circular ? AnyShape(Circle()) : AnyShape(Rectangle()) }
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let action {
+            Button(action: action) {
+                content.contentShape(hitShape)
+            }
+            .buttonStyle(.plain)
+            .hoverHighlight(isHovered && !circular)
+            .background {
+                if circular {
+                    Circle().fill(.quaternary)
+                        .opacity(isHovered ? 1 : 0)
+                        .animation(.easeOut(duration: 0.12), value: isHovered)
+                }
+            }
+            .contentShape(hitShape)
+            .onHover { isHovered = $0 }
+            .accessibilityValue(metric.title)
+            .accessibilityHint(L10n.dashboard("Switch to %@", metric.next.title))
+        } else {
+            content
+        }
+    }
+}
+
 /// 프로바이더 ID에 고정된 브랜드 색상 — 기간·순위 변화에도 색 유지.
-/// 검정 브랜드는 양 appearance에서 읽히도록 동적 색상 사용.
+/// 검정 브랜드는 밝은·어두운 모드 모두 읽을 수 있는 동적 색상 사용.
 enum TotalSpendPalette {
     private static let byProviderID: [String: Color] = [
         "claude": hex(0xDE7356),
@@ -363,7 +341,7 @@ enum TotalSpendPalette {
         "zai": dynamic(light: 0x2D2D2D, dark: 0xD1D1D6)
     ]
 
-    /// 팔레트 미등록 프로바이더용 결정적 backstop 색 — ID 키잉으로 기간·재실행 간 색 고정.
+    /// 미등록 프로바이더의 대체 색상 — ID 기준으로 기간·재실행과 무관한 색 유지.
     private static let fallback: [Color] = [
         hex(0x34C759), hex(0x5856D6), hex(0xFF2D55), hex(0xA2845E)
     ]
@@ -382,7 +360,7 @@ enum TotalSpendPalette {
         )
     }
 
-    /// 순수 검정 브랜드용 light/dark adaptive 색 — 다크 카드에서의 비가시성 방지.
+    /// 검정 브랜드의 밝은·어두운 모드별 색상 — 어두운 카드에서도 식별 가능.
     private static func dynamic(light: UInt32, dark: UInt32) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
             let value = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light

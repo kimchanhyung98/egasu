@@ -15,7 +15,8 @@ Copilot CLI가 남긴 날짜별 사용 이력은 대시보드 상단 비용·토
 | Chat | 채팅 메시지 할당량 사용량 |
 | Completions | 코드 완성 할당량 사용량 |
 
-Credits와 Extra Usage는 기본적으로 Always Visible이며, Org Credits, Org Spend, Chat, Completions는 카드 캐럿 아래의 On Demand로 시작.
+All Usage는 계정 응답에서 값을 받은 지표를 한 목록으로 표시.
+지표 표시와 순서는 Accounts에서 조정.
 할당량 미터에는 사용 백분율과 응답에 포함된 경우 다음 재설정까지의 카운트다운 표시.
 개인·조직 크레딧 수에는 한도나 백분율을 임의로 붙이지 않음.
 요금제 이름(Pro, Business, Free, …)은 프로바이더 옆에 표시.

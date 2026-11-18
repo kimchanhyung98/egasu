@@ -130,6 +130,70 @@ final class DashboardLineRulesTests: XCTestCase {
         XCTAssertEqual(runtime.refreshCount, 6)
     }
 
+    func testPeriodRowDetailFollowsWhatWasReported() {
+        let spent = period([MetricValue(number: 4.08, kind: .dollars), MetricValue(number: 1_200_000, kind: .count, label: "tokens")])
+        XCTAssertEqual(spent.rowDetail(reportsModels: true), .saved, "합계만 있고 모델 내역이 없으면 합계 패널")
+        XCTAssertNil(spent.rowDetail(reportsModels: false), "모델 내역을 내지 않는 프로바이더는 툴팁만")
+
+        var detailed = spent
+        detailed.modelBreakdown = ModelUsageBreakdown(
+            totalTokens: 1_200_000, totalCostUSD: 4.08,
+            models: [ModelUsageEntry(model: "gpt-5", totalTokens: 1_200_000, costUSD: 4.08)], sourceNote: ""
+        )
+        XCTAssertEqual(detailed.rowDetail(reportsModels: true), .breakdown)
+
+        let zero = period([MetricValue(number: 0, kind: .dollars), MetricValue(number: 0, kind: .count, label: "tokens")])
+        XCTAssertNil(zero.rowDetail(reportsModels: false), "0 행은 값을 유지하고 상세는 생략")
+        XCTAssertNil(zero.rowDetail(reportsModels: true))
+        var missing = zero
+        missing.hasData = false
+        XCTAssertEqual(missing.rowDetail(reportsModels: true), .empty)
+    }
+
+    func testZeroCostDoesNotHideTokenUsageDetails() {
+        var free = period([MetricValue(number: 0, kind: .dollars), MetricValue(number: 200, kind: .count, label: "tokens")])
+        free.selection = .kind(.dollars)
+        XCTAssertEqual(free.rowDetail(reportsModels: true), .saved, "비용만 표시해도 토큰 내역은 유지")
+        free.modelBreakdown = ModelUsageBreakdown(
+            totalTokens: 200, totalCostUSD: 0,
+            models: [ModelUsageEntry(model: "free-model", totalTokens: 200, costUSD: 0)], sourceNote: ""
+        )
+        XCTAssertEqual(free.rowDetail(reportsModels: true), .breakdown)
+
+        var unpriced = period([MetricValue(number: 200, kind: .count, label: "tokens")])
+        unpriced.modelBreakdown = ModelUsageBreakdown(
+            totalTokens: 200, totalCostUSD: nil,
+            models: [ModelUsageEntry(model: "new-model", totalTokens: 200, costUSD: nil)], sourceNote: ""
+        )
+        XCTAssertEqual(unpriced.rowDetail(reportsModels: true), .breakdown)
+    }
+
+    func testChartRowOpensItsTrendOnlyWithData() {
+        var chart = WidgetData(title: "Usage Trend", icon: .providerMark("codex"), kind: .count, used: 0, limit: nil)
+        chart.isChart = true
+        XCTAssertNil(chart.rowDetail(reportsModels: true), "표시할 차트 포인트가 없으면 상세를 열지 않음")
+        chart.chartPoints = [.init(value: 120, label: "2026-11-18")]
+        XCTAssertEqual(chart.rowDetail(reportsModels: true), .trend)
+        chart.hasData = false
+        XCTAssertNil(chart.rowDetail(reportsModels: true))
+    }
+
+    func testSavedBreakdownReasonPrefersNoticeThenStaleness() {
+        let stale = StalenessHint(label: "Outdated", tooltip: "Last updated 2h ago")
+        L10n.withLanguage(.english) {
+            XCTAssertEqual(UsageBreakdownSavedState.reason(notice: "Sign in again", staleness: stale), "Sign in again")
+            XCTAssertEqual(UsageBreakdownSavedState.reason(notice: nil, staleness: stale), "Last updated 2h ago")
+            XCTAssertEqual(UsageBreakdownSavedState.reason(notice: nil, staleness: nil), "Refresh to load the details for this range.")
+        }
+    }
+
+    private func period(_ values: [MetricValue]) -> WidgetData {
+        var data = WidgetData(title: "Today", icon: .providerMark("codex"), kind: .dollars, used: 0, limit: nil)
+        data.isUsagePeriod = true
+        data.values = values
+        return data
+    }
+
     func testEmptyFamilyWithoutANoticeStaysHidden() {
         let provider = Provider(id: "kimi", displayName: "Kimi", icon: .providerMark("kimi"))
         let family = DashboardFamily(

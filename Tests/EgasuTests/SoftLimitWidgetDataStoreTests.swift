@@ -284,7 +284,7 @@ final class SoftLimitWidgetDataStoreTests: XCTestCase {
 
     }
 
-    func testPresentedAccountModesKeepGuidesSeparateFromSharedHomeResetWatch() throws {
+    func testAccountCardsKeepGuidesSeparateFromSharedHomeResetWatch() throws {
         let defaults = makeDefaults()
         let settings = SoftLimitSettingsStore(defaults: defaults)
         settings.enabled = true
@@ -303,7 +303,7 @@ final class SoftLimitWidgetDataStoreTests: XCTestCase {
         let layout = LayoutStore(
             registry: registry, defaults: defaults, storageKey: "layout",
             defaultMetricIDs: metricIDs, migrationBaselineMetricIDs: metricIDs,
-            defaultPinnedMetricIDs: ["codex.weekly"], defaultExpandedMetricIDs: ["codex.resetWatch"]
+            defaultPinnedMetricIDs: ["codex.weekly"]
         )
         let store = WidgetDataStore(registry: registry, providers: [], defaults: defaults, softLimitSettings: { settings })
         let usage = ["claude": 30.0, "claude@profile-work": 40, "codex": 90, "codex@profile-work": 95]
@@ -315,33 +315,24 @@ final class SoftLimitWidgetDataStoreTests: XCTestCase {
         store.setCodexResetWatch(.init(chancePercent: 75, deadline: .distantFuture, communityYesPercent: 60))
         layout.setMetric("codex.weekly", pinned: true)
         let originalPlaced = layout.placed
-        let originalExpanded = layout.expandedMetricIDs
         let originalPins = layout.priorityPinIDs
 
-        for mode in [AccountCardDisplayMode.singleCard, .separateCards] {
-            let visibleIDs = AccountCardPresentationPlanner.presentedCardIDs(
-                orderedCardIDs: cardIDs,
-                modesByFamily: ["claude": mode, "codex": mode],
-                selectedCardIDsByFamily: ["claude": cardIDs[1], "codex": cardIDs[3]]
-            )
-            XCTAssertEqual(visibleIDs, mode == .singleCard ? [cardIDs[1], cardIDs[3]] : cardIDs)
-            for raw in layout.displayGroups where visibleIDs.contains(raw.id) {
-                let group = try XCTUnwrap(AccountCardPresentationPlanner.presentedGroup(raw, mode: mode))
-                for display in [WidgetDisplayMode.used, .remaining] {
-                    store.meterStyle = display
-                    let rows = try group.widgets.map { store.data(for: try XCTUnwrap(layout.descriptor(for: $0))) }
-                    let quota = try XCTUnwrap(rows.first { $0.title == "Weekly" })
-                    XCTAssertEqual(quota.used, usage[group.id])
-                    XCTAssertEqual(quota.softLimitMarkerFraction ?? -1, display == .used ? 0.90 : 0.10, accuracy: 0.0001)
-                    let showsWatch = ProviderAccountID.family(of: group.id) == "codex"
-                        && (mode == .singleCard || group.id == "codex")
-                    XCTAssertEqual(rows.filter(\.isForecast).count, showsWatch ? 1 : 0)
-                    XCTAssertTrue(rows.filter(\.isForecast).allSatisfy { $0.softLimitMarkerFraction == nil })
-                }
+        let groups = layout.displayGroups
+        XCTAssertEqual(groups.map(\.id).sorted(), cardIDs.sorted())
+        for group in groups {
+            // 추가 계정 카드는 공유 홈 전용 행(Reset Watch 등)을 숨김 — 대시보드 계정 섹션과 같은 규칙.
+            let widgets = group.widgets.filter { !AppContainer.hidesMetric($0.descriptorID, onCard: group.id) }
+            for display in [WidgetDisplayMode.used, .remaining] {
+                store.meterStyle = display
+                let rows = try widgets.map { store.data(for: try XCTUnwrap(layout.descriptor(for: $0))) }
+                let quota = try XCTUnwrap(rows.first { $0.title == "Weekly" })
+                XCTAssertEqual(quota.used, usage[group.id])
+                XCTAssertEqual(quota.softLimitMarkerFraction ?? -1, display == .used ? 0.90 : 0.10, accuracy: 0.0001)
+                XCTAssertEqual(rows.filter(\.isForecast).count, group.id == "codex" ? 1 : 0)
+                XCTAssertTrue(rows.filter(\.isForecast).allSatisfy { $0.softLimitMarkerFraction == nil })
             }
         }
         XCTAssertEqual(layout.placed, originalPlaced)
-        XCTAssertEqual(layout.expandedMetricIDs, originalExpanded)
         XCTAssertEqual(layout.priorityPinIDs, originalPins)
     }
 

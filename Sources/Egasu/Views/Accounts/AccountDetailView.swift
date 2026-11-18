@@ -114,7 +114,7 @@ struct AccountMetricSettingsCard: View {
     private func move(_ metric: WidgetDescriptor, onto target: String) {
         guard
             layout.reorderMetric(
-                dragged: metric.id, target: target, in: metric.providerID, preservingExpandedMembership: true
+                dragged: metric.id, target: target, in: metric.providerID
             )
         else { return }
         let reordered =
@@ -149,7 +149,7 @@ struct AccountMetricSettingsCard: View {
             orderedIDs: { metrics.map(\.id) },
             reorder: {
                 layout.reorderMetric(
-                    dragged: metric.id, target: $0, in: metric.providerID, preservingExpandedMembership: true)
+                    dragged: metric.id, target: $0, in: metric.providerID)
             }
         )
     }

@@ -12,9 +12,11 @@ struct DashboardFamily: Identifiable {
         accounts.contains { $0.isVisible(headerNotice: headerNotice) }
     }
 
-    /// 이메일 계정명을 뺀 사본 — Privacy Mode가 꺼진 공유 이미지용.
-    var hidingEmails: DashboardFamily {
-        DashboardFamily(id: id, provider: provider, displayName: displayName, accounts: accounts.map(\.hidingEmail))
+    /// 공유 이미지에서 이메일 계정명과 마지막 초기화권 사용 후 임시 유지한 행을 제외한 사본.
+    var forSharing: DashboardFamily {
+        var copy = self
+        copy.accounts = accounts.map(\.forSharing)
+        return copy
     }
 }
 
@@ -28,7 +30,7 @@ struct DashboardAccount: Identifiable {
     /// 계정명을 눌러 바꿔 보는 로그인 이메일 — 계정명과 다를 때만, 공유 이미지에서는 제외.
     var email: String? = nil
     var isInUse = false
-    let lines: [DashboardLine]
+    private(set) var lines: [DashboardLine]
     /// 첫 수신 전 대기 모양으로 표시할 지표.
     var waitingMetricIDs: [String] = []
 
@@ -68,6 +70,12 @@ struct DashboardAccount: Identifiable {
         var copy = self
         copy.email = nil
         if isNamedByEmail { copy.name = nil }
+        return copy
+    }
+
+    fileprivate var forSharing: DashboardAccount {
+        var copy = hidingEmail
+        copy.lines.removeAll { !$0.isVisible }
         return copy
     }
 

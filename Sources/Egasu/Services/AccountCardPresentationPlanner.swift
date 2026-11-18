@@ -110,22 +110,6 @@ enum AccountCardPresentationPlanner {
         }
     }
 
-    /// 비활성 분리 카드의 공유 홈 전용 행만 제외 — 저장된 레이아웃은 유지.
-    static func presentedGroup(_ group: ProviderGroup, mode: AccountCardDisplayMode) -> ProviderGroup? {
-        guard mode == .separateCards,
-              ProviderAccountID.families.contains(ProviderAccountID.family(of: group.id)),
-              ProviderAccountID.isAccountCard(group.id)
-        else { return group }
-        let hiddenIDs = Set(["trend", "today", "yesterday", "resetWatch"].map { "\(group.id).\($0)" })
-        let alwaysShown = group.alwaysShownWidgets.filter { !hiddenIDs.contains($0.descriptorID) }
-        let expanded = group.expandedWidgets.filter { !hiddenIDs.contains($0.descriptorID) }
-        guard !alwaysShown.isEmpty || !expanded.isEmpty else { return nil }
-        return ProviderGroup(
-            provider: group.provider,
-            alwaysShownWidgets: alwaysShown.isEmpty ? expanded : alwaysShown,
-            expandedWidgets: alwaysShown.isEmpty ? [] : expanded
-        )
-    }
 
     private static func groupingID(_ cardID: String) -> String {
         let family = ProviderAccountID.family(of: cardID)

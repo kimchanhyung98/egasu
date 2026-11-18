@@ -5,23 +5,19 @@ import XCTest
 final class AccountQuotaCardLayoutTests: XCTestCase {
     private let cardID = "claude@profile-work"
 
-    func testAccountDividerSharesSectionsAndKeepsQuotaVisibilityIndependent() {
-        let store = makeStore(defaults: makeDefaults("SharedDivider"))
+    func testReorderingAnAccountKeepsItsQuotaVisibilityIndependent() {
+        let store = makeStore(defaults: makeDefaults("IndependentReorder"))
         store.setMetricEnabled("claude.weekly", false)
-        store.expandedMetricIDs = ["claude.session"]
-        let divider = "\(cardID)::expanded-divider"
 
-        XCTAssertTrue(
-            store.applyMetricDividerOrder(
-                [
-                    "\(cardID).sonnet", divider, "\(cardID).session", "\(cardID).weekly"
-                ], dragged: "\(cardID).weekly", dividerID: divider, in: cardID))
+        XCTAssertTrue(store.reorderMetric(
+            dragged: "\(cardID).weekly", target: "\(cardID).sonnet", in: cardID))
 
-        XCTAssertTrue(store.isExpandedMetric("claude.weekly"))
-        XCTAssertTrue(store.isExpandedMetric("\(cardID).weekly"))
         XCTAssertFalse(store.isMetricEnabled("claude.weekly"))
         XCTAssertTrue(store.isMetricEnabled("\(cardID).weekly"))
-        XCTAssertFalse(store.expandedMetricIDs.contains { ProviderAccountID.isAccountCard($0) })
+        XCTAssertEqual(store.accountSettingsMetrics(for: cardID).map(\.id),
+            ["session", "sonnet", "weekly"].map { "\(cardID).\($0)" })
+        XCTAssertEqual(store.accountSettingsMetrics(for: "claude").map(\.id),
+            ["claude.session", "claude.weekly", "claude.sonnet"])
     }
 
     func testProviderResetFromAnAccountRestoresItsFamilyAndKeepsOtherProviders() {
@@ -43,8 +39,8 @@ final class AccountQuotaCardLayoutTests: XCTestCase {
         XCTAssertFalse(store.canUndo)
     }
 
-    func testAccountQuotaCardKeepsLegacyOnDemandPresentation() {
-        // 기존 확장 영역 소속은 유지하고 개인 지표만 카드별로 복사.
+    func testLegacyOnDemandGroupingMigratesToTheVisibleCardOrder() {
+        // 기존 표시 순서를 평탄화한 뒤 개인 지표의 계정별 순서로 보존.
         let defaults = makeDefaults("OnDemandSplit")
         defaults.set(["claude.session"], forKey: "layout.expandedMetrics")
         saveStored(["claude.session", "claude.weekly", "claude.sonnet"], forKey: "layout.seededDefaults", in: defaults)
@@ -55,8 +51,9 @@ final class AccountQuotaCardLayoutTests: XCTestCase {
         XCTAssertEqual(
             group?.widgets.map(\.descriptorID),
             ["\(cardID).weekly", "\(cardID).sonnet", "\(cardID).session"],
-            "the card shows the provider's old Always Visible rows first, then the old On Demand rows"
+            "이전 접기 영역의 표시 순서 유지"
         )
+        XCTAssertNil(defaults.object(forKey: "layout.expandedMetrics"))
     }
 
     func testHidingAMetricOnAnAccountCardLeavesOtherCardsAlone() {
@@ -105,14 +102,15 @@ final class AccountQuotaCardLayoutTests: XCTestCase {
             ["claude.session", "claude.weekly", "\(cardID).session", "\(cardID).weekly"]
         )
         XCTAssertEqual(
-            store.metricOrderByProvider["claude"], ["claude.session", "claude.weekly", "claude.sonnet"],
-            "기존 지표 순서는 확장 영역 소속과 별개로 유지"
+            store.metricOrderByProvider["claude"], ["claude.session", "claude.sonnet", "claude.weekly"],
+            "기존 표시 순서를 평탄화하여 보존"
         )
         XCTAssertEqual(
-            store.metricOrderByProvider[cardID], ["\(cardID).session", "\(cardID).weekly", "\(cardID).sonnet"],
-            "개인 지표의 기존 순서를 계정 카드로 복사"
+            store.metricOrderByProvider[cardID], ["\(cardID).session", "\(cardID).sonnet", "\(cardID).weekly"],
+            "평탄화한 개인 지표 순서를 계정 카드로 복사"
         )
-        XCTAssertEqual(store.expandedMetricIDs, ["claude.weekly"])
+        XCTAssertNil(defaults.object(forKey: "layout.expandedMetrics"))
+        XCTAssertNil(defaults.object(forKey: "layout.expandedProviders"))
 
         let persistence = LayoutPersistence(defaults: defaults, storageKey: "layout")
         XCTAssertEqual(
@@ -221,7 +219,7 @@ final class AccountQuotaCardLayoutTests: XCTestCase {
         XCTAssertFalse(relaunched.isMetricEnabled("claude.sonnet"))
     }
 
-    func testFullyHiddenQuotaCardRemainsReachableThroughCustomizeAndCanBeRestored() throws {
+    func testFullyHiddenQuotaCardRemainsReachableThroughAccountsAndCanBeRestored() {
         let defaults = makeDefaults("RestoreHiddenCard")
         let store = makeStore(defaults: defaults)
         for suffix in ["session", "weekly", "sonnet"] {
@@ -229,8 +227,7 @@ final class AccountQuotaCardLayoutTests: XCTestCase {
         }
         XCTAssertNil(widgets(store, cardID))
         XCTAssertTrue(store.customizeProviderRows.contains { $0.id == cardID })
-        let detail = try XCTUnwrap(store.customizeDetail(for: cardID))
-        XCTAssertEqual(detail.metrics.count, 3)
+        XCTAssertEqual(store.accountSettingsMetrics(for: cardID).count, 3)
 
         store.setMetricEnabled("\(cardID).weekly", true)
 

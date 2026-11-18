@@ -115,3 +115,31 @@ extension WidgetData {
         return false
     }
 }
+
+/// 행 값에 포인터를 올리거나 클릭할 때 여는 상세 패널.
+enum WidgetRowDetail: Equatable {
+    /// 모델별 사용 내역.
+    case breakdown
+    /// 합계만 있고 모델 내역이 없음 — 읽은 시각과 사유.
+    case saved
+    /// 사용량을 아직 받지 못함 — 빈 상태.
+    case empty
+    /// Limit Resets 만료 타임라인.
+    case resets
+    /// Usage Trend 30일 상세.
+    case trend
+}
+
+extension WidgetData {
+    /// 값에서 여는 상세 — 없으면 nil(툴팁만).
+    /// `reportsModels`는 모델 내역 지원 여부 — 미지원 행은 합계 패널 대신 툴팁 표시.
+    func rowDetail(reportsModels: Bool) -> WidgetRowDetail? {
+        if showsResetExpiries { return hasData ? .resets : nil }
+        if isChart { return hasData && !chartPoints.isEmpty ? .trend : nil }
+        guard isUsagePeriod else { return nil }
+        if hasModelBreakdown { return .breakdown }
+        if !hasData { return .empty }
+        if isEmptyUsagePeriod { return nil }
+        return reportsModels ? .saved : nil
+    }
+}

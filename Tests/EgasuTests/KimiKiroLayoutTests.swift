@@ -15,19 +15,15 @@ final class KimiKiroLayoutTests: XCTestCase {
         XCTAssertEqual(store.placed.map(\.descriptorID), [
             "kimi.session", "kimi.weekly", "kimi.total", "kimi.extra", "kimi.extraBalance", "kiro.credits"
         ])
-        XCTAssertTrue(store.priorityPinIDs.isEmpty)
+        XCTAssertTrue(store.priorityPinIDs.isEmpty, "새 설치는 고정 없이 시작")
 
         let kimi = store.customizeGroups.first { $0.provider.id == "kimi" }
-        XCTAssertEqual(
-            kimi?.alwaysShownMetrics.map(\.id),
-            [
-                "kimi.session", "kimi.weekly", "kimi.total", "kimi.extra", "kimi.extraBalance"
+        XCTAssertEqual(kimi?.metrics.map(\.id), [
+            "kimi.session", "kimi.weekly", "kimi.total", "kimi.extra", "kimi.extraBalance"
         ])
-        XCTAssertTrue(kimi?.expandedMetrics.isEmpty == true)
 
         let kiro = store.customizeGroups.first { $0.provider.id == "kiro" }
-        XCTAssertEqual(kiro?.alwaysShownMetrics.map(\.id), ["kiro.credits"])
-        XCTAssertTrue(kiro?.expandedMetrics.isEmpty == true)
+        XCTAssertEqual(kiro?.metrics.map(\.id), ["kiro.credits"])
     }
 
     func testAddingKimiMetricsKeepsExistingHiddenMetricAndOrderAcrossRelaunch() {
@@ -46,12 +42,12 @@ final class KimiKiroLayoutTests: XCTestCase {
         store.replaceRegistry(registry)
 
         let expectedOrder = ["kimi.weekly", "kimi.session", "kimi.total", "kimi.extra", "kimi.extraBalance"]
+        XCTAssertEqual(store.accountSettingsMetrics(for: "kimi").map(\.id), expectedOrder)
+        XCTAssertEqual(store.placed.map(\.descriptorID), expectedOrder.filter { $0 != "kimi.weekly" })
         let relaunched = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
-        for current in [store, relaunched] {
-            XCTAssertEqual(current.customizeGroups.first { $0.provider.id == "kimi" }?.metrics.map(\.id), expectedOrder)
-            XCTAssertEqual(current.placed.map(\.descriptorID), expectedOrder.filter { $0 != "kimi.weekly" })
-            XCTAssertTrue(current.priorityPinIDs.isEmpty)
-        }
+        XCTAssertEqual(relaunched.accountSettingsMetrics(for: "kimi").map(\.id), expectedOrder)
+        XCTAssertEqual(relaunched.placed.map(\.descriptorID), expectedOrder.filter { $0 != "kimi.weekly" })
+        XCTAssertEqual(defaults.stringArray(forKey: "layout.disabledMetrics"), ["kimi.weekly"])
     }
     func testRemovingCodeMetricPreservesOtherVisibilityOrderAndPinsAcrossRelaunch() {
         let suiteName = "EgasuTests.KimiKiroLayout.\(UUID().uuidString)"

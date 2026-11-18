@@ -170,7 +170,7 @@ final class AccountCardPresentationStoreTests: XCTestCase {
         let second = try registry.add(family: "claude", label: "Second", identityKey: "two")
         registry.setPreferred(family: "claude", profileID: first.id)
         defaults.set("existing-layout", forKey: "openusage.layout.v1")
-        DashboardUsageAccountSelection.select("claude", for: "claude", defaults: defaults)
+        defaults.set("claude", forKey: "openusage.dashboardUsageAccount.claude")
         let before = defaults.persistentDomain(forName: suiteName) ?? [:]
         let store = AccountCardPresentationStore(defaults: defaults)
 

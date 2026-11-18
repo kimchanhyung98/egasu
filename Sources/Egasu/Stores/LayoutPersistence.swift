@@ -47,7 +47,12 @@ final class LayoutPersistence {
     func loadPins() -> [String]? { defaults.stringArray(forKey: keys.pins) }
     func loadExpandedMetrics() -> [String]? { defaults.stringArray(forKey: keys.expandedMetrics) }
     func loadExpandOnEnable() -> [String]? { defaults.stringArray(forKey: keys.expandOnEnable) }
-    func loadExpandedProviders() -> [String]? { defaults.stringArray(forKey: keys.expandedProviders) }
+
+    var hasOnDemandState: Bool {
+        [keys.expandedMetrics, keys.expandOnEnable, keys.expandedProviders].contains {
+            defaults.object(forKey: $0) != nil
+        }
+    }
 
     func savePlaced(_ value: [PlacedWidget]) { encode(value, forKey: keys.placed) }
     func saveProviderOrder(_ value: [String]) { encode(value, forKey: keys.providerOrder) }
@@ -58,15 +63,11 @@ final class LayoutPersistence {
 
     func savePriorityPins(_ value: Set<String>) { defaults.set(Array(value).sorted(), forKey: keys.priorityPins) }
 
-    func savePins(_ value: Set<String>) { defaults.set(Array(value), forKey: keys.pins) }
-    func saveExpandedMetrics(_ value: Set<String>) {
-        defaults.set(Array(value), forKey: keys.expandedMetrics)
-    }
-    func saveExpandOnEnable(_ value: Set<String>) {
-        defaults.set(Array(value), forKey: keys.expandOnEnable)
-    }
-    func saveExpandedProviders(_ value: Set<String>) {
-        defaults.set(Array(value), forKey: keys.expandedProviders)
+    /// 레거시 On Demand 키 제거. 호출 전에 변환한 지표 순서 저장.
+    func clearOnDemandState() {
+        for key in [keys.expandedMetrics, keys.expandOnEnable, keys.expandedProviders] {
+            defaults.removeObject(forKey: key)
+        }
     }
 
     /// 공유 홈 카드가 다른 등록 계정을 가리키면 개인 설정만 같은 프로필의 새 카드로 이동.

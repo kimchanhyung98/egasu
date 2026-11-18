@@ -286,8 +286,7 @@ Reset Watch 평가기의 입력은 조회 결과인 `receive`와 설정 변경�
 Accounts는 레이아웃의 프로바이더 계열 순서와 계열 내부 관리형 계정 순서 편집.
 All Usage는 두 순서를 합성해 등록 계정별 행과 현재 계정명 표시.
 메뉴 막대는 모든 표시 계정에서 Running Out·Priority·Pinned Only 중 선택한 [표시 기준](/docs/menu-bar.md#표시-항목)에 따라 지표 선택.
-푸터의 Share Screenshot 선택기는 저장된 계정 표시 모드 사용.
-계정 줄의 Share Screenshot은 지정한 계정을 Separate Cards 방식으로 렌더링.
+All Usage의 프로바이더 섹션 공유 이미지는 표시 중인 계정·지표 순서와 해당 탭의 레이아웃 사용.
 제품 동작은 [대시보드](/docs/dashboard.md)와 [계정](/docs/accounts.md) 참조.
 
 ## 프로세스 실행과 Codex 자동화

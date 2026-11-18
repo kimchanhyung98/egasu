@@ -27,7 +27,7 @@ final class DashboardMenusTests: XCTestCase {
     func testRenameSitsBetweenRefreshAndEditForNamedAccounts() {
         let commands = DashboardMenus.account(account, status: nil, canRename: true).flatMap { $0 }.compactMap(
             \.command)
-        XCTAssertEqual(commands, [.refresh([cardID]), .rename(cardID), .editAccount(cardID), .shareScreenshot(cardID)])
+        XCTAssertEqual(commands, [.refresh([cardID]), .rename(cardID), .editAccount(cardID)])
     }
 
     func testAccountsWithoutANameOfferNoRename() {

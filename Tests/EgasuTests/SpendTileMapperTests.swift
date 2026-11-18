@@ -213,7 +213,7 @@ final class SpendTileMapperTests: XCTestCase {
         XCTAssertEqual(last30.sourceNote, "From test logs")
     }
 
-    func testModelBreakdownSortsFoldsOtherAndKeepsUnpricedNamed() throws {
+    func testModelBreakdownPreservesAllModelsBeforeRanking() throws {
         var lines: [MetricLine] = []
         SpendTileMapper.appendTokenUsage(
             DailyUsageSeries(daily: [
@@ -237,18 +237,18 @@ final class SpendTileMapperTests: XCTestCase {
             modelSourceNote: "From test logs"
         )
 
-        // 미가격 "mystery" 존재 → 전체가 token share 기준으로 전환, 정렬은 cost 우선 유지
         let breakdown = try XCTUnwrap(modelBreakdown(lines, "Today"))
         XCTAssertEqual(
             breakdown.models.map(\.model),
-            ["aardvark", "beta", "delta", "epsilon", "zeta", "mystery", "Other"]
+            ["alpha", "aardvark", "beta", "delta", "epsilon", "zeta", "eta", "mystery"]
         )
-        let other = try XCTUnwrap(breakdown.models.first { $0.model == "Other" })
-        XCTAssertEqual(other.totalTokens, 800)
-        XCTAssertEqual(other.costUSD, 13)
-        XCTAssertEqual(other.variants?.map(\.model), ["alpha", "eta"],
-                       "the Other row's tooltip lists the folded models, largest spend first")
         XCTAssertNil(breakdown.models.first { $0.model == "mystery" }?.costUSD)
+        let rows = UsageBreakdown(title: "Today", breakdown: breakdown).rows(by: .cost)
+        XCTAssertEqual(rows.dropLast().map(\.name), ["aardvark", "beta", "delta", "epsilon", "zeta"])
+        let other = try XCTUnwrap(rows.last)
+        XCTAssertEqual(other.name, L10n.metrics(ModelUsageEntry.otherModelName))
+        XCTAssertNil(other.number)
+        XCTAssertEqual(other.variants.map(\.model), ["alpha", "eta", "mystery"])
     }
 
     func testModelBreakdownFoldsSubFivePercentModelsIntoOther() throws {
@@ -270,12 +270,15 @@ final class SpendTileMapperTests: XCTestCase {
             modelSourceNote: "From test logs"
         )
 
-        // 전부 가격 존재 → cost share 90/6/4%, 5% floor 미만인 "tiny"는 cap 여유와 무관하게 Other로 편입
         let breakdown = try XCTUnwrap(modelBreakdown(lines, "Today"))
-        XCTAssertEqual(breakdown.models.map(\.model), ["big", "mid", "Other"])
-        let other = try XCTUnwrap(breakdown.models.first { $0.model == "Other" })
-        XCTAssertEqual(other.costUSD, 4)
-        XCTAssertEqual(other.variants?.map(\.model), ["tiny"])
+        let detail = UsageBreakdown(title: "Today", breakdown: breakdown)
+        let costRows = detail.rows(by: .cost)
+        XCTAssertEqual(costRows.dropLast().map(\.name), ["big", "mid"])
+        let other = try XCTUnwrap(costRows.last)
+        XCTAssertEqual(other.name, L10n.metrics(ModelUsageEntry.otherModelName))
+        XCTAssertEqual(other.number, 4)
+        XCTAssertEqual(other.variants.map(\.model), ["tiny"])
+        XCTAssertEqual(detail.rows(by: .tokens).map(\.name), ["big", "mid", "tiny"])
     }
 
     func testModelBreakdownFoldsUnattributedIntoOtherRegardlessOfSize() throws {
@@ -298,11 +301,14 @@ final class SpendTileMapperTests: XCTestCase {
         )
 
         let breakdown = try XCTUnwrap(modelBreakdown(lines, "Today"))
-        XCTAssertEqual(breakdown.models.map(\.model), ["grok-build", "Other"],
-                       "unattributed tokens read as Other, never as their own row")
-        let other = try XCTUnwrap(breakdown.models.first { $0.model == "Other" })
-        XCTAssertEqual(other.totalTokens, 400)
-        XCTAssertNil(other.costUSD)
+        let detail = UsageBreakdown(title: "Today", breakdown: breakdown)
+        for figure in [ModelFigure.cost, .tokens] {
+            let rows = detail.rows(by: figure)
+            XCTAssertEqual(rows.map(\.name), ["grok-build", L10n.metrics(ModelUsageEntry.otherModelName)])
+            let other = try XCTUnwrap(rows.last)
+            XCTAssertEqual(other.number, figure == .tokens ? 400 : nil)
+            XCTAssertEqual(other.variants.map(\.model), [ModelUsageEntry.unattributedModelName])
+        }
     }
 
     func testModelBreakdownGroupsCaseInsensitivelyAndKeepsDominantSpelling() throws {

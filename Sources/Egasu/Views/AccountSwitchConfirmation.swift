@@ -78,7 +78,7 @@ private struct AccountSwitchConfirmation: ViewModifier {
             }
             try await switcher.switchAuthentication(to: profile, in: store)
             let refreshes = container.refreshAccountCatalog()
-            await container.syncDashboardUsageAccount(to: profile)
+            await container.refreshSharedRuntime(afterSwitchingTo: profile)
             for (providerID, refresh) in refreshes where providerIDs.contains(providerID) { await refresh.value }
             error = nil
             AppDiagnostics.record(.accountSwitch, result: .success, providerID: profile.family)

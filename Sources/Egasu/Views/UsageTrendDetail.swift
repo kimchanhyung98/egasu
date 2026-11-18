@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Usage Trend 행의 상세 팝오버 — 확대 바 차트, peak/호버 일자 readout, 소스 노트.
+/// Usage Trend 상세 팝오버 — 확대 막대 차트, 최고값·호버한 날짜의 수치, 출처 안내.
 struct UsageTrendDetail: View {
     let title: String
     let points: [MetricChartPoint]
@@ -11,7 +11,6 @@ struct UsageTrendDetail: View {
     @State private var activeIndex: Int?
 
     private static let chartHeight: CGFloat = 76
-    private static let width: CGFloat = 240
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -22,9 +21,9 @@ struct UsageTrendDetail: View {
                 PopoverSourceNote(text: note)
             }
         }
-        .padding(12)
-        .frame(width: Self.width)
-        // 팝오버가 열린 채 refresh로 `points` 교체 가능 — 선택 해제로 stale 하이라이트 방지
+        .padding(UsageBreakdownDetail.padding)
+        .frame(width: UsageBreakdownDetail.width)
+        // 열린 상태에서 데이터가 바뀌면 선택을 해제하여 이전 강조 표시 제거.
         .onChange(of: points) { activeIndex = nil }
         .onContinuousHover { phase in
             switch phase {
@@ -37,8 +36,8 @@ struct UsageTrendDetail: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.primary)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
             Spacer(minLength: 8)
             Text(readout)
                 .font(.system(size: 11))
@@ -54,7 +53,7 @@ struct UsageTrendDetail: View {
                 Color.clear
                     .frame(maxWidth: .infinity)
                     .frame(height: Self.chartHeight)
-                    // 짧은 바도 쉽게 hit되도록 전체 컬럼을 hover 대상화
+                    // 짧은 막대도 쉽게 선택하도록 열 전체를 호버 대상으로 사용.
                     .overlay(alignment: .bottom) {
                         RoundedRectangle(cornerRadius: 1.5, style: .continuous)
                             .fill(Theme.meterFill(.normal))
@@ -68,7 +67,7 @@ struct UsageTrendDetail: View {
             }
         }
         .frame(height: Self.chartHeight)
-        // 바 영역 이탈 시(팝오버 내부라도) 선택 해제 — readout이 마지막 바에 고정되지 않고 peak로 복귀
+        // 막대 영역을 벗어나면 선택 해제 — 표시 수치를 최고값으로 복원.
         .onContinuousHover { phase in if case .ended = phase { activeIndex = nil } }
         .animation(.easeOut(duration: 0.12), value: activeIndex)
     }
@@ -86,7 +85,7 @@ struct UsageTrendDetail: View {
 
     private var peakIndex: Int? { points.indices.max { points[$0].value < points[$1].value } }
 
-    /// 호버 중인 일자 수치, 미호버 시 peak 수치.
+    /// 포인터가 가리키는 날짜의 수치 — 선택이 없으면 최고값.
     private var readout: String {
         if let activeIndex, points.indices.contains(activeIndex) {
             return "\(points[activeIndex].localizedLabel) · \(points[activeIndex].localizedReadout)"
@@ -101,4 +100,4 @@ struct UsageTrendDetail: View {
     }
 }
 
-// 호버 개폐 코디네이터는 `HoverPopoverState` 소유 (모델 분해 팝오버와 공유)
+// 호버 열기·닫기 상태는 모델별 내역 팝오버와 같은 HoverPopoverState 사용.

@@ -136,9 +136,9 @@ struct DashboardView: View {
         // 닫힌 패널은 포인터 이탈을 알리지 않으므로 남은 툴팁·호버 팝오버 정리.
         HoverTooltips.dismissAll()
         HoverPopoverState.dismissAll()
+        ReducedMotionPopoverController.dismissAll()
         // 닫힐 때 열린 이름 편집은 저장 — 포커스 이탈이 오지 않음.
         renaming.commit()
-        layout.clearShareConfirmation()
         popover.reset()
         reorderLift = nil
         layout.cancelDrag()

@@ -1,69 +1,83 @@
 import SwiftUI
 
-/// 우클릭 "Share Screenshot" 액션용 프로바이더 사용량 오프스크린 PNG.
-/// 전달된 계정 지표를 저장 순서대로 ×4 래스터화.
-/// 환경 의존 없는 `[WidgetData]` 입력 — 앱·테스트에서 동일 렌더 보장.
-struct ShareCardView: View {
-    let provider: Provider
-    var plan: String?
-    let rows: [WidgetData]
-    let appearance: ColorScheme
-    /// 세션 중 rename된 라이브 카드 제목. `ImageRenderer`는 앱 environment 밖이라 명시 전달 필수.
-    var displayNameOverride: String? = nil
-
-    /// 저작 카드 폭 (pt). 렌더러가 `ShareCardRenderer.scale` 배율 적용, 높이는 행 합산으로 가변.
+private enum ShareCardDimensions {
     static let width: CGFloat = 360
+    static let inset: CGFloat = 16
+}
+
+/// 프로바이더 카드의 공유 이미지 — 머리글 + 계정 섹션(전체 또는 계정 하나).
+/// 폭·불투명 바탕(`ImageRenderer`에는 창 바탕이 없음)·강제 모양을 스스로 지정.
+struct ShareCardView: View {
+    let family: DashboardFamily
+    var plans: [String: String] = [:]
+    let appearance: ColorScheme
+    /// 이메일 계정명은 생략하고 Privacy Mode가 켜지면 별명도 흐리게 표시.
+    var blursAccountNames = false
+    var layoutStyle = DashboardLayoutStyle.minimal
+
+    static let width = ShareCardDimensions.width
+    static let inset = ShareCardDimensions.inset
 
     var body: some View {
-        ShareCardChrome(appearance: appearance) {
-            headerRow
-            metricsCard
+        ShareCardFrame(appearance: appearance, blursAccountNames: blursAccountNames) {
+            DashboardProviderSection(family: family.forSharing, layoutStyle: layoutStyle) { account in
+                DashboardAccountRows(
+                    account: account, plan: plans[account.id], layoutStyle: layoutStyle, showsEmptyMessage: true
+                )
+            }
         }
     }
+}
 
-    // MARK: - Header
+/// Priority 탭의 공유 이미지 — 탭 막대 없이 목록만.
+struct PriorityShareCard: View {
+    let board: PriorityBoard
+    let now: Date
+    let appearance: ColorScheme
+    var blursAccountNames = false
 
-    private var headerRow: some View {
-        HStack(spacing: 10) {
-            ProviderIcon(source: provider.icon, inset: 0.04)
-                .frame(width: 22, height: 22)
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(displayNameOverride ?? provider.displayName)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                if let plan, !plan.isEmpty {
-                    Text(plan)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            Spacer(minLength: 0)
+    var body: some View {
+        ShareCardFrame(appearance: appearance, blursAccountNames: blursAccountNames) {
+            PriorityBoardList(board: board, now: now)
         }
     }
+}
 
-    // MARK: - Body
+/// 공유 이미지 공통 틀 — 패널 바탕, 막대는 도형, 하단 브랜드 띠.
+/// AppKit 기준 뷰가 노란 상자로 그려지지 않도록 툴팁 비활성화.
+struct ShareCardFrame<Content: View>: View {
+    let appearance: ColorScheme
+    var blursAccountNames = false
+    @ViewBuilder let content: Content
 
-    /// 계정 지표의 정적 렌더. 빈 계정은 안내 문구 표시.
-    @ViewBuilder
-    private var metricsCard: some View {
-        if rows.isEmpty {
-            DashboardMetricCard {
-                Text(L10n.dashboard("No metrics to show"))
-                    .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-            }
-        } else {
-            DashboardMetricCard {
-                let condensed = WidgetData.condensedTextRowOffsets(in: rows)
-                ForEach(Array(rows.enumerated()), id: \.offset) { index, data in
-                    WidgetRowView(data: data, condensedTop: condensed.contains(index))
-                }
-            }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            content
+                .padding(ShareCardDimensions.inset)
+            watermarkFooter
         }
+        .frame(width: ShareCardDimensions.width, alignment: .topLeading)
+        .background(Theme.panelBody)
+        .environment(\.drawsLevelsAsShapes, true)
+        .environment(\.concealsAccountNames, blursAccountNames)
+        .environment(\.hoverTooltipsDisabled, true)
+        .environment(\.colorScheme, appearance)
+    }
+
+    private var watermarkFooter: some View {
+        HStack(spacing: 6) {
+            ProviderIcon(source: .providerMark("egasu"), inset: 0)
+                .frame(width: 16, height: 16)
+            Text("egasu")
+                .font(.system(size: 13, weight: .semibold))
+            Spacer(minLength: 8)
+            Text(L10n.dashboard("Monitor Your AI Subscriptions"))
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, ShareCardDimensions.inset)
+        .frame(maxWidth: .infinity, minHeight: 40)
+        .background(Theme.cardFill)
+        .overlay(alignment: .top) { Rectangle().fill(.separator).frame(height: 0.5) }
     }
 }

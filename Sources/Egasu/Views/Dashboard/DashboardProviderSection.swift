@@ -4,12 +4,15 @@ import SwiftUI
 struct DashboardProviderSection<Header: View, Account: View>: View {
     let family: DashboardFamily
     var layoutStyle = DashboardLayoutStyle.minimal
-    @ViewBuilder var header: () -> Header
+    @ViewBuilder var header: (_ isHovered: Bool) -> Header
     @ViewBuilder var account: (DashboardAccount) -> Account
+
+    @State private var isHovered = false
+    @Environment(PopoverState.self) private var popover: PopoverState?
 
     var body: some View {
         VStack(alignment: .leading, spacing: DashboardGrid.headerGap) {
-            header()
+            header(isHovered)
             if layoutStyle == .cards {
                 VStack(alignment: .leading, spacing: DashboardGrid.accountSpacing) {
                     ForEach(family.accounts) { entry in
@@ -25,7 +28,10 @@ struct DashboardProviderSection<Header: View, Account: View>: View {
             }
         }
         .contentShape(Rectangle())
-
+        .onHover { isHovered = $0 }
+        .onChange(of: popover?.popoverShown) { _, shown in
+            if shown == false { isHovered = false }
+        }
     }
 
     private func card<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -44,17 +50,46 @@ extension DashboardProviderSection where Header == DashboardProviderHeader {
         @ViewBuilder account: @escaping (DashboardAccount) -> Account
     ) {
         self.init(
-            family: family, layoutStyle: layoutStyle, header: { DashboardProviderHeader(family: family) },
-            account: account)
+            family: family, layoutStyle: layoutStyle,
+            header: { _ in DashboardProviderHeader(family: family) }, account: account
+        )
     }
 }
 
-/// 카드 밖 머리글 — 프로바이더 이름·서버 장애 상태·오른쪽 로고.
+/// 카드 밖 머리글 — 프로바이더 이름·서버 장애 상태·오른쪽 로고와 호버 시 복사 버튼.
 struct DashboardProviderHeader: View {
     let family: DashboardFamily
     var serviceIssue: ProviderServiceIssue?
+    var isRevealed = false
+    var onCopyScreenshot: (() -> Bool)?
+    var reorderGesture: AnyGesture<Void>?
 
     var body: some View {
+        HStack(spacing: onCopyScreenshot == nil ? Theme.Spacing.s : 0) {
+            reorderArea(titleArea)
+            if let onCopyScreenshot {
+                CopyFeedbackButton(
+                    accessibilityLabel: L10n.dashboard("Copy %@ Screenshot", family.displayName),
+                    isRevealed: isRevealed,
+                    action: onCopyScreenshot
+                )
+                // 기존 슬롯 양쪽 여백을 28pt 버튼 입력 영역에 포함.
+                .frame(width: DashboardGrid.iconSize + 2 * Theme.Spacing.s)
+                .zIndex(1)
+            }
+            reorderArea(
+                ProviderIcon(source: family.provider.icon, inset: 0.04)
+                    .frame(width: DashboardGrid.iconSize, height: DashboardGrid.iconSize)
+                    .accessibilityHidden(true)
+            )
+        }
+        .padding(.horizontal, DashboardGrid.cardPadding)
+        .frame(height: DashboardGrid.headerHeight)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+
+    private var titleArea: some View {
         HStack(spacing: Theme.Spacing.s) {
             Text(family.displayName)
                 .font(DashboardGrid.headerFont)
@@ -71,14 +106,19 @@ struct DashboardProviderHeader: View {
                 }
             }
             Spacer(minLength: DashboardGrid.columnGap)
-            ProviderIcon(source: family.provider.icon, inset: 0.04)
-                .frame(width: DashboardGrid.iconSize, height: DashboardGrid.iconSize)
-                .accessibilityHidden(true)
         }
-        .padding(.horizontal, DashboardGrid.cardPadding)
-        .frame(height: DashboardGrid.headerHeight)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private func reorderArea<Content: View>(_ content: Content) -> some View {
+        if let reorderGesture {
+            content
+                .frame(height: DashboardGrid.headerHeight)
+                .contentShape(Rectangle())
+                .highPriorityGesture(reorderGesture)
+        } else {
+            content
+        }
     }
 }
 
@@ -176,9 +216,7 @@ struct DashboardAccountStatus {
             MotionAwareProgressView(controlSize: .mini)
                 .accessibilityLabel(L10n.dashboard("Refreshing"))
         } else if let notice {
-            Button {
-                onFix?()
-            } label: {
+            Button { onFix?() } label: {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.notice)
@@ -202,14 +240,23 @@ struct DashboardAccountRows: View {
     let account: DashboardAccount
     var plan: String?
     var layoutStyle = DashboardLayoutStyle.minimal
+    var showsEmptyMessage = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             DashboardAccountCaption(account: account, plan: plan)
-            DashboardLineStack(account: account, layoutStyle: layoutStyle) { line in
-                DashboardMetricRow(
-                    model: line.data.dashboardRow(), chartPoints: line.data.chartPoints, layoutStyle: layoutStyle,
-                    valueTooltip: line.data.isChart ? line.data.chartNote : nil)
+            if showsEmptyMessage && account.lines.isEmpty && account.waitingMetricIDs.isEmpty {
+                Text(L10n.dashboard("No metrics to show"))
+                    .font(DashboardMetricRow.font)
+                    .foregroundStyle(.secondary)
+                    .frame(minHeight: DashboardGrid.rowHeight, alignment: .leading)
+            } else {
+                DashboardLineStack(account: account, layoutStyle: layoutStyle) { line in
+                    DashboardMetricRow(
+                        model: line.data.dashboardRow(), chartPoints: line.data.chartPoints, layoutStyle: layoutStyle,
+                        valueTooltip: line.data.isChart ? line.data.chartNote : nil
+                    )
+                }
             }
         }
     }

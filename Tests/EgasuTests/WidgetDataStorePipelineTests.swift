@@ -85,6 +85,31 @@ final class WidgetDataStorePipelineTests: XCTestCase {
         XCTAssertEqual(tokens(in: store.snapshots["codex"]), 300)
     }
 
+    func testHistoryMissKeepsReportedValuesButCannotFillMissingPeriods() async throws {
+        let fixture = makeFixture()
+        let store = fixture.store
+        let periods = WidgetDescriptor.spendTiles(provider: fixture.runtime.provider)
+        let yesterday = try XCTUnwrap(periods.first { $0.id == "codex.yesterday" })
+        await store.refresh(providerID: "codex", force: true)
+        XCTAssertTrue(store.data(for: yesterday).isZeroUsage)
+
+        fixture.runtime.snapshot.usageHistory = nil
+        await store.refresh(providerID: "codex", force: true)
+
+        let retained = try XCTUnwrap(store.snapshots["codex"])
+        XCTAssertNil(retained.warning)
+        XCTAssertEqual(retained.isDegraded, true)
+        XCTAssertEqual(tokens(in: retained), 100)
+        XCTAssertFalse(store.data(for: yesterday).hasData)
+        XCTAssertEqual(fixture.cache.loadSnapshots(providerIDs: ["codex"])["codex"]?.isDegraded, true)
+
+        fixture.runtime.snapshot.usageHistory = ProviderUsageHistory(series: .init(daily: []))
+        await store.refresh(providerID: "codex", force: true)
+
+        XCTAssertNil(store.snapshots["codex"]?.isDegraded)
+        XCTAssertTrue(store.data(for: yesterday).isZeroUsage)
+    }
+
     func testCatalogReplacementWhileQueuedReleasesOldWorkWithoutCallingOldRuntime() async throws {
         let fixture = makeFixture()
         let acquired = await fixture.queue.acquire("test:block-refresh")

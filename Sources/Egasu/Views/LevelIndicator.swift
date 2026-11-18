@@ -77,3 +77,11 @@ struct LevelIndicator: View {
             .accessibilityHidden(true)
     }
 }
+
+/// meter marker를 fraction 중심에 배치하되 track 양 끝을 넘지 않게 clamp.
+enum MeterMarkerGeometry {
+    static func offset(track: CGFloat, fraction: Double, markerWidth: CGFloat) -> CGFloat {
+        let centered = track * fraction - markerWidth / 2
+        return min(max(centered, 0), max(track - markerWidth, 0))
+    }
+}

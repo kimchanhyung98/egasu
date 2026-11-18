@@ -323,35 +323,6 @@ final class CodexScheduledResetTests: XCTestCase {
         }
     }
 
-    func testScheduledLabelsFitCurrentPanelAndWrapAtNarrowWidths() throws {
-        let suiteName = "EgasuTests.ScheduledResetLayout.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        defaults.set(DensitySetting.regular.rawValue, forKey: DensitySetting.key)
-
-        for label in ["Scheduled 9월 12일 at 오후 4:00", "Cached forecast · Refresh failed"] {
-            var data = WidgetData(
-                title: "Reset Watch", icon: .providerMark("codex"), kind: .percent, used: 99, limit: 100)
-            data.forecast = .init(isScheduled: true)
-            data.subtitleOverride = label
-
-            func render(width: CGFloat) throws -> NSImage {
-                try XCTUnwrap(
-                    ShareCardRenderer.image(
-                        for: WidgetRowView(data: data)
-                            .frame(width: width)
-                            .environment(\.hoverTooltipsDisabled, true)
-                            .defaultAppStorage(defaults)))
-            }
-
-            let dashboard = try render(width: PanelMetrics.width - 28)
-            let wide = try render(width: ShareCardView.width - 32)
-            let narrow = try render(width: 240)
-            XCTAssertEqual(dashboard.size.width, PanelMetrics.width - 28)
-            XCTAssertGreaterThanOrEqual(dashboard.size.height, wide.size.height, label)
-            XCTAssertGreaterThan(narrow.size.height, wide.size.height, label)
-        }
-    }
 
     func testForecastTimeButtonTogglesSharedSettingWhenHostExposesAccessibility() throws {
         try withHosting(Button("Control") {}) { hosting in

@@ -165,7 +165,7 @@ final class ProviderCatalogTests: XCTestCase {
         )
     }
 
-    func testCodexSnapshotCardsRenderTheirFamilyLayout() {
+    func testCodexSnapshotCardsKeepQuotaAndCanonicalSharedRows() {
         let card = AccountUsageSnapshotCard(id: "codex@profile-p1", profileID: "p1", family: "codex")
         let registry = WidgetRegistry.from(ProviderCatalog.make(snapshotCards: [card]))
         let layout = LayoutStore(registry: registry, defaults: makeScratchDefaults(), storageKey: "layout")
@@ -175,9 +175,10 @@ final class ProviderCatalogTests: XCTestCase {
 
         let group = layout.displayGroups.first { $0.provider.id == card.id }
         XCTAssertNotNil(group, "the snapshot card renders its own dashboard group")
-        let expandedIDs = group?.expandedWidgets.map(\.descriptorID) ?? []
-        XCTAssertTrue(expandedIDs.contains("\(card.id).trend"), "the family's caret split applies to the card")
-        XCTAssertTrue(expandedIDs.contains("\(card.id).rateLimitResets"))
+        let ids = group?.widgets.map(\.descriptorID) ?? []
+        XCTAssertFalse(ids.contains("\(card.id).trend"), "공통 이력은 기본 카드에서 한 번 표시")
+        XCTAssertTrue(ids.contains("\(card.id).rateLimitResets"))
+        XCTAssertTrue(layout.isMetricEnabled("codex.trend"))
 
         XCTAssertFalse(
             layout.priorityPinIDs.contains { ProviderAccountID.isAccountCard($0) },

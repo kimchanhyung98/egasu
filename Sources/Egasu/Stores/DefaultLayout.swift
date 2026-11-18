@@ -78,29 +78,4 @@ enum DefaultLayout {
         "zai.session", "zai.weekly"
     ]
 
-    /// 신규 설치 시 provider별 On Demand 섹션에 배치되는 metric
-    /// 활성화가 아닌 소속 목록 — 비활성 optional row도 나중에 켜면 caret 아래 등장
-    /// registry 필터링 적용, 순수 신규 설치에서만 시드
-    static let expandedMetricIDs: [String] = [
-        // Antigravity: Gemini pool 쌍은 fold 위, Claude pool 쌍·Argon 주간은 caret 아래
-        "antigravity.claude", "antigravity.claudeWeekly", "antigravity.argonWeekly",
-        // Claude: Session·Weekly·Fable은 fold 위, Trend·optional limit·Extra Usage·spend history는 caret 아래
-        "claude.trend", "claude.extra", "claude.sonnet",
-        "claude.today", "claude.yesterday", "claude.last30",
-        // Codex: Session·Weekly는 fold 위, Trend·reset watch·reset 상세·Spark·Extra Usage·spend history는 caret 아래
-        "codex.trend", "codex.resetWatch", "codex.rateLimitResets", "codex.spark", "codex.sparkWeekly",
-        "codex.credits", "codex.today", "codex.yesterday", "codex.last30",
-        "cursor.onDemand", "cursor.requests", "cursor.credits",
-        "cursor.today", "cursor.yesterday", "cursor.last30",
-        // Copilot: Credits·Extra Usage는 fold 위, org billing 쌍과 Chat·Completions는 caret 아래 — Chat·Completions는 free에서만 실측치
-        "copilot.orgCredits", "copilot.orgSpend", "copilot.chat", "copilot.completions",
-        "devin.extra",
-        "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30",
-        // OpenCode: Go cap 3종과 Trend는 fold 위, spend tile은 caret 아래
-        "opencode.today", "opencode.yesterday", "opencode.last30",
-        // OpenRouter: Credits meter·Balance는 fold 위, 기간 spend·key cap은 caret 아래
-        "openrouter.today", "openrouter.week", "openrouter.month", "openrouter.keyLimit",
-        // Z.ai: Session meter는 fold 위, Web Searches는 caret 아래
-        "zai.webSearches"
-    ]
 }
