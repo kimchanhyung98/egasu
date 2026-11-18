@@ -83,8 +83,10 @@ CLAUDE.md에 지침·중복 지침·프로젝트 규칙 추가 금지.
 ```sh
 swift build
 swift test            # make check는 위 두 명령을 순서대로 실행
-script/build_and_run.sh [run|build|logs|verify]
+./script/build_and_run.sh run
 ```
+
+스크립트는 `build`, `logs`, `verify` 모드도 지원.
 
 - 핫 리로드 없음.
   테스트 전에 실행 중인 앱을 종료하고 변경한 코드를 빌드한 뒤 앱 재실행.
@@ -150,7 +152,8 @@ script/build_and_run.sh [run|build|logs|verify]
 
 ## 오류 처리
 
-- 오류가 발생하면 로그 파일과 PostHog에 기록하고 사용자에게 이해하기 쉬운 문구 표시.
+- 오류가 발생하면 로그 파일에 기록하고 사용자에게 이해하기 쉬운 문구 표시.
+- PostHog에는 **Share Anonymous Usage**를 켰을 때만 [개인정보 보호 설정](/docs/settings.md#개인정보-보호)에서 정한 범위의 진단 이벤트 전송.
 - 실제 문제를 숨기는 조용한 fallback 추가 금지.
 - 프로바이더 API 실패는 계정별로 친절한 오류로 표시.
 - 자격 증명과 응답 본문은 로그에 남기지 않음.

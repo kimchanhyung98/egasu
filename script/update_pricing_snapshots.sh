@@ -4,7 +4,8 @@
 #   Sources/Egasu/Resources/pricing_litellm_snapshot.json      (LiteLLM model_prices)
 #   Sources/Egasu/Resources/pricing_models_dev_snapshot.json   (models.dev api.json)
 #
-# 첫 실행·오프라인용 가격. 실행 중에는 마지막 성공 후 1시간이 지나면 같은 피드를 재조회하며 캐시 사용.
+# 첫 실행·오프라인용 가격. 마지막 성공 후 1시간이 지난 뒤 첫 가격 조회에서 같은 피드의 갱신 시작.
+# 갱신에 실패하면 30분이 지난 뒤 가격을 조회할 때 재시도.
 # 릴리스 시 갱신해 첫 실행의 가격도 최신 상태로 유지. 저장소 루트에서 실행:
 #
 #   ./script/update_pricing_snapshots.sh

@@ -134,7 +134,7 @@ enum PricingCatalogCodecs {
             var oa: Double?
             var cwa: Double?
             var cra: Double?
-            /// 필드가 없으면 명시 요율로 처리하여 이전 스냅샷 호환 — 새로 생성한 기본 요율은 false 기록.
+            /// 필드 생략은 명시 요율로 해석해 이전 스냅샷과 호환. `false`는 기본 요율을 뜻함.
             var cre: Bool?
             var fast: Double?
         }

@@ -1,4 +1,5 @@
-/// 캐시 우회 여부와 별개인 작업 원인 — 사용자가 직접 요청한 새로 고침만 manual 집계.
+/// 캐시 우회 여부와 별개인 작업 원인.
+/// 직접 요청한 새로 고침과 Keychain으로 로그인 확인 후 실행하는 계정 카드 조회를 `manual`로 집계.
 enum RefreshTrigger: String, Codable, CaseIterable, Sendable {
     case scheduled
     case manual

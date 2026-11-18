@@ -1,6 +1,7 @@
 import Foundation
 
-/// 취소에 응답하지 않는 프로바이더도 호출자의 대기는 종료 — 실제 작업 종료와 결과 반영 분리.
+/// 프로바이더가 `MainActor` 실행권을 양보하면 취소에 응답하지 않아도 호출자 대기 종료 가능.
+/// `MainActor`가 막히면 시간 초과·취소 처리가 지연되며, 제한 시간 이후 반환한 결과는 폐기.
 @MainActor
 enum ProviderRefreshDeadline {
     enum Result: Sendable {

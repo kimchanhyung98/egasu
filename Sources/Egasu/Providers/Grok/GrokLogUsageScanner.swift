@@ -112,7 +112,8 @@ struct GrokLogUsageScanner: Sendable {
                 return
             }
 
-            // 세션 ID 없는 하위 에이전트 모델 이벤트 이후에는 프로세스 기본 모델의 갱신·추정 사용 중단.
+            // 세션 ID 없는 하위 에이전트 모델 이벤트 이후 해당 PID의 기본 모델 갱신 중단.
+            // 기본 모델은 이미 상속한 세션에서만 계속 사용.
             if msg == "subagent model resolved", sid == nil {
                 if let pid { ambiguousPIDs.insert(pid) }
                 return

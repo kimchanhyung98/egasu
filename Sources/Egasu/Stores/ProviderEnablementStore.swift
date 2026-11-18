@@ -12,7 +12,7 @@ final class ProviderEnablementStore {
     private static let knownStorageKey = "openusage.knownProviders.v1"
     private static let initialDetectionPendingKey = "openusage.initialProviderDetectionPending.v1"
 
-    /// 활성 프로바이더 목록이 실제 변경되면 알림 게시 — 갱신 루프의 조기 재개 신호.
+    /// 갱신 루프 조기 재개 신호 — 활성 프로바이더 변경 또는 구형 방식에서 활성 목록 방식으로 전환 시 게시.
     /// 전체 UserDefaults 변경 알림은 구독하지 않음 — 무관한 저장으로 불필요한 갱신 방지.
     /// 불변 Sendable 상수이므로 nonisolated에서 메인 액터 전환 없이 접근 가능.
     nonisolated static let didChangeNotification = Notification.Name("ProviderEnablementDidChange")
@@ -88,7 +88,7 @@ final class ProviderEnablementStore {
     }
 
     /// 활성 목록 방식으로 전환하여 전달된 ID만 활성화 — 신규 설치 초기화용.
-    /// 새로 켠 프로바이더마다 onProviderEnabled 호출 후 변경 알림 게시.
+    /// 새로 켠 프로바이더마다 `onProviderEnabled` 호출. 최초 전환 또는 이후 목록 변경 시 알림 게시.
     func seedEnabledProviders(_ ids: Set<String>) {
         let newlyEnabled = ids.filter { !isEnabled($0) }
         let changed = enabledIDs != ids

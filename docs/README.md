@@ -24,7 +24,7 @@
 
 - [명령줄 인터페이스](/docs/cli.md) — 에이전트와 스크립트를 위한 1회 실행 캐시 조회와 강제 조회
 - [로컬 HTTP API](/docs/local-http-api.md) — `127.0.0.1:6736`에서 다른 앱이 사용량을 읽는 방법
-- [프록시](/docs/proxy.md) — 앱의 원격 HTTP 요청에 SOCKS5·HTTP·HTTPS 프록시 적용
+- [프록시](/docs/proxy.md) — 프로바이더 사용량·공개 상태·모델 가격 조회와 Codex Reset Watch에 SOCKS5·HTTP·HTTPS 프록시 적용
 
 ## 프로바이더
 

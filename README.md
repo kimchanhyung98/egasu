@@ -27,7 +27,8 @@ The app updates itself in place via signed, notarized [Sparkle](docs/updates.md)
 - **[Grok](docs/providers/grok.md)** — weekly shared pool, pay-as-you-go, local daily spend
 - **[Kimi](/docs/providers/kimi.md)** — 5시간·주간·월간 총한도, 추가 지출·잔액.
 - **[Kiro](docs/providers/kiro.md)** — coding credits and subscription plan
-- **[OpenCode](/docs/providers/opencode.md)** — Go의 세션·주간·월간 한도 추정치, Console(종전 Zen)과 Go의 로컬 지출·토큰.
+- **[OpenCode](/docs/providers/opencode.md)** — Go의 세션·주간·월간 한도 추정치, Console과 Go의 로컬 지출·토큰.
+  과거 Zen 기록도 Console 집계에 포함.
 - **[OpenRouter](docs/providers/openrouter.md)** — credit balance, daily/weekly/monthly spend (API key)
 - **[Z.ai](docs/providers/zai.md)** — session, weekly, web-search quotas (GLM Coding Plan, API key)
 
@@ -141,7 +142,11 @@ The release workflow needs these repository secrets (Settings → Secrets and va
 | `POSTHOG_CLI_PROJECT_ID`     | numeric PostHog project ID the dSYMs upload to                        |
 
 
-Export the Developer ID Application cert (with its private key) from Keychain Access as a `.p12`, then `base64 -i DeveloperID.p12 | pbcopy`. App-specific passwords come from appleid.apple.com → Sign-In and Security → App-Specific Passwords. Generate the Sparkle EdDSA key pair once with Sparkle's `generate_keys` tool; the workflow stops if the new appcast item lacks a signature, including when the public and private keys do not match.
+Export the Developer ID Application cert (with its private key) from Keychain Access as a `.p12`, then `base64 -i DeveloperID.p12 | pbcopy`. App-specific passwords come from appleid.apple.com → Sign-In and Security → App-Specific Passwords. Generate the Sparkle EdDSA key pair once with Sparkle's `generate_keys` tool.
+
+워크플로는 GitHub Release에 DMG를 먼저 게시하고, 해당 DMG의 appcast 항목에 `sparkle:edSignature` 속성이 있는지 확인.
+검사에 실패하면 Pages의 appcast는 갱신되지 않으며, 이미 게시된 GitHub Release와 DMG는 공개 상태로 유지.
+GitHub Release와 DMG를 확인한 뒤 서명 설정이 원인이면 수정하고 같은 태그로 릴리스 워크플로를 다시 실행.
 
 For iCloud Sync, store the original development and Developer ID provisioning profiles in 1Password as secure documents. Install the development profile on each registered Mac; base64-encode the Developer ID profile and store it only in the `APPLE_DEVELOPER_ID_ICLOUD_PROFILE` Actions secret. See [iCloud Sync](/docs/icloud-sync.md#개발-및-릴리스-설정) for the container identifiers, build command, and file-inspection command.
 

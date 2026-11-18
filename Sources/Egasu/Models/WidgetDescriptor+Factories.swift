@@ -75,7 +75,7 @@ extension WidgetDescriptor {
         traySuffix: String? = nil,
         showsResetExpiries: Bool = false
     ) -> WidgetDescriptor {
-        // 각 값이 자체 유형을 보유하므로 이 kind는 .values 표시에 미사용 — 단일 유형 선택이면 해당 유형, 그 외 dollars.
+        // 선택된 값은 각각의 `kind`로 표시. 선택된 값 없이 숫자를 표시할 때는 이 기본 유형으로 형식과 단위 결정.
         let kind: MetricKind = { if case .kind(let only) = selection { return only }; return .dollars }()
         var sample = WidgetData(title: title, icon: provider.icon, kind: kind, used: 0, limit: nil,
                                 unboundedValueWord: valueWord)
@@ -106,7 +106,8 @@ extension WidgetDescriptor {
             .combined(id: "\(provider.id).yesterday", provider: provider, title: "Yesterday", isUsagePeriod: true),
             .combined(id: "\(provider.id).last30", provider: provider, title: "Last 30 Days", isUsagePeriod: true)
         ]
-        // 전체 지표를 기간 지출로 표시하여 Total Spend 집계 대상에 포함.
+        // 공통 기간 지출 지표로 분류. Total Spend는 스냅샷에서 비용·토큰 중 하나의 합계가 양수인 기간 행을 집계.
+        // 전용 합계를 쓰는 프로바이더는 `totalSpendLines`의 기간 행 사용.
         return descriptors.map { descriptor in
             var sample = descriptor.sample
             sample.valueTooltipNote = valueTooltipNote

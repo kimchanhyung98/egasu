@@ -60,7 +60,8 @@ enum ZAIUsageError: Error, LocalizedError, Equatable {
     case connectionFailed
     case invalidResponse
     case requestFailed(Int)
-    /// 유효 키지만 GLM Coding Plan이 없는 상태. 2xx 응답의 `success:false`로 구분.
+    /// 유효한 키로 조회한 계정에 GLM Coding Plan이 없는 상태.
+    /// 한도 조회의 2xx 응답에서 `success: false`와 `msg`에 포함된 "coding plan" 문구를 함께 확인.
     /// 요청 실패·응답 손상과 별도로 처리.
     case noCodingPlan
 

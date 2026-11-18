@@ -3,7 +3,7 @@ import Observation
 
 /// 메뉴 막대의 개인정보 보호 상태 — 저장된 설정과 현재 캡처 상태를 결합.
 /// 상태 반영 후 StatusItemImageUpdater에 전달하여 캡처 중 메뉴 막대를 앱 아이콘으로 표시.
-/// 설정을 켠 동안만 감시 — 주기적 조회와 윈도 서버 변경 알림 병행.
+/// 설정을 켜면 주기적 조회와 윈도 서버 변경 알림으로 캡처 감시.
 @MainActor
 @Observable
 final class MenuBarPrivacyStore {
@@ -13,7 +13,7 @@ final class MenuBarPrivacyStore {
     static let pollInterval: Duration = .seconds(3)
 
     /// 기본 켜짐 설정 — SwiftUI·AppKit이 같은 저장값 사용.
-    /// 설정을 끄면 감시 작업 중지.
+    /// 설정을 끄면 주기적 조회 중지. 등록된 변경 알림은 수신하되 캡처 상태 조회 생략.
     var hideUsageWhileScreenSharing: Bool {
         didSet {
             guard hideUsageWhileScreenSharing != oldValue else { return }

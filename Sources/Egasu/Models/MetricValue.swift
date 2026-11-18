@@ -8,7 +8,8 @@ struct MetricValue: Hashable, Sendable, Codable {
     var number: Double
     /// 값별 출력 형식 — 금액·백분율·개수 중 선택.
     var kind: MetricKind
-    /// 숫자 뒤 단위 명사 — nil이면 숫자만 표시, 금액은 지표의 unboundedValueWord 사용.
+    /// 숫자 뒤 단위 명사 — nil이면 값 자체의 단위 생략.
+    /// 위젯의 단일 금액 표시는 `WidgetData.unboundedValueWord`가 설정된 경우 해당 단어 우선.
     var label: String?
     /// 로컬 추정치 여부 — 같은 행에서도 비용은 추정, 토큰은 실측일 수 있어 값별 보관.
     var estimated: Bool

@@ -86,7 +86,8 @@ enum CursorUsageSummaryMapper {
         return true
     }
 
-    /// 요청 한도가 없으면 팀 한도에서 `pooled`를 먼저 확인. 그 외에는 개인 `plan`, 개인 `overall`, 팀 `pooled` 순으로 선택.
+    /// 유효한 요청 한도가 없을 때 요약 사용량으로 대체.
+    /// `limitType`이 `team`이면 유효한 팀 `pooled` 우선. 그 외에는 개인 `plan`, 개인 `overall`, 팀 `pooled` 순으로 선택.
     private static func appendSummaryTotal(
         _ summary: [String: Any]?,
         cycle: BillingCycle,

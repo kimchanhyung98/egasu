@@ -3,7 +3,8 @@
 #
 # assets/AppIcon.icon은 Icon Composer의 refractivity(Liquid Glass) 기능 사용.
 # 컴파일 가능한 actool로 미리 생성한 결과를 저장소에 보관(Xcode 26.2에서 확인, Apple FB20183399).
-# 릴리스 빌드는 actool을 실행하지 않고 이 결과를 복사.
+# 릴리스 빌드는 사전 빌드한 Assets.car가 있으면 복사. AppIcon.icns도 있으면 함께 복사.
+# Assets.car가 없으면 actool로 아이콘 직접 컴파일.
 #
 # 아이콘 변경 시 .icon을 읽을 수 있는 actool 환경에서 실행한 뒤 생성 결과를 함께 커밋.
 set -euo pipefail

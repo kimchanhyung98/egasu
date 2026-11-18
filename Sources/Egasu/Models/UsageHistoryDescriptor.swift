@@ -1,7 +1,7 @@
 import Foundation
 
 /// 프로바이더 일별 지출 이력의 Mac 간 합산 가능 여부.
-/// 공용 지출 지표를 가진 프로바이더는 명시적으로 선언 — 계정 전체 사용량의 중복 합산 방지.
+/// 공용 지출 지표를 제공하는 프로바이더는 집계 범위를 명시해야 함. 계정 전체 사용량의 중복 합산 방지.
 struct UsageHistoryDescriptor: Hashable, Sendable {
     enum Scope: String, Hashable, Sendable, Codable {
         case machineLocal
