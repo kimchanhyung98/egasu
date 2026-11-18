@@ -14,18 +14,25 @@ const initial = initialPreviewState();
   </> : <div class="am-list" data-account-list>
     {providers.flatMap((provider) => {
       const family = accountFamilies.find((family) => family.id === provider.id);
-      return (family?.profiles ?? [{ id: 'default', name: '' }]).map((account) => (
-        <div class="am-prow" data-account-list-row data-provider={provider.id} data-account-id={account.id}
-          data-open={`account:${provider.id}:${account.id}`} hidden={!initial.enabledProviders.includes(provider.id)}>
-          <span class="am-drag" draggable="true" data-drag-account={`${provider.id}:${account.id}`} tabindex="0" role="button" aria-keyshortcuts="ArrowUp ArrowDown" aria-label={`Reorder ${provider.name} ${account.name}`}><Glyph name="grip" class="am-grip" /></span>
-          <svg class="am-mark" viewBox="0 0 24 24" aria-hidden="true"><use href={`#pi-${provider.id}`} /></svg>
-          <button type="button" class="am-account-open" data-go={`account:${provider.id}:${account.id}`}>
-            <span>{provider.name}</span>{account.name && <span data-account-name={provider.id} data-account-id={account.id}>{account.name}</span>}
-          </button>
-          {family && <span class="am-plan" data-in-use={provider.id} data-account-id={account.id} hidden={family.activeAccount !== account.id}>In Use</span>}
-          <button type="button" class="am-open" data-go={`account:${provider.id}:${account.id}`} aria-label={`Open ${provider.name}${account.name ? ` ${account.name}` : ''}`}><Glyph name="chevron-right" class="am-chev" /></button>
-        </div>
-      ));
+      return (family?.profiles ?? [{ id: 'default', name: '' }]).map((account) => {
+        const label = [provider.name, account.name].filter(Boolean).join(' ');
+        return (
+          <div class="am-prow" data-account-list-row data-provider={provider.id} data-account-id={account.id}
+            data-open={`account:${provider.id}:${account.id}`} hidden={!initial.enabledProviders.includes(provider.id)}>
+            <span class="am-drag" draggable="true" data-drag-account={`${provider.id}:${account.id}`} tabindex="0" role="button" aria-keyshortcuts="ArrowUp ArrowDown">
+              <Glyph name="grip" class="am-grip" /><span class="am-sr" data-account-action-label="Reorder">{`Reorder ${label}`}</span>
+            </span>
+            <svg class="am-mark" viewBox="0 0 24 24" aria-hidden="true"><use href={`#pi-${provider.id}`} /></svg>
+            <button type="button" class="am-account-open" data-go={`account:${provider.id}:${account.id}`}>
+              <span>{provider.name}</span>{account.name && <span data-account-name={provider.id} data-account-id={account.id}>{account.name}</span>}
+            </button>
+            {family && <span class="am-plan" data-in-use={provider.id} data-account-id={account.id} hidden={family.activeAccount !== account.id}>In Use</span>}
+            <button type="button" class="am-open" data-go={`account:${provider.id}:${account.id}`}>
+              <Glyph name="chevron-right" class="am-chev" /><span class="am-sr" data-account-action-label="Open">{`Open ${label}`}</span>
+            </button>
+          </div>
+        );
+      });
     })}
   </div>}
   {!onboarding && <p class="am-account-empty" data-accounts-empty hidden>No Accounts</p>}

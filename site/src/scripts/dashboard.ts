@@ -2,6 +2,7 @@ import { dashboardLines, priorityBoard, menuBarItems } from '../data/preview-das
 import { metricKey, providerMetrics } from '../data/metrics';
 import { orderedMetrics, accountName, accountEmail, type PreviewState } from '../data/preview-state';
 import { providers } from '../data/providers';
+import { previewAccountDisplayName, setPreviewAccountText } from './localization';
 
 export function renderDashboard(mock: HTMLElement, state: PreviewState): void {
   if (!mock.querySelector('[data-dashboard-panel]')) return;
@@ -98,7 +99,17 @@ function renderAccountSettings(mock: HTMLElement, state: PreviewState): void {
   const empty = mock.querySelector<HTMLElement>('[data-accounts-empty]');
   if (empty) empty.hidden = state.enabledProviders.length !== 0;
   mock.querySelectorAll<HTMLElement>('[data-account-list-row]').forEach((row) => {
-    row.hidden = !state.enabledProviders.includes(row.dataset.provider!);
+    const family = row.dataset.provider!;
+    const id = row.dataset.accountId!;
+    const providerName = providers.find((provider) => provider.id === family)!.name;
+    const { name, literal } = id === 'default' ? { name: '', literal: false } : previewAccountDisplayName(state, family, id);
+    row.hidden = !state.enabledProviders.includes(family);
+    row.querySelectorAll<HTMLElement>('[data-account-action-label]').forEach((label) => {
+      setPreviewAccountText(
+        label, (name) => `${label.dataset.accountActionLabel} ${[providerName, name].filter(Boolean).join(' ')}`,
+        name, literal,
+      );
+    });
   });
   const list = mock.querySelector<HTMLElement>('[data-account-list]');
   if (list) state.providerOrder.forEach((family) => {
@@ -136,9 +147,14 @@ function renderAccountNames(mock: HTMLElement, state: PreviewState): void {
   mock.querySelectorAll<HTMLElement>('[data-account-name]').forEach((element) => {
     const family = element.dataset.accountName!;
     const id = element.dataset.accountId!;
-    const dashboard = element.closest('[data-scr="dashboard"]');
-    element.toggleAttribute('data-preview-literal', Object.hasOwn(state.accountNames, `${family}:${id}`) || Boolean(dashboard && mock.dataset.showEmails === 'true'));
-    element.textContent = dashboard && mock.dataset.showEmails === 'true' ? accountEmail(family, id) : accountName(state, family, id);
+    const dashboard = element.closest('[data-scr="dashboard"]') !== null;
+    const masked = dashboard && state.preferences.privacyMode === true;
+    const showEmail = dashboard && mock.dataset.showEmails === 'true';
+    const { name, literal } = masked || showEmail
+      ? { name: accountEmail(family, id), literal: true }
+      : previewAccountDisplayName(state, family, id);
+    element.toggleAttribute('data-preview-literal', literal);
+    element.textContent = masked ? name.replace(/^[^@]+/, '••••') : name;
     element.classList.toggle('is-in-use', state.activeAccounts[family] === id);
   });
   mock.querySelectorAll<HTMLElement>('[data-in-use]').forEach((badge) => { badge.hidden = state.activeAccounts[badge.dataset.inUse!] !== badge.dataset.accountId; });

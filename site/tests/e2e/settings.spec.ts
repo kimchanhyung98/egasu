@@ -16,8 +16,11 @@ test('Accounts confirms switching and preserves both registered account limits',
   await expect(second).toHaveAttribute('aria-checked', 'true');
   await page.reload();
   await allUsage(page);
-  await expect(app.locator('[data-card="claude-account-1"]')).toBeVisible();
-  await expect(app.locator('[data-card="claude-account-2"]')).toBeVisible();
+  for (const accountID of ['account-1', 'account-2']) {
+    const card = app.locator(`[data-card="claude-${accountID}"]`);
+    await expect(card).toBeVisible();
+    await expect(card.locator('[data-row="claude.session"]')).toBeVisible();
+  }
   await expect(app.locator('[data-card="claude-account-2"]')).toHaveAttribute('data-inactive-account', 'false');
 });
 

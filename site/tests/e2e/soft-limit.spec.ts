@@ -14,7 +14,10 @@ test('Soft Limit confirmation preserves navigation and cancellation status', asy
   await allUsage(page);
   const app = page.locator('[data-mock]');
   await openSettings(page);
-  await app.locator('button[data-settings-tab="Advanced"]').click();
+  const advanced = app.getByRole('tab', { name: 'Advanced', exact: true });
+  await advanced.click();
+  const cancellation = app.getByText('Cancellation Status', { exact: true });
+  await expect(cancellation).toBeHidden();
   await app.getByRole('switch', { name: 'Enable Soft Limit' }).click();
   await app.locator('[data-soft-confirm]').click();
   await app.getByRole('button', { name: 'Back', exact: true }).click();
@@ -28,7 +31,9 @@ test('Soft Limit confirmation preserves navigation and cancellation status', asy
   await options.click();
   await app.getByRole('menuitem', { name: 'Settings', exact: true }).click();
   await expect(app).toHaveAttribute('data-screen', 'settings');
-  await expect(app.locator('[data-settings-group="softLimit"]')).toContainText('Automatic cancellation is currently unavailable.');
+  await advanced.click();
+  await cancellation.click();
+  await expect(app.getByText('Automatic cancellation is currently unavailable.', { exact: true })).toBeVisible();
 });
 
 test('Soft Limit covers Fable and Antigravity model windows and mirrors them in Left mode', async ({ page }) => {

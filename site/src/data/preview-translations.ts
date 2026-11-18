@@ -4,6 +4,7 @@ export const previewTranslations: Record<string, { ko: string; ja: string }> = {
   "Sample provider added. Connect your account in the Mac app.": { ko: "예시 프로바이더를 추가했습니다. 실제 계정은 Mac 앱에서 연결하세요.", ja: "サンプルのプロバイダーを追加しました。実際のアカウントはMacアプリで接続してください。" },
   "Sign in again in the Mac app. This preview does not access your credentials.": { ko: "Mac 앱에서 다시 로그인하세요. 이 미리보기는 로그인 정보에 접근하지 않습니다.", ja: "Macアプリで再ログインしてください。このプレビューは認証情報にアクセスしません。" },
   "Remove accounts in the Mac app. Your actual accounts are not connected to this preview.": { ko: "계정 삭제는 Mac 앱에서 진행하세요. 이 미리보기에는 실제 계정이 연결되어 있지 않습니다.", ja: "アカウントの削除はMacアプリで行ってください。このプレビューに実際のアカウントは接続されていません。" },
+  "Remove From Preview": { ko: "미리보기에서 제거", ja: "プレビューから削除" },
   'Use up to 60 characters without slashes, backslashes, or control characters.': {
     ko: '이름은 60자 이내로 입력하세요. 슬래시, 역슬래시, 제어 문자는 사용할 수 없습니다.',
     ja: 'スラッシュ、バックスラッシュ、制御文字を使わず、60文字以内で入力してください。',

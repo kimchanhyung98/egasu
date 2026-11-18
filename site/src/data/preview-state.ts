@@ -67,12 +67,18 @@ export function accountEmail(family: string, id: string): string {
   return `${family}.${id}@example.com`;
 }
 
-export function renameAccount(state: PreviewState, family: string, id: string, value: string): PreviewState {
-  account(family, id);
+function validatedAccountName(family: string, id: string, value: string): string {
+  const hasForbiddenCharacters = /[/\\\p{Cc}]/u.test(value);
   const name = value.trim() || accountEmail(family, id);
-  if (name.length > 60 || /[/\\\p{Cc}]/u.test(name)) {
+  if (hasForbiddenCharacters || name.length > 60) {
     throw new Error('Use up to 60 characters without slashes, backslashes, or control characters.');
   }
+  return name;
+}
+
+export function renameAccount(state: PreviewState, family: string, id: string, value: string): PreviewState {
+  account(family, id);
+  const name = validatedAccountName(family, id, value);
   const siblings = accountFamilies.find((entry) => entry.id === family)!.profiles;
   const nameKey = name.normalize('NFC').toLowerCase();
   if (siblings.some((other) => other.id !== id
@@ -196,7 +202,7 @@ export function restorePreviewState(value: unknown): PreviewState {
     const parts = key.split(':');
     const [family, id] = parts;
     if (parts.length !== 2 || typeof name !== 'string') throw new Error('Invalid preview account name.');
-    state.accountNames[key] = name.trim() || accountEmail(family, id);
+    state.accountNames[key] = validatedAccountName(family, id, name);
   }
   // 이름 중복은 복원할 최종 집합에서 검사.
   for (const [key, name] of Object.entries(state.accountNames)) {

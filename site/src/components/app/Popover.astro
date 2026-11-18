@@ -49,10 +49,11 @@ const optionItems = [
       <div id={`${uid}-priority`} role="tabpanel" aria-label="Priority" data-dashboard-panel="Priority" hidden={initialDashboardTab !== 'Priority'}><Priority providerIDs={selected.map((card) => card.provider)} /></div>
       <div id={`${uid}-all-usage`} role="tabpanel" aria-label="All Usage" data-dashboard-panel="All Usage" hidden={initialDashboardTab !== 'All Usage'}>
         {groups.map((provider) => <section class="am-family-section" data-family={provider.id} hidden={!selected.some((card) => card.provider === provider.id)}>
-          <div class="am-family-header" data-provider-header={provider.id} tabindex="0" aria-haspopup="menu" aria-expanded="false" aria-controls={`${uid}-family-${provider.id}`}>
+          <div class="am-family-header" data-provider-header={provider.id}>
             <span class="am-drag" draggable="true" data-drag-provider={provider.id} tabindex="0" role="button" aria-keyshortcuts="ArrowUp ArrowDown" aria-label={`Reorder ${provider.name}`}><Glyph name="grip" class="am-grip" /></span>
             <svg class="am-mark" viewBox="0 0 24 24" aria-hidden="true"><use href={`#pi-${provider.id}`} /></svg><b>{provider.name}</b>
             <button type="button" class="am-icon-action" data-native-action="Copy a usage image from the Mac app." aria-label={`Copy ${provider.name}`}><Glyph name="copy" /></button>
+            {nav && !demonstration && <button type="button" class="am-icon-action" tabindex="0" data-provider-menu-trigger aria-label={`${provider.name} Links`} aria-haspopup="menu" aria-expanded="false" aria-controls={`${uid}-family-${provider.id}`}><Glyph name="more" /></button>}
           </div>
           <div class="am-family-accounts">{[...shown, ...dormant].filter((card) => card.provider === provider.id).map((card) => <Section c={card} uid={uid} />)}</div>
           <p class="am-note am-family-notice" data-family-notice hidden>No sample usage for this provider.</p>
@@ -81,7 +82,7 @@ const optionItems = [
     const family = accountFamilies.find((family) => family.id === provider.id);
     return (family?.profiles ?? [{ id: 'default', name: '' }]).map((account) => <div class="am-scr" data-scr={`account:${provider.id}:${account.id}`} hidden>
       <TopBar title={provider.name} back="accounts">{provider.name}{account.name && <>: <span data-account-name={provider.id} data-account-id={account.id}>{account.name}</span></>}</TopBar>
-      <div class="am-body"><MetricList provider={provider.id} accountID={account.id} /></div>
+      <div class="am-body"><MetricList provider={provider.id} accountID={account.id} uid={uid} /></div>
     </div>);
   })}
   {nav && <div class="am-scr" data-scr="add-account" hidden><TopBar title="Add Account" back="accounts" /><div class="am-body"><div class="am-screen"><div class="am-list">

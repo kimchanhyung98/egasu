@@ -2,16 +2,18 @@
 import Glyph from './Glyph.astro';
 import { providerMetrics } from '../../data/metrics';
 import { accountFamilies } from '../../data/accounts';
-interface Props { provider: string; accountID: string }
-const { provider, accountID } = Astro.props;
+import { cards } from '../../data/dashboard';
+interface Props { provider: string; accountID: string; uid: string }
+const { provider, accountID, uid } = Astro.props;
 const family = accountFamilies.find((family) => family.id === provider);
 const profile = family?.profiles.find((profile) => profile.id === accountID);
+const needsConnection = !profile && !cards.some((card) => card.provider === provider);
 const rows = providerMetrics[provider].rows;
 ---
 <div class="am-screen" data-account-detail={provider} data-account-id={accountID}>
   {profile && <form class="am-list am-rename-form" data-rename-form data-provider={provider} data-account-id={accountID}>
     <label class="am-item"><span>Name</span><input aria-label="Name" data-rename-input value={profile.name} maxlength="60" /></label>
-    <p class="am-note" data-rename-error role="alert" hidden />
+    <p class="am-note" id={`${uid}-rename-error-${provider}-${accountID}`} data-rename-error role="alert" hidden />
   </form>}
   {[false, true].map((shared) => rows.some((row) => row.shared === shared) && <div class="am-group">
     <b>{shared ? 'Shared Settings' : 'Account Settings'}</b>
@@ -25,11 +27,14 @@ const rows = providerMetrics[provider].rows;
     </div>
   </div>)}
   <div class="am-list">
-    <div class="am-item"><span>Status</span><span class="am-item-ctl am-badge">{profile ? 'Ready' : 'Detected Locally'}</span></div>
+    <div class="am-item"><span>Status</span><span class="am-item-ctl am-badge">{profile?.status ?? (needsConnection ? 'Sign-In Needed' : 'Detected Locally')}</span></div>
+    {needsConnection && <p class="am-note">Add and sign in to accounts in the Mac app.</p>}
     {profile && <>
-      <div class="am-item"><span>Use This Account</span><span class="am-item-ctl"><button type="button" class:list={['am-toggle', { 'is-on': family?.activeAccount === accountID }]} role="switch" aria-checked={family?.activeAccount === accountID} aria-label="Use This Account" data-account-switch={provider} data-account-id={accountID} /></span></div>
+      <div class="am-item"><span>Use This Account</span><span class="am-item-ctl"><button type="button" class:list={['am-toggle', { 'is-on': family?.activeAccount === accountID }]} role="switch" aria-checked={family?.activeAccount === accountID} aria-label="Use This Account" data-account-switch={provider} data-account-id={accountID} disabled={profile.status !== 'Ready'} /></span></div>
       <button type="button" class="am-account-action" data-native-action="Sign in again in the Mac app. This preview does not access your credentials.">Sign In Again…</button>
     </>}
-    <button type="button" class="am-account-action is-destructive" data-native-action="Remove accounts in the Mac app. Your actual accounts are not connected to this preview.">Remove Account…</button>
+    {needsConnection
+      ? <button type="button" class="am-account-action is-destructive" data-remove-preview-provider={provider}>Remove From Preview</button>
+      : <button type="button" class="am-account-action is-destructive" data-native-action="Remove accounts in the Mac app. Your actual accounts are not connected to this preview.">Remove Account…</button>}
   </div>
 </div>

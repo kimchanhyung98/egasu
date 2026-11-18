@@ -4,8 +4,10 @@ import { initialPreviewState, orderedMetrics, moveMetric, restorePreviewState, s
 const ids = (state: PreviewState, account: string) => orderedMetrics(state, 'codex', account).map((row) => row.id);
 const a = 'account-1', b = 'account-2';
 test('default order follows the interleaved provider declaration', () => {
-  const order = ids(initialPreviewState(), a);
-  assert.ok(order.indexOf('codex.trend') < order.indexOf('codex.rateLimitResets'));
+  assert.deepEqual(ids(initialPreviewState(), a), [
+    'codex.session', 'codex.weekly', 'codex.trend', 'codex.resetWatch', 'codex.rateLimitResets',
+    'codex.spark', 'codex.sparkWeekly', 'codex.credits', 'codex.today', 'codex.yesterday', 'codex.last30',
+  ]);
 });
 test('a quota can cross a common row and survive reload without changing the other account', () => {
   let state = initialPreviewState();

@@ -33,19 +33,43 @@ test('account metrics hide independently and pin once in Priority', async ({ pag
   await expect(app.locator('[data-card="claude-account-1"] [data-row="claude.session"]')).toBeVisible();
 });
 
-test('provider context menu exposes links and closes on scroll with restored focus', async ({ page }) => {
+test('provider context menu exposes links and restores focus to its named button', async ({ page }) => {
   await openHome(page);
   await allUsage(page);
   const app = page.locator('[data-mock]');
   const header = app.locator('[data-provider-header="claude"]');
+  const trigger = header.getByRole('button', { name: 'Claude Links', exact: true });
+  const menu = app.locator('.am-family-menu[id="hero-family-claude"]');
   await header.scrollIntoViewIfNeeded();
+  if (await page.evaluate(() => matchMedia('(hover: none)').matches)) {
+    const grip = header.locator('[data-drag-provider]');
+    await expect(grip).toHaveCSS('opacity', '1');
+    await expect(grip).toHaveCSS('width', '10px');
+  }
+  await expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
+  await expect(trigger).toHaveAttribute('aria-controls', (await menu.getAttribute('id'))!);
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
   await header.click({ button: 'right' });
-  const menu = app.getByRole('menu', { name: 'Claude Links' });
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
   await expect(menu.getByRole('menuitem', { name: 'Status', exact: true })).toHaveAttribute('href', 'https://status.claude.com/');
   await expect(menu.getByRole('menuitem', { name: 'Dashboard', exact: true })).toHaveAttribute('href', 'https://claude.ai/settings/usage');
   await app.locator('[data-scr="dashboard"] .am-body').evaluate((element) => { element.scrollTop += 50; });
   await expect(menu).toBeHidden();
-  await expect(header).toBeFocused();
+  await expect(trigger).toBeFocused();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
+  await trigger.press('Enter');
+  await expect(menu.getByRole('menuitem', { name: 'Refresh', exact: true })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(trigger).toBeFocused();
+
+  await trigger.click();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await trigger.click();
+  await expect(menu).toBeHidden();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(trigger).toBeFocused();
 });
 
 test('selected spend periods remain readable in the Light theme', async ({ page }) => {
@@ -136,16 +160,47 @@ test('metric order and custom names survive reload and privacy keeps Accounts ed
   await page.reload();
   await allUsage(page);
   const name = app.locator('[data-card="claude-account-1"] [data-account-name]');
-  await expect(name).toHaveText('Today');
-  expect(await name.evaluate((node) => getComputedStyle(node).filter)).toBe('blur(4px)');
+  await expect(name).toHaveText('••••@example.com');
+  await expect(name).toHaveAccessibleName('••••@example.com');
   await app.locator('[data-options]').click();
   await app.locator('.am-optmenu [data-go="accounts"]').click();
-  await app.locator('[data-account-list] .am-open[data-go="account:claude:account-1"]').click();
+  const accountRow = app.locator('[data-account-list-row][data-provider="claude"][data-account-id="account-1"]');
+  await expect(accountRow.locator('.am-open')).toHaveAccessibleName('Claude Today 열기');
+  await expect(accountRow.locator('[data-drag-account]')).toHaveAccessibleName('Claude Today 순서 변경');
+  await accountRow.locator('.am-open').click();
   await expect(input).toHaveValue('Today');
   await expect(title).toHaveText('Claude: Today');
   await expect(titleName).toHaveText('Today');
   await expect(input).toBeEditable();
   await expect(detail.locator('[data-metric-list][data-shared="false"] > div').first()).toHaveAttribute('data-metric-setting', 'claude.weekly');
+});
+
+test('a saved literal name stays distinct from a localized default after switching languages', async ({ page }) => {
+  await openHome(page);
+  const app = page.locator('[data-mock]');
+  const back = app.locator('.am-scr:not([hidden]) .am-back');
+  await accountDetail(page, 'claude');
+  const detail = app.locator('[data-scr="account:claude:account-1"]');
+  await detail.locator('[data-rename-input]').fill('계정 2');
+  await detail.locator('.am-topbar > b').click();
+  await back.click();
+  await back.click();
+  await openSettings(page);
+  await chooseSetting(page, 'Language', '한국어');
+  await back.click();
+
+  const verifyAccountNames = async (): Promise<void> => {
+    await app.locator('[data-options]').click();
+    await app.locator('.am-optmenu [data-go="accounts"]').click();
+    const account = (id: string) => app.locator(`[data-account-list-row][data-provider="claude"][data-account-id="${id}"]`);
+    await expect(account('account-1').locator('[data-account-name]')).toHaveText('계정 2');
+    await expect(account('account-1').locator('.am-open')).toHaveAccessibleName('Claude 계정 2 열기');
+    await expect(account('account-2').locator('[data-account-name]')).toHaveText('Account 2');
+    await expect(account('account-2').locator('.am-open')).toHaveAccessibleName('Claude Account 2 열기');
+  };
+  await verifyAccountNames();
+  await page.reload();
+  await verifyAccountNames();
 });
 
 test('swapped account names and display settings survive reload', async ({ page }) => {
@@ -156,18 +211,25 @@ test('swapped account names and display settings survive reload', async ({ page 
   await app.getByRole('button', { name: 'Back', exact: true }).click();
   await accountDetail(page, 'claude');
   const firstDetail = app.locator('[data-scr="account:claude:account-1"]');
-  await firstDetail.locator('[data-rename-input]').fill(' account 2 ');
+  const firstName = firstDetail.getByRole('textbox', { name: 'Name', exact: true });
+  await firstName.fill(' account 2 ');
   await firstDetail.locator('.am-topbar > b').click();
   await expect(firstDetail.locator('[data-rename-error]')).toBeVisible();
   await expect(firstDetail.locator('.am-topbar > b')).toHaveText('Claude: Account 1');
+  await firstName.focus();
+  await expect(firstName).toHaveAttribute('aria-invalid', 'true');
+  await expect(firstName).toHaveAccessibleDescription('This account name is already in use.');
   await app.locator('.am-scr:not([hidden]) .am-back').click();
   await app.locator('.am-scr:not([hidden]) .am-back').click();
   for (const [id, name] of [['account-1', 'Temporary'], ['account-2', 'Account 1'], ['account-1', 'Account 2']]) {
     await accountDetail(page, 'claude', id);
     const detail = app.locator(`[data-scr="account:claude:${id}"]`);
-    await detail.locator('[data-rename-input]').fill(name);
+    const input = detail.getByRole('textbox', { name: 'Name', exact: true });
+    await input.fill(name);
     await detail.locator('.am-topbar > b').click();
     await expect(detail.locator('[data-rename-error]')).toBeHidden();
+    await expect(input).not.toHaveAttribute('aria-invalid', 'true');
+    await expect(input).toHaveAccessibleDescription('');
     await app.locator('.am-scr:not([hidden]) .am-back').click();
     await app.locator('.am-scr:not([hidden]) .am-back').click();
   }
@@ -200,7 +262,7 @@ test('All Usage uses the layout selected in Display settings', async ({ page }) 
   expect(await columns()).toBe(2);
 });
 
-test('Accounts can add a dormant provider while All Usage omits unreported limits', async ({ page }) => {
+test('Accounts can add and remove a dormant provider while All Usage omits unreported limits', async ({ page }) => {
   await openHome(page);
   await allUsage(page);
   const app = page.locator('[data-mock]');
@@ -214,6 +276,32 @@ test('Accounts can add a dormant provider while All Usage omits unreported limit
   await expect(cursor.locator('[data-family-notice]')).toBeVisible();
   await expect(cursor.locator('[data-metric="cursor.credits"]')).toBeHidden();
   await expect(cursor.locator('.am-meter:visible')).toHaveCount(0);
+
+  const notice = app.locator('[data-priority-notice="cursor"]');
+  await app.getByRole('tab', { name: 'Priority', exact: true }).click();
+  await notice.getByRole('button', { name: 'Fix', exact: true }).click();
+  const detail = app.locator('[data-scr="account:cursor:default"]');
+  await expect(detail.getByText('Sign-In Needed', { exact: true })).toBeVisible();
+  await expect(detail.getByText('Add and sign in to accounts in the Mac app.', { exact: true })).toBeVisible();
+  await detail.getByRole('button', { name: 'Remove From Preview', exact: true }).click();
+  await expect(app).toHaveAttribute('data-screen', 'accounts');
+  const cursorAccount = app.locator('[data-account-list-row][data-provider="cursor"]');
+  await expect(cursorAccount).toBeHidden();
+  await app.getByRole('button', { name: 'Back', exact: true }).click();
+  await expect(notice).toBeHidden();
+
+  await page.reload();
+  await allUsage(page);
+  await expect(cursor).toBeHidden();
+  await accountDetail(page, 'claude');
+  const claude = app.locator('[data-scr="account:claude:account-1"]');
+  await expect(claude.getByText('Ready', { exact: true })).toBeVisible();
+  await expect(claude.getByRole('button', { name: 'Remove Account…', exact: true })).toBeVisible();
+  await expect(claude.locator('[data-remove-preview-provider]')).toHaveCount(0);
+  await app.getByRole('button', { name: 'Back', exact: true }).click();
+  await app.locator('[data-add-account]').click();
+  await app.locator('[data-add-provider="cursor"]').click();
+  await expect(cursorAccount).toBeVisible();
 });
 
 test('All Usage shows reported rows without expanding an On Demand section', async ({ page }) => {
@@ -494,4 +582,76 @@ test('keyboard reorder moves providers, accounts and metrics within their sectio
   const firstAccountRows = cards.last().locator('[data-row]:visible');
   await expect(firstAccountRows.first()).toHaveAttribute('data-row', 'claude.weekly');
   await expect(firstAccountRows.nth(1)).toHaveAttribute('data-row', 'claude.session');
+});
+
+test('Privacy Mode masks dashboard names, emails, and accessible captions while Accounts keeps the name', async ({ page }) => {
+  await openHome(page);
+  const app = page.locator('[data-mock]');
+  const back = app.locator('.am-scr:not([hidden]) .am-back');
+  await accountDetail(page, 'claude');
+  const detail = app.locator('[data-scr="account:claude:account-1"]');
+  const input = detail.locator('[data-rename-input]');
+  const alias = 'Review Account';
+  const email = 'claude.account-1@example.com';
+  const masked = '••••@example.com';
+  await input.fill(alias);
+  await input.press('Enter');
+  await back.click();
+  await back.click();
+  await allUsage(page);
+
+  const allUsageCaption = app.locator('[data-card="claude-account-1"] .am-account-caption');
+  const allUsageName = allUsageCaption.locator('[data-account-name]');
+  const priorityName = app.locator('[data-priority-key="claude.weekly@account-1"] [data-account-name]');
+  await expect(allUsageCaption).toHaveAccessibleName(`Claude ${alias}`);
+  await expect(allUsageName).toHaveAccessibleName(alias);
+  await allUsageName.click();
+  await expect(allUsageCaption).toHaveAccessibleName(`Claude ${email}`);
+  await expect(allUsageName).toHaveAccessibleName(email);
+  await app.getByRole('tab', { name: 'Priority', exact: true }).click();
+  await expect(priorityName).toHaveAccessibleName(email);
+
+  await openSettings(page);
+  await app.locator('button[data-settings-tab="Advanced"]').click();
+  await app.locator('[data-setting="privacyMode"]').click();
+  await back.click();
+  await expect(priorityName).toHaveText(masked);
+  await expect(priorityName).toHaveAccessibleName(masked);
+  await allUsage(page);
+  await expect(allUsageName).toHaveText(masked);
+  await expect(allUsageName).toHaveAccessibleName(masked);
+  await expect(allUsageCaption).toHaveAccessibleName(`Claude ${masked}`);
+  await allUsageName.click();
+  await expect(allUsageName).toHaveAccessibleName(masked);
+  await app.getByRole('tab', { name: 'Priority', exact: true }).click();
+  await expect(priorityName).toHaveAccessibleName(masked);
+  await expect(app.locator('[data-scr="dashboard"]')).not.toContainText(alias);
+  await expect(app.locator('[data-scr="dashboard"]')).not.toContainText(email);
+
+  await accountDetail(page, 'claude');
+  await expect(input).toHaveValue(alias);
+  await expect(detail.locator('.am-topbar > b')).toHaveText(`Claude: ${alias}`);
+});
+
+test('metric drag only accepts targets in the same visible list', async ({ page }) => {
+  await openHome(page);
+  await accountDetail(page, 'claude');
+  const detail = page.locator('[data-mock] [data-scr="account:claude:account-1"]');
+  const session = detail.locator('[data-drag-metric="claude.session"]');
+  const weekly = detail.locator('[data-drag-metric="claude.weekly"]');
+  const yesterday = detail.locator('[data-drag-metric="claude.yesterday"]');
+  const today = detail.locator('[data-drag-metric="claude.today"]');
+  const privateRows = detail.locator('[data-metric-list][data-shared="false"] > [data-metric-setting]');
+  const sharedRows = detail.locator('[data-metric-list][data-shared="true"] > [data-metric-setting]');
+  const storedOrder = () => page.evaluate(() => JSON.parse(localStorage.getItem('openusage.site.preview.v1') ?? '{}').metricOrder ?? {});
+  const before = await storedOrder();
+  await session.dragTo(yesterday);
+  expect(await storedOrder()).toEqual(before);
+  await expect(privateRows.first()).toHaveAttribute('data-metric-setting', 'claude.session');
+
+  await weekly.dragTo(session);
+  await expect(privateRows.first()).toHaveAttribute('data-metric-setting', 'claude.weekly');
+  await yesterday.dragTo(today);
+  const shared = await sharedRows.evaluateAll((rows) => rows.map((row) => row.getAttribute('data-metric-setting')));
+  expect(shared.indexOf('claude.yesterday')).toBeLessThan(shared.indexOf('claude.today'));
 });

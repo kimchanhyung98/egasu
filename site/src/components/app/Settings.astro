@@ -26,7 +26,10 @@ const groups = settingGroups.map((group) => ({ ...group, rows: group.rows.map((r
               <div class:list={['am-item', { 'am-action-row': !label }]} data-requires={requires} hidden={Boolean(requires)}>
                 {label && <span class="am-item-label">
                   {label}
-                  {info && <span class="am-setting-info" tabindex="0" aria-label={info}><Glyph name="info" class="am-accessory" /><span role="tooltip">{info}</span></span>}
+                  {info && <button type="button" class="am-setting-info" tabindex="0" aria-label={info}>
+                    <Glyph name="info" class="am-accessory" />
+                    <span role="tooltip">{info}</span>
+                  </button>}
                 </span>}
                 <span class="am-item-ctl">
                   {control.kind === 'toggle' &&

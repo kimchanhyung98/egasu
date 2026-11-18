@@ -1,5 +1,50 @@
 import { test, expect, openHome, openSettings, chooseSetting, allUsage, accountDetail } from './fixtures';
 
+test('Settings information is named and opens while the info button has focus', async ({ page }) => {
+  await openHome(page);
+  await openSettings(page);
+  const app = page.locator('[data-mock]');
+  const info = app.getByRole('button', { name: 'Open egasu from anywhere', exact: true });
+  const tooltip = info.locator('[role="tooltip"]');
+  await expect(info).toBeVisible();
+  await expect(tooltip).toBeHidden();
+  await app.getByRole('button', { name: 'Default Tab', exact: true }).focus();
+  await page.keyboard.press('Tab');
+  await expect(info).toBeFocused();
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toHaveText('Open egasu from anywhere');
+  await page.keyboard.press('Escape');
+  await expect(tooltip).toBeHidden();
+  await expect(info).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(info).not.toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(info).toBeFocused();
+  await expect(tooltip).toBeVisible();
+});
+
+test('settings tooltips stay inside the popover near its left and bottom edges', async ({ page }) => {
+  await openHome(page);
+  await openSettings(page);
+  const app = page.locator('[data-mock]');
+  await app.getByRole('tab', { name: 'Alerts', exact: true }).click();
+  const body = app.locator('[data-scr="settings"] .am-body');
+  for (const name of ['When a limit turns into a priority', 'Alert when Reset Watch expects Codex limits to reset soon']) {
+    const info = app.getByRole('button', { name, exact: true });
+    await info.focus();
+    const tooltip = info.locator('[role="tooltip"]');
+    await expect(tooltip).toBeVisible();
+    await expect.poll(async () => {
+      const bounds = (await tooltip.boundingBox())!;
+      const panel = (await body.boundingBox())!;
+      return {
+        horizontal: bounds.x >= panel.x && bounds.x + bounds.width <= panel.x + panel.width,
+        vertical: bounds.y >= panel.y && bounds.y + bounds.height <= panel.y + panel.height,
+      };
+    }, name).toEqual({ horizontal: true, vertical: true });
+  }
+});
+
 test('Reset Watch keeps probability and votes when usage flips, and shares time preferences', async ({ page }) => {
   await openHome(page);
   await allUsage(page);
@@ -140,8 +185,9 @@ test('text-only account cards open context menus and restore focus to their head
   await allUsage(page);
   const first = app.locator('[data-card="codex-account-1"]');
   const header = first.locator('[data-account-actions-trigger]');
-  await expect(first.locator('[data-metric="codex.today"]')).toBeVisible();
-  await expect(first.locator('.am-row:visible')).toHaveCount(0);
+  const rows = first.locator('[data-row]:visible');
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toHaveAttribute('data-row', 'codex.today');
   await header.click({ button: 'right' });
   const refresh = first.getByRole('menuitem', { name: 'Refresh', exact: true });
   await expect(refresh).toBeFocused();
@@ -221,6 +267,12 @@ test('reset credit details float above the dashboard without changing card heigh
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width - 8);
   await trigger.click();
   await expect(detail).toBeHidden();
+  await trigger.press('Enter');
+  await expect(detail).toBeVisible();
+  await expect(detail).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(detail).toBeHidden();
+  await expect(trigger).toBeFocused();
   await trigger.click();
   await expect(detail).toBeVisible();
   await app.getByRole('button', { name: 'Next update in 4m', exact: true }).click();

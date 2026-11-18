@@ -16,9 +16,14 @@ test('Settings follows the native tab order and covers its named sections', () =
   assert.deepEqual(settingsTabs, tabs);
   for (const tab of settingsTabs) {
     const body = englishSource(`Views/Settings/Settings${tab}Tab.swift`);
-    const titles = [...body.matchAll(/Section\("([^"]+)"\)/g)].map((match) => match[1]);
+    const titles = [...body.matchAll(/Section\(\s*"([^"]+)"\s*\)|}\s*header:\s*\{\s*Text\(\s*"([^"]+)"\s*\)/g)]
+      .map((match) => match[1] ?? match[2]);
     const groups = settingGroups.filter((group) => group.tab === tab);
-    for (const title of titles) assert.ok(groups.some((group) => group.title === title), `${tab}: ${title}`);
+    if (tab === 'Display') assert.ok(titles.includes('Menu Bar Icons'));
+    for (const title of titles) {
+      if (tab === 'Advanced' && title === 'Command Line') continue;
+      assert.ok(groups.some((group) => group.title === title), `${tab}: ${title}`);
+    }
   }
   assert.ok(!settingGroups.some((group) => group.id === 'accounts'));
 });
@@ -26,15 +31,26 @@ test('Settings follows the native tab order and covers its named sections', () =
 test('Settings covers native controls and the four alert conditions', () => {
   const labels = new Set(settingGroups.flatMap((group) => group.rows.map((row) => row.label)));
   const files = settingsTabs.map((tab) => `Views/Settings/Settings${tab}Tab.swift`);
-  const native = files.flatMap((file) => [...englishSource(file).replace(/private var commandLineSection:[\s\S]*?(?=private var debugSection:)/, '').matchAll(/(?:Toggle|SettingsPicker)\(\s*"([^"]+)"|SettingsTitle\(\s*title:\s*"([^"]+)"/g)].map((match) => match[1] ?? match[2]));
+  const native = files.flatMap((file) => [...englishSource(file).matchAll(/(?:Toggle|SettingsPicker)\(\s*"([^"]+)"|SettingsTitle\(\s*title:\s*"([^"]+)"/g)].map((match) => match[1] ?? match[2]));
   assert.ok(native.includes('Default Tab'));
   assert.ok(native.includes('Show Total Spend'));
-  for (const label of native.filter((label) => !label.includes('\\('))) assert.ok(labels.has(label), label);
+  for (const label of native.filter((label) => !label.includes('\\(') && label !== 'Terminal Helper')) assert.ok(labels.has(label), label);
   const alerts = englishSource('Views/Settings/SettingsAlertsTab.swift');
   for (const { label } of alertConditions) assert.ok(alerts.includes(`"${label}"`), label);
   assert.deepEqual(alertConditions.map((condition) => condition.label), ['Warning', 'Critical', 'Burning Fast', 'Use It or Lose It']);
   assert.ok(labels.has('Language'));
   assert.ok(labels.has('Codex Reset Watch'));
+});
+
+test('native Advanced Settings keeps Terminal Helper install, uninstall and conflict controls', () => {
+  const advanced = englishSource('Views/Settings/SettingsAdvancedTab.swift');
+  assert.match(advanced, /^\s+commandLineSection$/m);
+  const helper = advanced.match(/private var commandLineSection:[\s\S]*?(?=private var debugSection:)/)?.[0];
+  assert.ok(helper);
+  assert.match(helper, /SettingsTitle\(\s*title:\s*"Terminal Helper"/);
+  assert.match(helper, /case \.notInstalled:\s*Button\("Install…"\) \{ commandLineTool\.install\(\) \}/);
+  assert.match(helper, /case \.installed:\s*Button\("Uninstall"\) \{ commandLineTool\.uninstall\(\) \}/);
+  assert.match(helper, /case \.conflict:\s*Text\("Unavailable"\)/);
 });
 
 test('Alerts, Soft Limit, and Tokscale expose their preview controls', () => {
@@ -185,15 +201,16 @@ test('canonically equivalent account names conflict during rename and restore', 
 test('rename and restore reject control characters but keep valid joined names', () => {
   const initial = initialPreviewState();
   const key = 'claude:account-1';
-  for (const name of ['Ops\u0000Team', 'Ops\tTeam', 'Ops\u0085Team']) {
+  for (const name of ['Ops\u0000Team', 'Ops\tTeam', 'Ops\u0085Team', '\tOps', 'Ops\n', '\t']) {
     assert.throws(() => renameAccount(initial, 'claude', 'account-1', name), /control characters/);
     assert.throws(() => restorePreviewState({ ...initial, accountNames: { [key]: name } }), /control characters/);
   }
 
   const name = '팀 👩\u200d💻';
-  const renamed = renameAccount(initial, 'claude', 'account-1', name);
+  const renamed = renameAccount(initial, 'claude', 'account-1', `  ${name}  `);
   assert.equal(renamed.accountNames[key], name);
-  assert.equal(restorePreviewState(JSON.parse(JSON.stringify(renamed))).accountNames[key], name);
+  assert.equal(restorePreviewState({ ...initial, accountNames: { [key]: `  ${name}  ` } }).accountNames[key], name);
+  assert.equal(renameAccount(initial, 'claude', 'account-1', '  ').accountNames[key], 'claude.account-1@example.com');
 });
 
 test('saved account order only accepts registered provider families', () => {

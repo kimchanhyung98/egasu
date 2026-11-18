@@ -123,8 +123,8 @@ const rowSelections = new WeakMap<HTMLElement, RowSelection>();
 function openContext(target: Element, event: Event): void {
   const mock = root(target);
   if (!mock) return;
-  const menuTrigger = target.closest<HTMLElement>('[data-provider-header]')
-    ?? target.closest('.am-account-caption')?.querySelector<HTMLButtonElement>('[data-account-actions-trigger]');
+  const menuTrigger = target.closest('[data-provider-header], .am-account-caption')
+    ?.querySelector<HTMLButtonElement>('[data-provider-menu-trigger], [data-account-actions-trigger]');
   if (menuTrigger) {
     const id = menuTrigger.getAttribute('aria-controls');
     const menu = id && mock.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
@@ -240,12 +240,12 @@ export function initPopoverNav(): void {
       fitHeight(mock);
       return;
     }
-    const accountMenu = target.closest<HTMLButtonElement>('[data-open-account-menu]');
-    if (mock && accountMenu) {
-      if (accountMenu.getAttribute('aria-expanded') === 'true') {
+    const menuButton = target.closest<HTMLButtonElement>('[data-provider-menu-trigger], [data-open-account-menu]');
+    if (mock && menuButton) {
+      if (menuButton.getAttribute('aria-expanded') === 'true') {
         closeOptions(mock);
-        accountMenu.focus({ preventScroll: true });
-      } else openContext(accountMenu, event);
+        menuButton.focus({ preventScroll: true });
+      } else openContext(menuButton, event);
       return;
     }
 
@@ -276,6 +276,17 @@ export function initPopoverNav(): void {
         updatePreviewState(setProviderEnabled(state, id, true));
         go(mock, 'accounts');
         pill(mock, 'Sample provider added. Connect your account in the Mac app.');
+      }
+      return;
+    }
+
+    const remove = target.closest<HTMLButtonElement>('button[data-remove-preview-provider]');
+    if (remove && mock) {
+      const id = remove.dataset.removePreviewProvider;
+      const state = previewState();
+      if (id && state.enabledProviders.includes(id)) {
+        updatePreviewState(setProviderEnabled(state, id, false));
+        go(mock, 'accounts');
       }
       return;
     }
@@ -390,6 +401,14 @@ function reorder(source: HTMLElement, target: HTMLElement): void {
   source.focus({ preventScroll: true });
 }
 
+function dragTarget(source: HTMLElement, over: Element): HTMLElement | undefined {
+  const row = over.closest(source.dataset.dragMetric ? '[data-metric-setting]' : source.dataset.dragAccount ? '[data-account-list-row]' : '[data-provider-header]');
+  const target = row?.querySelector<HTMLElement>('.am-drag') ?? undefined;
+  const metricList = target?.closest('[data-metric-list]');
+  if (source.dataset.dragMetric && (!metricList || metricList !== source.closest('[data-metric-list]'))) return;
+  return target;
+}
+
 function initReordering(): void {
   document.addEventListener('keydown', (event) => {
     if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey
@@ -410,11 +429,13 @@ function initReordering(): void {
     source = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>('.am-drag') ?? undefined : undefined;
     if (source) { event.dataTransfer!.setData('text/plain', 'egasu-preview'); event.dataTransfer!.effectAllowed = 'move'; }
   });
-  document.addEventListener('dragover', (event) => { if (source && event.target instanceof Element && event.target.closest('[data-mock]')) event.preventDefault(); });
+  document.addEventListener('dragover', (event) => {
+    if (!source || !(event.target instanceof Element)) return;
+    if (source.dataset.dragMetric ? dragTarget(source, event.target) : event.target.closest('[data-mock]')) event.preventDefault();
+  });
   document.addEventListener('drop', (event) => {
     if (!source || !(event.target instanceof Element)) return;
-    const row = event.target.closest<HTMLElement>(source.dataset.dragMetric ? '[data-metric-setting]' : source.dataset.dragAccount ? '[data-account-list-row]' : '[data-provider-header]');
-    const target = row?.querySelector<HTMLElement>('.am-drag');
+    const target = dragTarget(source, event.target);
     if (target) { event.preventDefault(); reorder(source, target); }
     source = undefined;
   });

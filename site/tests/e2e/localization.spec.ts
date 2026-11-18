@@ -93,9 +93,12 @@ test('Korean remains applied after display changes and restores on reload', asyn
   await choose(app, 'timeFormat', '12-hour');
   await choose(app, 'showUsageAs', 'Left');
   await choose(app, 'allUsageLayout', 'Cards');
-  await expect(app.locator('[data-picker="timeFormat"]')).toContainText('12시간제');
   await expect(app.locator('[data-picker="showUsageAs"]')).toContainText('남음');
   await expect(app.locator('[data-picker="allUsageLayout"]')).toContainText('카드');
+  await app.locator('button[data-settings-tab="General"]').click();
+  const timeFormat = app.locator('[data-picker="timeFormat"]');
+  await expect(timeFormat).toBeVisible();
+  await expect(timeFormat).toContainText('12시간제');
   await app.locator('[data-scr="settings"] .am-back').click();
   await app.locator('button[data-dashboard-tab="All Usage"][role="tab"]').click();
 

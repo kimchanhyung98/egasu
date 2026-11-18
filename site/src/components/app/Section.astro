@@ -9,10 +9,13 @@ const accountID = c.accountID ?? 'default';
 const active = accountFamilies.find((family) => family.id === c.provider)?.activeAccount;
 const inactive = c.accountID !== undefined && active !== c.accountID;
 const menuID = `${uid}-actions-${c.id}`;
+const providerNameID = `${uid}-caption-provider-${c.id}`;
+const accountNameID = `${uid}-caption-account-${c.id}`;
 ---
 <div class="am-section am-account-section" data-card={c.id} data-provider={c.provider} data-account-id={accountID} data-inactive-account={String(inactive)} hidden={hidden}>
-  <div class="am-account-caption" tabindex="0" role="group" aria-label={`${c.title}${c.account ? ` ${c.account}` : ''}`}>
-    {c.account && <button type="button" class="am-account-label" data-toggle-account-name data-account-name={c.provider} data-account-id={accountID}>{c.account}</button>}
+  <div class="am-account-caption" tabindex="0" role="group" aria-labelledby={c.account ? `${providerNameID} ${accountNameID}` : providerNameID}>
+    <span id={providerNameID} hidden>{c.title}</span>
+    {c.account && <button type="button" id={accountNameID} class="am-account-label" data-toggle-account-name data-account-name={c.provider} data-account-id={accountID}>{c.account}</button>}
     {c.plan && <span class="am-plan">{c.plan}</span>}
     <button type="button" class="am-icon-action am-caption-menu" tabindex="0" data-open-account-menu data-account-actions-trigger aria-label={`${c.title} Actions`} aria-haspopup="menu" aria-expanded="false" aria-controls={menuID}><Glyph name="more" /></button>
   </div>

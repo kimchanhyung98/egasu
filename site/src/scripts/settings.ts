@@ -2,7 +2,7 @@ import { accountFamilies } from '../data/accounts';
 import { initialPreviewState, changePreference, activateAccount, restorePreviewState, previewTime, accountName, accountEmail, renameAccount, type PreviewState } from '../data/preview-state';
 import { languageTags } from '../data/settings';
 import { closeMenu } from './menus';
-import { applyPreviewLanguage, localizePreview, setPreviewAccountText } from './localization';
+import { applyPreviewLanguage, localizePreview, previewAccountDisplayName, setPreviewAccountText } from './localization';
 
 const STORAGE_KEY = 'openusage.site.preview.v1';
 let state = initialPreviewState();
@@ -86,11 +86,13 @@ export function handleSettingsClick(target: Element, mock: HTMLElement): boolean
     if (menu) closeMenu(menu);
     pending.set(mock, { family, id, button: trigger });
     const masked = state.preferences.privacyMode === true && trigger.closest('[data-scr="dashboard"]') !== null;
-    const name = masked ? accountEmail(family, id).replace(/^[^@]+/, '••••') : accountName(state, family, id);
+    const display = masked
+      ? { name: accountEmail(family, id).replace(/^[^@]+/, '••••'), literal: true }
+      : previewAccountDisplayName(state, family, id);
     setPreviewAccountText(
       dialog.querySelector<HTMLElement>('[data-account-confirm-text]')!,
       (name) => `Use ${name} in this demo? Your Mac’s sign-in will stay unchanged.`,
-      name, masked || Object.hasOwn(state.accountNames, `${family}:${id}`),
+      display.name, display.literal,
     );
     localizePreview(mock);
     dialog.showModal();
@@ -143,13 +145,17 @@ export function applySettingsToMock(mock: HTMLElement): void {
     const family = button.dataset.accountSwitch!;
     const id = button.dataset.accountId!;
     const on = state.activeAccounts[family] === id;
-    if (button.getAttribute('role') === 'menuitem') {
-      button.disabled = on;
-      const provider = accountFamilies.find((entry) => entry.id === family)!.name;
+    const provider = accountFamilies.find((entry) => entry.id === family)!;
+    const menuItem = button.getAttribute('role') === 'menuitem';
+    const ready = provider.profiles.find((account) => account.id === id)?.status === 'Ready';
+    button.disabled = !ready || (menuItem && on);
+    if (menuItem) {
       const masked = preferences.privacyMode === true;
-      const name = masked ? accountEmail(family, id).replace(/^[^@]+/, '••••') : accountName(state, family, id);
+      const display = masked
+        ? { name: accountEmail(family, id).replace(/^[^@]+/, '••••'), literal: true }
+        : previewAccountDisplayName(state, family, id);
       setPreviewAccountText(
-        button, (name) => `Use ${provider}: ${name}`, name, masked || Object.hasOwn(state.accountNames, `${family}:${id}`),
+        button, (name) => `Use ${provider.name}: ${name}`, display.name, display.literal,
       );
     } else {
       button.classList.toggle('is-on', on);
@@ -189,16 +195,39 @@ export function initPreviewSettings(refresh: () => void, showNotice: typeof noti
       updatePreviewState(renameAccount(state, form.dataset.provider!, form.dataset.accountId!, input.value));
       input.value = accountName(state, form.dataset.provider!, form.dataset.accountId!);
       error.hidden = true;
+      input.removeAttribute('aria-invalid');
+      input.removeAttribute('aria-describedby');
     } catch (failure) {
       console.warn('Preview account rename failed');
       error.textContent = failure instanceof Error ? failure.message : 'Could not rename this account.';
       error.hidden = false;
+      input.setAttribute('aria-invalid', 'true');
+      input.setAttribute('aria-describedby', error.id);
       localizePreview(form.closest<HTMLElement>('[data-mock]')!);
     }
   };
   document.querySelectorAll<HTMLFormElement>('[data-rename-form]').forEach((form) => {
     form.addEventListener('submit', (event) => { event.preventDefault(); rename(form); });
     form.addEventListener('change', () => rename(form));
+  });
+  document.querySelectorAll<HTMLElement>('[data-mock] [data-scr="settings"] .am-body').forEach((body) => {
+    const place = (button: HTMLButtonElement): void => {
+      const tooltipHeight = button.querySelector('[role="tooltip"]')!.getBoundingClientRect().height;
+      const row = button.closest('.am-item')!.getBoundingClientRect();
+      const viewport = body.getBoundingClientRect();
+      const spaceBelow = viewport.bottom - row.bottom;
+      const spaceAbove = row.top - viewport.top;
+      button.toggleAttribute('data-tooltip-above', spaceBelow < tooltipHeight && spaceAbove > spaceBelow);
+    };
+    body.querySelectorAll<HTMLButtonElement>('.am-setting-info').forEach((button) => {
+      const reveal = (): void => { delete button.dataset.tooltipDismissed; place(button); };
+      button.addEventListener('focus', reveal);
+      button.addEventListener('pointerenter', reveal);
+      button.addEventListener('click', reveal);
+    });
+    body.addEventListener('scroll', () => {
+      body.querySelectorAll<HTMLButtonElement>('.am-setting-info:not([data-tooltip-dismissed]):is(:hover, :focus)').forEach(place);
+    }, { passive: true });
   });
   document.addEventListener('change', (event) => {
     const input = event.target;
@@ -207,6 +236,10 @@ export function initPreviewSettings(refresh: () => void, showNotice: typeof noti
     catch (error) { report(error, 'Enter a whole percentage from 1 to 100. The previous threshold is unchanged.'); render(); }
   });
   document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      document.querySelectorAll<HTMLButtonElement>('[data-mock] .am-setting-info:is(:hover, :focus)')
+        .forEach((button) => { button.dataset.tooltipDismissed = ''; });
+    }
     const input = event.target;
     if (event.key === 'Enter' && input instanceof HTMLInputElement && input.matches('[data-number-setting]')) {
       event.preventDefault();

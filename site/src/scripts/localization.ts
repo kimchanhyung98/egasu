@@ -1,5 +1,7 @@
 import { createTranslator, parseStrings, type PreviewLocale, type TranslationTable } from '../data/preview-locale';
 import { previewTranslations } from '../data/preview-translations';
+import { accountFamilies } from '../data/accounts';
+import { accountName, type PreviewState } from '../data/preview-state';
 
 const sources = import.meta.glob('../../../Sources/Egasu/Resources/Localization/{ko,ja}.lproj/*.strings', {
   query: '?raw', import: 'default', eager: true,
@@ -27,6 +29,22 @@ const attributeSources = new WeakMap<Element, Map<string, SourceValue>>();
 const accountText = new WeakMap<Element, { template: string; name: string }>();
 const accountNameSlot = '\0';
 let currentLocale: PreviewLocale = 'en';
+
+function localeForLanguage(language: string): PreviewLocale {
+  return language === '한국어' ? 'ko' : language === '日本語' ? 'ja' : 'en';
+}
+
+/** 기본 이름의 번역이 사용자 지정 이름과 겹치면 기본 이름만 영어로 표시. */
+export function previewAccountDisplayName(state: PreviewState, family: string, id: string): { name: string; literal: boolean } {
+  const name = accountName(state, family, id);
+  if (Object.hasOwn(state.accountNames, `${family}:${id}`)) return { name, literal: true };
+  const locale = localeForLanguage(String(state.preferences.language));
+  const translatedKey = translator(locale, 'Accounts')(name).normalize('NFC').toLowerCase();
+  const profiles = accountFamilies.find((entry) => entry.id === family)!.profiles;
+  const literal = profiles.some((profile) =>
+    state.accountNames[`${family}:${profile.id}`]?.normalize('NFC').toLowerCase() === translatedKey);
+  return { name, literal };
+}
 
 export function setPreviewAccountText(
   element: HTMLElement, format: (name: string) => string, name: string, literal: boolean,
@@ -79,7 +97,7 @@ export function localizePreview(root: HTMLElement): void {
 }
 
 export function applyPreviewLanguage(language: string): void {
-  currentLocale = language === '한국어' ? 'ko' : language === '日本語' ? 'ja' : 'en';
+  currentLocale = localeForLanguage(language);
   document.querySelectorAll<HTMLElement>('[data-tour-mock] [data-picker="language"] [data-picker-value]').forEach((label) => {
     label.textContent = language;
     label.lang = currentLocale;
