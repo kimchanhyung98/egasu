@@ -17,5 +17,5 @@ const { title, back } = Astro.props;
       <span class="am-back" aria-hidden="true"><Glyph name="chevron-left" /></span>
     )
   }
-  <b>{title}</b>
+  <b><slot>{title}</slot></b>
 </div>

@@ -98,7 +98,7 @@ const declared: Record<string, Array<[string, string]>> = {
   ],
 };
 
-/** 기존 Customize 상세의 구역 구분. All Usage 배치는 이 목록을 읽지 않음. */
+/** 계정 상세의 구역 구분. All Usage 배치는 이 목록을 읽지 않음. */
 const onDemandIDs = new Set([
   'antigravity.claude', 'antigravity.claudeWeekly',
   'claude.trend', 'claude.extra', 'claude.sonnet',

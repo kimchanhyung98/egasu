@@ -1,4 +1,4 @@
-/* 앱 화면 재현 그래픽 — 화면 이동과 Customize L2.
+/* 앱 화면 재현 그래픽 — 화면 이동과 계정 상세.
    소스: Sources/Egasu/ v0.11.1. 밀도 Compact, 외관 다크.
    1 CSS px = 1 SwiftUI pt. */
 
@@ -64,7 +64,7 @@ button.am-back { cursor: pointer; }
 /* 행 전체가 하나의 열기 타깃 — grip과 스위치만 제외(ProviderListRow.swift:19,22,37). */
 .am-prow[data-open] { cursor: pointer; }
 
-/* ---------- Customize L2 지표 행 ---------- */
+/* ---------- 계정 상세 지표 행 ---------- */
 
 .am-mrow {
   padding: var(--am-control-pad) 12px;
@@ -73,7 +73,7 @@ button.am-back { cursor: pointer; }
   gap: 10px;
 }
 
-/* L1 제목과 달리 semibold가 아님 — 기본 본문(13). CustomizeRow.swift:16-17. */
+/* 지표 이름은 일반 본문 굵기 사용. */
 .am-mrow-title {
   flex: 1;
   min-width: 0;
@@ -183,7 +183,7 @@ button.am-star { cursor: pointer; }
 
 /* ---------- 알림 필 ---------- */
 
-/* Views/TransientPill.swift. Customize 스크롤 위에 떠서 아래에서 12만큼 띄움. */
+/* Views/TransientPill.swift. 스크롤 영역 위에 떠서 아래에서 12만큼 띄움. */
 .am-pill {
   position: absolute;
   pointer-events: none;

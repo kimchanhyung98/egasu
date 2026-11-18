@@ -1,62 +1,48 @@
 ---
-// 팝오버 한 채. 320px 폭, radius 13.
-// 앱은 화면을 밀어 넣지 않고 제자리 교체함(PopoverNavigationStore) — dashboard · customize · L2 · settings.
-// 그래서 여기서도 화면을 전부 미리 그려 두고 hidden만 바꾼다. JS가 없으면 start 화면 하나만 보임.
-// data-screen은 화면 위치라 이 팝오버에만 있고 저장하지 않음.
-// 반대로 data-mode / data-reset은 앱의 UserDefaults 설정이라 모든 팝오버에 함께 적용되고 저장됨.
 import Section from './Section.astro';
-import Priority from './Priority.astro';
 import SpendCard from './SpendCard.astro';
 import TopBar from './TopBar.astro';
-import Customize from './Customize.astro';
+import Accounts from './Accounts.astro';
 import MetricList from './MetricList.astro';
 import Settings from './Settings.astro';
+import Priority from './Priority.astro';
 import Glyph from './Glyph.astro';
-import { cards, customize, appVersion } from '../../data/demo';
+import { cards, appVersion } from '../../data/demo';
 import { emptyCard, accountCardVariants } from '../../data/dashboard';
 import { providers } from '../../data/providers';
+import { accountFamilies } from '../../data/accounts';
+import { settingsTabs } from '../../data/settings';
 
-type Screen = 'dashboard' | 'customize' | 'settings';
-
+type Screen = 'dashboard' | 'accounts' | 'settings';
 interface Props {
   parts?: Array<'spend' | 'claude' | 'codex' | 'antigravity'>;
   footer?: boolean;
   label: string;
-  /** JS 없이도 보이는 첫 화면. */
   start?: Screen;
-  /** 화면 이동을 켤지. 끄면 그 화면 하나만 그리고 이동 컨트롤을 만들지 않음. */
   nav?: boolean;
-  /** 인스턴스가 여럿이라 메뉴 id가 겹치지 않게 하는 접두사. */
   uid: string;
   demonstration?: boolean;
 }
-
 const { parts = ['spend', 'claude', 'codex', 'antigravity'], footer = true, label, start = 'dashboard', nav = false, uid, demonstration = false } = Astro.props;
-const selected = cards.filter((c) => parts.includes(c.id as never));
+const selected = cards.filter((card) => parts.includes(card.id as never));
 const shown = selected.flatMap((card) => demonstration ? accountCardVariants(card).slice(0, 1) : accountCardVariants(card));
-// Customize에서 켜면 나타날 나머지 provider — 자료가 없으니 값 없는 행으로만 그려 두고 기본은 감춤.
-// 앱도 credential이 없는 provider를 이런 카드로 그림. 미리 그려 두어야 JS가 보이기만 바꿀 수 있음.
-const dormant = nav && !demonstration ? customize.filter((p) => !cards.some((c) => c.id === p.id)).map((p) => emptyCard(p.id, p.name)) : [];
+const dormant = nav && !demonstration ? providers.filter((provider) => !cards.some((card) => card.id === provider.id)).map((provider) => emptyCard(provider.id, provider.name)) : [];
+const has = (screen: Screen): boolean => nav || start === screen;
 const groups = providers.filter((provider) => [...shown, ...dormant].some((card) => card.provider === provider.id));
-const has = (s: Screen): boolean => nav || start === s;
 const initialDashboardTab = demonstration ? 'Priority' : 'All Usage';
-
-// Options 메뉴. Views/HeaderView.swift:60-88 순서 그대로.
-// 화면을 옮기는 두 개만 실제로 동작하고 나머지는 앱에만 있는 동작이라 눌리지 않음을 보이게 둠.
 const optionItems = [
-  { label: 'Customize', icon: 'sliders' as const, go: 'customize' },
+  { label: 'Accounts', icon: 'sliders' as const, go: 'accounts' },
   { label: 'Settings', icon: 'gear' as const, go: 'settings' },
-  { label: 'Share Screenshot', icon: 'share' as const, message: 'Copy a usage image from the Mac app.' },
   { label: 'Check for Updates…', icon: 'refresh' as const, message: 'Check for signed app updates in the Mac app.' },
   { label: 'Report an Issue…', icon: 'warn' as const, href: 'https://github.com/kimchanhyung98/egasu/issues' },
-  { label: 'About egasu', icon: 'info' as const, message: 'This website uses sample data.' },
+  { label: 'About egasu', icon: 'info' as const, message: 'egasu is maintained by kimchanhyung98. This website uses sample data.' },
   { label: 'Quit egasu', icon: 'power' as const, message: 'Quit egasu from the Mac app.' },
 ];
 ---
-
-<div class="am" lang="en" role="group" aria-label={label} aria-hidden={demonstration ? 'true' : undefined} inert={demonstration} data-mock={demonstration ? undefined : true} data-tour-mock={demonstration ? true : undefined} data-mode="used" data-reset="absolute" data-layout="minimal" data-dashboard-tab={initialDashboardTab} data-screen={start}>
+<div class="am" lang="en" role="group" aria-label={label} aria-hidden={demonstration ? 'true' : undefined} inert={demonstration} data-mock={demonstration ? undefined : true} data-tour-mock={demonstration ? true : undefined} data-mode="used" data-reset="absolute" data-layout="minimal" data-dashboard-tab={initialDashboardTab} data-settings-tab="General" data-screen={start}>
   {has('dashboard') && <div class="am-scr" data-scr="dashboard" hidden={start !== 'dashboard'}>
     <div class="am-body"><div class="am-content">
+      <span id={`${uid}-account-display-description`} data-account-display-description hidden />
       {parts.includes('spend') && <SpendCard uid={uid} />}
       <div class="am-dashboard-tabs" role="tablist" aria-label="Dashboard">
         {['Priority', 'All Usage'].map((tab) => <button type="button" role="tab" aria-selected={tab === initialDashboardTab} tabindex={tab === initialDashboardTab ? 0 : -1} aria-controls={`${uid}-${tab === 'Priority' ? 'priority' : 'all-usage'}`} data-dashboard-tab={tab}>{tab}</button>)}
@@ -64,20 +50,22 @@ const optionItems = [
       <div id={`${uid}-priority`} role="tabpanel" aria-label="Priority" data-dashboard-panel="Priority" hidden={initialDashboardTab !== 'Priority'}><Priority providerIDs={selected.map((card) => card.provider)} /></div>
       <div id={`${uid}-all-usage`} role="tabpanel" aria-label="All Usage" data-dashboard-panel="All Usage" hidden={initialDashboardTab !== 'All Usage'}>
         {groups.map((provider) => <section class="am-family-section" data-family={provider.id} hidden={!selected.some((card) => card.provider === provider.id)}>
-          <div class="am-family-header" data-provider-header={provider.id} tabindex="0" aria-haspopup="menu" aria-controls={`${uid}-family-${provider.id}`}>
+          <div class="am-family-header" data-provider-header={provider.id}>
+            <span class="am-drag" draggable="true" data-drag-provider={provider.id} tabindex="0" role="button" aria-keyshortcuts="ArrowUp ArrowDown" aria-label={`Reorder ${provider.name}`}><Glyph name="grip" class="am-grip" /></span>
             <svg class="am-mark" viewBox="0 0 24 24" aria-hidden="true"><use href={`#pi-${provider.id}`} /></svg><b>{provider.name}</b>
             <button type="button" class="am-icon-action" data-native-action="Copy a usage image from the Mac app." aria-label={`Copy ${provider.name}`}><Glyph name="copy" /></button>
+            {nav && !demonstration && <button type="button" class="am-icon-action" tabindex="0" data-provider-menu-trigger aria-label={`${provider.name} Links`} aria-haspopup="menu" aria-expanded="false" aria-controls={`${uid}-family-${provider.id}`}><Glyph name="more" /></button>}
           </div>
           <div class="am-family-accounts">{[...shown, ...dormant].filter((card) => card.provider === provider.id).map((card) => <Section c={card} uid={uid} />)}</div>
           <p class="am-note am-family-notice" data-family-notice hidden>No sample usage for this provider.</p>
           <ul class="am-menu am-family-menu" id={`${uid}-family-${provider.id}`} role="menu" aria-label={`${provider.name} Links`} hidden>
             <li role="none"><button type="button" role="menuitem" data-native-action={`Refresh ${provider.name} from the Mac app. This preview uses sample data.`}>Refresh</button></li>
-            <li role="none"><button type="button" role="menuitem" data-go="customize">Customize…</button></li>
+            <li role="none"><button type="button" role="menuitem" data-go="accounts">Manage Accounts…</button></li>
             {(cards.find((card) => card.provider === provider.id)?.links ?? []).map((link) => <li role="none"><a role="menuitem" href={link.href} target="_blank" rel="noopener noreferrer">{link.label}<Glyph name="arrow-out" /></a></li>)}
           </ul>
         </section>)}
       </div>
-      <div class="am-clear" data-empty-dashboard hidden><b>No Enabled Providers</b><button type="button" class="am-chip" data-go="customize">Customize</button></div>
+      <div class="am-clear" data-empty-dashboard hidden><b>Add an Account</b><button type="button" class="am-chip" data-go="accounts">Accounts</button></div>
     </div></div>
     {footer && <div class="am-foot"><span class="am-foot-id"><span>egasu {appVersion}</span><button type="button" class="am-refresh" data-native-action="The Mac app refreshes usage here or with ⌘R. This preview uses sample data.">Next update in 4m</button></span>
       <button type="button" class="am-icon-action" data-priority-copy hidden={initialDashboardTab !== 'Priority'} data-native-action="Copy a usage image from the Mac app." aria-label="Copy Priority"><Glyph name="copy" /></button>
@@ -86,58 +74,38 @@ const optionItems = [
       </span>}
     </div>}
   </div>}
-
-  {
-    has('customize') && (
-      <div class="am-scr" data-scr="customize" hidden={start !== 'customize'}>
-        <TopBar title="Customize" back={nav ? 'dashboard' : undefined} />
-        <div class="am-body"><Customize nav={nav} /></div>
-      </div>
-    )
-  }
-
-  {
-    nav &&
-      customize.map((p) => (
-        <div class="am-scr" data-scr={`metrics:${p.id}`} hidden>
-          <TopBar title={p.name} back="customize" />
-          <div class="am-body"><MetricList provider={p.id} nav={nav} /></div>
-        </div>
-      ))
-  }
-
-  {
-    has('settings') && (
-      <div class="am-scr" data-scr="settings" hidden={start !== 'settings'}>
-        <TopBar title="Settings" back={nav ? 'dashboard' : undefined} />
-        <div class="am-body"><Settings nav={nav} uid={uid} onboarding={demonstration} /></div>
-        {footer && nav && (
-          <div class="am-foot">
-            <span class="am-foot-id">
-              <span>egasu {appVersion}</span>
-              <button type="button" class="am-refresh" data-native-action="The Mac app refreshes usage here or with ⌘R. This preview uses sample data.">Next update in 4m</button>
-            </span>
-          </div>
-        )}
-      </div>
-    )
-  }
-
+  {has('accounts') && <div class="am-scr" data-scr="accounts" hidden={start !== 'accounts'}>
+    <TopBar title="Accounts" back={nav ? 'dashboard' : undefined} />
+    <div class="am-body"><Accounts onboarding={demonstration} /></div>
+    <div class="am-foot"><button type="button" class="am-chip" data-add-account data-go="add-account"><Glyph name="plus" />Add Account</button></div>
+  </div>}
+  {nav && providers.flatMap((provider) => {
+    const family = accountFamilies.find((family) => family.id === provider.id);
+    return (family?.profiles ?? [{ id: 'default', name: '' }]).map((account) => <div class="am-scr" data-scr={`account:${provider.id}:${account.id}`} hidden>
+      <TopBar title={provider.name} back="accounts">{provider.name}{account.name && <>: <span data-account-name={provider.id} data-account-id={account.id}>{account.name}</span></>}</TopBar>
+      <div class="am-body"><MetricList provider={provider.id} accountID={account.id} uid={uid} /></div>
+    </div>);
+  })}
+  {nav && <div class="am-scr" data-scr="add-account" hidden><TopBar title="Add Account" back="accounts" /><div class="am-body"><div class="am-screen"><div class="am-list">
+    {providers.map((provider) => <button type="button" class="am-provider-choice" data-add-provider={provider.id}><svg class="am-mark" viewBox="0 0 24 24" aria-hidden="true"><use href={`#pi-${provider.id}`} /></svg>{provider.name}<Glyph name="chevron-right" /></button>)}
+  </div><p class="am-note">Add and sign in to accounts in the Mac app.</p></div></div></div>}
+  {has('settings') && <div class="am-scr" data-scr="settings" hidden={start !== 'settings'}>
+    <TopBar title="Settings" back={nav ? 'dashboard' : undefined} />
+    <div class="am-settings-tabs" role="tablist" aria-label="Settings">{settingsTabs.map((tab) => <button type="button" role="tab" id={`${uid}-settings-tab-${tab}`} aria-controls={`${uid}-settings-panel-${tab}`} aria-selected={tab === 'General'} tabindex={tab === 'General' ? 0 : -1} data-settings-tab={tab}>{tab}</button>)}</div>
+    <div class="am-body"><Settings nav={nav} uid={uid} /></div>
+  </div>}
   {nav && <>
     <ul class="am-menu am-row-menu" data-row-menu role="menu" aria-label="Metric Actions" hidden>
       <li role="none"><button type="button" role="menuitem" data-row-action="pin">Pin</button></li>
       <li role="none"><button type="button" role="menuitem" data-row-action="hide">Hide</button></li>
       <li role="separator" class="am-optsep" data-row-account-action />
-      <li role="none" data-row-account-action><button type="button" role="menuitem" data-row-action="edit">Customize…</button></li>
+      <li role="none" data-row-account-action><button type="button" role="menuitem" data-row-action="edit">Edit Account…</button></li>
     </ul>
+    <p class="am-pill" data-pill role="status" aria-live="polite" hidden />
+    <dialog class="am-account-dialog" data-account-dialog aria-labelledby={`${uid}-switch-title`} aria-describedby={`${uid}-switch-description`}>
+      <h2 id={`${uid}-switch-title`}>Switch Account?</h2><p id={`${uid}-switch-description`} data-account-confirm-text></p>
+      <div class="am-dialog-actions"><button type="button" class="am-chip" data-account-cancel>Cancel</button><button type="button" class="am-chip am-confirm" data-account-confirm>Switch Account</button></div>
+    </dialog>
+    <dialog class="am-account-dialog" data-soft-limit-dialog aria-labelledby={`${uid}-soft-title`}><h2 id={`${uid}-soft-title`}>Enable Soft Limit?</h2><p>Shows the limit guide and allows cancellation only for verified client/account connections. The current Codex connection is not account-verified and will not cancel tasks. Unconnected sessions and unsupported providers are not protected.</p><div class="am-dialog-actions"><button type="button" class="am-chip" data-soft-cancel>Cancel</button><button type="button" class="am-chip am-confirm" data-soft-confirm>Enable</button></div></dialog>
   </>}
-  {nav && <p class="am-pill" data-pill role="status" aria-live="polite" hidden />}
-  {nav && <dialog class="am-account-dialog" data-account-dialog aria-labelledby={`${uid}-switch-title`} aria-describedby={`${uid}-switch-description`}>
-    <h2 id={`${uid}-switch-title`}>Switch Account?</h2>
-    <p id={`${uid}-switch-description`} data-account-confirm-text></p>
-    <div class="am-dialog-actions">
-      <button type="button" class="am-chip" data-account-cancel>Cancel</button>
-      <button type="button" class="am-chip am-confirm" data-account-confirm>Switch Account</button>
-    </div>
-  </dialog>}
 </div>

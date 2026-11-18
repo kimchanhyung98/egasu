@@ -31,8 +31,7 @@ function reportsLimit(row: Row): row is BoundedRow {
 export function dashboardLines(state: PreviewState, input: Card[] = cards.flatMap(accountCardVariants)): DashboardLine[] {
   return state.providerOrder.flatMap((provider) => {
     if (!state.enabledProviders.includes(provider)) return [];
-    const viewed = state.preferences.usageCards === 'Single Card' ? state.viewedAccounts[provider] : undefined;
-    const accounts = input.filter((card) => card.provider === provider && (!viewed || card.accountID === viewed)).sort((a, b) =>
+    const accounts = input.filter((card) => card.provider === provider).sort((a, b) =>
       (state.accountOrder[provider]?.indexOf(a.accountID ?? '') ?? 0) - (state.accountOrder[provider]?.indexOf(b.accountID ?? '') ?? 0));
     return accounts.flatMap((card) => {
       const accountID = card.accountID ?? 'default';
@@ -42,7 +41,7 @@ export function dashboardLines(state: PreviewState, input: Card[] = cards.flatMa
         if (!id) return [];
         const key = metricKey(id, accountID);
         if (state.hiddenMetrics.includes(key)) return [];
-        if (isSharedMetric(id) && (viewed ?? state.activeAccounts[provider]) !== accountID) return [];
+        if (isSharedMetric(id) && state.activeAccounts[provider] !== accountID) return [];
         if ((row.kind === 'text' && row.values.includes('No data')) || (row.kind === 'bounded' && row.noData)) return [];
         const line: DashboardLine = { id, key, cardID: card.id, provider, accountID, row,
           pinned: state.pinnedMetrics.includes(key), severity: 'normal', rank: Infinity };

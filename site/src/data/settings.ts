@@ -1,7 +1,6 @@
-// 배포 앱의 Settings 순서와 일반 상태 재현. 이스터에그·권한 오류·실행 중 상태는 기본 화면에서 숨김.
-import { accountFamilies, type DemoAccountFamily } from './accounts.ts';
-
 export const languageTags: Record<string, string> = { English: 'en', 한국어: 'ko', 日本語: 'ja' };
+export const settingsTabs = ['General', 'Display', 'Alerts', 'Advanced'] as const;
+export type SettingsTab = typeof settingsTabs[number];
 
 export type Control =
   | { kind: 'toggle'; on: boolean }
@@ -13,147 +12,92 @@ export interface SettingRow {
   id: string;
   label: string;
   control: Control;
-  /** 행 아래 도움말. */
   note?: string;
-  /** 라벨 옆 info.circle. 눌리지 않는 이미지. */
-  info?: boolean;
+  info?: string;
   requires?: string;
 }
 
 export interface SettingGroup {
   id: string;
   title: string;
-  /** 제목 옆 accessory — Accounts는 plus.circle 버튼, iCloud Sync는 info.circle. */
-  accessory?: 'add' | 'info' | 'manage';
+  tab: SettingsTab;
   rows: SettingRow[];
-  /** Accounts 섹션에만 있는 family 하위 카드. */
-  families?: DemoAccountFamily[];
 }
 
-export const settingGroups: SettingGroup[] = [
-  {
-    id: 'general',
-    title: 'General',
-    rows: [
-      { id: 'showTotalSpend', label: 'Show Total Spend', control: { kind: 'toggle', on: true } },
-      { id: 'launchAtLogin', label: 'Launch at Login', control: { kind: 'toggle', on: false } },
-      { id: 'globalShortcut', label: 'Global Shortcut', control: { kind: 'action', label: 'Record Shortcut', message: 'Record a global shortcut in the Mac app.' } },
-      { id: 'language', label: 'Language', control: { kind: 'picker', value: 'English', options: ['English', '한국어', '日本語'] },
-        note: 'Language changes apply immediately in this preview.' },
-    ],
-  },
-  {
-    id: 'accounts',
-    title: 'Accounts',
-    accessory: 'add',
-    rows: [
-      { id: 'usageCards', label: 'Usage Cards', control: { kind: 'picker', value: 'Single Card', options: ['Single Card', 'Separate Cards'] } },
-    ],
-    families: accountFamilies,
-  },
-  {
-    id: 'icloud',
-    title: 'iCloud Sync',
-    accessory: 'info',
-    rows: [
-      {
-        id: 'syncAcrossMacs',
-        label: 'Sync Across Macs',
-        control: { kind: 'toggle', on: false },
-        note: 'Shares usage history through iCloud, so you can see one combined summary for all your Macs.',
-      },
-    ],
-  },
-  {
-    id: 'appearance',
-    title: 'Appearance',
-    rows: [
-      { id: 'iconStyle', label: 'Icon Style', control: { kind: 'picker', value: 'Bars', options: ['Text', 'Bars'] } },
-      { id: 'theme', label: 'Theme', control: { kind: 'picker', value: 'System', options: ['System', 'Light', 'Dark'] } },
-      { id: 'density', label: 'Density', control: { kind: 'picker', value: 'Compact', options: ['Default', 'Compact'] } },
-      { id: 'allUsageLayout', label: 'All Usage Layout', control: { kind: 'picker', value: 'Minimal', options: ['Minimal', 'Cards'] } },
-      { id: 'timeFormat', label: 'Time Format', control: { kind: 'picker', value: '24-hour', options: ['Auto', '12-hour', '24-hour'] } },
-      { id: 'increaseTransparency', label: 'Increase Transparency', control: { kind: 'toggle', on: false } },
-    ],
-  },
-  {
-    id: 'usageDisplay',
-    title: 'Usage Display',
-    rows: [
-      // 이 두 개는 대시보드의 헤드라인·리셋 라벨과 같은 상태라 서로 반영됨.
-      { id: 'showUsageAs', label: 'Show Usage As', control: { kind: 'picker', value: 'Used', options: ['Used', 'Left'] } },
-      { id: 'resetTimes', label: 'Reset Times', control: { kind: 'picker', value: 'Exact Time', options: ['Countdown', 'Exact Time'] } },
-      { id: 'alwaysShowPacing', label: 'Always Show Pacing', control: { kind: 'toggle', on: false }, info: true },
-    ],
-  },
-  {
-    id: 'softLimit', title: 'Soft Limit',
-    rows: [
-      { id: 'softLimitEnabled', label: 'Enabled', control: { kind: 'toggle', on: false },
-        note: 'Shows a personal limit guide. Automatic cancellation is currently unavailable.' },
-      { id: 'softLimitWindow', label: 'Window', requires: 'softLimitEnabled',
-        control: { kind: 'picker', value: 'Weekly', options: ['5 Hours', 'Weekly'] } },
-      { id: 'softLimitThreshold', label: 'Threshold', requires: 'softLimitEnabled',
-        control: { kind: 'number', value: '90', min: 1, max: 100 } },
-    ],
-  },
-  {
-    id: 'notifications', title: 'Notifications',
-    rows: [
-      { id: 'underTenPercent', label: 'Critical', control: { kind: 'toggle', on: false }, info: true },
-      { id: 'healthyToClose', label: 'Warning', control: { kind: 'toggle', on: false }, info: true },
-      { id: 'closeToRunningOut', label: 'Burning Fast', control: { kind: 'toggle', on: false }, info: true },
-      { id: 'useItOrLoseIt', label: 'Use It or Lose It', control: { kind: 'toggle', on: false }, info: true },
-      { id: 'codexResetWatch', label: 'Codex Reset Watch', control: { kind: 'toggle', on: false },
-        note: 'Notifies you about new public reset forecasts or scheduled resets. Not a guarantee of an account reset.' },
-    ],
-  },
-  {
-    id: 'privacy', title: 'Privacy',
-    rows: [
-      { id: 'hideFromScreenShare', label: 'Hide From Screen Share', control: { kind: 'toggle', on: true },
-        note: 'While your screen is shared or recorded, the menu bar shows “egasu” instead of your usage.' },
-      { id: 'shareAnonymousUsage', label: 'Share Anonymous Usage', control: { kind: 'toggle', on: false },
-        note: 'Shares anonymous usage counts and error types to help improve egasu. No account details, credentials, or usage values are sent.' },
-    ],
-  },
-  {
-    id: 'tokscale', title: 'Tokscale', accessory: 'manage',
-    rows: [
-      { id: 'usageSync', label: 'Usage Sync', info: true,
-        control: { kind: 'action', label: 'Sync', message: 'Publish usage to your Tokscale profile from the Mac app. This preview does not upload data.' },
-        note: 'Sync local usage to your public Tokscale profile.' },
-    ],
-  },
-  {
-    id: 'commandLine', title: 'Command Line',
-    rows: [
-      { id: 'terminalHelper', label: 'Terminal Helper',
-        control: { kind: 'action', label: 'Install…', message: 'Install the terminal helper from the Mac app.' },
-        note: 'Adds a global `egasu` command agents can use to monitor limits.' },
-    ],
-  },
-  {
-    id: 'advanced', title: 'Advanced',
-    rows: [
-      { id: 'logLevel', label: 'Log Level', control: { kind: 'picker', value: 'Info', options: ['Error', 'Warning', 'Info', 'Debug'] } },
-      { id: 'copyLogPath', label: '', control: { kind: 'action', label: 'Copy Log Path', message: 'Copy the actual log file path from Settings → Advanced in the Mac app.' } },
-      { id: 'revealLog', label: '', control: { kind: 'action', label: 'Reveal in Finder', message: 'Reveal the app log in Finder from the Mac app.' } },
-    ],
-  },
-  {
-    // 업데이트 피드가 포함된 배포판 기준 표시.
-    id: 'updates', title: 'Updates',
-    rows: [
-      { id: 'updateAutomatically', label: 'Update Automatically', control: { kind: 'toggle', on: true } },
-      { id: 'betaUpdates', label: 'Beta Updates', control: { kind: 'toggle', on: false } },
-      { id: 'checkForUpdates', label: '', control: { kind: 'action', label: 'Check for Updates…', message: 'Check for signed app updates in the Mac app.' } },
-    ],
-  },
+export const alertConditions = [
+  { label: 'Warning', notify: 'warningNotification' },
+  { label: 'Critical', notify: 'criticalNotification' },
+  { label: 'Burning Fast', shown: 'showBurningFast', notify: 'closeToRunningOut' },
+  { label: 'Use It or Lose It', shown: 'showUseItOrLoseIt', notify: 'useItOrLoseItNotification' },
 ];
 
-/** Settings 맨 아래의 Customize 이동 행. 섹션 제목 없이 카드 하나로 놓임. */
-export const settingsCrossLink = {
-  title: 'Customize',
-  subtitle: "Choose what's visible and where",
-};
+// 현재 앱의 네 탭 구성. 시스템 작업은 Mac 앱에서 수행하도록 안내.
+export const settingGroups: SettingGroup[] = [
+  { id: 'general', title: 'General', tab: 'General', rows: [
+    { id: 'launchAtLogin', label: 'Launch at Login', control: { kind: 'toggle', on: false } },
+    { id: 'defaultTab', label: 'Default Tab', control: { kind: 'picker', value: 'Priority', options: ['Priority', 'All Usage'] } },
+    { id: 'globalShortcut', label: 'Global Shortcut', info: 'Open egasu from anywhere',
+      control: { kind: 'action', label: 'Record Shortcut', message: 'Record a global shortcut in the Mac app.' } },
+    { id: 'language', label: 'Language', control: { kind: 'picker', value: 'English', options: ['English', '한국어', '日本語'] },
+      note: 'This preview changes language immediately. The Mac app applies it after restarting.' },
+  ] },
+  { id: 'appearance', title: 'Appearance', tab: 'General', rows: [
+    { id: 'theme', label: 'Theme', control: { kind: 'picker', value: 'System', options: ['System', 'Light', 'Dark'] } },
+    { id: 'timeFormat', label: 'Time Format', control: { kind: 'picker', value: '24-hour', options: ['Auto', '12-hour', '24-hour'] } },
+  ] },
+  { id: 'icloud', title: 'iCloud Sync', tab: 'General', rows: [
+    { id: 'syncAcrossMacs', label: 'Sync Across Macs', control: { kind: 'toggle', on: false },
+      info: 'Shares usage history through iCloud, so you can see one combined summary for all your Macs.' },
+  ] },
+  { id: 'updates', title: 'Updates', tab: 'General', rows: [
+    { id: 'updateAutomatically', label: 'Check Automatically', control: { kind: 'toggle', on: true } },
+    { id: 'betaUpdates', label: 'Beta Updates', control: { kind: 'toggle', on: false },
+      info: 'Receive pre-release builds before they ship to everyone' },
+    { id: 'checkForUpdates', label: '', control: { kind: 'action', label: 'Check for Updates…', message: 'Check for signed app updates in the Mac app.' } },
+  ] },
+  { id: 'menuBar', title: 'Menu Bar Icons', tab: 'Display', rows: [
+    { id: 'iconStyle', label: 'Icon Style', control: { kind: 'picker', value: 'Text', options: ['Text', 'Bars'] } },
+    { id: 'menuBarLimit', label: 'Max Items In Menu Bar', control: { kind: 'picker', value: 'Up to 3', options: ['App Icon Only', 'Up to 1', 'Up to 2', 'Up to 3', 'Up to 4', 'Up to 5'] } },
+    { id: 'menuBarItems', label: 'Menu Bar Items', control: { kind: 'picker', value: 'Running Out', options: ['Running Out', 'Priority', 'Pinned Only'] } },
+    { id: 'menuBarExtras', label: 'Show Extra Indicators', control: { kind: 'toggle', on: true }, info: 'Show the +N count and update indicator in the menu bar' },
+  ] },
+  { id: 'layout', title: 'Appearance', tab: 'Display', rows: [
+    { id: 'allUsageLayout', label: 'All Usage Layout', control: { kind: 'picker', value: 'Minimal', options: ['Minimal', 'Cards'] } },
+  ] },
+  { id: 'usageDisplay', title: 'Usage', tab: 'Display', rows: [
+    { id: 'showUsageAs', label: 'Show Usage As', control: { kind: 'picker', value: 'Used', options: ['Used', 'Left'] } },
+    { id: 'resetTimes', label: 'Reset Times', control: { kind: 'picker', value: 'Exact Time', options: ['Countdown', 'Exact Time'] } },
+    { id: 'paceMarks', label: 'Pace Marks', control: { kind: 'toggle', on: false }, info: 'Where usage would be at an even pace' },
+    { id: 'showTotalSpend', label: 'Show Total Spend', control: { kind: 'toggle', on: true }, info: 'Combined spend across your providers at the top of the dashboard' },
+  ] },
+  { id: 'thresholds', title: 'Thresholds', tab: 'Alerts', rows: [
+    { id: 'warning', label: 'Warning', control: { kind: 'picker', value: '30% left', options: Array.from({ length: 11 }, (_, i) => `${70 - i * 5}% left`) }, info: 'When a limit turns into a priority' },
+    { id: 'critical', label: 'Critical', control: { kind: 'picker', value: '10% left', options: ['25% left', '20% left', '15% left', '10% left', '5% left'] }, info: 'When a limit turns critically low' },
+  ] },
+  { id: 'conditions', title: 'Condition', tab: 'Alerts', rows: alertConditions.flatMap((condition): SettingRow[] => [
+    ...(condition.shown ? [{ id: condition.shown, label: `${condition.label}, Show in Priority`, control: { kind: 'toggle' as const, on: true } }] : []),
+    { id: condition.notify, label: `${condition.label}, Receive Alerts`, control: { kind: 'toggle', on: false } },
+  ]) },
+  { id: 'notifications', title: 'Other Notifications', tab: 'Alerts', rows: [
+    { id: 'codexResetWatch', label: 'Codex Reset Watch', control: { kind: 'toggle', on: false }, info: 'Alert when Reset Watch expects Codex limits to reset soon' },
+  ] },
+  { id: 'privacy', title: 'Privacy', tab: 'Advanced', rows: [
+    { id: 'privacyMode', label: 'Privacy Mode', control: { kind: 'toggle', on: false },
+      info: 'Hides dashboard account names and disables renaming. Dashboard account actions show masked emails. Accounts stays visible and editable. During screen sharing or recording, the menu bar shows only the egasu icon.' },
+    { id: 'shareAnonymousUsage', label: 'Share Anonymous Usage', control: { kind: 'toggle', on: false },
+      info: 'Shares anonymous usage counts and error types to help improve egasu. No account details, credentials, or usage values are sent.' },
+  ] },
+  { id: 'tokscale', title: 'Tokscale', tab: 'Advanced', rows: [
+    { id: 'usageSync', label: 'Usage Sync', control: { kind: 'action', label: 'Sync', message: 'Publish usage to your Tokscale profile from the Mac app. This preview does not upload data.' }, info: 'Sync local usage to your public Tokscale profile.' },
+  ] },
+  { id: 'softLimit', title: 'Soft Limit', tab: 'Advanced', rows: [
+    { id: 'softLimitEnabled', label: 'Enabled', control: { kind: 'toggle', on: false } },
+    { id: 'softLimitWindow', label: 'Window', requires: 'softLimitEnabled', control: { kind: 'picker', value: 'Weekly', options: ['5 Hours', 'Weekly'] } },
+    { id: 'softLimitThreshold', label: 'Threshold', requires: 'softLimitEnabled', control: { kind: 'number', value: '90', min: 1, max: 100 } },
+  ] },
+  { id: 'debug', title: 'Debug', tab: 'Advanced', rows: [
+    { id: 'logLevel', label: 'Log Level', control: { kind: 'picker', value: 'Info', options: ['Error', 'Warning', 'Info', 'Debug'] }, info: 'How much detail egasu writes to its log file. Choose Debug while you reproduce a problem.' },
+    { id: 'copyLogPath', label: '', control: { kind: 'action', label: 'Copy Log Path', message: 'Copy the actual log file path from Settings → Advanced in the Mac app.' } },
+    { id: 'revealLog', label: '', control: { kind: 'action', label: 'Reveal in Finder', message: 'Reveal the app log in Finder from the Mac app.' } },
+  ] },
+];

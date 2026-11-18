@@ -1,5 +1,3 @@
-import { providerMetrics } from './metrics.ts';
-import { providers } from './providers.ts';
 // 앱 재현 그래픽의 데모 입력값과 파생 규칙.
 // 원칙 — 손으로 적는 것은 앱이 실제로 받는 입력뿐이고, 화면에 보이는 문자열은 전부 여기서 계산.
 // 라벨을 직접 적으면 상태가 늘어날 때마다 어긋남.
@@ -253,12 +251,3 @@ export const strip = {
   text: stripGroups.map((group) => ({ icon: group.icon, values: group.fractions.map((fraction) => `${Math.round(fraction * 100)}%`) })),
   bars: stripGroups.flatMap((group) => group.fractions),
 };
-
-const enabledProviders = new Set(['claude', 'codex', 'antigravity']);
-
-export const customize = providers.map((p) => ({
-  id: p.id,
-  name: p.name,
-  on: enabledProviders.has(p.id),
-  metrics: providerMetrics[p.id].count,
-}));

@@ -34,7 +34,7 @@
   gap: var(--am-section-gap);
 }
 
-/* 상단 바 — Settings·Customize 전용. 대시보드에는 없음. */
+/* 상단 바 — Accounts·Settings 전용. 대시보드에는 없음. */
 .am-topbar {
   height: 44px;
   padding: 0 14px;
@@ -45,14 +45,18 @@
   border-bottom: 0.5px solid var(--am-sep);
 }
 
-.am-topbar b {
+.am-topbar > b {
   grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   text-align: center;
   font-size: 13px;
   font-weight: 600;
 }
 
-.am-topbar span {
+.am-topbar > span {
   color: var(--am-secondary);
   font-size: 12px;
   font-weight: 600;

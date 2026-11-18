@@ -1,7 +1,10 @@
+import { settingGroups } from '../../src/data/settings';
 import type { Locator } from '@playwright/test';
-import { test, expect, openHome, openSettings, allUsage } from './fixtures';
+import { test, expect, accountDetail, allUsage, openHome, openSettings } from './fixtures';
 
 async function choose(app: Locator, id: string, value: string): Promise<void> {
+  const group = settingGroups.find((group) => group.rows.some((row) => row.id === id))!;
+  await app.locator(`button[data-settings-tab="${group.tab}"]`).click();
   const picker = app.locator(`[data-picker="${id}"]`);
   await picker.click();
   await app.locator(`[data-pick="${id}"][data-value="${value}"]`).click();
@@ -14,7 +17,7 @@ async function settings(app: Locator): Promise<void> {
   await expect(app).toHaveAttribute('data-screen', 'settings');
 }
 
-test('Korean applies immediately to settings, accounts, dashboard details, and customization', async ({ page }) => {
+test('Korean applies immediately to settings, accounts, dashboard details, and metric settings', async ({ page }) => {
   await openHome(page);
   const app = page.locator('[data-mock]');
   const documentStart = await page.evaluate(() => performance.timeOrigin);
@@ -29,29 +32,33 @@ test('Korean applies immediately to settings, accounts, dashboard details, and c
   await expect(screen.locator('.am-topbar > b')).toHaveText('설정');
   await expect(screen.locator('[data-settings-group="general"] > b')).toHaveText('일반');
   await expect(screen.locator('[data-settings-group="privacy"] > b')).toHaveText('개인정보 보호');
-  await expect(screen.locator('[data-settings-group="advanced"] > b')).toHaveText('고급');
-  await expect(screen.locator('[data-language-notice]')).toHaveText('이 미리보기에서는 언어 변경이 즉시 적용됩니다.');
+  await expect(screen.locator('button[data-settings-tab="Advanced"]')).toHaveText('고급');
+  await expect(screen.locator('[data-language-notice]')).toHaveText('이 미리보기에서는 언어가 즉시 바뀝니다. Mac 앱에서는 재시작 후 적용됩니다.');
   await expect(screen.getByRole('button', { name: '언어', exact: true })).toContainText('한국어');
   await screen.getByRole('button', { name: '단축키 지정', exact: true }).click();
   await expect(app.getByRole('status')).toHaveText('Mac 앱에서 전역 단축키를 지정하세요.');
 
-  await screen.locator('[data-account-switch="codex"][data-account-id="account-2"]').click();
+  await screen.locator('.am-back').click();
+  await app.locator('[data-options]').click();
+  await app.locator('.am-optmenu [data-go="accounts"]').click();
+  await app.locator('[data-account-list] .am-open[data-go="account:codex:account-2"]').click();
+  await app.locator('[data-scr="account:codex:account-2"] [data-account-switch]').click();
   const dialog = app.getByRole('dialog', { name: '계정을 전환할까요?' });
   await expect(dialog).toBeVisible();
   await expect(dialog.locator('[data-account-confirm-text]')).toHaveText('이 미리보기의 사용 계정을 계정 2로 바꿀까요? Mac의 로그인 상태는 그대로 유지됩니다.');
   await dialog.getByRole('button', { name: '취소', exact: true }).click();
-  await screen.getByRole('button', { name: '뒤로', exact: true }).click();
+  await app.locator('.am-scr:not([hidden]) .am-back').click();
+  await app.locator('.am-scr:not([hidden]) .am-back').click();
+  await app.locator('button[data-dashboard-tab="All Usage"][role="tab"]').click();
 
   const spend = app.locator('.am-spend-card');
-  await expect(spend.locator('[data-state="today:cost"] .am-ring-center')).toHaveAccessibleName(/비용/);
   await expect(spend.getByRole('radio', { name: '오늘', exact: true })).toBeVisible();
   await spend.locator('[data-state="today:cost"] .am-ring-center').click();
   await spend.locator('[data-state="today:costPerMtok"] .am-ring-center').click();
   await expect(spend.locator('[data-state="today:tokens"] .am-ring-center')).toContainText('백만');
 
-  await allUsage(page);
   const codex = app.locator('[data-card="codex-account-1"]');
-  await expect(codex.locator('[data-account-title]')).toHaveText('Codex: 계정 1');
+  await expect(codex.locator('.am-account-caption [data-account-name]')).toHaveText('계정 1');
   await expect(codex.locator('[data-metric="codex.session"] .am-metric-label')).toHaveText('세션');
   const forecast = codex.locator('[data-metric="codex.resetWatch"]');
   await expect(forecast).toBeVisible();
@@ -66,16 +73,16 @@ test('Korean applies immediately to settings, accounts, dashboard details, and c
   await expect(resetDetails).toBeVisible();
   await expect(resetDetails.locator('.am-reset-date')).toHaveText(['10월 31일 10:00', '11월 7일 10:00']);
   await expect(resetDetails.locator('.am-reset-countdown')).toHaveText(['4일 19시간', '11일 19시간']);
-  await page.keyboard.press('Escape');
+  await codex.locator('.am-reset-trigger').click();
   await expect(resetDetails).toBeHidden();
 
   await app.locator('[data-options]').click();
-  await app.getByRole('menuitem', { name: '커스터마이즈', exact: true }).click();
-  await app.locator('[data-scr="customize"] [data-go="metrics:codex"]').click();
-  const metrics = app.locator('[data-scr="metrics:codex"]');
-  await expect(metrics.locator('.am-group > b')).toHaveText('지표');
+  await app.locator('.am-optmenu [data-go="accounts"]').click();
+  await app.locator('[data-account-list] .am-open[data-go="account:codex:account-1"]').click();
+  const metrics = app.locator('[data-scr="account:codex:account-1"]');
+  await expect(metrics.locator('.am-group > b')).toHaveText(['계정별 설정', '공통 설정']);
   await expect(metrics.getByRole('switch', { name: '초기화 예측', exact: true })).toBeVisible();
-  await expect(metrics.locator('[data-star="codex.session"] .am-sr')).toHaveText('세션 고정');
+  await expect(metrics.locator('[data-pin="codex.session"]')).toHaveAttribute('aria-pressed', 'false');
 });
 
 test('Korean remains applied after display changes and restores on reload', async ({ page }) => {
@@ -85,13 +92,16 @@ test('Korean remains applied after display changes and restores on reload', asyn
   await choose(app, 'language', '한국어');
   await choose(app, 'timeFormat', '12-hour');
   await choose(app, 'showUsageAs', 'Left');
-  await choose(app, 'density', 'Default');
-  await expect(app.locator('[data-picker="timeFormat"]')).toContainText('12시간제');
+  await choose(app, 'allUsageLayout', 'Cards');
   await expect(app.locator('[data-picker="showUsageAs"]')).toContainText('남음');
-  await expect(app.locator('[data-picker="density"]')).toContainText('기본');
+  await expect(app.locator('[data-picker="allUsageLayout"]')).toContainText('카드');
+  await app.locator('button[data-settings-tab="General"]').click();
+  const timeFormat = app.locator('[data-picker="timeFormat"]');
+  await expect(timeFormat).toBeVisible();
+  await expect(timeFormat).toContainText('12시간제');
   await app.locator('[data-scr="settings"] .am-back').click();
+  await app.locator('button[data-dashboard-tab="All Usage"][role="tab"]').click();
 
-  await allUsage(page);
   const codex = app.locator('[data-card="codex-account-1"]');
   const session = codex.locator('[data-metric="codex.session"]');
   await expect(session.locator('.am-headline .l')).toHaveText('72%');
@@ -104,7 +114,7 @@ test('Korean remains applied after display changes and restores on reload', asyn
   await expect(session.locator('.rel')).toHaveText('3시간 27분');
 
   await page.reload();
-  await allUsage(page);
+  await app.locator('button[data-dashboard-tab="All Usage"][role="tab"]').click();
   await expect(app).toHaveAttribute('lang', 'ko');
   await expect(app).toHaveAttribute('data-mode', 'left');
   await expect(app).toHaveAttribute('data-reset', 'relative');
@@ -140,13 +150,44 @@ test('language cycles through Korean, Japanese, and English across interactive a
     await expect(sheet.locator('.tour-sheet-head > b')).toHaveText(sheetTitle);
     await expect(downloads).toHaveText([downloadLabel, downloadLabel, `${downloadLabel} v0.99.2`]);
   }
-  await expect(app.locator('[data-language-notice]')).toHaveText('Language changes apply immediately in this preview.');
+  await expect(app.locator('[data-language-notice]')).toHaveText('This preview changes language immediately. The Mac app applies it after restarting.');
   await app.locator('[data-scr="settings"] .am-back').click();
-  await allUsage(page);
+  await app.locator('button[data-dashboard-tab="All Usage"][role="tab"]').click();
   const codex = app.locator('[data-card="codex-account-1"]');
-  await expect(codex.locator('[data-account-title]')).toHaveText('Codex: Account 1');
+  await expect(codex.locator('.am-account-caption [data-account-name]')).toHaveText('Account 1');
   await expect(codex.getByRole('img', { name: 'Reset chance is high', exact: true })).toBeVisible();
   await expect(codex.locator('.am-forecast .am-headline')).toHaveText('65% chance');
   await expect(codex.locator('.am-forecast .abs')).toHaveText('By Oct 27 at 10:00');
   await expect(app.locator('.am-spend-card [data-period="today"]')).toHaveText('Today');
+});
+
+test('localized switch actions preserve the saved custom account name', async ({ page }) => {
+  await openHome(page);
+  const app = page.locator('[data-mock]');
+  await accountDetail(page, 'codex', 'account-2');
+  const detail = app.locator('[data-scr="account:codex:account-2"]');
+  const input = detail.locator('[data-rename-input]');
+  await input.fill('Today');
+  await input.press('Enter');
+  await expect(detail.locator('.am-topbar > b')).toHaveText('Codex: Today');
+  await detail.locator('.am-back').click();
+  await app.locator('[data-scr="accounts"] .am-back').click();
+
+  for (const [language, menuText, confirmation] of [
+    ['한국어', 'Codex 사용: Today', '이 미리보기의 사용 계정을 Today로 바꿀까요? Mac의 로그인 상태는 그대로 유지됩니다.'],
+    ['日本語', 'Codexを使用: Today', 'このプレビューでTodayを使用しますか？Macのログイン状態は変わりません。'],
+  ]) {
+    await settings(app);
+    await choose(app, 'language', language);
+    await app.locator('[data-scr="settings"] .am-back').click();
+    await page.reload();
+    await allUsage(page);
+    const card = app.locator('[data-card="codex-account-2"]');
+    await card.locator('[data-account-actions-trigger]').click({ button: 'right' });
+    const action = card.locator('[data-account-switch]');
+    await expect(action).toHaveText(menuText);
+    await action.click();
+    await expect(app.locator('[data-account-confirm-text]')).toHaveText(confirmation);
+    await app.locator('[data-account-cancel]').click();
+  }
 });

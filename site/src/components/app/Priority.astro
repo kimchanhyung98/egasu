@@ -33,7 +33,7 @@ const groups = [
             <svg class="am-priority-provider" viewBox="0 0 24 24" aria-hidden="true"><use href={`#pi-${line.provider}`} /></svg>
           </span>
           <span class="am-priority-text"><b>{row.label}</b>
-            <span class="am-priority-account"><span>{providers.find((provider) => provider.id === line.provider)?.name}</span>{name && <span class="am-account-label" data-account-name={line.provider} data-account-id={line.accountID}>{name}</span>}</span>
+            <span class="am-priority-account"><span>{providers.find((provider) => provider.id === line.provider)?.name}</span>{name && <button type="button" class="am-account-label" data-toggle-account-name data-account-name={line.provider} data-account-id={line.accountID}>{name}</button>}</span>
           </span>
           <span class="am-priority-detail">
             {bounded ? <><span class="am-priority-status">Used Up</span><button type="button" class="am-priority-value am-headline" data-toggle-meter><span class="u">{Math.round(fraction * 100)}% used</span><span class="l">{Math.round((1 - fraction) * 100)}% left</span></button></>
@@ -45,7 +45,7 @@ const groups = [
     </div>
   </section>)}
   <section data-priority-notices hidden><h3>Needs Attention</h3>
-    {providers.map((provider) => <div class="am-priority-notice" data-priority-notice={provider.id} hidden><span><b>{provider.name}</b><span>No sample usage for this provider.</span></span><button type="button" class="am-chip" data-go={`metrics:${provider.id}`}>Customize…</button></div>)}
+    {providers.map((provider) => <div class="am-priority-notice" data-priority-notice={provider.id} hidden><span><b>{provider.name}</b><span>No sample usage for this provider.</span></span><button type="button" class="am-chip" data-go={`account:${provider.id}:default`}>Fix</button></div>)}
   </section>
   <section data-all-clear hidden={!board.allClear}><h3>Running Out</h3><div class="am-clear-row"><span class="am-clear-icon">✓</span><span><b>All Clear</b><span>Nothing is running out.</span></span></div></section>
   <div class="am-clear" data-no-limits hidden={!board.noLimits}><b>No Reported Limits</b><button type="button" class="am-chip" data-dashboard-tab="All Usage">View All Usage</button></div>
