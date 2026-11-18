@@ -180,8 +180,8 @@ final class ProviderCatalogTests: XCTestCase {
         XCTAssertTrue(expandedIDs.contains("\(card.id).rateLimitResets"))
 
         XCTAssertFalse(
-            layout.pinnedMetricIDs.contains { ProviderAccountID.isAccountCard($0) },
-            "layout settings are stored per provider, never per account card"
+            layout.priorityPinIDs.contains { ProviderAccountID.isAccountCard($0) },
+            "새 계정 카드는 Priority 고정 없이 시작"
         )
     }
 
@@ -200,7 +200,7 @@ final class ProviderCatalogTests: XCTestCase {
         XCTAssertTrue(layout.isMetricEnabled("\(card.id).session"))
         XCTAssertTrue(layout.displayGroups.contains { $0.provider.id == card.id })
         XCTAssertFalse(
-            layout.pinnedMetricIDs.contains { $0.hasPrefix("\(card.id).") },
+            layout.priorityPinIDs.contains { $0.hasPrefix("\(card.id).") },
             "an account discovered at runtime must not claim menu-bar space by default"
         )
     }
@@ -224,24 +224,20 @@ final class ProviderCatalogTests: XCTestCase {
         XCTAssertTrue(layout.displayGroups.contains { $0.provider.id == card.id })
     }
 
-    func testMenuBarStarsAreSharedByEveryCardOfAProvider() {
+    func testPriorityPinsBelongToOneCardAndHidingAMetricUnpinsOnlyThatCard() {
         let card = AccountUsageSnapshotCard(id: "claude@profile-work", profileID: "work", family: "claude")
         let registry = WidgetRegistry.from(ProviderCatalog.make(snapshotCards: [card]))
-        let layout = LayoutStore(
-            registry: registry,
-            defaults: makeScratchDefaults(),
-            storageKey: "layout",
-            defaultPinnedMetricIDs: ["claude.session", "claude.weekly", "codex.weekly"]
-        )
+        let layout = LayoutStore(registry: registry, defaults: makeScratchDefaults(), storageKey: "layout")
 
-        // star는 family 설정 — 계정 전환이 pin을 옮길 필요 없이 카드가 그대로 물려받음
-        XCTAssertTrue(layout.isPinned("\(card.id).session"))
-        XCTAssertTrue(layout.isPinned("\(card.id).weekly"))
-        XCTAssertEqual(layout.pinnedCount(forProvider: card.id), 2)
+        layout.setMetric("\(card.id).weekly", pinned: true)
+        XCTAssertTrue(layout.isMetricPinned("\(card.id).weekly"))
+        XCTAssertFalse(layout.isMetricPinned("claude.weekly"), "고정은 카드 단위 — 다른 계정에 번지지 않음")
 
-        layout.setPinned(false, for: "\(card.id).weekly")
+        layout.setMetric("claude.weekly", pinned: true)
+        layout.setMetricEnabled("claude.weekly", false)
+        XCTAssertEqual(layout.priorityPinIDs, ["\(card.id).weekly"], "숨긴 카드의 고정만 해제")
 
-        XCTAssertFalse(layout.isPinned("claude.weekly"), "unstarring on a card unstars the provider")
-        XCTAssertEqual(layout.pinnedMetricIDs, ["claude.session", "codex.weekly"])
+        layout.setMetric("claude.weekly", pinned: true)
+        XCTAssertEqual(layout.priorityPinIDs, ["\(card.id).weekly"], "숨긴 지표는 고정 불가")
     }
 }

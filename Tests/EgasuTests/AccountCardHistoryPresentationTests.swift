@@ -259,9 +259,9 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
         let layout = makeLayout()
         layout.setMetricEnabled("codex.resetWatch", true)
         layout.expandedMetricIDs.insert("codex.resetWatch")
-        layout.setPinned(true, for: "codex.today")
-        layout.setPinned(true, for: "codex.resetWatch")
-        let pins = layout.pinnedMetricIDs
+        layout.setMetric("codex.today", pinned: true)
+        layout.setMetric("codex.resetWatch", pinned: true)
+        let pins = layout.priorityPinIDs
         let group = try XCTUnwrap(layout.displayGroups.first { $0.id == "codex@profile-account-2" })
         let presented = try XCTUnwrap(AccountCardPresentationPlanner.presentedGroup(group, mode: .separateCards))
         XCTAssertTrue(layout.setProviderExpanded(true, for: group.id))
@@ -274,7 +274,7 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
             XCTAssertTrue(layout.isExpandedMetric("codex.\(suffix)"))
             XCTAssertTrue(layout.isMetricEnabled("codex.\(suffix)"))
         }
-        XCTAssertEqual(layout.pinnedMetricIDs, pins)
+        XCTAssertEqual(layout.priorityPinIDs, pins)
     }
 
     func testReorderingPromotedLimitsWithLinksExpandedPreservesSavedMembership() throws {

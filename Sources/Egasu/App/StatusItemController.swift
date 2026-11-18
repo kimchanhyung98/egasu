@@ -91,7 +91,7 @@ final class StatusItemController: NSObject {
         let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.statusItem = statusItem
         // 상태 항목만 캡처하여 순환 참조 방지 — 버튼은 적용 시점마다 조회.
-        self.imageUpdater = StatusItemImageUpdater(container: container) { image in
+        self.imageUpdater = StatusItemImageUpdater(container: container, updater: updater) { image in
             statusItem.button?.image = image
         }
 

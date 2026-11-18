@@ -19,9 +19,7 @@ final class TelemetryRecorderTests: XCTestCase {
     private let snapshot = TelemetryConfigSnapshot(
         enabledProviders: ["claude", "codex"],
         enabledMetricIDs: ["claude.session", "codex.weekly"],
-        pinnedMetricIDs: ["claude.session"],
-        expandedMetricIDs: ["codex.weekly"],
-        menuBarStyle: "text"
+        pinnedMetricIDs: ["claude.session"]
     )
 
     func testOnlyRefreshedAndFailedCount_andRollOverEmitsCompleteDailyCounts() {
@@ -77,8 +75,9 @@ final class TelemetryRecorderTests: XCTestCase {
         XCTAssertEqual(active[0]["install_id"] as? String, store.installID)
         XCTAssertEqual(active[0]["enabled_providers"] as? [String], ["claude", "codex"])
         XCTAssertEqual(active[0]["pinned_metric_ids"] as? [String], ["claude.session"])
-        XCTAssertEqual(active[0]["expanded_metric_ids"] as? [String], ["codex.weekly"])
-        XCTAssertEqual(active[0]["menu_bar_style"] as? String, "text")
+        XCTAssertEqual(active[0]["schema_version"] as? Int, 3)
+        XCTAssertNil(active[0]["expanded_metric_ids"], "On Demand 배치는 더 이상 없음")
+        XCTAssertNil(active[0]["menu_bar_style"], "메뉴 막대 스타일 설정은 더 이상 없음")
 
         clock = day(26)
         recorder.tick()
@@ -136,9 +135,7 @@ final class TelemetryRecorderTests: XCTestCase {
                 "claude.session", "claude@ab12cd34.session", "claude@profile-p1.weekly",
                 "codex@profile-p2.session", "cursor.usage",
             ],
-            pinnedMetricIDs: ["claude@ab12cd34.weekly"],
-            expandedMetricIDs: ["codex@profile-p2.trend"],
-            menuBarStyle: "strip",
+            pinnedMetricIDs: ["claude@ab12cd34.weekly", "claude.weekly", "codex@profile-p2.session"],
             providerIDForMetric: providerIDForMetric
         )
 
@@ -146,8 +143,8 @@ final class TelemetryRecorderTests: XCTestCase {
                        "account card ids and their count must never reach telemetry")
         XCTAssertEqual(snapshot.enabledMetricIDs,
                        ["claude.session", "claude.weekly", "codex.session", "cursor.usage"])
-        XCTAssertEqual(snapshot.pinnedMetricIDs, ["claude.weekly"])
-        XCTAssertEqual(snapshot.expandedMetricIDs, ["codex.trend"])
+        XCTAssertEqual(snapshot.pinnedMetricIDs, ["claude.weekly", "codex.session"],
+                       "카드 단위 Priority 고정은 family 지표로 축약·중복 제거")
     }
 
     func testInstallIDIsStableAcrossStoreInstances() {

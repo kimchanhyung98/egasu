@@ -4,7 +4,6 @@ import Foundation
 struct LayoutDefaultSet {
     let metricIDs: [String]
     let migrationBaselineMetricIDs: [String]
-    let pinnedMetricIDs: [String]
     let expandedMetricIDs: [String]
 }
 
@@ -13,18 +12,15 @@ struct LayoutInitialState {
     let placed: [PlacedWidget]
     let providerOrder: [String]
     let metricOrderByProvider: [String: [String]]
-    let pinnedMetricIDs: Set<String>
     let expandedMetricIDs: Set<String>
     let expandedProviderIDs: Set<String>
     let defaultExpandedOnEnableIDs: Set<String>
-    let menuBarStyle: MenuBarStyle
     let disabledMetricIDs: Set<String>
     let shouldPersistVisibility: Bool
 
     let shouldPersistPlaced: Bool
     let shouldPersistExpanded: Bool
     let shouldPersistExpandOnEnable: Bool
-    let shouldPersistPins: Bool
     let shouldPersistMetricOrder: Bool
     let shouldPersistExpandedProviders: Bool
     let seededDefaultsToPersist: Set<String>?
@@ -117,35 +113,6 @@ enum LayoutBootstrap {
             registry: registry, defaults: defaults
         )
 
-        // 저장값(모두 unpin한 빈 배열 포함) 우선, 미지의 저장 id는 부재 중 계정 card용 tombstone으로 보존
-        let pinnedMetricIDs: Set<String>
-        var shouldPersistPins = false
-        if let savedPins = persistence.loadPins() {
-            // 카드별 pin은 canonical로 합친 뒤 provider 상한 재적용 — fold가 조용히 상한을 넘기지 않도록
-            pinnedMetricIDs = LayoutOrdering.foldingPins(
-                savedPins,
-                order: metricOrderByProvider,
-                limit: LayoutStore.maxPinsPerProvider
-            )
-            shouldPersistPins = pinnedMetricIDs != Set(savedPins)
-        } else if let importedPins = persistence.loadPriorityPins() {
-            // 현재 등록된 항목만 기존 메뉴 막대에 표시하고 원본 계정 ID는 Priority 저장값에 유지.
-            pinnedMetricIDs = LayoutOrdering.foldingPins(
-                importedPins.filter { id in
-                    if ProviderAccountID.isAccountCard(ProviderAccountID.providerID(ofMetric: id)) {
-                        return registry.descriptor(id: id)?.pinnable == true
-                    }
-                    return registry.descriptors.contains {
-                        $0.pinnable && ProviderAccountID.canonicalMetricID($0.id) == id
-                    }
-                },
-                order: metricOrderByProvider,
-                limit: LayoutStore.maxPinsPerProvider
-            )
-        } else {
-            pinnedMetricIDs = Set(defaults.pinnedMetricIDs.filter { registry.hasCanonicalMetric($0) })
-        }
-
         // expanded 소속은 신규 설치 전용 default — 기능 도입 전 기존 layout은 전부 caret 위 유지
         var shouldPersistExpanded = false
         var expandedMetricIDs: Set<String>
@@ -197,17 +164,14 @@ enum LayoutBootstrap {
             placed: placed,
             providerOrder: providerOrder,
             metricOrderByProvider: metricOrderByProvider,
-            pinnedMetricIDs: pinnedMetricIDs,
             expandedMetricIDs: expandedMetricIDs,
             expandedProviderIDs: expandedProviderIDs,
             defaultExpandedOnEnableIDs: defaultExpandedOnEnableIDs,
-            menuBarStyle: persistence.loadMenuBarStyle(),
             disabledMetricIDs: disabled,
             shouldPersistVisibility: mayPersist,
             shouldPersistPlaced: false,
             shouldPersistExpanded: shouldPersistExpanded,
             shouldPersistExpandOnEnable: shouldPersistExpandOnEnable,
-            shouldPersistPins: shouldPersistPins,
             shouldPersistMetricOrder: order != savedOrder,
             shouldPersistExpandedProviders: shouldPersistExpandedProviders,
             seededDefaultsToPersist: seededResult.shouldPersistSeededDefaults

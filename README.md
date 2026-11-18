@@ -34,7 +34,9 @@ Most providers read the credentials already on your machine (keychain, auth file
 
 ## Features
 
-- **Menu bar pins.** Pin metrics to the menu bar (up to 2 per provider); render as compact text or mini bars. The strip hides metrics with no data instead of showing placeholders.
+- **[메뉴 막대](/docs/menu-bar.md).** 소진 임박·Priority·직접 고정한 항목 중 표시 기준 선택.
+  텍스트 또는 막대로 최대 5개 표시.
+- **Priority.** 고정한 한도, 소진 임박·소진 완료 한도와 확인이 필요한 계정 표시.
 - **[All Usage](/docs/dashboard.md#all-usage).** 등록 계정별 사용량·초기화 시각·사용 속도 표시.
   Minimal은 프로바이더별 계정 묶음, Cards는 계정별 독립 카드.
   행 우클릭으로 표시·메뉴 막대 고정·새로 고침·Accounts 관리 연결.

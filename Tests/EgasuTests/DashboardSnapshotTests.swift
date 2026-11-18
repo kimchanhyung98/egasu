@@ -167,4 +167,134 @@ final class DashboardSnapshotTests: XCTestCase {
         let png = try XCTUnwrap(ShareCardRenderer.pngData(from: image))
         try png.write(to: url.appendingPathComponent("\(name).png"))
     }
+    func testStackedMenuBarIconsRenderOneThroughFiveBars() throws {
+        for count in 1...5 {
+            var content = menuBarSample(limit: MenuBarLimit(count: count))
+            content.overflow = 0
+            let image = try XCTUnwrap(MenuBarStripRenderer.image(for: content, style: .bars))
+            XCTAssertEqual(image.size.width, 18)
+            XCTAssertEqual(image.size.height, 18)
+            var rect = CGRect(origin: .zero, size: image.size)
+            let pixels = try XCTUnwrap(image.cgImage(forProposedRect: &rect, context: nil, hints: nil))
+            XCTAssertNotNil(MenuBarStripRenderer.visibleBounds(of: pixels))
+            try export(image, name: "menubar-bars-\(count)")
+            for appearance in [ColorScheme.light, .dark] {
+                _ = try render(Image(nsImage: image).renderingMode(.template).frame(height: 30),
+                               appearance: appearance, name: "menubar-bars-\(count)-\(appearance)")
+            }
+        }
+    }
+
+    func testPriorityListRendersEverySection() throws {
+        let board = PriorityBoard.make(
+            accounts: codexFamily().accounts + [cursorAccount()],
+            pinned: ["codex.session"],
+            burningFast: BurningFast(),
+            useItOrLoseIt: true,
+            now: now
+        ) { account in account.id == "cursor" ? .unavailable("Session expired") : .current }
+        XCTAssertFalse(board.attention.isEmpty)
+        XCTAssertFalse(board.usedUp.isEmpty)
+        XCTAssertFalse(board.notices.isEmpty)
+        for appearance in [ColorScheme.light, .dark] {
+            let image = try render(PriorityBoardList(board: board, now: now), appearance: appearance, name: "priority-\(appearance)")
+            XCTAssertGreaterThan(image.size.height, 46 * 3)
+        }
+    }
+
+    func testPinnedRowsKeepTheirHeightThroughWarningSpentAndReset() throws {
+        let provider = MockData.codex
+        let balanceProvider = Provider(id: "openrouter", displayName: "OpenRouter", icon: .providerMark("openrouter"))
+        let balance = WidgetData(title: "Balance", icon: balanceProvider.icon, kind: .dollars, used: 0, limit: nil,
+                                 unboundedValueWord: "left", values: [MetricValue(number: 0, kind: .dollars)])
+        let balanceLine = line("openrouter.balance", balance)
+        let balanceDescriptor = balanceLine.descriptor.exportingLimit("balance", kind: .balance, unit: "usd", source: .value(kind: .dollars))
+        let balanceAccount = DashboardAccount(provider: balanceProvider, providerName: "OpenRouter", name: nil, lines: [
+            DashboardLine(descriptor: balanceDescriptor, data: balance)
+        ])
+        for appearance in [ColorScheme.light, .dark] {
+            for language in [LanguageSetting.english, .korean, .japanese] {
+                try L10n.withLanguage(language) {
+                    var expectedHeight: CGFloat?
+                    for used in [20.0, 95, 100, 0] {
+                        let lines = [
+                            line("codex.weekly", meter("Weekly", used: used, resetIn: 3 * 86_400)),
+                            line("codex.session", meter("Session", used: 60, resetIn: 2.5 * 3_600, period: 5 * 3_600_000)),
+                            line("codex.credits", meter("Credits", used: 10, resetIn: 20 * 3_600)),
+                        ]
+                        let account = DashboardAccount(provider: provider, providerName: "Codex", name: "Account 1", lines: lines)
+                        let pins = lines.map(\.id) + [balanceLine.id]
+                        let board = PriorityBoard.make(accounts: [account, balanceAccount], pinned: Set(pins),
+                                                       burningFast: BurningFast(), useItOrLoseIt: true, now: now)
+                        XCTAssertEqual(board.pinned.map(\.id), pins)
+                        XCTAssertTrue(board.attention.isEmpty)
+                        XCTAssertTrue(board.usedUp.isEmpty)
+                        XCTAssertTrue(board.useItOrLoseIt.isEmpty)
+                        let image = try render(PriorityBoardList(board: board, now: now), appearance: appearance,
+                                               name: "priority-pinned-\(Int(used))-\(language.rawValue)-\(appearance)")
+                        if let expectedHeight {
+                            XCTAssertEqual(image.size.height, expectedHeight, "상태가 바뀌어도 고정 행 높이 유지")
+                        } else {
+                            expectedHeight = image.size.height
+                        }
+                        XCTAssertGreaterThan(image.size.height, 46 * CGFloat(pins.count))
+                    }
+                }
+            }
+        }
+    }
+
+    func testMenuBarStripRendersBadgesAndOverflow() throws {
+        let content = MenuBarContent(items: [
+            MenuBarContent.Item(id: "codex.weekly", icon: .providerMark("codex"), providerName: "Codex — Account 1", badge: "A1",
+                                label: "Weekly", shortLabel: "Weekly", value: "9%"),
+            MenuBarContent.Item(id: "codex@ab12cd34.session", icon: .providerMark("codex"), providerName: "Codex — Account 2", badge: "A2",
+                                label: "Session", shortLabel: "Session", value: "14%"),
+            MenuBarContent.Item(id: "cursor.usage", icon: .providerMark("cursor"), providerName: "Cursor", badge: nil,
+                                label: "Premium Usage", shortLabel: "Premium", value: "$12"),
+        ], overflow: 2)
+        let image = try XCTUnwrap(MenuBarStripRenderer.textImage(for: content))
+        XCTAssertLessThanOrEqual(image.size.height, 22, "메뉴 막대 높이 안에 들어감")
+        try export(image, name: "menubar-strip")
+    }
+
+    func testMenuBarExtraIndicatorsCanBeHiddenWithoutChangingUsage() throws {
+        var original = menuBarSample(limit: .upToTwo)
+        original.updateAvailable = true
+        original.nextInvalidation = now.addingTimeInterval(30)
+        let plain = original.showingExtraIndicators(false)
+        XCTAssertEqual(plain.items, original.items)
+        XCTAssertEqual(plain.nextInvalidation, original.nextInvalidation)
+        XCTAssertEqual(original.showingExtraIndicators(true), original)
+        XCTAssertEqual(plain.accessibilityText, plain.items.map { "\($0.providerName) \($0.label) \($0.value)" }.joined(separator: "; "))
+        for style in MenuBarStyle.allCases {
+            let fullImage = try XCTUnwrap(MenuBarStripRenderer.image(for: original, style: style))
+            let plainImage = try XCTUnwrap(MenuBarStripRenderer.image(for: plain, style: style))
+            XCTAssertLessThan(plainImage.size.width, fullImage.size.width)
+            if style == .bars { XCTAssertEqual(plainImage.size, NSSize(width: 18, height: 18)) }
+            XCTAssertEqual(plainImage.accessibilityDescription, plain.accessibilityText)
+            let restored = try XCTUnwrap(MenuBarStripRenderer.image(for: original, style: style))
+            XCTAssertEqual(restored.size, fullImage.size)
+            try export(plainImage, name: "menubar-\(style.rawValue)-plain")
+
+            let empty = MenuBarContent(items: [], updateAvailable: true)
+            XCTAssertNotNil(MenuBarStripRenderer.image(for: empty, style: style))
+            XCTAssertNil(MenuBarStripRenderer.image(for: empty.showingExtraIndicators(false), style: style))
+        }
+    }
+
+    private func cursorAccount() -> DashboardAccount {
+        let provider = Provider(id: "cursor", displayName: "Cursor", icon: .providerMark("cursor"))
+        return DashboardAccount(provider: provider, providerName: "Cursor", name: nil, lines: [])
+    }
+
+    private func menuBarSample(limit: MenuBarLimit) -> MenuBarContent {
+        MenuBarContent(items: (0..<limit.count).map { index in
+            MenuBarContent.Item(
+                id: "codex.meter\(index)", icon: .providerMark("codex"), providerName: "Codex",
+                badge: "A\(index + 1)", label: "Weekly", shortLabel: "Weekly", value: "42%",
+                fraction: Double(index + 1) / 6)
+        }, overflow: 2)
+    }
+
 }

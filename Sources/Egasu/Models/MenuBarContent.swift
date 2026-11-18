@@ -1,115 +1,129 @@
 import Foundation
 
-/// pinned metric과 live 값으로 만든 menu-bar strip용 데이터 — resolve·정렬·개수 제한 완료.
-/// `groups`는 Text style(1 pinned provider = 1 segment), `bars`는 Bars style(fill 있는 bounded metric 선착 4개), `isEmpty`면 기본 app icon 렌더.
+/// 메뉴 막대 스트립 내용 — Priority 보드에서 고른 항목, 넘친 개수, 업데이트 점.
 struct MenuBarContent: Equatable {
-    /// resolve 완료된 pinned metric 하나.
-    struct Metric: Equatable {
+    struct Item: Equatable, Identifiable {
         let id: String
-        let label: String       // metric label — provider에 metric이 2개일 때 표시
-        let value: String       // tray 표시값 — bounded는 "%", unbounded는 raw 값, 없으면 no-data marker
-        let fraction: Double     // 0...1 fill — bounded metric에서만 유효 (bars 렌더 근거)
-        let isBounded: Bool      // limit 보유 → fill 보유 — bar 렌더 가능 여부
-        let hasData: Bool
-    }
-
-    /// provider 하나와 순서대로의 pinned metric — Text strip의 segment 하나.
-    struct Group: Equatable {
-        let providerID: String
-        let displayName: String
         let icon: IconSource
-        let metrics: [Metric]
+        let providerName: String
+        /// 같은 프로바이더 계정이 여럿일 때만 계정 이니셜.
+        let badge: String?
+        let label: String
+        let shortLabel: String
+        let value: String
+        var fraction: Double? = nil
     }
 
-    /// Text style용 provider group (Customize 순서).
-    /// 실데이터 있는 metric만 포함, 전부 데이터 없는 provider는 icon째 제외 — strip에 "—" placeholder 없음.
-    let groups: [Group]
-    /// Bars style용 bounded metric(fill 보유) — 순서대로 평탄화, 최대 4개.
-    let bars: [Metric]
-    /// 현재 strip 값이 시간만으로 무효화되는 가장 이른 시각. 상태 아이템의 1회성 재렌더 예약용.
-    var nextInvalidation: Date? = nil
+    let items: [Item]
+    var overflow = 0
+    var updateAvailable = false
+    /// 시간만으로 내용이 바뀌는 가장 이른 시각 — 순위 재계산(30초)·예측 기한.
+    var nextInvalidation: Date?
 
-    /// pin 없음·pinned provider 전부 비활성·데이터 있는 pin 없음 — menu bar가 app icon으로 fallback.
-    var isEmpty: Bool { groups.isEmpty }
+    var isEmpty: Bool { items.isEmpty }
 
-    /// 렌더된 strip 이미지의 VoiceOver 요약 (예: "Claude Session 41%, Weekly 12%").
-    var accessibilityText: String {
-        groups.map { group in
-            let metrics = group.metrics.map { "\($0.label) \($0.value)" }.joined(separator: ", ")
-            return "\(group.displayName) \(metrics)"
+    func showingExtraIndicators(_ show: Bool) -> Self {
+        var content = self
+        if !show {
+            content.overflow = 0
+            content.updateAvailable = false
         }
-        .joined(separator: "; ")
+        return content
+    }
+
+    /// 그림이 같은지 — `nextInvalidation`은 다음 재렌더 시각일 뿐 그림에 영향 없음(렌더 캐시 키).
+    func drawsSame(as other: MenuBarContent) -> Bool {
+        items == other.items && overflow == other.overflow && updateAvailable == other.updateAvailable
+    }
+
+    var accessibilityText: String {
+        let shown = items.map { "\($0.providerName) \($0.label) \($0.value)" }
+        let more = overflow > 0 ? [L10n.dashboard("%lld more", overflow)] : []
+        let update = updateAvailable ? [L10n.dashboard("Update Available")] : []
+        return (shown + more + update).joined(separator: "; ")
+    }
+}
+
+/// 계정 이니셜 배지 — 단어 첫 글자, 여러 단어면 첫·마지막 단어 첫 글자("Attention Machine 1" → "A1").
+enum AccountInitials {
+    static func tag(for name: String) -> String {
+        let initials = name.split(whereSeparator: \.isWhitespace).compactMap(\.first)
+        guard let first = initials.first else { return "" }
+        let letters = initials.count > 1 ? [first, initials[initials.count - 1]] : [first]
+        return String(letters).uppercased()
     }
 }
 
 @MainActor
 enum MenuBarContentBuilder {
-    /// compact style이 렌더하는 최대 bar 수.
-    static let maxBars = 4
+    private static let genericWords: Set<String> = ["models", "bot", "usage"]
+    static let rankingTick: TimeInterval = 30
 
-    /// pinned provider group을 menu-bar content로 resolve.
-    /// `groups`는 정렬·비활성 제외 완료(`LayoutStore.pinnedGroups`), `data`는 live `WidgetData` resolver, `title`은 카드 title resolver.
-    /// pin은 membership — 데이터 없는 metric은 탈락, 데이터 있는 pin 없는 provider는 icon째 제외.
+    /// 소진 임박·Priority·고정만 중 선택 — 고정 전용은 사용자가 저장한 계정·지표 순서 유지.
+    /// 데이터 없는 행(실패한 예측 등)은 자리를 차지하지 않음. 계정 배지는 `multiAccountFamilies`의 패밀리에만.
+    /// Priority 모드에서 고정하지 않은 소진됨은 남는 칸에만 표시하고 `+N`에 세지 않음.
     static func build(
-        groups: [ProviderMetrics],
-        data: (WidgetDescriptor) -> WidgetData,
-        title: (Provider) -> String = { $0.displayName },
-        now: Date = Date()
+        board: PriorityBoard, limit: MenuBarLimit, selection: MenuBarSelection = .runningOut,
+        multiAccountFamilies: Set<String> = [], style: MenuBarStyle = .text, now: Date = Date()
     ) -> MenuBarContent {
-        var invalidationDates: [Date] = []
-        let resolvedGroups = groups.compactMap { group -> MenuBarContent.Group? in
-            let metrics = group.metrics.compactMap { descriptor -> MenuBarContent.Metric? in
-                let widgetData = data(descriptor)
-                let metric = resolve(descriptor, widgetData, at: now)
-                guard metric.hasData else { return nil }
-                if let deadline = widgetData.forecastDeadline, deadline > now {
-                    invalidationDates.append(deadline)
-                }
-                return metric
+        guard limit != .iconOnly else { return MenuBarContent(items: []) }
+        let counted: [(DashboardAccount, DashboardLine)] = switch selection {
+        case .runningOut: board.runningOut.map { ($0.account, $0.line) }
+        case .priority:
+            board.pinned.map { ($0.account, $0.line) }
+                + (board.attention + board.useItOrLoseIt).map { ($0.account, $0.line) }
+        case .pinnedOnly: board.pinned.map { ($0.account, $0.line) }
+        }
+        let usedUp = selection == .priority ? board.usedUp.map { ($0.account, $0.line) } : []
+        func withData(_ candidates: [(DashboardAccount, DashboardLine)]) -> [(DashboardAccount, DashboardLine, WidgetData)] {
+            candidates.compactMap { account, line in
+                let presented = line.data.presented(at: now)
+                guard presented.hasData, style != .bars || presented.isBounded else { return nil }
+                return (account, line, presented)
             }
-            guard !metrics.isEmpty else { return nil }
-            return MenuBarContent.Group(
-                providerID: group.provider.id,
-                displayName: title(group.provider),
-                icon: group.provider.icon,
-                metrics: metrics
+        }
+        let countedEntries = withData(counted)
+        let shownEntries = (countedEntries + withData(usedUp)).prefix(limit.count)
+        let items = shownEntries.map { account, line, presented in
+            let label = line.data.localizedTitle
+            let isSibling = multiAccountFamilies.contains(AppContainer.dashboardFamilyID(for: account.id))
+            let badge = isSibling ? account.name.map(AccountInitials.tag).flatMap { $0.isEmpty ? nil : $0 } : nil
+            return MenuBarContent.Item(
+                id: line.id,
+                icon: account.provider.icon,
+                providerName: account.fullName,
+                badge: badge,
+                label: label,
+                shortLabel: shortLabel(label),
+                value: presented.menuBarValue,
+                fraction: presented.isBounded ? presented.fraction : nil
             )
         }
-        // bars는 bounded metric 전부 대상 — fill 없는 unbounded 값은 제외.
-        let bars = resolvedGroups
-            .flatMap(\.metrics)
-            .filter(\.isBounded)
-            .prefix(maxBars)
+        // 갱신에 실패한 예측은 기한에 사라지므로 넘친 항목 수도 다시 계산.
+        let deadlines = countedEntries.compactMap { $0.2.forecastDeadline }.filter { $0 > now }
+        let ranked = selection == .runningOut ? board.runningOut : board.attention
+        let tick =
+            selection != .pinnedOnly && PriorityBoard.requiresRankingClock(for: ranked, at: now)
+            ? [now.addingTimeInterval(rankingTick)] : []
+        let priorityDeadline = selection == .priority ? board.nextUseItOrLoseItChange : nil
         return MenuBarContent(
-            groups: resolvedGroups,
-            bars: Array(bars),
-            nextInvalidation: invalidationDates.min()
+            items: items,
+            overflow: max(0, countedEntries.count - items.count),
+            nextInvalidation: (deadlines + tick + [priorityDeadline].compactMap { $0 }).min()
         )
     }
 
-    private static func resolve(
-        _ descriptor: WidgetDescriptor,
-        _ data: WidgetData,
-        at now: Date
-    ) -> MenuBarContent.Metric {
-        let data = data.presented(at: now)
-        return MenuBarContent.Metric(
-            id: descriptor.id,
-            label: trayLabel(descriptor.metricLabel),
-            value: data.menuBarValue,
-            fraction: data.fraction,
-            isBounded: data.isBounded,
-            hasData: data.hasData
-        )
+    /// 계정이 둘 이상인 패밀리 — 메뉴 막대에서 계정 이니셜 배지로 구분.
+    static func multiAccountFamilies(_ accounts: [DashboardAccount]) -> Set<String> {
+        let counts = Dictionary(grouping: accounts, by: { AppContainer.dashboardFamilyID(for: $0.id) }).mapValues(\.count)
+        return Set(counts.filter { $0.value > 1 }.keys)
     }
 
-    /// tray 전용 label 축약(dashboard는 전체 이름 유지) — 긴 시간 window metric은 한 글자로, 미지정 label은 통과.
-    private static func trayLabel(_ metricLabel: String) -> String {
-        switch metricLabel.lowercased() {
-        case "today": return L10n.metrics("T")
-        case "yesterday": return L10n.metrics("Y")
-        case "last 30 days": return L10n.metrics("M")
-        default: return L10n.metrics(metricLabel)
-        }
+    /// 라벨 끝의 일반 단어(models, bot, usage) 생략 — "Premium Usage" → "Premium".
+    static func shortLabel(_ label: String) -> String {
+        var words = label.split(separator: " ")
+        guard words.count > 1, let last = words.last, genericWords.contains(last.lowercased()) else { return label }
+        words.removeLast()
+        return words.joined(separator: " ")
     }
 }

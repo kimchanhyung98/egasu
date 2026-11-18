@@ -44,7 +44,6 @@ struct SettingsScreen: View {
     private var content: some View {
         @Bindable var store = container.dataStore
         @Bindable var display = container.dataStore.displaySettings
-        @Bindable var layout = container.layout
         @Bindable var updater = updater
         @Bindable var privacy = container.privacy
         @Bindable var notifications = container.notificationSettings
@@ -74,7 +73,19 @@ struct SettingsScreen: View {
             ICloudSyncSettingsSection(sync: container.iCloudSync)
             section(L10n.settings("Appearance")) {
                 row(L10n.settings("Icon Style")) {
-                    picker($layout.menuBarStyle, options: MenuBarStyle.allCases, label: \.label)
+                    picker($display.menuBarStyle, options: MenuBarStyle.allCases, label: \.label)
+                        .disabled(display.menuBarLimit == .iconOnly)
+                }
+                row(L10n.settings("Max Items In Menu Bar")) {
+                    picker($display.menuBarLimit, options: MenuBarLimit.allCases, label: \.label)
+                }
+                row(L10n.settings("Menu Bar Items")) {
+                    picker($display.menuBarSelection, options: MenuBarSelection.allCases, label: \.label)
+                        .disabled(display.menuBarLimit == .iconOnly)
+                }
+                row(L10n.settings("Show Extra Indicators")) {
+                    Toggle("", isOn: $display.showsMenuBarExtras)
+                        .settingsSwitchStyle()
                 }
                 row(L10n.settings("Theme")) {
                     picker($appearance, options: AppearanceSetting.allCases, label: \.label)

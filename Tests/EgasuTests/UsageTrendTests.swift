@@ -132,7 +132,9 @@ final class UsageTrendTests: XCTestCase {
             defaults: suite,
             storageKey: "layout"
         )
-        XCTAssertFalse(store.canPin("claude.trend"), "a chart can't be drawn in the tray, so it can't be pinned")
+        store.setMetric("claude.trend", pinned: true)
+        XCTAssertFalse(store.isMetricPinned("claude.trend"))
+        XCTAssertTrue(store.priorityPinIDs.isEmpty)
     }
 
     func testDataStoreResolvesChartLineToAChartTile() {

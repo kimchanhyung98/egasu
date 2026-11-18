@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 대시보드 스크롤 내용 — 업데이트 배너·공통 사용량 요약·All Usage.
+/// 대시보드 스크롤 내용 — 업데이트 배너·공통 사용량 요약·Priority와 All Usage.
 /// 화면 전환·패널 크기·바·키보드·닫기 처리는 `DashboardView` 소관.
 struct DashboardContentView: View {
     @Environment(AppContainer.self) private var container
@@ -31,6 +31,12 @@ struct DashboardContentView: View {
                     TotalSpendCard()
                         .padding(.bottom, PanelMetrics.sectionSpacing)
                 }
+                CapsuleSegments(
+                    options: DashboardTab.allCases.map { ($0, $0.label) },
+                    selection: Bindable(popover).dashboardTab,
+                    selectsOnPress: true
+                )
+                    .padding(.bottom, PanelMetrics.sectionSpacing)
                 widgetContent
             }
             .animation(Motion.spring, value: updater.availableUpdateVersion)
@@ -48,7 +54,16 @@ struct DashboardContentView: View {
         if !hasEnabledProvider {
             EmptyDashboardView { popover.openAccounts(nil) }
         } else {
-            allUsageContent
+            switch popover.dashboardTab {
+            case .priority:
+                if container.dashboardAccounts().isEmpty {
+                    hiddenMetricsNotice
+                } else {
+                    PriorityDashboardView()
+                }
+            case .allUsage:
+                allUsageContent
+            }
         }
     }
 

@@ -268,7 +268,7 @@ final class AppRefreshLoopTests: XCTestCase {
             )
             telemetry = TelemetryRecorder(sink: Sink(), store: TelemetryStore(defaults: defaults), snapshot: {
                 TelemetryConfigSnapshot(
-                    enabledProviders: [], enabledMetricIDs: [], pinnedMetricIDs: [], expandedMetricIDs: [], menuBarStyle: "text"
+                    enabledProviders: [], enabledMetricIDs: [], pinnedMetricIDs: []
                 )
             }, heartbeatSleep: heartbeatSleep)
         }

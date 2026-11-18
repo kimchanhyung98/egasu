@@ -15,11 +15,11 @@ final class StatusItemImageUpdater {
     private var deadlineUpdateTask: Task<Void, Never>?
 
     /// - Parameter apply: 렌더된 image를 status-item button에 적용.
-    convenience init(container: AppContainer, apply: @escaping (NSImage) -> Void) {
+    convenience init(container: AppContainer, updater: UpdaterController, apply: @escaping (NSImage) -> Void) {
         self.init(
             privacy: container.privacy,
             renderButtonImage: { concealed in
-                Self.renderButtonImage(container: container, concealed: concealed)
+                Self.renderButtonImage(container: container, updater: updater, concealed: concealed)
             },
             delay: { try? await Task.sleep(for: .milliseconds(50)) },
             apply: apply
@@ -120,46 +120,35 @@ final class StatusItemImageUpdater {
         }
     }
 
-    /// 선택 style의 pinned-metric strip, pin 없으면 앱 icon.
-    private static func renderButtonImage(container: AppContainer, concealed: Bool) -> RenderedButtonImage {
-        // 화면 공유 중 strip을 wordmark로 대체 — post-mutation edge의 명시 값 사용.
-        if concealed {
+    /// 메뉴 막대에 표시할 지표가 없거나 사용량을 가리면 앱 아이콘 표시.
+    private static func renderButtonImage(container: AppContainer, updater: UpdaterController, concealed: Bool)
+        -> RenderedButtonImage
+    {
+        let settings = container.dataStore.displaySettings
+        let showsExtras = settings.showsMenuBarExtras
+        let updateAvailable = showsExtras && updater.availableUpdateVersion != nil
+        let limit: MenuBarLimit = concealed ? .iconOnly : settings.menuBarLimit
+        guard limit != .iconOnly else {
             return RenderedButtonImage(
-                image: MenuBarStripRenderer.privacyImage
-                    ?? MenuBarIcon.image
-                    ?? MenuBarStripRenderer.fallbackIcon,
+                image: updateAvailable ? MenuBarStripRenderer.appIconWithUpdateDot : MenuBarStripRenderer.appIcon,
                 nextInvalidation: nil
             )
         }
-        let content = MenuBarContentBuilder.build(
-            groups: stripGroups(container: container),
-            data: { container.dataStore.data(for: $0) },
-            title: { container.displayName(for: $0) }
+        let now = Date()
+        let accounts = container.dashboardAccounts()
+        let board = container.dataStore.priorityBoard(accounts: accounts, pinned: container.layout.priorityPinIDs, now: now)
+        var content = MenuBarContentBuilder.build(
+            board: board, limit: limit, selection: settings.menuBarSelection,
+            multiAccountFamilies: MenuBarContentBuilder.multiAccountFamilies(accounts), style: settings.menuBarStyle, now: now
         )
+        content.updateAvailable = updateAvailable
+        content = content.showingExtraIndicators(showsExtras)
         return RenderedButtonImage(
-            image: MenuBarStripRenderer.image(for: content, style: container.layout.menuBarStyle)
-                ?? MenuBarIcon.image
-                ?? MenuBarStripRenderer.fallbackIcon,
+            image: MenuBarStripRenderer.image(for: content, style: settings.menuBarStyle) ?? MenuBarStripRenderer.appIcon,
             nextInvalidation: content.nextInvalidation
         )
     }
 
-    /// strip은 provider당 한 segment — star는 family 설정이라 모든 계정 카드가 같은 pin을 들고 있음.
-    /// dashboard가 고른 카드를 먼저 남기고, 그래도 남는 같은 family 카드(관리형이 아닌 config-dir 카드)는 첫 카드만.
-    private static func stripGroups(container: AppContainer) -> [ProviderMetrics] {
-        // 선택 자체는 `UserDefaults` 값이라 관찰 대상이 아님 — revision을 읽어 picker 변경에 re-arm.
-        _ = container.accountSelectionRevision
-        let groups = container.layout.pinnedGroups
-        let visibleCardIDs = Set(container.collapsingAccountCards(
-            groups.map(\.provider.id),
-            selectionByFamily: DashboardUsageAccountSelection.storedSelections()
-        ))
-        var seenFamilies = Set<String>()
-        return groups.filter { group in
-            guard visibleCardIDs.contains(group.provider.id) else { return false }
-            return seenFamilies.insert(ProviderAccountID.family(of: group.provider.id)).inserted
-        }
-    }
 
     /// 렌더 결과 + 현재 strip 값이 시간만으로 무효화되는 가장 이른 시각.
     struct RenderedButtonImage {

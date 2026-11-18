@@ -326,78 +326,51 @@ final class ResetWatchPresentationTests: XCTestCase {
         )
     }
 
-    func testPinnedForecastBuildsTextAndBarMenuContent() throws {
-        let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
-        let descriptor = WidgetDescriptor.forecast(
-            id: "codex.resetWatch",
-            provider: provider,
-            title: "Reset Watch"
-        )
+    func testPinnedForecastShowsInTheMenuBarWhenAlwaysShown() throws {
         var data = forecast(chance: 75, deadline: .distantFuture)
         data.displayMode = .remaining
 
-        let content = MenuBarContentBuilder.build(
-            groups: [ProviderMetrics(provider: provider, metrics: [descriptor])],
-            data: { _ in data }
-        )
+        let content = pinnedResetWatchMenuBar(data, now: Date())
 
-        let metric = try XCTUnwrap(content.groups.first?.metrics.first)
-        XCTAssertEqual(metric.id, "codex.resetWatch")
-        XCTAssertEqual(metric.label, "Reset Watch")
-        XCTAssertEqual(metric.value, "75%")
-        XCTAssertEqual(metric.fraction, 0.75, accuracy: 0.000_001)
-        XCTAssertTrue(metric.isBounded)
-        XCTAssertTrue(metric.hasData)
-        XCTAssertEqual(content.bars, [metric])
+        let item = try XCTUnwrap(content.items.first)
+        XCTAssertEqual(item.id, "codex.resetWatch")
+        XCTAssertEqual(item.label, "Reset Watch")
+        XCTAssertEqual(item.value, "75%")
     }
 
     func testPinnedForecastPublishesDeadlineAndBecomesZeroAtThatInstant() {
-        let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
-        let descriptor = WidgetDescriptor.forecast(
-            id: "codex.resetWatch",
-            provider: provider,
-            title: "Reset Watch"
-        )
         let now = Date(timeIntervalSince1970: 1_000)
         let deadline = now.addingTimeInterval(60)
         let data = forecast(chance: 75, deadline: deadline)
-        let groups = [ProviderMetrics(provider: provider, metrics: [descriptor])]
 
-        let active = MenuBarContentBuilder.build(groups: groups, data: { _ in data }, now: now)
+        let active = pinnedResetWatchMenuBar(data, now: now)
         XCTAssertEqual(active.nextInvalidation, deadline)
         XCTAssertFalse(active.isEmpty)
 
-        let expired = MenuBarContentBuilder.build(groups: groups, data: { _ in data }, now: deadline)
+        let expired = pinnedResetWatchMenuBar(data, now: deadline)
         XCTAssertNil(expired.nextInvalidation)
         XCTAssertFalse(expired.isEmpty)
-        XCTAssertEqual(expired.groups.first?.metrics.first?.value, "0%")
-        XCTAssertEqual(expired.groups.first?.metrics.first?.fraction, 0)
+        XCTAssertEqual(expired.items.first?.value, "0%")
+        XCTAssertEqual(expired.items.first?.fraction, 0)
     }
 
     func testPinnedScheduledResetInvalidatesAtEndOfTwoHourGracePeriod() {
-        let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
-        let descriptor = WidgetDescriptor.forecast(
-            id: "codex.resetWatch", provider: provider, title: "Reset Watch"
-        )
         let scheduledFor = Date(timeIntervalSince1970: 1_800_000_000)
         let expiresAt = scheduledFor.addingTimeInterval(7_200)
-        let groups = [ProviderMetrics(provider: provider, metrics: [descriptor])]
         var data = forecast(chance: 99, deadline: scheduledFor)
         data.forecast?.isScheduled = true
 
-        let pending = MenuBarContentBuilder.build(
-            groups: groups, data: { _ in data }, now: expiresAt.addingTimeInterval(-1)
-        )
+        let pending = pinnedResetWatchMenuBar(data, now: expiresAt.addingTimeInterval(-1))
         XCTAssertEqual(pending.nextInvalidation, expiresAt)
-        XCTAssertEqual(pending.groups.first?.metrics.first?.value, "99%")
+        XCTAssertEqual(pending.items.first?.value, "99%")
 
-        let expired = MenuBarContentBuilder.build(groups: groups, data: { _ in data }, now: expiresAt)
+        let expired = pinnedResetWatchMenuBar(data, now: expiresAt, style: .bars)
         XCTAssertNil(expired.nextInvalidation)
-        XCTAssertEqual(expired.groups.first?.metrics.first?.value, "0%")
-        XCTAssertEqual(expired.bars.first?.fraction, 0)
+        XCTAssertEqual(expired.items.first?.value, "0%")
+        XCTAssertEqual(expired.items.first?.fraction, 0)
 
         data.forecast?.refreshFailed = true
-        let failed = MenuBarContentBuilder.build(groups: groups, data: { _ in data }, now: expiresAt)
+        let failed = pinnedResetWatchMenuBar(data, now: expiresAt)
         XCTAssertTrue(failed.isEmpty)
         XCTAssertNil(failed.nextInvalidation)
     }
@@ -429,6 +402,17 @@ final class ResetWatchPresentationTests: XCTestCase {
         let periodic = WidgetRowTimelineSchedule(deadline: nil, interval: 30)
         XCTAssertEqual(Array(periodic.entries(from: start, mode: .normal).prefix(3)),
                        [start, start.addingTimeInterval(30), start.addingTimeInterval(60)])
+    }
+
+    private func pinnedResetWatchMenuBar(_ data: WidgetData, now: Date, style: MenuBarStyle = .text) -> MenuBarContent {
+        let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
+        let descriptor = WidgetDescriptor.forecast(id: "codex.resetWatch", provider: provider, title: "Reset Watch")
+        let account = DashboardAccount(
+            provider: provider, providerName: "Codex", name: nil,
+            lines: [DashboardLine(descriptor: descriptor, data: data)]
+        )
+        let board = PriorityBoard.make(accounts: [account], pinned: [descriptor.id], now: now)
+        return MenuBarContentBuilder.build(board: board, limit: .upToOne, selection: .pinnedOnly, style: style, now: now)
     }
 
     private func forecast(chance: Double, deadline: Date = .distantFuture) -> WidgetData {

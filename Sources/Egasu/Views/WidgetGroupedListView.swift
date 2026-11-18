@@ -120,7 +120,7 @@ struct WidgetGroupedListView: View {
             .contentShape(Rectangle())
             .contextMenu {
                 DashboardMenu(
-                    sections: [DashboardMenus.metric(line.id, pinnable: line.descriptor.pinnable, pinned: layout.isPinned(line.id))]
+                    sections: [DashboardMenus.metric(line.id, pinnable: line.descriptor.pinnable, pinned: layout.isMetricPinned(line.id))]
                         + accountMenu(account, status: status),
                     perform: perform
                 )
@@ -174,11 +174,7 @@ struct WidgetGroupedListView: View {
         case .editAccount(let accountID):
             popover.openAccounts(accountID)
         case .setPinned(let metricID, let pinned):
-            if pinned && !layout.canPin(metricID) {
-                layout.notePinDenied(metricID)
-            } else {
-                withAnimation(Motion.spring) { layout.setPinned(pinned, for: metricID) }
-            }
+            withAnimation(Motion.spring) { layout.setMetric(metricID, pinned: pinned) }
         case .hide(let metricID):
             withAnimation(Motion.spring) { layout.setMetricEnabled(metricID, false) }
         case .rename(let accountID):

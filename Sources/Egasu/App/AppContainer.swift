@@ -120,6 +120,13 @@ final class AppContainer {
             profileIDsByCardID: initialProfileIDs,
             isProviderEnabled: { [enablement] in enablement.isEnabled($0) }
         )
+        let displaySettings = DisplaySettingsStore()
+        // 이전 메뉴 막대 별표를 Priority 고정으로 1회 이전 — 메뉴 막대는 Priority 모드로 유지.
+        if let migrated = layout.migrateMenuBarStars(isHiddenOnCard: Self.hidesMetric(_:onCard:)) {
+            displaySettings.menuBarSelection = .priority
+            displaySettings.menuBarLimit = MenuBarLimit(count: min(max(migrated, 3), 5))
+            AppLog.info(.config, "menu bar stars migrated to \(migrated) Priority pins")
+        }
         let dataStore = WidgetDataStore(
             registry: registry,
             providers: providers,
@@ -129,6 +136,7 @@ final class AppContainer {
             softLimitSettings: { softLimitSettings },
             providerIdentityKeys: accountAssembly.identityKeysByCard,
             familyTotalHistoryCardIDs: accountAssembly.familyTotalHistoryCardIDs,
+            displaySettings: displaySettings,
             workQueue: workQueue
         )
         // 익명 opt-in telemetry. 상태는 전용 UserDefaults suite에 격리 — 공유 선택과 install id가 앱 설정 변경과 독립.
@@ -149,9 +157,7 @@ final class AppContainer {
                 return TelemetryConfigSnapshot.collapsingAccountCards(
                     enabledProviders: dataStore.knownProviderIDs.filter { enablement.isEnabled($0) },
                     enabledMetricIDs: layout.placed.map(\.descriptorID).filter(providerOn),
-                    pinnedMetricIDs: layout.pinnedMetricIDs.filter(providerOn),
-                    expandedMetricIDs: layout.expandedMetricIDs.filter(providerOn),
-                    menuBarStyle: layout.menuBarStyle.rawValue,
+                    pinnedMetricIDs: layout.priorityPinIDs.filter(providerOn),
                     providerIDForMetric: { layout.registry.descriptor(id: $0)?.providerID }
                 )
             }

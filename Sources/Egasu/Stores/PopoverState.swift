@@ -72,7 +72,7 @@ final class PopoverState {
 
     let shareNotice = TransientNotice<Bool>(clearedValue: false, timeout: .seconds(2.5))
 
-    init(dashboardTab: DashboardTab = .allUsage) {
+    init(dashboardTab: DashboardTab = .preferred()) {
         self.dashboardTab = dashboardTab
     }
 

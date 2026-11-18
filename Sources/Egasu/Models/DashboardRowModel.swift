@@ -74,6 +74,13 @@ extension WidgetData {
         return (valuePrefix ?? "") + MetricFormatter.number(displayedValue, kind: kind, style: .row)
     }
 
+    /// 값과 그 뜻의 단어 — 예: "49% left". Priority 행 오른쪽.
+    var amountText: String {
+        if !isBounded, !selectedValues.isEmpty { return valueText }
+        return hasMeterStyleToggle
+            ? MetricFormatter.usageValue(gridValueText, word: displayMode == .used ? "used" : "left") : gridValueText
+    }
+
     /// 초기화 열의 짧은 표기 — 카운트다운("3h 5m") 또는 시각("토 02:59").
     func compactResetText(now: Date = Date()) -> String? {
         if let forecast {

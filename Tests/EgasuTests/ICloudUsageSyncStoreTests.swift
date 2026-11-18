@@ -294,8 +294,7 @@ final class ICloudUsageSyncStoreTests: XCTestCase {
                 telemetryStore.enabled = enabled
                 let sink = ICloudTelemetrySink()
                 let recorder = TelemetryRecorder(sink: sink, store: telemetryStore, snapshot: {
-                    TelemetryConfigSnapshot(enabledProviders: [], enabledMetricIDs: [], pinnedMetricIDs: [],
-                                            expandedMetricIDs: [], menuBarStyle: "text")
+                    TelemetryConfigSnapshot(enabledProviders: [], enabledMetricIDs: [], pinnedMetricIDs: [])
                 })
                 recorder.startDiagnostics()
                 defer { recorder.stopDiagnostics() }
