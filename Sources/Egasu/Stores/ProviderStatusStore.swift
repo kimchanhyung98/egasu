@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// 공개 상태 API 결과를 provider family 단위로 보관하는 transient store.
+/// 공개 상태 API 결과를 프로바이더별로 보관하는 메모리 저장소.
 @MainActor
 @Observable
 final class ProviderStatusStore {
@@ -50,7 +50,7 @@ final class ProviderStatusStore {
         statusesByFamily[ProviderAccountID.family(of: providerID)] ?? .unknown
     }
 
-    /// 같은 family의 card를 한 요청으로 합치고 실제 조회는 공통 큐에서 순차 실행.
+    /// 같은 프로바이더의 계정 카드를 한 요청으로 묶고 공통 큐에서 순차 조회.
     func refresh(providerIDs: [String], force: Bool = false) async {
         guard !Task.isCancelled else { return }
         var seenFamilies: Set<String> = []
@@ -94,7 +94,7 @@ final class ProviderStatusStore {
         inFlight.removeAll()
     }
 
-    /// 재활성화 시 일반 실패 gate만 해제. 서버가 지정한 Retry-After와 fresh success TTL은 유지.
+    /// 재활성화 시 일반 실패 대기만 해제 — 서버 Retry-After와 정상 결과의 유효 기간 유지.
     func providerEnabled(_ providerID: String) {
         let family = ProviderAccountID.family(of: providerID)
         entries[family]?.nextAutomaticAttemptAt = nil

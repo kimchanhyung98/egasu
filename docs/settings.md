@@ -373,7 +373,7 @@ Advanced의 **Command Line**에서 **Terminal Helper**의 **Install…**로 앱�
 | Copy Log Path(로그 경로 복사) | 버튼 | 로그 파일 경로(`~/Library/Logs/egasu/egasu.log`)를 클립보드에 복사. |
 | Reveal in Finder(Finder에서 보기) | 버튼 | 로그 파일이 선택된 Finder 창 열기. |
 
-**Debug**에서 위치를 확인할 수 있는 로그의 서브시스템 태그, 파일 크기 상한, 민감 정보 마스킹 범위와 한계는 [로깅](/docs/logging.md) 참조.
+로그의 서브시스템 태그, 파일 크기 상한, 민감 정보 마스킹 범위와 한계는 [로깅](/docs/logging.md) 참조.
 
 ## 버전
 

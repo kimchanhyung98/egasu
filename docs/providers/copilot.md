@@ -16,23 +16,25 @@ Copilot CLI가 남긴 날짜별 사용 이력은 대시보드 상단 비용·토
 | Completions | 코드 완성 할당량 사용량 |
 
 All Usage는 계정 응답에서 값을 받은 지표를 한 목록으로 표시.
-지표 표시와 순서는 Accounts에서 조정.
+Credits, Extra Usage, Org Credits, Org Spend, Chat, Completions는 기본으로 켜짐.
+지표 표시와 순서는 [Accounts](/docs/accounts.md#계정-상세)의 Copilot 계정 상세에서 조정.
 할당량 미터에는 사용 백분율과 응답에 포함된 경우 다음 재설정까지의 카운트다운 표시.
 개인·조직 크레딧 수에는 한도나 백분율을 임의로 붙이지 않음.
 요금제 이름(Pro, Business, Free, …)은 프로바이더 옆에 표시.
 응답의 `access_type_sku=free_limited_copilot`은 `Free`로 표시.
-이 값이 없거나 다른 값이면 기존 `copilot_plan` 이름을 사용하며 `individual`만으로 무료 여부를 추정하지 않음.
+이 값이 없거나 다른 값이면 `copilot_plan` 이름 사용.
+`individual`만으로 무료 여부를 추정하지 않음.
 확인된 Free 응답에 표시할 할당량이 없으면 사용량 확인 불가로 처리하며, 조직 청구 정보는 조회하지 않음.
 현행 Free·Student·Pro·Pro+·Max·Business·Enterprise·Copilot access의 가격과 크레딧은 [구독 요금제](/docs/pricing.md#구독-요금제) 참조.
 
 할당량 API의 응답에 따라 계정별 표시 내용이 달라짐.
 
 - **유료 요금제**는 크레딧 풀 사용량을 집계하므로 Credits 표시(추가 지출을 켰으면 Extra Usage도 표시).
-  유료 요금제의 Chat과 Completions는 무제한이므로 해당 행에는 "No data" 표시.
+  응답이 Chat 또는 Completions를 무제한으로 표시하면 해당 행 숨김.
 - **무료·교육용 요금제**도 응답에 크레딧 할당량이 있으면 Credits 표시.
   Chat과 Completions는 각 할당량이 제공된 경우 표시.
 - **조직 관리 좌석(조직에서 할당한 Copilot Business / Enterprise)**은 개인 할당량이 없어도 응답에 양수 개인 사용 크레딧이 있으면 **Credits**에 수치 표시.
-  개인 사용 크레딧이 0이거나 제공되지 않으면 기존처럼 "No data" 표시.
+  개인 사용 크레딧이 0이거나 제공되지 않으면 Credits 행 숨김.
   별도로 조직 청구 정보를 조회해 **Org Credits**(이번 달 조직 전체 사용 크레딧)와 **Org Spend**(기본 제공분을 초과해 청구된 금액) 표시.
   두 가지 유의 사항:
   - Org Credits와 Org Spend는 **조직 전체** 사용량이며 개인 Credits에 합산하지 않음.
@@ -46,12 +48,15 @@ All Usage는 계정 응답에서 값을 받은 지표를 한 목록으로 표시
 
 ## 상단 비용·토큰 통계
 
+### 수집 범위와 계산
+
 Copilot CLI의 `~/.copilot/session-store.db`에서 요청별 사용량을 읽기 전용으로 조회.
 앱 실행 환경에 `COPILOT_HOME`이 있으면 해당 디렉터리 사용.
 CLI의 `assistant_usage_events` 테이블에 기록된 모델·시각·토큰·AI 크레딧 원값만 집계.
 대화 본문과 인증 정보는 사용 이력 수집 대상에서 제외.
 
 - 요청 시각을 이 Mac의 날짜로 변환해 Today·Yesterday·30 Days에 반영.
+  30 Days는 오늘과 이전 30일 포함.
 - 기록된 `total_nano_aiu`를 100,000,000,000으로 나눠 달러로 환산.
   1,000,000,000 nano AIU = 1 AI 크레딧, 1 AI 크레딧 = $0.01.
   구독료나 추가 청구액이 아닌 사용량의 달러 환산값.
@@ -72,7 +77,8 @@ CLI의 `assistant_usage_events` 테이블에 기록된 모델·시각·토큰·A
 VS Code·JetBrains·GitHub 웹·다른 Mac의 전체 계정 사용량을 자동 복원하는 기능은 아님.
 Mac 간 동기화를 켠 경우에만 다른 Mac의 egasu가 수집한 CLI 이력과 합산.
 같은 CLI 데이터베이스를 여러 Mac에 복사한 경우 중복 집계 가능.
-새 지표 타일이나 탭 없이 기존 상단 통계에 반영하며 Copilot 카드 배치는 유지.
+
+### 조회 실패와 로컬 감지
 
 할당량 조회에 실패해도 읽을 수 있는 CLI 이력은 갱신하고 헤더에 오류 안내 표시.
 마지막 정상 할당량이 있으면 기존 플랜·할당량·조회 시각 보존.
@@ -85,13 +91,13 @@ CLI 기록 읽기에 실패해도 공유 도구 수집은 계속 진행.
 할당량 조회와 로컬 기록 읽기가 함께 실패하면 두 원인을 함께 안내.
 CLI 사용 이력만 있어도 첫 실행의 로컬 감지 대상에 포함.
 로컬 인증이나 CLI 저장소가 없어도 최근 집계 기간에 유효한 공유 도구 Copilot 이력이 있으면 감지.
-다른 provider 기록이나 정상 빈 공유 파일만 있는 경우는 감지 근거에서 제외.
+다른 프로바이더 기록이나 정상 빈 공유 파일만 있는 경우는 감지 근거에서 제외.
 
 사용량 비교는 Copilot CLI의 `/usage`에서 세션 크레딧과 모델별 토큰 확인.
 [CLI 사용량 확인](https://docs.github.com/en/copilot/how-tos/copilot-cli/use-copilot-cli/overview#context-management)과 [AI 크레딧 단가](https://docs.github.com/en/copilot/concepts/billing-and-usage/individuals/billing) 참조.
 
 공유 도구에서 `github-copilot` 또는 `copilot`로 기록한 사용량도 같은 로컬 통계에 반영.
-추가 기록의 비용은 제공자가 보고한 금액만 사용하며 모델 API 가격으로 Copilot 크레딧을 추정하지 않음.
+공유 도구의 비용은 제공자가 보고한 금액만 사용하며 모델 API 가격으로 Copilot 크레딧을 추정하지 않음.
 토큰이 양수이고 비용이 없는 기록은 토큰만 유지하고 해당 기간 전체 비용은 생략.
 토큰이 0이고 비용도 없는 기록은 다른 정상 기록의 비용에 영향 없음.
 공유 도구의 누락된 요청을 현재 GitHub 계정이나 조직 청구액으로 보충하지 않음.
@@ -100,7 +106,8 @@ CLI 사용 이력만 있어도 첫 실행의 로컬 감지 대상에 포함.
 
 다음 순서로 확인(사용자 확인이 필요 없는 파일 우선, 키체인 마지막):
 
-1. Copilot 편집기 토큰: `~/.config/github-copilot/apps.json`(이전 `hosts.json`) — VS Code / JetBrains / Neovim Copilot 플러그인에서 기록
+1. Copilot 편집기 토큰: `~/.config/github-copilot/apps.json`, 이어서 `hosts.json` 확인.
+   VS Code / JetBrains / Neovim Copilot 플러그인에서 기록한 토큰 사용.
 2. GitHub CLI 설정: `~/.config/gh/hosts.yml`의 `github.com` 바로 아래 `oauth_token` — 활성 계정의 토큰을 파일에 저장하는 경우
 3. GitHub CLI 활성 계정의 키체인 항목(서비스 `gh:github.com`) — `gh`에서 토큰을 시스템 키링에 저장하는 경우
 
@@ -139,7 +146,10 @@ Copilot이 활성화돼 있으면 실행 시, 활성화 시, 5분마다, 대시�
   편집기 토큰을 사용 중이면 해당 편집기에서 Copilot 재로그인.
   GitHub CLI 토큰을 사용 중이면 `gh auth login` 실행.
   편집기 토큰이 남아 있으면 GitHub CLI 재로그인 후에도 편집기 토큰을 먼저 사용.
-- **미터에 "No data"가 표시되지만 요금제는 표시됨** — 조직 관리 좌석의 개인 사용 크레딧이 0이거나 제공되지 않고 조직 청구 정보도 조회할 수 없을 때 가능한 상태.
+- **개인 또는 조직 크레딧 행 없음** — 개인 할당량이 없는 조직 관리 좌석에서 개인 사용 크레딧이 0이거나 미제공이면 Credits 행 숨김.
+  조직 청구 정보를 가져오지 못하면 Org Credits와 Org Spend 행도 숨김.
+  표시할 행·로딩·오류가 모두 없으면 All Usage에서 계정 섹션 숨김.
+  할당량 조회가 실패하면 마지막 정상값이 있을 때 보존.
   조직 관리자인데도 Org Credits가 보이지 않으면 현재 사용 중인 토큰의 조직 목록·청구 조회 권한 확인.
   일부 편집기 토큰은 조직 목록 조회 권한이 없으며, 편집기 토큰이 있으면 GitHub CLI 토큰보다 먼저 사용.
 - **"Personal Credits are unavailable"** — 개인 사용 크레딧 값이 유효하지 않은 상태.
@@ -163,6 +173,6 @@ Copilot이 활성화돼 있으면 실행 시, 활성화 시, 5분마다, 대시�
 도구별 경로·중복 제거·가격 규칙은 [사용량 수집](/docs/usage-collection.md) 참조.
 계정 귀속을 확인하지 못하는 기록은 계정 전용 카드에 합산하지 않음.
 공통 수집이 실행되면 읽지 못한 저장소를 경고하고 읽은 기록은 보존.
-네이티브 이력의 실패 탐지와 화면 반영은 해당 provider의 수집 경로에 따름.
+Copilot CLI 이력의 실패 처리와 화면 반영은 위 조회 실패 규칙 적용.
 공유 도구 기록에는 제공자가 보고한 비용만 사용하며 단가표 추정액은 합산하지 않음.
-모델 가격을 확인하지 못해도 토큰은 보존하고 해당 기간의 총비용 생략.
+토큰이 양수인 기록에 보고 비용이 없으면 토큰은 보존하고 해당 기간의 총비용 생략.

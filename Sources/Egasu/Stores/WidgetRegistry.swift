@@ -1,16 +1,16 @@
 import Foundation
 
-/// launch 시 live `ProviderRuntime`들로 구성되는 provider·widget 읽기 전용 catalog
-/// 구성 후 불변 — lookup이 매 render마다 호출되므로 조회 map을 생성 시 1회 precompute (선형 scan 회피)
+/// 실행 중인 ProviderRuntime으로 구성하는 읽기 전용 프로바이더·지표 목록.
+/// 구성 후 불변 — 렌더링마다 순차 탐색하지 않도록 조회 사전 한 번 생성.
 struct WidgetRegistry: Sendable {
     let providers: [Provider]
     let descriptors: [WidgetDescriptor]
 
     private let descriptorsByID: [String: WidgetDescriptor]
     private let providersByID: [String: Provider]
-    /// provider별 descriptor 목록 — 원본 `descriptors` 순서 보존 (UI metric 순서가 의존하는 sequence)
+    /// 프로바이더별 지표 선언 — 화면 지표 순서에 쓰는 원본 순서 유지.
     private let descriptorsByProvider: [String: [WidgetDescriptor]]
-    /// family별 canonical metric id — 저장 layout의 key 공간, 카드 중복 제거 후 첫 등장 순서 보존
+    /// 저장된 레이아웃이 참조하는 프로바이더 기준 지표 ID — 카드별 중복 제거 후 첫 등장 순서 보존.
     private let canonicalMetricIDsByFamily: [String: [String]]
 
     init(providers: [Provider], descriptors: [WidgetDescriptor]) {
@@ -44,19 +44,19 @@ struct WidgetRegistry: Sendable {
         descriptorsByProvider[providerID] ?? []
     }
 
-    /// family가 지원하는 canonical metric id — bare 카드가 없어도(추가 계정 카드만 있는 registry) 동일 목록
+    /// 프로바이더가 지원하는 공통 지표 ID — 기본 카드 없이 추가 계정 카드만 있어도 제공.
     func canonicalMetricIDs(family: String) -> [String] {
         canonicalMetricIDsByFamily[family] ?? []
     }
 
-    /// canonical id를 지원하는 descriptor 존재 여부 — 저장된 layout 항목의 유효성 gate
+    /// 프로바이더 기준 지표 ID의 지원 여부 — 저장된 레이아웃 항목 검증용.
     func hasCanonicalMetric(_ canonicalID: String) -> Bool {
         let family = ProviderAccountID.family(of: ProviderAccountID.providerID(ofMetric: canonicalID))
         return canonicalMetricIDsByFamily[family]?.contains(canonicalID) ?? false
     }
 
-    /// 설치된 provider로 필터링한 저장 순서 + 신규 provider는 canonical registry 순서로 append
-    /// 계정 card(`claude@ab12cd34`)는 family 그룹 바로 뒤에 삽입 — dashboard·local API·one-shot CLI 공용
+    /// 현재 등록된 프로바이더만 저장 순서대로 유지 — 새 프로바이더는 등록 순서대로 추가.
+    /// 같은 프로바이더의 카드가 있으면 새 계정을 그중 마지막 카드 뒤에 삽입. 대시보드·로컬 API·CLI 공용.
     func orderedProviderIDs(savedOrder: [String]) -> [String] {
         let defaults = providers.map(\.id)
         let known = Set(defaults)

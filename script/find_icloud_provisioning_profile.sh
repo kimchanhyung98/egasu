@@ -19,8 +19,7 @@ profile_matches_identifiers() {
   esac
 }
 
-# Keep the identifier matcher sourceable so its exact profile-selection behavior can be tested
-# without manufacturing signed provisioning profiles.
+# 서명된 프로파일 없이 식별자 선택 규칙을 테스트할 수 있도록 함수만 불러오는 경로 유지.
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
   return 0
 fi

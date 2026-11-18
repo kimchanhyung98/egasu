@@ -1,6 +1,6 @@
 import Foundation
 
-/// UI 반올림·캐시와 분리된 로컬 live quota 판정 입력.
+/// 실시간 한도 응답에서 얻는 Soft Limit 판정 입력 — 표시용 반올림과 캐시 값 제외.
 struct SoftLimitObservation: Equatable, Sendable {
     let providerID: String
     let observedAt: Date

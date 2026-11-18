@@ -43,7 +43,7 @@ final class AppRelauncher {
         }
     }
 
-    /// 정상 종료와 single-instance lock 해제까지 대기. 경로는 셸 코드에 삽입하지 않고 인자로 전달.
+    /// 현재 프로세스가 종료될 때까지 기다린 뒤 앱을 다시 엶. 경로는 셸 인자로 전달.
     static func makeRelaunchProcess(
         bundleURL: URL,
         processIdentifier: Int32,

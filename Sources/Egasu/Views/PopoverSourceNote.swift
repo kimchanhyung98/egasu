@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 호버 팝오버(모델 분해, 사용 추세)가 공유하는 중앙 정렬 source-note 푸터.
+/// 모델별 내역·사용 추세 팝오버의 중앙 정렬 출처 안내.
 struct PopoverSourceNote: View {
     let text: String
 

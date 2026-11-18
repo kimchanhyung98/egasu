@@ -33,7 +33,7 @@ extension ClaudeLogUsageScanner {
         parseEntries(data).first
     }
 
-    /// 최상위 사용량과 advisor·compaction만 별도 기록. 일반 iteration의 중복 집계 방지.
+    /// 최상위 사용량과 advisor·compaction만 별도 기록. 일반 반복 요청의 중복 집계 방지.
     private static func parseEntries(_ data: Data) -> [Entry] {
         guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return [] }
         return parseEntries(object)
@@ -150,7 +150,7 @@ extension ClaudeLogUsageScanner {
         return true
     }
 
-    /// 숫자 세 구간과 선택적 사전 출시 접미사 허용. "unknown" 같은 값은 제외.
+    /// 숫자.숫자.숫자로 시작하는 버전 접두사 확인. 뒤쪽 문자열은 추가 검증하지 않음.
     static func isSemverPrefix(_ value: String) -> Bool {
         let bytes = Array(value.utf8)
         var index = 0

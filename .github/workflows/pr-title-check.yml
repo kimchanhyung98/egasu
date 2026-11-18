@@ -36,26 +36,26 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # Validate the format without restricting type or scope to a fixed list.
+          # type·scope를 고정 목록으로 제한하지 않고 형식만 검증.
           types: |
             [a-z]+
 
-          # Scope is optional (allows both `type: title` and `type(scope): title`)
+          # scope는 선택 사항 — type: title과 type(scope): title 모두 허용.
           requireScope: false
 
-          # Match the same `type(scope): text` structure as the local validator.
+          # 로컬 검증기와 같은 type(scope): text 구조 적용.
           headerPattern: '^([a-z]+)(?:\(([a-z0-9_-]+)\))?:\s+(\S.*)$'
           headerPatternCorrespondence: type, scope, subject
 
-          # Work in progress PR support
+          # 작업 중인 PR 허용.
           wip: true
 
-          # Skip validation for PRs with these labels
+          # 아래 라벨이 있는 PR은 검증 생략.
           ignoreLabels: |
             bot
             ignore-semantic-pull-request
 
-          # Ensure the subject doesn't start with an uppercase character
+          # 제목 본문의 첫 글자가 영문 대문자이면 거부.
           subjectPattern: ^(?![A-Z]).+$
           subjectPatternError: |
             The subject "{subject}" found in the pull request title "{title}"

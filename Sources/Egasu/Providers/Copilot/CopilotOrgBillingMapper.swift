@@ -1,9 +1,9 @@
 import Foundation
 
-/// GitHub organization billing 응답을 org 단위 Copilot meter로 normalize. billing usage summary(`/orgs/{org}/settings/billing/usage/summary`)의 Copilot AI-credit 항목이 **Org Credits**(이달 소비 credit, allotment 미노출이라 percentage 조작 없음)와 **Org Spend**(포함 credit 초과로 실제 청구된 달러)가 됨.
-/// 둘 다 organization 전체 합계 — 개인 Credits와 별도 scope.
+/// 조직별 Copilot 크레딧 수와 순청구액을 Org Credits·Org Spend로 집계. 누락·잘못된 숫자·음수는 0으로 처리.
+/// 개인 Credits와 별도인 조직 전체 합계. 할당량이 없어 사용 비율은 생성하지 않음.
 enum CopilotOrgBillingMapper {
-    /// `/user/orgs` 응답의 org slug, GitHub 순서 그대로. 깨진 body는 빈 배열.
+    /// `/user/orgs`의 조직 식별자를 응답 순서대로 반환. 해석 실패는 빈 배열.
     static func orgLogins(_ response: HTTPResponse) -> [String] {
         guard let array = try? JSONSerialization.jsonObject(with: response.body) as? [[String: Any]] else {
             return []
@@ -13,8 +13,8 @@ enum CopilotOrgBillingMapper {
         }
     }
 
-    /// billing usage summary → metric line, Copilot AI-credit 항목이 없으면 nil(그 org는 Copilot credit 미사용 — 호출자가 다른 org 계속 probe).
-    /// `unitType`이 credit 계열(`ai-units`/`ai-credits`)인 항목만 집계 — 다른 단위의 seat-fee 항목이 합계를 오염시키지 못함.
+    /// 조직 청구 요약을 지표로 변환. Copilot AI 크레딧 항목이 없으면 nil로 다음 조직 조회 허용.
+    /// `unitType`이 `ai-units`·`ai-credits`인 항목만 집계하여 좌석 요금 등 다른 단위 제외.
     static func usageLines(_ response: HTTPResponse) -> [MetricLine]? {
         guard let body = ProviderParse.jsonObject(response.body) else { return nil }
         return usageLines(body: body)

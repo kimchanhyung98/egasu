@@ -1,12 +1,12 @@
 import Foundation
 
-/// GitHub 공개 REST billing endpoint로 org 관리 Copilot seat의 organization을 찾고 월누적 usage 읽기. per-seat quota 없는 token-based-billing seat에서 개인 count와 별도로 조직 합계 조회.
-/// org billing 읽기는 org owner/billing manager 권한 필요 — 일반 member는 403. 이는 오류가 아닌 기대 상태로 provider가 처리.
+/// GitHub REST API로 조직 목록과 조직별 월 누적 Copilot 사용량 조회.
+/// 개인 할당량이 없는 조직 계정의 보조 조회. 청구 권한 부족의 403은 카드 전체 실패로 처리하지 않음.
 struct CopilotOrgBillingClient: Sendable {
     static let userOrgsURL = "https://api.github.com/user/orgs?per_page=100"
 
     static func usageSummaryURL(org: String) -> URL? {
-        // org slug는 영숫자+하이픈이지만 경로 삽입 전 방어적으로 encode.
+        // 조직 식별자를 URL 경로에 넣기 전에 인코딩.
         guard let encoded = org.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
             return nil
         }
@@ -19,7 +19,7 @@ struct CopilotOrgBillingClient: Sendable {
         self.http = http
     }
 
-    /// token 사용자가 속한 organization (첫 페이지, 최대 100 — 용도상 충분).
+    /// 현재 사용자가 속한 조직의 첫 페이지 조회. 최대 100개.
     func fetchUserOrgs(token: String) async throws -> HTTPResponse {
         guard let url = URL(string: Self.userOrgsURL) else {
             throw CopilotUsageError.invalidResponse
@@ -27,7 +27,7 @@ struct CopilotOrgBillingClient: Sendable {
         return try await send(url: url, token: token)
     }
 
-    /// organization 하나의 월누적 billing usage summary.
+    /// 조직 하나의 월 누적 청구 사용량 요약 조회.
     func fetchUsageSummary(org: String, token: String) async throws -> HTTPResponse {
         guard let url = Self.usageSummaryURL(org: org) else {
             throw CopilotUsageError.invalidResponse

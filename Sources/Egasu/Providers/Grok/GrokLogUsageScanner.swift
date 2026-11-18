@@ -1,8 +1,8 @@
 import Foundation
 
-/// Grok CLI의 로컬 로그에서 일별 token/cost 추정치 생성.
-/// token 행(`shell.turn.inference_done`)에 model id가 없어 process·session별 모델 추적으로 귀속.
-/// 출력은 Claude/Codex spend tile과 동일한 `DailyUsageSeries` 형태로 `SpendTileMapper`에 그대로 연결.
+/// Grok CLI 로컬 기록의 일별 토큰 집계와 비용 추정.
+/// 토큰 행에 모델 ID가 없어 프로세스·세션별 모델 적용 이벤트로 귀속.
+/// 집계 결과를 공통 일별 사용량 형식으로 반환.
 struct GrokLogUsageScanner: Sendable {
     var files: TextFileAccessing
     var environment: EnvironmentReading
@@ -74,8 +74,8 @@ struct GrokLogUsageScanner: Sendable {
         return Task.isCancelled ? nil : DailyUsageAccumulator.merged([sessionScan, scan])
     }
 
-    /// append-only 로그에 대한 시간순 단일 pass.
-    /// 날짜와 무관하게 process·session의 모델 갱신 — 기간 경계 전 기록도 모델 귀속에 사용.
+    /// 추가 기록 방식의 로그를 시간순으로 한 번 순회.
+    /// 조회 기간 이전의 모델 변경도 프로세스·세션 귀속에 반영.
     static func parse(
         _ text: String, since: Date, pricing: ModelPricing,
         excludingSessionIDs: Set<String> = [], reportNumericFailures: Bool = true,
@@ -112,7 +112,7 @@ struct GrokLogUsageScanner: Sendable {
                 return
             }
 
-            // 공식 child_model 이벤트에는 sid가 없음. 이후 기본 모델 갱신과 미확인 세션의 기본값 사용 중단.
+            // 세션 ID 없는 하위 에이전트 모델 이벤트 이후에는 프로세스 기본 모델의 갱신·추정 사용 중단.
             if msg == "subagent model resolved", sid == nil {
                 if let pid { ambiguousPIDs.insert(pid) }
                 return
@@ -161,7 +161,7 @@ struct GrokLogUsageScanner: Sendable {
                 accumulator.rejectNumericRow()
                 return
             }
-            // `cached_prompt_tokens`는 `prompt_tokens`의 부분집합 — total에서 prompt는 1회만 집계
+            // `cached_prompt_tokens`는 `prompt_tokens`의 부분집합. 입력 토큰 중복 합산 금지.
             let cacheRead = min(cached, promptTokens)
             let inputNoCache = promptTokens - cacheRead
 
@@ -209,7 +209,7 @@ struct GrokLogUsageScanner: Sendable {
         let outputIncludesReasoning: Bool
     }
 
-    /// 같은 파일의 손상 행 수 증가만 보고; 정상 window로 돌아오면 복구 기록.
+    /// 같은 파일의 손상 행 수 증가분만 보고. 손상 없는 조회 결과에서는 복구 기록.
     private actor NumericFailureReporter {
         private var rejectedRowsByPath: [String: Int] = [:]
 
@@ -226,7 +226,7 @@ struct GrokLogUsageScanner: Sendable {
     }
 
     /// 실제 모델 적용 이벤트의 모델·API 계산 방식. 검증 전 요청인 `model changed`는 제외.
-    /// 세션 정보는 호출부에서 판별; 여기서는 모델·API 필드만 해석.
+    /// 세션 구분은 호출부 담당. 여기서는 모델·API 필드만 해석.
     private static func modelContext(msg: String, ctx: [String: Any]) -> ModelContext? {
         let raw: Any?
         switch msg {

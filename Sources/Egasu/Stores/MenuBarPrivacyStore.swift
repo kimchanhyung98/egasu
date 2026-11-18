@@ -1,19 +1,19 @@
 import Foundation
 import Observation
 
-/// 메뉴바 screen-share privacy mode의 단일 출처 — persisted "Hide From Screen Share" 설정과 라이브 캡처 신호
-/// 저장 완료된 conceal edge를 `StatusItemImageUpdater`에 전달해 캡처 시작·종료 즉시 wordmark 전환
-/// monitoring은 설정 on일 때만 — poll(보증)과 window server watcher 알림(fast path, best-effort) 병행
+/// 메뉴 막대의 개인정보 보호 상태 — 저장된 설정과 현재 캡처 상태를 결합.
+/// 상태 반영 후 StatusItemImageUpdater에 전달하여 캡처 중 메뉴 막대를 앱 아이콘으로 표시.
+/// 설정을 켠 동안만 감시 — 주기적 조회와 윈도 서버 변경 알림 병행.
 @MainActor
 @Observable
 final class MenuBarPrivacyStore {
     static let key = "hideUsageWhileScreenSharing"
 
-    /// 설정 on 동안의 poll 주기 — 알림 유실 시 노출을 수 초로 제한, 검사 자체는 저비용 window-server 호출 1회
+    /// 변경 알림의 누락을 보완하는 캡처 상태 재확인 주기.
     static let pollInterval: Duration = .seconds(3)
 
-    /// persisted 설정 (기본 on) — view-local `@AppStorage` 대신 여기 저장해 AppKit strip renderer와 값 일치 보장
-    /// toggle이 monitoring을 시작·중지하므로 off 상태 비용 없음
+    /// 기본 켜짐 설정 — SwiftUI·AppKit이 같은 저장값 사용.
+    /// 설정을 끄면 감시 작업 중지.
     var hideUsageWhileScreenSharing: Bool {
         didSet {
             guard hideUsageWhileScreenSharing != oldValue else { return }
@@ -27,10 +27,10 @@ final class MenuBarPrivacyStore {
         }
     }
 
-    /// 현재 캡처 활성 여부 — 설정 on 동안만 유지, 그 외 항상 `false`
+    /// 현재 캡처 여부 — 설정이 꺼져 있으면 항상 false.
     private(set) var screenIsCaptured = false
 
-    /// 메뉴바가 usage 대신 wordmark를 보여야 하는 정확한 조건
+    /// 메뉴 막대 사용량을 앱 아이콘으로 바꿀 조건.
     var concealUsage: Bool { hideUsageWhileScreenSharing && screenIsCaptured }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -40,7 +40,7 @@ final class MenuBarPrivacyStore {
     @ObservationIgnored private var concealUsageObserver: ((Bool) -> Void)?
     @ObservationIgnored private var lastPublishedConcealUsage: Bool?
 
-    /// probe·알림 installer는 실제 window-server 신호(`ScreenCaptureProbe`)가 기본값, 테스트 주입용으로 교체 가능
+    /// 기본값은 ScreenCaptureProbe의 윈도 서버 조회·알림 — 테스트에서 교체 가능.
     init(
         defaults: UserDefaults = .standard,
         probe: @escaping @MainActor () -> Bool = ScreenCaptureProbe.isScreenCaptured,
@@ -50,7 +50,7 @@ final class MenuBarPrivacyStore {
         self.probe = probe
         self.installChangeNotifications = installChangeNotifications
         self.hideUsageWhileScreenSharing = defaults.bool(forKey: Self.key, default: true)
-        // init 중에는 `didSet` 미발동 — persisted-on launch는 직접 monitoring 시작
+        // 초기화 중 didSet이 실행되지 않으므로 저장값이 켜짐이면 직접 감시 시작.
         if hideUsageWhileScreenSharing {
             startMonitoring()
         }
@@ -58,14 +58,14 @@ final class MenuBarPrivacyStore {
 
     deinit { pollTask?.cancel() }
 
-    /// 메뉴바 image consumer 하나 등록 — 이후 derived conceal edge를 저장 완료 순서대로 전달.
+    /// 메뉴 막대 이미지 갱신 콜백 하나 등록 — 사용량 숨김 상태가 반영된 순서대로 전달.
     func setConcealUsageObserver(_ observer: @escaping (Bool) -> Void) {
         concealUsageObserver = observer
         lastPublishedConcealUsage = concealUsage
     }
 
-    /// watcher flag 재확인 후 변경 게시 — poll·monitoring 시작 경로
-    /// 설정을 경유해 읽으므로 toggle off 후 도착한 stale 알림이 재은폐 불가
+    /// 주기적 조회·감시 시작 시 캡처 상태 재확인 후 변경 전달.
+    /// 현재 설정을 함께 확인하여 설정을 끈 뒤 도착한 이전 알림으로 다시 숨겨지지 않도록 처리.
     func refreshCaptureState() {
         applyCaptureState(hideUsageWhileScreenSharing && probe())
     }

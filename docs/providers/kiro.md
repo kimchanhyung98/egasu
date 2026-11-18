@@ -10,11 +10,11 @@ Kiro CLI에 이미 로그인된 계정의 코딩 크레딧 추적.
 
 Kiro가 반환한 구독 이름도 표시.
 현행 Free·Pro·Pro+·Pro Max·Power와 팀 크레딧 풀의 가격은 [구독 요금제](/docs/pricing.md#구독-요금제) 참조.
-보너스 크레딧과 초과 사용 상세 정보는 활성 응답 형식이 검증되지 않아 표시하지 않음.
+보너스 크레딧 및 초과 사용 상세는 표시 대상에서 제외.
 
 ## 상단 통계 지원 범위
 
-이 Mac의 Kiro CLI V3 세션을 기존 Today·Yesterday·Last 30 Days의 Cost·Tokens·Cost/MTok에 반영.
+이 Mac의 Kiro CLI V3 세션을 상단 Today·Yesterday·30 Days의 Cost·Tokens·Cost/MTok에 반영.
 원천은 `~/.kiro/sessions/<workspace>/<session>/messages.jsonl`의 턴별 사용량과 대화 이력.
 [공식 V3 설정](https://kiro.dev/docs/reference/settings/)에 따라 유효한 절대경로 `KIRO_HOME`이 있으면 해당 경로의 `sessions`만 조회.
 상대경로·파일시스템 루트·사용자 홈·홈의 상위 경로는 기본 `~/.kiro` 사용.
@@ -50,9 +50,9 @@ Kiro가 반환한 구독 이름도 표시.
   마지막으로 확인한 V3 실경로 하나만 메모리에 유지하므로 앱 재시작 뒤 이전 폴더 유실을 구분하지 못할 수 있음.
   V3 폴더를 확인한 적 없는 첫 수집에서 정상 빈 V2 데이터베이스는 빈 이력으로 처리.
 - 턴 사용량이 저장된 시각을 로컬 자정 기준 날짜로 묶어 집계.
-  Last 30 Days는 기존 통계와 같이 오늘 및 이전 30일 포함.
+  30 Days는 오늘과 이전 30일 포함.
 
-V3 지원은 확인한 로컬 `messages.jsonl` 형식에 한정.
+V3 수집은 로컬 `messages.jsonl`의 지원 형식에 한정.
 V2는 아래 별도 형식으로 수집하며 이 Mac에 기록되지 않은 사용량은 포함하지 않음.
 [CLI V3 ACP 문서](https://kiro.dev/docs/cli/v3/acp-migration/)는 공개 프로토콜의 세션 조회·불러오기를 안내하며 내부 파일 형식을 보장하지 않음.
 CLI 내부 저장 형식 변경 시 수집기 갱신 필요.
@@ -67,7 +67,7 @@ V3 디렉터리 탐색에 실패해도 읽을 수 있는 V2 기록을 수집하�
 V2의 빈 계량 목록도 비용 미보고로 처리.
 SQLite의 대화 수준 크레딧을 요청 날짜와 연결할 수 없으면 원본만 보존하고 진단 로그에 기록.
 CLI·IDE가 남긴 지원 형식만 수집하며 제목·문자 길이·수정 시각으로 다른 버전의 원장을 추측하지 않음.
-IDE globalStorage의 별도 `.chat`·실행 파일 및 원격 V3 저장소는 이번 수집 경로에 포함하지 않음.
+IDE globalStorage의 별도 `.chat`·실행 파일 및 원격 V3 저장소는 수집 대상에서 제외.
 
 ## 인증 정보 출처
 

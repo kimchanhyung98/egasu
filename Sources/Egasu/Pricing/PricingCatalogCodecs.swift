@@ -1,12 +1,12 @@
 import Foundation
 
-/// 공개 pricing feed 2종의 parser + bundled snapshot·disk cache용 compact catalog format.
-/// compact format은 cost field만 보존 — 원본 feed는 수 MB.
+/// 공개 가격표 두 종의 해석과 번들·디스크 캐시용 축약 형식 변환.
+/// 요율과 해석에 필요한 메타데이터 보관 — 취득 시각, 캐시 읽기 요율의 출처 포함.
 enum PricingCatalogCodecs {
     // MARK: - LiteLLM (model_prices_and_context_window.json)
 
-    /// LiteLLM 전체 JSON에서 catalog 생성 — input·output cost 없는 entry 제외, feed의 per-token을 per-million으로 저장.
-    /// JSONSerialization 사용 — 불량 entry 하나가 feed 전체를 무너뜨리지 않는 계약.
+    /// LiteLLM JSON을 가격표로 변환 — 입력·출력 요율 없는 항목 제외, 토큰당 요율을 백만 토큰당으로 환산.
+    /// 항목별로 JSON 해석 — 잘못된 항목 하나 때문에 전체 가격표를 거부하지 않음.
     static func catalogFromLiteLLM(_ data: Data) throws -> PricingCatalog {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw PricingCodecError.notAnObject
@@ -41,8 +41,8 @@ enum PricingCatalogCodecs {
 
     // MARK: - models.dev (api.json)
 
-    /// models.dev `api.json`(`{provider: {models: {id: {cost: ...}}}}`)에서 catalog 생성.
-    /// model id는 bare 저장 — 동일 id 중복 시 provider명 정렬 첫 항목 승리, cost는 feed에서 이미 per-million.
+    /// models.dev의 provider → models → id → cost 구조를 가격표로 변환.
+    /// 모델 ID를 그대로 저장 — 중복 ID는 프로바이더 이름순 첫 유효 항목 사용. 단위는 백만 토큰당.
     static func catalogFromModelsDev(_ data: Data) throws -> PricingCatalog {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw PricingCodecError.notAnObject
@@ -120,7 +120,7 @@ enum PricingCatalogCodecs {
         return try encoder.encode(CompactCatalog(retrievedAt: catalog.retrievedAt, models: models))
     }
 
-    /// snapshot 축소용 단축 key의 per-million rates — `i`nput, `o`utput, `c`ache`w`rite, `c`ache`r`ead, `a`bove-200k 변형, `fast` multiplier.
+    /// 축약 키별 백만 토큰당 요율 — i는 입력, o는 출력, cw·cr은 캐시 쓰기·읽기, a는 긴 문맥, fast는 배율.
     private struct CompactCatalog: Codable {
         var retrievedAt: String?
         var models: [String: Model]
@@ -134,7 +134,7 @@ enum PricingCatalogCodecs {
             var oa: Double?
             var cwa: Double?
             var cra: Double?
-            /// 생략 = explicit — provenance bit 이전 snapshot과의 하위 호환. 새로 compact되는 합성 rate는 `false` 기록.
+            /// 필드가 없으면 명시 요율로 처리하여 이전 스냅샷 호환 — 새로 생성한 기본 요율은 false 기록.
             var cre: Bool?
             var fast: Double?
         }

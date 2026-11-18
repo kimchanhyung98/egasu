@@ -1,6 +1,6 @@
 import Foundation
 
-/// 공개 상태 API 전용 전송 계층 — provider 인증·cookie·cache와 분리하고 redirect를 따르지 않음.
+/// 공개 상태 API 전용 전송 — 프로바이더 인증·쿠키·캐시와 분리하고 리다이렉트 거부.
 struct ProviderStatusHTTPClient: HTTPClient {
     private static let timeout: TimeInterval = 10
 

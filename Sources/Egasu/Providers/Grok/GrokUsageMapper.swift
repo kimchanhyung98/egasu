@@ -6,8 +6,8 @@ struct GrokMappedUsage: Equatable, Sendable {
 }
 
 enum GrokUsageMapper {
-    /// credits-format billing 응답을 remote line(Weekly meter + pay-as-you-go badge)으로 매핑.
-    /// current period가 weekly가 아니면 Weekly 행 생략("No data") — 구 monthly-only 계정의 percent 오표기 방지.
+    /// 크레딧 청구 응답을 주간 한도와 추가 지출 상태로 변환.
+    /// 현재 기간이 주간이 아니면 Weekly 생략. 월간 한도의 주간 오표기 방지.
     static func mapCreditsConfig(_ response: HTTPResponse) throws -> GrokMappedUsage {
         try ProviderAuthRetry.requireSuccess(
             response,
@@ -27,7 +27,7 @@ enum GrokUsageMapper {
                 periodDurationMs: config.periodDurationMs
             ))
         }
-        // `onDemandCap` 부재는 pay-as-you-go 없음(proto-JSON은 0 cap도 생략) — cap 0과 동일하게 Disabled badge
+        // `onDemandCap` 부재는 proto-JSON의 0 생략으로 처리하여 추가 지출 비활성 표시.
         let cap = Formatters.currency(ProviderParse.centsToDollars(config.onDemandCap))
         lines.append(.badge(
             label: "Pay as you go",

@@ -1,18 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Applies the branch/tag protections this repo uses on GitHub, mirroring
-# robinebers/openusage. GitHub gates these features on private repos
-# (free plan), so run this once after the repo goes public:
+# 대상 GitHub 저장소에 브랜치·태그 보호 규칙 적용.
 #
 #   ./script/apply_github_protections.sh
 #
-# Requires: gh CLI authenticated as a repo admin.
+# 전제 조건: 저장소 관리자 계정으로 gh CLI 인증 완료.
 
 REPO="${REPO:-kimchanhyung98/egasu}"
 
-# No visibility pre-check: a private repo on a paid plan supports these
-# settings, so let GitHub be the judge and surface its error if not.
+# 저장소 공개 여부와 관계없이 GitHub API에 요청하고 실패 응답 전달.
 echo "==> Branch protection on main (required CI check, 2 approvals, code owners, conversation resolution; admins exempt)"
 BRANCH_PROTECTION='{
   "required_status_checks": {"strict": true, "contexts": ["Build and Test"]},
@@ -39,8 +36,7 @@ if ! echo "$BRANCH_PROTECTION" | gh api -X PUT "repos/$REPO/branches/main/protec
 fi
 echo "    applied."
 
-# Convergent like the branch-protection PUT above: creates the ruleset if
-# missing, otherwise overwrites it by id so a re-run reconciles any drift.
+# 규칙이 없으면 생성, 있으면 ID로 갱신해 재실행 시에도 같은 설정 유지.
 apply_ruleset() {
   local name="$1" payload="$2"
   local existing_id
@@ -54,10 +50,7 @@ apply_ruleset() {
   fi
 }
 
-# The bypass actor is the repo-admin role because rulesets have no per-user
-# actor type; on a user-owned repo collaborators top out at write, so the
-# owner is the only admin and the bypass is owner-only in practice. This
-# matches the original repo's ruleset exactly.
+# 태그 보호의 예외 대상은 저장소 관리자 역할.
 echo "==> Tag ruleset: only the repo owner can create/update/delete v* release tags"
 apply_ruleset "Release tags owner only" '{
   "name": "Release tags owner only",
