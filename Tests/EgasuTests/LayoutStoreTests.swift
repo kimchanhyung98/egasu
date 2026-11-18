@@ -791,14 +791,20 @@ final class LayoutStoreTests: XCTestCase {
     }
 
     func testResetToDefaultClearsPriorityPins() {
-        let store = makeStore("ResetPins")
-        store.setMetric("claude.weekly", pinned: true)
-        XCTAssertTrue(store.isMetricPinned("claude.weekly"))
+        let defaults = makeDefaults("ResetPins")
+        let persistence = LayoutPersistence(defaults: defaults, storageKey: "layout")
+        persistence.savePins(["claude.session"])
+        let store = LayoutStore(registry: .mock, defaults: defaults, storageKey: "layout")
+        XCTAssertEqual(store.migrateMenuBarStars(), 1)
+        XCTAssertTrue(store.isMetricPinned("claude.session"))
 
         store.resetToDefault()
 
         XCTAssertTrue(store.priorityPinIDs.isEmpty)
-        XCTAssertNil(store.migrateMenuBarStars(), "초기화한 고정을 이전 별표로 다시 채우지 않음")
+        XCTAssertEqual(persistence.loadPins(), ["claude.session"])
+        let reloaded = LayoutStore(registry: .mock, defaults: defaults, storageKey: "layout")
+        XCTAssertNil(reloaded.migrateMenuBarStars(), "초기화한 고정을 이전 별표로 다시 채우지 않음")
+        XCTAssertTrue(reloaded.priorityPinIDs.isEmpty)
     }
 
     func testProviderReorderMovesAnAbsentAccountCardWithItsFamily() {

@@ -94,7 +94,7 @@ enum MenuBarContentBuilder {
                 providerName: account.fullName,
                 badge: badge,
                 label: label,
-                shortLabel: shortLabel(label),
+                shortLabel: shortLabel(label, metricLabel: line.descriptor.metricLabel),
                 value: presented.menuBarValue,
                 fraction: presented.isBounded ? presented.fraction : nil
             )
@@ -119,8 +119,14 @@ enum MenuBarContentBuilder {
         return Set(counts.filter { $0.value > 1 }.keys)
     }
 
-    /// 라벨 끝의 일반 단어(models, bot, usage) 생략 — "Premium Usage" → "Premium".
-    static func shortLabel(_ label: String) -> String {
+    /// 기간 라벨은 짧은 번역 사용. 다른 라벨은 끝의 일반 단어 생략.
+    static func shortLabel(_ label: String, metricLabel: String) -> String {
+        switch metricLabel.lowercased() {
+        case "today": return L10n.metrics("T")
+        case "yesterday": return L10n.metrics("Y")
+        case "last 30 days": return L10n.metrics("M")
+        default: break
+        }
         var words = label.split(separator: " ")
         guard words.count > 1, let last = words.last, genericWords.contains(last.lowercased()) else { return label }
         words.removeLast()

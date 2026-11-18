@@ -77,7 +77,7 @@ final class TelemetryRecorderTests: XCTestCase {
         XCTAssertEqual(active[0]["pinned_metric_ids"] as? [String], ["claude.session"])
         XCTAssertEqual(active[0]["schema_version"] as? Int, 3)
         XCTAssertNil(active[0]["expanded_metric_ids"], "On Demand 배치는 더 이상 없음")
-        XCTAssertNil(active[0]["menu_bar_style"], "메뉴 막대 스타일 설정은 더 이상 없음")
+        XCTAssertNil(active[0]["menu_bar_style"], "앱 사용 이벤트 스키마 3에서 메뉴 막대 표시 스타일 수집 제외")
 
         clock = day(26)
         recorder.tick()

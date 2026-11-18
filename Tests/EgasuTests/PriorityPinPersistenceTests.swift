@@ -128,21 +128,29 @@ final class PriorityPinPersistenceTests: XCTestCase {
         XCTAssertTrue(returned.isMetricPinned("codex.weekly"))
     }
 
-    func testUnknownSavedPinsStayDormantUntilTheirMetricReturns() {
+    func testSavedPinsDiscardKnownNonPinnableMetricsAndPreserveUnknownMetrics() {
         let defaults = makeDefaults()
-        LayoutPersistence(defaults: defaults, storageKey: "layout").savePriorityPins(["future.meter"])
+        let persistence = LayoutPersistence(defaults: defaults, storageKey: "layout")
+        let absentAccountPin = "\(card("absent")).weekly"
+        persistence.savePriorityPins(["codex.weekly", "codex.trend", "future.meter", "future.trend", absentAccountPin])
         let fixture = catalog()
         let store = makeStore(defaults: defaults, catalog: fixture)
-        XCTAssertTrue(store.priorityPinIDs.contains("future.meter"))
+        let dormant: Set<String> = ["future.meter", "future.trend", absentAccountPin]
+        XCTAssertEqual(store.priorityPinIDs, dormant.union(["codex.weekly"]))
+        XCTAssertEqual(Set(persistence.loadPriorityPins() ?? []), store.priorityPinIDs)
+        XCTAssertFalse(store.isMetricPinned("codex.trend"))
         XCTAssertFalse(store.isMetricPinned("future.meter"))
         let future = Provider(id: "future", displayName: "Future", icon: .providerMark("codex"))
         let registry = WidgetRegistry(
             providers: fixture.registry.providers + [future],
             descriptors: fixture.registry.descriptors + [
-                WidgetDescriptor.percent(id: "future.meter", provider: future, title: "Meter")
+                WidgetDescriptor.percent(id: "future.meter", provider: future, title: "Meter"),
+                WidgetDescriptor.usageTrend(provider: future)
             ])
         store.replaceRegistry(registry, profileIDsByCardID: fixture.mapping)
         XCTAssertTrue(store.isMetricPinned("future.meter"))
+        XCTAssertEqual(store.priorityPinIDs, ["codex.weekly", "future.meter", absentAccountPin])
+        XCTAssertEqual(Set(persistence.loadPriorityPins() ?? []), store.priorityPinIDs)
     }
 
     func testLegacyCustomStarsExpandOnceAndNeverPinChartsOrLaterAccounts() {

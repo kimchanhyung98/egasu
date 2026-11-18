@@ -88,7 +88,7 @@ final class LayoutStore {
         placed = initial.placed
         providerOrder = initial.providerOrder
         metricOrderByProvider = initial.metricOrderByProvider
-        priorityPinIDs = Set(persistence.loadPriorityPins() ?? [])
+        priorityPinIDs = Self.loadPriorityPins(from: persistence, registry: registry)
         expandedMetricIDs = initial.expandedMetricIDs
         expandedProviderIDs = initial.expandedProviderIDs
         defaultExpandedOnEnableIDs = initial.defaultExpandedOnEnableIDs
@@ -124,7 +124,7 @@ final class LayoutStore {
         placed = reloaded.placed
         providerOrder = reloaded.providerOrder
         metricOrderByProvider = reloaded.metricOrderByProvider
-        priorityPinIDs = Set(persistence.loadPriorityPins() ?? [])
+        priorityPinIDs = Self.loadPriorityPins(from: persistence, registry: registry)
         expandedMetricIDs = reloaded.expandedMetricIDs
         expandedProviderIDs = reloaded.expandedProviderIDs
         defaultExpandedOnEnableIDs = reloaded.defaultExpandedOnEnableIDs
@@ -246,6 +246,14 @@ final class LayoutStore {
     }
 
     // MARK: - Priority pins
+
+    /// 가져온 고정값에서 알려진 고정 불가 지표만 제거하고, 현재 카탈로그에 없는 지표는 복귀를 위해 보관.
+    private static func loadPriorityPins(from persistence: LayoutPersistence, registry: WidgetRegistry) -> Set<String> {
+        let saved = Set(persistence.loadPriorityPins() ?? [])
+        let valid = saved.filter { registry.descriptor(id: $0)?.pinnable != false }
+        if valid != saved { persistence.savePriorityPins(valid) }
+        return valid
+    }
 
     /// 기존 별표의 사용자 지정분을 알려진 계정으로 1회 이전 — Priority 저장값이 있으면 생략.
     func migrateMenuBarStars(isHiddenOnCard: (String, String) -> Bool = { _, _ in false }) -> Int? {

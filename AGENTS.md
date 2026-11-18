@@ -50,7 +50,8 @@ Conventions for the per-provider modules under `Sources/Egasu/Providers/<Name>/`
 - **Metric placement defaults:** 지표는 기본 켜짐이며 기존 숨김 설정 우선. 나머지 배치 기본값은 오너와 확인:
   1. 지표는 기본 켜짐이며 숨긴 지표만 저장. 기존 egasu·OpenUsage에서 이전한 표시·숨김 설정 우선(`DefaultLayout.metricIDs(in:)`).
   2. Always Visible vs. On Demand — above the fold vs. behind the per-provider caret (`DefaultLayout.expandedMetricIDs`). Note: a provider always keeps at least one Always Visible row — the dashboard promotes all metrics when every one is marked On Demand, so a fully On Demand provider isn't possible; leave one metric Always Visible for the caret to appear,
-  3. pinned to the menu bar (`DefaultLayout.pinnedMetricIDs`),
+  3. 메뉴 막대는 Priority 보드에서 지표를 자동 선택.
+     `DefaultLayout.pinnedMetricIDs`는 이전 기본 별표와 저장된 별표를 비교하는 마이그레이션 전용 값.
   4. order (within a provider, the `widgetDescriptors` declaration order).
 
 ## Running / Testing Changes

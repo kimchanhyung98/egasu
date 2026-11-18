@@ -39,16 +39,19 @@ Claude와 Codex로 시작한 뒤 Mac의 로컬 인증 정보·사용 흔적을 �
 |---|---|
 | Pinned | 고정한 지표. 소진 완료 후에도 저장된 계정·지표 순서 유지 |
 | Running Out | 고정하지 않은 한도 중 남은 양이 Warning 기준 이하이거나 빠르게 소진 중(Burning Fast)인 항목, 급한 순 |
-| Use It or Lose It | 고정하지 않은 한도 중 하루 넘는 주기에서 초기화 하루 전 50% 넘게 남은 항목([Settings의 알림 설정](/docs/settings.md#알림)에서 끌 수 있음) |
+| Use It or Lose It | 고정하지 않은 한도 중 주기가 하루보다 길고, 초기화가 24시간 이내로 남았으며, 잔량을 정수 퍼센트로 반올림한 값이 50%를 넘는 항목.<br>달러 단위 한도 제외. |
 | Needs Attention | 사용량을 가져오지 못한 계정 표시, **Fix**로 계정 상세 열기.<br>VoiceOver에서 조회 실패 사유 안내. Privacy Mode에서는 일반 오류 안내 사용.<br>Claude·Codex 계정의 Keychain 읽기 실패이면 **Fix**가 그 계정만 다시 조회하며 macOS Keychain 승인 창 표시 |
 | Used Up | 고정하지 않은 한도 중 다 쓴 항목(흐리게) |
 
+- [Use It or Lose It 알림](/docs/settings.md#알림) 설정은 알림 전송 여부만 제어.
 - 한도 데이터를 받았고, 수신 대기·계정 경고·소진 임박이 없으면 **All Clear**("Nothing is running out.") 행 표시.
   고정한 경고 지표도 소진 임박 판정에 포함.
   경고 지표가 모두 고정된 경우 Pinned에만 표시하며 Running Out 구역과 All Clear는 숨김.
 - 첫 조회 전인 계정은 자리 표시(**Waiting for Usage**).
 - 한도를 보고하는 계정이 없으면 **No Reported Limits**와 **View All Usage** 버튼.
-- 링 색은 남은 양 기준: Warning 기준 이하 주황, Critical 기준 이하 빨강(기준은 [Settings의 알림 기준](/docs/settings.md#알림)).
+- 링의 채움 비율은 [Show Usage As](/docs/settings.md#사용량-표시)의 Used / Left 설정 적용.
+  링 색은 남은 양과 [알림 기준](/docs/settings.md#알림)에 따라 결정.
+  Warning 기준 이하는 주황, Critical 기준 이하는 빨강.
 - Burning Fast: 지금 속도면 초기화 전에 다 쓸 한도.
   한 번 표시되면 예상 기말 사용량이 한도의 90% 이하로 내려올 때까지 유지.
 - 행 우클릭으로 고정·해제(**Pin**/**Unpin**)와 숨기기(**Hide**).

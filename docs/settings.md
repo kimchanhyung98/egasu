@@ -50,7 +50,7 @@
 |---|---|---|
 | Icon Style(아이콘 스타일) | Text / Bars | 메뉴 막대 표시 방식, 저장값이 없으면 Text.<br>App Icon Only에서는 비활성. |
 | Max Items In Menu Bar | App Icon Only / Up to 1~5 | 기본 최대 3개.<br>App Icon Only는 항상 앱 아이콘만 표시. |
-| Menu Bar Items | Running Out / Priority / Pinned Only | 기본 Running Out.<br>App Icon Only에서는 비활성.<br>[표시 기준](/docs/menu-bar.md#표시-항목) 참조. |
+| Menu Bar Items | Running Out / Priority / Pinned Only | 표시 기준을 저장한 적이 없으면 이전 Always Show In Menu Bar 설정이 켜진 경우 Priority, 그 외 Running Out.<br>App Icon Only에서는 비활성.<br>[표시 기준](/docs/menu-bar.md#표시-항목) 참조. |
 | Show Extra Indicators | 켜기 / 끄기 | 기본 켬.<br>넘친 항목 수와 업데이트 점 표시. |
 | Theme(테마) | System / Light / Dark | 팝오버에 적용할 앱 전체 화면 스타일 재정의. |
 | All Usage Layout | Minimal / Cards | Minimal은 프로바이더 안 계정 묶음(기본값), Cards는 계정별 독립 카드.<br>선택은 즉시 적용하며 앱 재실행 후에도 유지. |

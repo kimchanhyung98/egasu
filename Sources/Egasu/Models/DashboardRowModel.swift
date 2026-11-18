@@ -74,7 +74,7 @@ extension WidgetData {
         return (valuePrefix ?? "") + MetricFormatter.number(displayedValue, kind: kind, style: .row)
     }
 
-    /// 값과 그 뜻의 단어 — 예: "49% left". Priority 행 오른쪽.
+    /// Priority 행의 값. Used·Left를 바꿀 수 있는 지표에는 사용·잔여 단어 추가.
     var amountText: String {
         if !isBounded, !selectedValues.isEmpty { return valueText }
         return hasMeterStyleToggle

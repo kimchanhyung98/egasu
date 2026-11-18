@@ -89,7 +89,7 @@ extension LayoutStore {
         displayGroups.flatMap(\.widgets).compactMap { descriptor(for: $0) }
     }
 
-    /// 외부 optional source를 구동하는 행 — dashboard 표시와 메뉴 막대 전용 pin을 순서대로 합치고 중복 제거.
+    /// 추가 데이터 조회에 사용할 표시 지표를 대시보드 순서로 반환.
     func orderedRefreshDescriptors() -> [WidgetDescriptor] {
         orderedRenderedDescriptors()
     }

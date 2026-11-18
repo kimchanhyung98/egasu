@@ -147,7 +147,7 @@ final class DashboardSnapshotTests: XCTestCase {
         )
     }
 
-    private func render<V: View>(_ view: V, appearance: ColorScheme, name: String) throws -> NSImage {
+    private func render<V: View>(_ view: V, appearance: ColorScheme, name: String? = nil) throws -> NSImage {
         let framed =
             view
             .frame(width: PanelMetrics.width - PanelMetrics.margin * 2)
@@ -156,8 +156,13 @@ final class DashboardSnapshotTests: XCTestCase {
             .environment(\.drawsLevelsAsShapes, true)
             .environment(\.hoverTooltipsDisabled, true)
         let image = try XCTUnwrap(ShareCardRenderer.image(for: framed))
-        try export(image, name: name)
+        if let name { try export(image, name: name) }
         return image
+    }
+
+    private func pixels(of image: NSImage) throws -> CGImage {
+        var rect = CGRect(origin: .zero, size: image.size)
+        return try XCTUnwrap(image.cgImage(forProposedRect: &rect, context: nil, hints: nil))
     }
 
     private func export(_ image: NSImage, name: String) throws {
@@ -174,31 +179,71 @@ final class DashboardSnapshotTests: XCTestCase {
             let image = try XCTUnwrap(MenuBarStripRenderer.image(for: content, style: .bars))
             XCTAssertEqual(image.size.width, 18)
             XCTAssertEqual(image.size.height, 18)
-            var rect = CGRect(origin: .zero, size: image.size)
-            let pixels = try XCTUnwrap(image.cgImage(forProposedRect: &rect, context: nil, hints: nil))
-            XCTAssertNotNil(MenuBarStripRenderer.visibleBounds(of: pixels))
+            let bitmap = NSBitmapImageRep(cgImage: try pixels(of: image))
+            let center = bitmap.pixelsWide / 2
+            var visibleBars = 0
+            var wasVisible = false
+            for y in 0..<bitmap.pixelsHigh {
+                let isVisible = (bitmap.colorAt(x: center, y: y)?.alphaComponent ?? 0) > 0.05
+                if isVisible && !wasVisible { visibleBars += 1 }
+                wasVisible = isVisible
+            }
+            XCTAssertEqual(visibleBars, count)
             try export(image, name: "menubar-bars-\(count)")
             for appearance in [ColorScheme.light, .dark] {
-                _ = try render(Image(nsImage: image).renderingMode(.template).frame(height: 30),
-                               appearance: appearance, name: "menubar-bars-\(count)-\(appearance)")
+                _ = try render(
+                    Image(nsImage: image).renderingMode(.template).frame(height: 30),
+                    appearance: appearance, name: "menubar-bars-\(count)-\(appearance)")
             }
         }
     }
 
     func testPriorityListRendersEverySection() throws {
+        let waitingProvider = Provider(id: "claude", displayName: "Claude", icon: .providerMark("claude"))
+        let waitingAccount = DashboardAccount(provider: waitingProvider, providerName: "Claude", name: nil, lines: [])
         let board = PriorityBoard.make(
-            accounts: codexFamily().accounts + [cursorAccount()],
+            accounts: codexFamily().accounts + [cursorAccount(), waitingAccount],
             pinned: ["codex.session"],
             burningFast: BurningFast(),
             useItOrLoseIt: true,
             now: now
-        ) { account in account.id == "cursor" ? .unavailable("Session expired") : .current }
+        ) { account in
+            switch account.id {
+            case "cursor": .unavailable("Session expired")
+            case "claude": .waiting
+            default: .current
+            }
+        }
+        XCTAssertFalse(board.pinned.isEmpty)
         XCTAssertFalse(board.attention.isEmpty)
         XCTAssertFalse(board.usedUp.isEmpty)
+        XCTAssertFalse(board.useItOrLoseIt.isEmpty)
         XCTAssertFalse(board.notices.isEmpty)
+        XCTAssertFalse(board.waiting.isEmpty)
+
+        enum Section: CaseIterable { case pinned, attention, usedUp, useItOrLoseIt, notices, waiting }
+        func without(_ section: Section) -> PriorityBoard {
+            PriorityBoard(
+                pinned: section == .pinned ? [] : board.pinned,
+                runningOut: board.runningOut,
+                attention: section == .attention ? [] : board.attention,
+                usedUp: section == .usedUp ? [] : board.usedUp,
+                useItOrLoseIt: section == .useItOrLoseIt ? [] : board.useItOrLoseIt,
+                notices: section == .notices ? [] : board.notices,
+                waiting: section == .waiting ? [] : board.waiting,
+                summary: board.summary,
+                showsClearRow: board.showsClearRow,
+                nextUseItOrLoseItChange: board.nextUseItOrLoseItChange
+            )
+        }
+
         for appearance in [ColorScheme.light, .dark] {
-            let image = try render(PriorityBoardList(board: board, now: now), appearance: appearance, name: "priority-\(appearance)")
-            XCTAssertGreaterThan(image.size.height, 46 * 3)
+            let image = try render(
+                PriorityBoardList(board: board, now: now), appearance: appearance, name: "priority-\(appearance)")
+            for section in Section.allCases {
+                let reduced = try render(PriorityBoardList(board: without(section), now: now), appearance: appearance)
+                XCTAssertGreaterThanOrEqual(image.size.height - reduced.size.height, 28, "\(appearance): \(section)")
+            }
         }
     }
 
@@ -245,15 +290,31 @@ final class DashboardSnapshotTests: XCTestCase {
     }
 
     func testMenuBarStripRendersBadgesAndOverflow() throws {
-        let content = MenuBarContent(items: [
-            MenuBarContent.Item(id: "codex.weekly", icon: .providerMark("codex"), providerName: "Codex — Account 1", badge: "A1",
-                                label: "Weekly", shortLabel: "Weekly", value: "9%"),
-            MenuBarContent.Item(id: "codex@ab12cd34.session", icon: .providerMark("codex"), providerName: "Codex — Account 2", badge: "A2",
-                                label: "Session", shortLabel: "Session", value: "14%"),
-            MenuBarContent.Item(id: "cursor.usage", icon: .providerMark("cursor"), providerName: "Cursor", badge: nil,
-                                label: "Premium Usage", shortLabel: "Premium", value: "$12"),
-        ], overflow: 2)
-        let image = try XCTUnwrap(MenuBarStripRenderer.textImage(for: content))
+        func strip(firstBadge: String?, secondBadge: String?, overflow: Int = 0) throws -> NSImage {
+            let content = MenuBarContent(
+                items: [
+                    MenuBarContent.Item(
+                        id: "codex.weekly", icon: .providerMark("codex"), providerName: "Codex — Account 1",
+                        badge: firstBadge, label: "Weekly", shortLabel: "Weekly", value: "9%"),
+                    MenuBarContent.Item(
+                        id: "codex@ab12cd34.session", icon: .providerMark("codex"), providerName: "Codex — Account 2",
+                        badge: secondBadge, label: "Session", shortLabel: "Session", value: "14%"),
+                    MenuBarContent.Item(
+                        id: "cursor.usage", icon: .providerMark("cursor"), providerName: "Cursor", badge: nil,
+                        label: "Premium Usage", shortLabel: "Premium", value: "$12")
+                ], overflow: overflow)
+            return try XCTUnwrap(MenuBarStripRenderer.textImage(for: content))
+        }
+        let plain = try strip(firstBadge: nil, secondBadge: nil)
+        let badged = try strip(firstBadge: "A1", secondBadge: "A2")
+        let otherInitials = try strip(firstBadge: "Z9", secondBadge: "Z8")
+        let image = try strip(firstBadge: "A1", secondBadge: "A2", overflow: 2)
+
+        XCTAssertGreaterThan(badged.size.width, plain.size.width)
+        let badgedPixels = try XCTUnwrap(try pixels(of: badged).dataProvider?.data) as Data
+        let otherPixels = try XCTUnwrap(try pixels(of: otherInitials).dataProvider?.data) as Data
+        XCTAssertNotEqual(badgedPixels, otherPixels, "배지 글자가 실제 스트립 픽셀에 반영됨")
+        XCTAssertGreaterThan(image.size.width, badged.size.width)
         XCTAssertLessThanOrEqual(image.size.height, 22, "메뉴 막대 높이 안에 들어감")
         try export(image, name: "menubar-strip")
     }

@@ -239,9 +239,25 @@ final class MenuBarContentTests: XCTestCase {
     }
 
     func testShortLabelDropsGenericTrailingWord() {
-        XCTAssertEqual(MenuBarContentBuilder.shortLabel("Premium Usage"), "Premium")
-        XCTAssertEqual(MenuBarContentBuilder.shortLabel("Weekly"), "Weekly")
-        XCTAssertEqual(MenuBarContentBuilder.shortLabel("Gemini Pro Models"), "Gemini Pro")
+        XCTAssertEqual(MenuBarContentBuilder.shortLabel("Premium Usage", metricLabel: "Premium Usage"), "Premium")
+        XCTAssertEqual(MenuBarContentBuilder.shortLabel("Weekly", metricLabel: "Weekly"), "Weekly")
+        XCTAssertEqual(
+            MenuBarContentBuilder.shortLabel("Gemini Pro Models", metricLabel: "Gemini Pro Models"), "Gemini Pro")
+    }
+
+    func testShortLabelAbbreviatesTimeWindowsInTheSelectedLanguage() {
+        let labels = ["Today", "Yesterday", "Last 30 Days"]
+        let cases: [(LanguageSetting, [String])] = [
+            (.english, ["T", "Y", "M"]),
+            (.korean, ["오늘", "어제", "30일"]),
+            (.japanese, ["今日", "昨日", "30日"])
+        ]
+        for (language, expected) in cases {
+            L10n.withLanguage(language) {
+                let shortened = labels.map { MenuBarContentBuilder.shortLabel(L10n.metrics($0), metricLabel: $0) }
+                XCTAssertEqual(shortened, expected)
+            }
+        }
     }
 
     func testAccountInitials() {

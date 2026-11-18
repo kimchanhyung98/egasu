@@ -330,12 +330,19 @@ final class ResetWatchPresentationTests: XCTestCase {
         var data = forecast(chance: 75, deadline: .distantFuture)
         data.displayMode = .remaining
 
-        let content = pinnedResetWatchMenuBar(data, now: Date())
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let content = pinnedResetWatchMenuBar(data, now: now)
 
         let item = try XCTUnwrap(content.items.first)
         XCTAssertEqual(item.id, "codex.resetWatch")
         XCTAssertEqual(item.label, "Reset Watch")
         XCTAssertEqual(item.value, "75%")
+
+        let bars = pinnedResetWatchMenuBar(data, now: now, style: .bars)
+        XCTAssertEqual(bars.items.count, 1)
+        XCTAssertEqual(bars.items.first?.id, "codex.resetWatch")
+        XCTAssertEqual(bars.items.first?.fraction, 0.75)
+        XCTAssertNotNil(MenuBarStripRenderer.image(for: bars, style: .bars))
     }
 
     func testPinnedForecastPublishesDeadlineAndBecomesZeroAtThatInstant() {

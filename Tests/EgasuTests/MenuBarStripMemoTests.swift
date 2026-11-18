@@ -26,11 +26,16 @@ final class MenuBarStripMemoTests: XCTestCase {
 
     func testBarsKeepOverflowAndUpdateMarkersAndEmptyFallback() throws {
         let plain = makeContent(value: "42%")
-        var decorated = plain
+        let plainImage = try XCTUnwrap(MenuBarStripRenderer.image(for: plain, style: .bars))
+        var updateOnly = plain
+        updateOnly.updateAvailable = true
+        let updateImage = try XCTUnwrap(MenuBarStripRenderer.image(for: updateOnly, style: .bars))
+        XCTAssertGreaterThan(updateImage.size.width, plainImage.size.width)
+
+        var decorated = updateOnly
         decorated.overflow = 3
-        decorated.updateAvailable = true
         let image = try XCTUnwrap(MenuBarStripRenderer.image(for: decorated, style: .bars))
-        XCTAssertGreaterThan(image.size.width, try XCTUnwrap(MenuBarStripRenderer.image(for: plain, style: .bars)).size.width)
+        XCTAssertGreaterThan(image.size.width, updateImage.size.width)
         XCTAssertLessThanOrEqual(image.size.height, 22)
         XCTAssertEqual(image.accessibilityDescription, decorated.accessibilityText)
         XCTAssertNil(MenuBarStripRenderer.image(for: MenuBarContent(items: []), style: .bars))
