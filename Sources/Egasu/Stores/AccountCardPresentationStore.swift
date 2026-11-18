@@ -29,12 +29,27 @@ final class AccountCardPresentationStore {
             case legacyModesByFamily = "modesByFamily"
         }
 
+        private struct FamilyKey: CodingKey {
+            let stringValue: String
+            var intValue: Int? { nil }
+
+            init(stringValue: String) {
+                self.stringValue = stringValue
+            }
+
+            init?(intValue: Int) { return nil }
+        }
+
         init() {}
 
         init(from decoder: Decoder) throws {
             let values = try decoder.container(keyedBy: CodingKeys.self)
             profileOrderByFamily = try values.decode([String: [String]].self, forKey: .profileOrderByFamily)
-            legacyModesByFamily = (try? values.decode([String: String].self, forKey: .legacyModesByFamily)) ?? [:]
+            if let modes = try? values.nestedContainer(keyedBy: FamilyKey.self, forKey: .legacyModesByFamily) {
+                for key in modes.allKeys {
+                    legacyModesByFamily[key.stringValue] = try? modes.decode(String.self, forKey: key)
+                }
+            }
         }
     }
 

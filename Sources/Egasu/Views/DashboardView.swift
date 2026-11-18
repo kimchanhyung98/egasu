@@ -241,6 +241,7 @@ struct DashboardView: View {
             )
         case .settings:
             SettingsScreen(operations: settingsOperations)
+                .environment(container.iCloudSync)
         }
     }
 }

@@ -4,7 +4,7 @@ import SwiftUI
 
 /// General 탭 — 앱 기본 동작·언어·모양, iCloud 동기화, 업데이트.
 struct SettingsGeneralTab: View {
-    @Environment(AppContainer.self) private var container
+    @Environment(ICloudUsageSyncStore.self) private var iCloudSync
     @Environment(PopoverState.self) private var popover
     @AppStorage(DashboardTab.defaultKey) private var defaultTab = DashboardTab.priority
     @AppStorage(LanguageSetting.key) private var language = LanguageSetting.current
@@ -53,7 +53,7 @@ struct SettingsGeneralTab: View {
                 $0.label
             }
         }
-        ICloudSyncSettingsSection(sync: container.iCloudSync)
+        ICloudSyncSettingsSection(sync: iCloudSync)
         SettingsUpdatesSection()
     }
 }

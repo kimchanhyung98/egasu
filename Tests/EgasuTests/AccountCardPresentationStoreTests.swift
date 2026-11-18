@@ -238,10 +238,35 @@ final class AccountCardPresentationStoreTests: XCTestCase {
         }
     }
 
+    func testMixedLegacyModesKeepEveryStringWhenReordering() throws {
+        let raw = Data(
+            #"""
+            {
+                "profileOrderByFamily": {"claude":["b","a"]},
+                "modesByFamily": {"claude":"separateCards","codex":42,"future":"futureMode","cursor":null}
+            }
+            """#.utf8)
+        defaults.set(raw, forKey: AccountCardPresentationStore.storageKey)
+        defaults.presentationWriteCount = 0
+        let profiles = [profile("a"), profile("b"), profile("c", family: "codex"), profile("d", family: "codex")]
+        let store = AccountCardPresentationStore(defaults: defaults)
+        XCTAssertNil(store.errorMessage)
+        XCTAssertEqual(store.orderedProfiles(profiles, family: "claude").map(\.id), ["b", "a"])
+        XCTAssertEqual(defaults.data(forKey: AccountCardPresentationStore.storageKey), raw)
+        XCTAssertEqual(defaults.presentationWriteCount, 0)
+
+        XCTAssertTrue(store.reorder(dragged: "d", target: "c", family: "codex", profiles: profiles))
+        let saved = try XCTUnwrap(defaults.data(forKey: AccountCardPresentationStore.storageKey))
+        let beta2 = try JSONDecoder().decode(Beta2Settings.self, from: saved)
+        XCTAssertEqual(beta2.modesByFamily, ["claude": "separateCards", "future": "futureMode"])
+        XCTAssertEqual(beta2.profileOrderByFamily, ["claude": ["b", "a"], "codex": ["d", "c"]])
+        XCTAssertEqual(defaults.presentationWriteCount, 1)
+    }
+
     func testMalformedOrMissingOrderStillBlocksWrites() {
         let profiles = [profile("a"), profile("b")]
         let invalidBlobs = [
-            #"{"profileOrderByFamily":{"claude":[42]},"modesByFamily":{"claude":"separateCards"}}"#,
+            #"{"profileOrderByFamily":{"claude":[42]},"modesByFamily":{"claude":"separateCards","codex":42}}"#,
             #"{"profileOrderByFamily":null,"modesByFamily":{"claude":"separateCards"}}"#,
             #"{"modesByFamily":{"claude":"separateCards"}}"#
         ]
