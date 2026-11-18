@@ -1,5 +1,10 @@
 import SwiftUI
 
+private enum ShareCardDimensions {
+    static let width: CGFloat = 360
+    static let inset: CGFloat = 16
+}
+
 /// 프로바이더 카드의 공유 이미지 — 머리글 + 계정 섹션(전체 또는 계정 하나).
 /// 폭·불투명 바탕(`ImageRenderer`에는 창 바탕이 없음)·강제 모양을 스스로 지정.
 struct ShareCardView: View {
@@ -10,8 +15,8 @@ struct ShareCardView: View {
     var blursAccountNames = false
     var layoutStyle = DashboardLayoutStyle.minimal
 
-    static let width: CGFloat = 360
-    static let inset: CGFloat = 16
+    static let width = ShareCardDimensions.width
+    static let inset = ShareCardDimensions.inset
 
     var body: some View {
         ShareCardFrame(appearance: appearance, blursAccountNames: blursAccountNames) {
@@ -48,10 +53,10 @@ struct ShareCardFrame<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             content
-                .padding(ShareCardView.inset)
+                .padding(ShareCardDimensions.inset)
             watermarkFooter
         }
-        .frame(width: ShareCardView.width, alignment: .topLeading)
+        .frame(width: ShareCardDimensions.width, alignment: .topLeading)
         .background(Theme.panelBody)
         .environment(\.drawsLevelsAsShapes, true)
         .environment(\.concealsAccountNames, blursAccountNames)
@@ -70,7 +75,7 @@ struct ShareCardFrame<Content: View>: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, ShareCardView.inset)
+        .padding(.horizontal, ShareCardDimensions.inset)
         .frame(maxWidth: .infinity, minHeight: 40)
         .background(Theme.cardFill)
         .overlay(alignment: .top) { Rectangle().fill(.separator).frame(height: 0.5) }

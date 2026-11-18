@@ -396,7 +396,23 @@ final class DashboardSnapshotTests: XCTestCase {
     func testShareCardRendersWithFooterBand() throws {
         let card = ShareCardView(family: codexFamily(), plans: ["codex": "Pro"], appearance: .light)
         let image = try XCTUnwrap(ShareCardRenderer.image(for: card))
+        let bodyOnly = DashboardProviderSection(
+            family: card.family.forSharing, layoutStyle: card.layoutStyle
+        ) { account in
+            DashboardAccountRows(
+                account: account, plan: card.plans[account.id], layoutStyle: card.layoutStyle, showsEmptyMessage: true
+            )
+        }
+        .padding(ShareCardView.inset)
+        .frame(width: ShareCardView.width, alignment: .topLeading)
+        .environment(\.drawsLevelsAsShapes, true)
+        .environment(\.concealsAccountNames, card.blursAccountNames)
+        .environment(\.hoverTooltipsDisabled, true)
+        .environment(\.colorScheme, card.appearance)
+        let bodyImage = try XCTUnwrap(ShareCardRenderer.image(for: bodyOnly))
+
         XCTAssertEqual(image.size.width, ShareCardView.width)
+        XCTAssertGreaterThanOrEqual(image.size.height - bodyImage.size.height, 40)
         try export(image, name: "share-light")
     }
 

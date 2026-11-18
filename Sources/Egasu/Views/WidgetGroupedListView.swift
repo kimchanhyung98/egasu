@@ -65,9 +65,9 @@ struct WidgetGroupedListView: View {
                 family: family,
                 serviceIssue: container.providerStatus.status(for: family.provider.id).issue,
                 isRevealed: isHovered,
-                onCopyScreenshot: { shareScreenshot(family.id) }
+                onCopyScreenshot: { shareScreenshot(family.id) },
+                reorderGesture: AnyGesture(familyDragGesture(for: family).map { _ in () })
             )
-            .highPriorityGesture(familyDragGesture(for: family))
         } account: { account in
             accountSection(account, in: family)
         }

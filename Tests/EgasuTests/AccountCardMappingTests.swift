@@ -242,6 +242,12 @@ final class AccountCardMappingTests: XCTestCase {
             try store.add(family: "codex", label: name, identityKey: "identity-\(index + 1)")
         }
         store.setPreferred(family: "codex", profileID: profiles[0].id)
+        let environment = FakeEnvironment()
+        let authStore = CodexAuthStore(environment: environment, files: FakeFiles(), keychain: FakeKeychain())
+        let scanner = CodexLogUsageScanner(environment: environment, incrementalScanner: IncrementalJSONLScanner())
+        let sharedMetricIDs: Set<String> = [
+            "codex.trend", "codex.today", "codex.yesterday", "codex.last30", "codex.resetWatch"
+        ]
 
         for sharedIdentity in [profiles[0].identityKey, profiles[1].identityKey, "identity-unregistered"] {
             let snapshots = AccountUsageCardPlanner.snapshotCards(
@@ -256,8 +262,17 @@ final class AccountCardMappingTests: XCTestCase {
                 profileIDsByCard: Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0.profileID) })
             )
             let mapping = AppContainer.accountProfileIDsByCardID(assembly: assembly, profiles: store)
+            let runtimes: [ProviderRuntime] = (["codex"] + snapshots.map(\.id)).map { cardID in
+                CodexProvider(
+                    provider: CodexProvider.makeProvider(id: cardID), authStore: authStore, logUsageScanner: scanner,
+                    includeSharedUsage: cardID == "codex"
+                )
+            }
+            let layout = LayoutStore(
+                registry: .from(runtimes), defaults: makeScratchDefaults(), profileIDsByCardID: mapping
+            )
             let ordered = AccountCardPresentationPlanner.orderedCardIDs(
-                ["codex"] + snapshots.map(\.id),
+                layout.displayGroups.map(\.id),
                 familyOrder: ["codex"],
                 orderedProfileIDsByFamily: ["codex": profiles.map(\.id)],
                 profileIDsByCardID: mapping
@@ -269,12 +284,11 @@ final class AccountCardMappingTests: XCTestCase {
 
             XCTAssertEqual(labels, names, "every registered account has one card, in account order")
             XCTAssertEqual(ordered.contains("codex"), sharedIdentity != "identity-unregistered")
-            // 공유 홈 전용 행은 공유 홈 카드(`codex`)에만 — 추가 계정 카드는 숨김.
-            for metric in ["trend", "today", "yesterday", "resetWatch"] {
-                XCTAssertEqual(
-                    ordered.filter { !AppContainer.hidesMetric("\($0).\(metric)", onCard: $0) },
-                    sharedIdentity == "identity-unregistered" ? [] : ["codex"]
-                )
+            for cardID in ordered {
+                let metricIDs = AppContainer.dashboardMetricDescriptors(for: cardID, in: layout).map(\.id)
+                XCTAssertTrue(Set(metricIDs).isSuperset(of: ["\(cardID).session", "\(cardID).weekly"]))
+                let sharedIDs = sharedMetricIDs.intersection(metricIDs.map(ProviderAccountID.canonicalMetricID))
+                XCTAssertEqual(sharedIDs, cardID == "codex" ? sharedMetricIDs : [])
             }
             XCTAssertEqual(store.preferredProfileID(family: "codex"), profiles[0].id)
             XCTAssertEqual(store.profiles(family: "codex").map(\.identityKey), profiles.map(\.identityKey))

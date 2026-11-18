@@ -17,7 +17,11 @@ final class AntigravityLayoutTests: XCTestCase {
 
         let group = store.customizeGroups.first { $0.provider.id == "antigravity" }
         XCTAssertEqual(group?.metrics.map(\.id), [
-            "antigravity.geminiPro", "antigravity.geminiWeekly", "antigravity.claude", "antigravity.claudeWeekly", "antigravity.argonWeekly"
+            "antigravity.geminiPro",
+            "antigravity.geminiWeekly",
+            "antigravity.claude",
+            "antigravity.claudeWeekly",
+            "antigravity.argonWeekly"
         ])
     }
 

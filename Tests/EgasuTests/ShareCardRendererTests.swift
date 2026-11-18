@@ -64,7 +64,7 @@ final class ShareCardRendererTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let provider = CodexProvider().provider
         let deadline = Date().addingTimeInterval(3600)
-        do {
+        for layoutStyle in DashboardLayoutStyle.allCases {
             for mode in [WidgetDisplayMode.used, .remaining] {
                 var quota = WidgetData(title: "Weekly", icon: provider.icon, kind: .percent, used: 95, limit: 100)
                 quota.softLimitUsedFraction = 0.95
@@ -79,7 +79,7 @@ final class ShareCardRendererTests: XCTestCase {
                 for appearance in [ColorScheme.light, .dark] {
                     let dashboard = VStack(spacing: 0) {
                         ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                            DashboardMetricRow(model: row.dashboardRow())
+                            DashboardMetricRow(model: row.dashboardRow(), layoutStyle: layoutStyle)
                         }
                     }
                     .padding(.horizontal, 14)
@@ -88,13 +88,15 @@ final class ShareCardRendererTests: XCTestCase {
                     .environment(\.colorScheme, appearance)
                     .environment(\.hoverTooltipsDisabled, true)
                     .defaultAppStorage(defaults)
-                    let card = ShareCardView(family: family(provider, rows: rows), appearance: appearance)
-                        .defaultAppStorage(defaults)
+                    let card = ShareCardView(
+                        family: family(provider, rows: rows), appearance: appearance, layoutStyle: layoutStyle
+                    )
+                    .defaultAppStorage(defaults)
                     for (name, image, width) in [
                         ("dashboard", ShareCardRenderer.image(for: dashboard), 320),
                         ("share", ShareCardRenderer.image(for: card), Int(ShareCardView.width))
                     ] {
-                        let rendered = try XCTUnwrap(image, "\(name), \(mode), \(appearance)")
+                        let rendered = try XCTUnwrap(image, "\(name), \(layoutStyle), \(mode), \(appearance)")
                         let rep = try XCTUnwrap(rendered.representations.first)
                         XCTAssertGreaterThan(rep.pixelsWide, 0)
                         XCTAssertEqual(rep.pixelsWide % width, 0)

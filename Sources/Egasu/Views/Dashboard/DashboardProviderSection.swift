@@ -62,8 +62,34 @@ struct DashboardProviderHeader: View {
     var serviceIssue: ProviderServiceIssue?
     var isRevealed = false
     var onCopyScreenshot: (() -> Bool)?
+    var reorderGesture: AnyGesture<Void>?
 
     var body: some View {
+        HStack(spacing: onCopyScreenshot == nil ? Theme.Spacing.s : 0) {
+            reorderArea(titleArea)
+            if let onCopyScreenshot {
+                CopyFeedbackButton(
+                    accessibilityLabel: L10n.dashboard("Copy %@ Screenshot", family.displayName),
+                    isRevealed: isRevealed,
+                    action: onCopyScreenshot
+                )
+                // 기존 슬롯 양쪽 여백을 28pt 버튼 입력 영역에 포함.
+                .frame(width: DashboardGrid.iconSize + 2 * Theme.Spacing.s)
+                .zIndex(1)
+            }
+            reorderArea(
+                ProviderIcon(source: family.provider.icon, inset: 0.04)
+                    .frame(width: DashboardGrid.iconSize, height: DashboardGrid.iconSize)
+                    .accessibilityHidden(true)
+            )
+        }
+        .padding(.horizontal, DashboardGrid.cardPadding)
+        .frame(height: DashboardGrid.headerHeight)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+
+    private var titleArea: some View {
         HStack(spacing: Theme.Spacing.s) {
             Text(family.displayName)
                 .font(DashboardGrid.headerFont)
@@ -80,21 +106,19 @@ struct DashboardProviderHeader: View {
                 }
             }
             Spacer(minLength: DashboardGrid.columnGap)
-            if let onCopyScreenshot {
-                CopyFeedbackButton(
-                    accessibilityLabel: L10n.dashboard("Copy %@ Screenshot", family.displayName),
-                    isRevealed: isRevealed,
-                    action: onCopyScreenshot
-                )
-            }
-            ProviderIcon(source: family.provider.icon, inset: 0.04)
-                .frame(width: DashboardGrid.iconSize, height: DashboardGrid.iconSize)
-                .accessibilityHidden(true)
         }
-        .padding(.horizontal, DashboardGrid.cardPadding)
-        .frame(height: DashboardGrid.headerHeight)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private func reorderArea<Content: View>(_ content: Content) -> some View {
+        if let reorderGesture {
+            content
+                .frame(height: DashboardGrid.headerHeight)
+                .contentShape(Rectangle())
+                .highPriorityGesture(reorderGesture)
+        } else {
+            content
+        }
     }
 }
 
