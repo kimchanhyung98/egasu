@@ -2,6 +2,41 @@
 
 This changelog starts with v0.8.0, the first release of this fork.
 
+## v1.0.0-beta.3
+
+### New Features
+
+- Claude·Kimi·Antigravity·Z.ai 활성 계정의 지원 한도에 구독 타이머 자동 시작 추가. 실행 전에 최신 한도와 인증을 확인하며, 전송하는 짧은 메시지는 구독 사용량을 소모할 수 있음. ([#183](https://github.com/kimchanhyung98/egasu/pull/183)) by @kimchanhyung98
+- Priority와 macOS 알림에 남은 한도, 예상 소진 속도, 초기화까지 남은 시간과 잔량을 반영. 빠른 소진과 초기화 전 사용의 Priority 표시·알림을 각각 설정. ([#185](https://github.com/kimchanhyung98/egasu/pull/185)) by @kimchanhyung98
+- Accounts에서 계정 추가와 순서를 관리. Claude·Codex 등록 계정의 이름 변경·재로그인·저장 로그인 전환·Keychain 접근 재시도 지원. OpenRouter·Z.ai는 API 키 관리 지원. Customize·Increase Transparency·Party Mode 제거. ([#186](https://github.com/kimchanhyung98/egasu/pull/186)) by @kimchanhyung98
+- All Usage에 기존 Density 설정을 대체하는 Minimal 목록과 계정별 Cards 추가. 계정별 조회 상태와 한도 지표의 초기화 시각 표시. 계정과 지표의 표시 순서는 Accounts에서 관리. ([#188](https://github.com/kimchanhyung98/egasu/pull/188)) by @kimchanhyung98
+- 저장한 기본 탭이 없으면 처음 여는 대시보드에 Priority 표시. 메뉴 막대에서 Running Out·Priority·Pinned Only 기준으로 지표를 최대 5개 표시. 저장한 Priority 고정 목록이 없고 기존 별표 설정이 기본값과 다르면, 표시 중이며 고정 가능한 별표 지표를 한 번 이전. 새 설치와 레이아웃 초기화에서 Codex Reset Watch 표시를 기본으로 켬. 알림은 별도 설정에서 켤 수 있으며 기본값은 꺼짐. ([#189](https://github.com/kimchanhyung98/egasu/pull/189)) by @kimchanhyung98
+- 기간별 내역에서 비용·토큰 상위 모델을 확인하고, Total Spend의 도넛 중앙이나 범례 값에서 비용·백만 토큰당 비용·토큰을 전환. Priority·프로바이더 섹션·Total Spend·기간별 내역을 PNG로 복사. 공유 이미지에서는 이메일이 포함된 계정명을 생략하거나 프로바이더명으로 표시. On Demand 지표를 일반 지표 뒤에 통합하며 각 구역의 상대 순서와 숨김 설정 유지. 오류·경고 없이 수집한 기록에서 빠진 기간은 지원 항목에 0을 표시. 실패·부분 수집에서 빠진 기간은 No data로 표시. ([#190](https://github.com/kimchanhyung98/egasu/pull/190)) by @kimchanhyung98
+- Settings를 General·Display·Alerts·Advanced로 재구성. 기본 탭, 로그인 시 실행, 전역 단축키, 대시보드와 메뉴 막대 표시, 알림을 각 탭에서 설정. 업데이트 피드가 없는 개발 빌드에서도 Beta Updates 선택은 저장하며 자동·수동 업데이트 확인은 비활성. ([#192](https://github.com/kimchanhyung98/egasu/pull/192)) by @kimchanhyung98
+- 사이트의 대시보드 미리보기와 기능 투어를 현재 앱에 맞게 갱신. 데스크톱과 모바일에서 예시 데이터로 Priority·All Usage·Total Spend와 기간별 내역을 탐색. ([#193](https://github.com/kimchanhyung98/egasu/pull/193)) by @kimchanhyung98
+- 웹 미리보기의 Customize를 Accounts와 Settings로 교체. 예시 계정명·순서·지표 표시·고정과 언어 설정을 같은 브라우저에서 복원. Privacy Mode에서 대시보드의 예시 계정명과 이메일을 가림. 예시 사용량이 없는 프로바이더는 Mac 앱 로그인 안내를 표시하며 미리보기에서 제거하거나 다시 추가할 수 있음. ([#194](https://github.com/kimchanhyung98/egasu/pull/194)) by @kimchanhyung98
+
+### Bug Fixes
+
+- 업데이트 배너를 닫으면 메뉴 막대의 업데이트 표시도 숨김. 자동 확인이 켜져 있고 업데이트가 계속 제공되면 다음 예약 확인에서 다시 표시. Beta Updates를 끄면 대기 중인 베타 제안을 철회하고 이미 시작한 다운로드·설치는 계속 진행. ([#191](https://github.com/kimchanhyung98/egasu/pull/191)) by @kimchanhyung98
+- 이전 카드 표시 설정이 남아 있어도 정상적인 계정 순서를 불러오고 다시 정렬할 수 있도록 수정. 순서 데이터를 읽을 수 없으면 기존 값을 보존하고 오류 표시. 같은 앱 실행 중 Settings로 돌아왔을 때 해결되지 않은 로그인 시 실행·언어 재시작·Terminal Helper 오류를 다시 표시. Codex 5시간·주간 구독 타이머의 공통 오류 안내를 영어·한국어·일본어에서 수정. ([#195](https://github.com/kimchanhyung98/egasu/pull/195)) by @kimchanhyung98
+
+### Refactor
+
+- 기존 Codex 기본 풀의 주간 타이머를 공통 처리 경로로 옮기고, 기본 풀의 5시간 타이머와 Spark 풀의 5시간·주간 타이머 자동 시작을 추가. 기존 전송 기록을 이어 읽고 계정·한도별 전송 상한 적용. ([#182](https://github.com/kimchanhyung98/egasu/pull/182)) by @kimchanhyung98
+- 기존 egasu·OpenUsage의 지표 표시·숨김·순서를 이전. 계정별 한도 지표와 같은 프로바이더의 계정이 공유하는 사용 이력의 표시·순서를 각각 관리. ([#184](https://github.com/kimchanhyung98/egasu/pull/184)) by @kimchanhyung98
+
+### Chores
+
+- CI에서 Intel 실행기로 Swift 테스트를 실행하고 ARM64 앱과 테스트를 교차 빌드. Swift·GitHub Actions·JavaScript/TypeScript의 CodeQL 검사 추가. ([#185](https://github.com/kimchanhyung98/egasu/pull/185)) by @kimchanhyung98
+- 사용량 수집·프로바이더·프록시·설정 가이드를 현재 앱에 맞게 정리. All Usage의 Minimal·Cards 화면 예시를 라이트·다크 모드로 갱신하고 개발 주석과 기여 지침 정리. ([#196](https://github.com/kimchanhyung98/egasu/pull/196)) by @kimchanhyung98
+
+---
+
+### Changelog
+
+**Full Changelog**: [v1.0.0-beta.2...v1.0.0-beta.3](https://github.com/kimchanhyung98/egasu/compare/432a4bcc51dc213dd01b2b86eaf87610491a6922...9b2ae9568db23b3d58ea6af3b82d8f54e0c20068)
+
 ## v1.0.0-beta.2
 
 ### New Features
