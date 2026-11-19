@@ -1,26 +1,35 @@
 import Foundation
 
-/// 기기에 이미 있는 user-supplied API key(환경 변수 또는 작은 JSON/plain-text config file) — credential을 남기는 동반 CLI/앱이 없는 provider(OpenRouter, Z.ai)용.
-/// read/status/save/delete 전부가 여기 있어 각 provider는 config 경로·env-var 이름·오류 메시지만 갖는 얇은 wrapper.
-/// Finder/Dock에서 실행된 GUI 앱은 interactive shell 환경을 상속하지 않음 — `ProcessEnvironmentReader`가 launch 시 login shell 환경을 capture(`LoginShellEnvironment`)해 shell profile의 export도 패키지 빌드에서 유효.
+/// OpenRouter와 Z.ai에서 설정 파일과 환경 변수의 API 키를 읽고 관리하는 공통 저장소.
 struct UserAPIKeyStore: Sendable {
-    /// wrapper가 자기 provider 오류로 매핑하는 save/delete 실패 — user-facing 메시지 보존.
+    /// 각 프로바이더의 사용자 안내에 필요한 저장·삭제 실패 유형.
     enum Failure { case missingKey, saveFailed, deleteFailed }
 
+    private struct UnreadableKey: LocalizedError, UserPresentableError, CategorizedError {
+        let presentationMessage = LocalizedMessage(
+            "Couldn't read the saved API key. Check the configuration file permissions.")
+        let errorCategory = ErrorCategory.credentialAccess
+        var errorDescription: String? { presentationMessage.key }
+    }
+
+    let providerID: String
     let configPaths: [String]
     let environmentNames: [String]
     var files: TextFileAccessing
     var environment: EnvironmentReading
     let makeError: @Sendable (Failure) -> Error
 
-    /// config file 우선, 환경 변수 차선 — config file이 키 교체 시 사용자가 편집하는 경로라 낡은 `launchctl setenv` 잔여값보다 우선.
-    func loadKey() -> String? {
-        keyFromConfigFile() ?? keyFromEnvironment()
+    /// 설정 파일을 먼저 확인하고, 읽기 실패는 대체할 환경 변수 키도 없을 때 전달.
+    func loadKey() throws -> String? {
+        let config = keyFromConfigFile()
+        if let key = config.key ?? keyFromEnvironment() { return key }
+        if config.unreadable { throw UnreadableKey() }
+        return nil
     }
 
-    /// 현재 key를 쥔 source 조합 — 4-state per-provider API-key 편집기 구동. 저장 key + env key는 config 우선이라 `overrideActive`.
+    /// 저장 파일과 환경 변수에 키가 있는지 확인해 편집 화면의 상태 결정.
     func keyStatus() -> APIKeyStatus {
-        let hasConfig = keyFromConfigFile() != nil
+        let hasConfig = keyFromConfigFile().key != nil
         let hasEnv = keyFromEnvironment() != nil
         switch (hasConfig, hasEnv) {
         case (true, true): return .overrideActive
@@ -30,31 +39,43 @@ struct UserAPIKeyStore: Sendable {
         }
     }
 
-    /// primary config file에 JSON `{"apiKey":"…"}`로 저장 — 낡은 env var보다 우선하므로 "override" 경로이기도 함. 빈 입력은 `.missingKey`.
+    /// 저장된 키가 환경 변수보다 우선하므로 첫 설정 파일에만 기록.
     func saveKey(_ key: String) throws {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw makeError(.missingKey) }
-        let data = try JSONSerialization.data(withJSONObject: ["apiKey": trimmed], options: [.sortedKeys])
-        guard let text = String(data: data, encoding: .utf8) else { throw makeError(.saveFailed) }
         do {
-            try files.writeText(configPaths[0], text)
+            let data = try JSONSerialization.data(withJSONObject: ["apiKey": trimmed], options: [.sortedKeys])
+            try files.writeText(configPaths[0], String(decoding: data, as: UTF8.self))
         } catch {
-            AppLog.error(.auth, "save API key to \(configPaths[0]) failed: \(error.localizedDescription)")
+            recordFileFailure(.credentialSave, error: error, context: "API key config write")
             throw makeError(.saveFailed)
         }
+        AppDiagnostics.record(.credentialSave, result: .success, providerID: providerID)
     }
 
-    /// primary만이 아닌 모든 config 경로에서 저장 key 제거 — 대체 경로의 key가 되살아나지 않도록. 없는 파일은 no-op.
+    /// 대체 파일의 키도 모두 지운 뒤 삭제 성공 기록. 환경 변수는 유지.
     func deleteKey() throws {
-        for path in configPaths {
-            guard files.exists(path) else { continue }
-            do {
+        do {
+            for path in configPaths {
                 try files.remove(path)
-            } catch {
-                AppLog.error(.auth, "delete API key at \(path) failed: \(error.localizedDescription)")
-                throw makeError(.deleteFailed)
             }
+        } catch {
+            recordFileFailure(.accountRemove, error: error, context: "API key config removal")
+            throw makeError(.deleteFailed)
         }
+        AppDiagnostics.record(.accountRemove, result: .success, providerID: providerID)
+    }
+
+    private func recordFileFailure(_ operation: DiagnosticOperation, error: Error, context: String) {
+        let category: ErrorCategory
+        if let posix = error as? POSIXError {
+            category = [.EACCES, .EPERM].contains(posix.code) ? .permission : .storage
+        } else {
+            category = ErrorCategory.classify(error)
+        }
+        AppDiagnostics.record(
+            operation, result: .failure, category: category, providerID: providerID, error: error, localContext: context
+        )
     }
 
     private func keyFromEnvironment() -> String? {
@@ -67,14 +88,18 @@ struct UserAPIKeyStore: Sendable {
         return nil
     }
 
-    private func keyFromConfigFile() -> String? {
+    private func keyFromConfigFile() -> (key: String?, unreadable: Bool) {
+        var unreadable = false
         for path in configPaths {
-            guard files.exists(path), let text = try? files.readText(path) else { continue }
-            if let key = Self.keyFromConfigText(text) {
-                return key
+            do {
+                if let text = try files.readTextIfPresent(path), let key = Self.keyFromConfigText(text) {
+                    return (key, false)
+                }
+            } catch {
+                unreadable = true
             }
         }
-        return nil
+        return (nil, unreadable)
     }
 
     /// `apiKey` / `api_key` / `key`를 가진 JSON 객체 또는 key만 담긴 plain-text 파일 허용.

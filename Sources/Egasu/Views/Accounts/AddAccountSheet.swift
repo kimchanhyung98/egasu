@@ -160,7 +160,6 @@ private struct APIKeyAddStep: View {
             try provider.saveAPIKey(trimmedKey)
         } catch {
             self.error = UserFacingErrors.message(error)
-            AppLog.error(.auth, "API key save failed for \(provider.provider.id): \(error.localizedDescription)")
             return
         }
         let id = provider.provider.id

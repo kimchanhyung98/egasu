@@ -99,7 +99,6 @@ struct APIKeyRows: View {
             refreshAfterCredentialChange()
         } catch {
             self.error = UserFacingErrors.message(error)
-            AppLog.error(.auth, "API key save failed for \(provider.provider.id): \(error.localizedDescription)")
         }
     }
 

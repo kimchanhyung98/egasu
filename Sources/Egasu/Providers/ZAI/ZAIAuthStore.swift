@@ -51,6 +51,7 @@ struct ZAIAuthStore: Sendable {
         environment: EnvironmentReading = ProcessEnvironmentReader()
     ) {
         store = UserAPIKeyStore(
+            providerID: "zai",
             configPaths: Self.configPaths,
             environmentNames: Self.environmentNames,
             files: files,
@@ -59,8 +60,13 @@ struct ZAIAuthStore: Sendable {
         )
     }
 
-    func loadAPIKey() -> ZAIAuth? { store.loadKey().map(ZAIAuth.init(apiKey:)) }
-    func currentAPIKey() -> String? { store.loadKey() }
+    func requireAPIKey() throws -> ZAIAuth {
+        guard let key = try store.loadKey() else { throw ZAIAuthError.missingKey }
+        return ZAIAuth(apiKey: key)
+    }
+
+    func loadAPIKey() -> ZAIAuth? { try? requireAPIKey() }
+    func currentAPIKey() -> String? { loadAPIKey()?.apiKey }
     func keyStatus() -> APIKeyStatus { store.keyStatus() }
     func saveAPIKey(_ key: String) throws { try store.saveKey(key) }
     func deleteAPIKey() throws { try store.deleteKey() }

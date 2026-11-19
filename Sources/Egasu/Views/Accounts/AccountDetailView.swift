@@ -280,23 +280,19 @@ struct ProviderAccountRows: View {
                 container.setProviderEnabled($0, for: $1)
             }
         } catch {
-            AppLog.error(.auth, "API key delete failed for \(provider.id): \(error.localizedDescription)")
             self.error = UserFacingErrors.message(error)
             return
         }
         onRemoved()
     }
 
-    /// 앱이 저장한 키만 지우고(환경 변수 키는 그대로) 추적을 끔 — 로컬 로그인 파일은 건드리지 않음.
-    /// 키 삭제가 실패하면 끄지 않음(재시도 가능).
+    /// 설정 파일 삭제가 끝나면 추적 해제. UI에 보이는 키 상태와 무관하게 저장 파일을 확인.
     static func remove(
         providerID: String,
         keyProvider: (any APIKeyManaging)?,
         setEnabled: (Bool, String) -> Void
     ) throws {
-        if let keyProvider, [.saved, .overrideActive].contains(keyProvider.apiKeyStatus) {
-            try keyProvider.deleteAPIKey()
-        }
+        try keyProvider?.deleteAPIKey()
         setEnabled(false, providerID)
     }
 }

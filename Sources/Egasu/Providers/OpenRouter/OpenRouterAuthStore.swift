@@ -51,6 +51,7 @@ struct OpenRouterAuthStore: Sendable {
         environment: EnvironmentReading = ProcessEnvironmentReader()
     ) {
         store = UserAPIKeyStore(
+            providerID: "openrouter",
             configPaths: Self.configPaths,
             environmentNames: Self.environmentNames,
             files: files,
@@ -59,8 +60,13 @@ struct OpenRouterAuthStore: Sendable {
         )
     }
 
-    func loadAPIKey() -> OpenRouterAuth? { store.loadKey().map(OpenRouterAuth.init(apiKey:)) }
-    func currentAPIKey() -> String? { store.loadKey() }
+    func requireAPIKey() throws -> OpenRouterAuth {
+        guard let key = try store.loadKey() else { throw OpenRouterAuthError.missingKey }
+        return OpenRouterAuth(apiKey: key)
+    }
+
+    func loadAPIKey() -> OpenRouterAuth? { try? requireAPIKey() }
+    func currentAPIKey() -> String? { loadAPIKey()?.apiKey }
     func keyStatus() -> APIKeyStatus { store.keyStatus() }
     func saveAPIKey(_ key: String) throws { try store.saveKey(key) }
     func deleteAPIKey() throws { try store.deleteKey() }

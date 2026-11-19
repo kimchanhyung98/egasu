@@ -318,3 +318,4 @@
 "Check access to your shell settings and Claude login files, then restart egasu." = "Check access to your shell settings and Claude login files, then restart egasu.";
 "Another egasu process is migrating the Claude login. Restart egasu after it finishes." = "Another egasu process is migrating the Claude login. Restart egasu after it finishes.";
 "Unlock your Keychain and restart egasu. Allow access to the Claude login if macOS asks." = "Unlock your Keychain and restart egasu. Allow access to the Claude login if macOS asks.";
+"Couldn't read the saved API key. Check the configuration file permissions." = "Couldn't read the saved API key. Check the configuration file permissions.";
