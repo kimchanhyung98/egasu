@@ -13,6 +13,22 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
     let password = "fixture-safe-storage-password"
     let now = Date(timeIntervalSince1970: 1_800_000_000)
 
+    func testDesktopCredentialErrorsLogAccessAndInvalidDataSeparately() {
+        let accessErrors: [ClaudeDesktopCredentialError] = [
+            .permissionRequired, .invalidSafeStorageKey, .keychainFailure(-50)
+        ]
+        let invalidErrors: [ClaudeDesktopCredentialError] = [
+            .invalidCiphertext, .invalidAccountMetadata, .decryptionFailed(-1)
+        ]
+
+        for error in accessErrors {
+            XCTAssertTrue(AppLog.errorDetails(error).hasPrefix("category=credential_access "))
+        }
+        for error in invalidErrors {
+            XCTAssertTrue(AppLog.errorDetails(error).hasPrefix("category=auth_invalid "))
+        }
+    }
+
     func testDecryptsElectronSafeStorageValue() throws {
         let key = try ClaudeDesktopAuthStore.deriveKey(password: password)
         let plaintext = Data(#"{"token":"secret"}"#.utf8)
