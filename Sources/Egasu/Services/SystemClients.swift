@@ -33,6 +33,7 @@ struct ProcessEnvironmentReader: EnvironmentReading {
 
 protocol TextFileAccessing: Sendable {
     func exists(_ path: String) -> Bool
+    func readDataIfPresent(_ path: String) throws -> Data?
     /// UTF-8 파일 존재 시 read — `nil`은 경로 부재만 의미.
     /// 권한·인코딩 실패는 throw — 저장소 고장을 로그아웃으로 오인 금지.
     func readTextIfPresent(_ path: String) throws -> String?
@@ -43,6 +44,10 @@ protocol TextFileAccessing: Sendable {
 }
 
 extension TextFileAccessing {
+    func readDataIfPresent(_ path: String) throws -> Data? {
+        try readTextIfPresent(path).map { Data($0.utf8) }
+    }
+
     /// 테스트 double용 호환 경로 — production accessor는 read 에러를 직접 분류해 exists-then-read race 없음.
     func readTextIfPresent(_ path: String) throws -> String? {
         guard exists(path) else { return nil }
@@ -57,6 +62,53 @@ struct LocalTextFileAccessor: TextFileAccessing {
 
     func exists(_ path: String) -> Bool {
         FileManager.default.fileExists(atPath: expandHome(path))
+    }
+
+    func readDataIfPresent(_ path: String) throws -> Data? {
+        // 대상이 없는 심볼릭 링크는 경로 부재이며 순환 링크는 읽기 오류.
+        guard let resolved = realpath(expandHome(path), nil) else {
+            if errno == ENOENT { return nil }
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        defer { free(resolved) }
+        do {
+            return try Self.readRegularFile(URL(fileURLWithPath: String(cString: resolved)))
+        } catch let error as POSIXError where error.code == .ENOENT {
+            return nil
+        }
+    }
+
+    static func readRegularFile(_ url: URL) throws -> Data {
+        let fd = Darwin.open(url.path, O_RDONLY | O_CLOEXEC | O_NONBLOCK | O_NOFOLLOW)
+        guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        var info = stat()
+        guard fstat(fd, &info) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        guard info.st_mode & S_IFMT == S_IFREG else { throw POSIXError(.EFTYPE) }
+        return try handle.readToEnd() ?? Data()
+    }
+
+    static func exchangeFiles(_ first: URL, with second: URL) throws {
+        guard renamex_np(first.path, second.path, UInt32(RENAME_SWAP)) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+    }
+
+    /// 실제 교체된 파일을 검사. 다른 편집을 발견하면 복원하고, 추가 경합 시 그 파일도 보존.
+    static func verifyExchangedFile(
+        at displaced: URL, target: URL, expected: Data, updated: Data
+    ) throws -> Bool {
+        guard (try? readRegularFile(displaced)) == expected else {
+            if (try? readRegularFile(target)) == updated {
+                try exchangeFiles(displaced, with: target)
+                if (try? readRegularFile(displaced)) == updated {
+                    try FileManager.default.removeItem(at: displaced)
+                }
+            }
+            return false
+        }
+        try FileManager.default.removeItem(at: displaced)
+        return true
     }
 
     func readText(_ path: String) throws -> String {

@@ -116,7 +116,8 @@ struct ManagedAccountSignInStep: View {
             defer {
                 if let pendingWorkspace {
                     importer.cleanup(family: family, context: "remove unregistered sign-in workspace") {
-                        try importer.removeSignInWorkspace(family: family, profileID: pendingWorkspace)
+                        try importer.discardUnregisteredSignInWorkspace(
+                            family: family, profileID: pendingWorkspace, in: store)
                     }
                 }
             }
@@ -173,8 +174,6 @@ struct ManagedAccountSignInStep: View {
                                 "The %@ sign-in finished without a usable credential. Nothing was added.", familyTitle))
                         return
                     }
-                    // 등록을 시작하면 작업 공간 정리도 register가 담당.
-                    pendingWorkspace = nil
                     _ = try importer.register(
                         credential,
                         family: family,
@@ -182,6 +181,7 @@ struct ManagedAccountSignInStep: View {
                         id: profileID,
                         into: store
                     )
+                    pendingWorkspace = nil
                 } else {
                     guard try await importer.importDefaultAccount(family: family, into: store) != nil else {
                         AppDiagnostics.record(.accountAdd, result: .failure, category: .authInvalid, providerID: family)

@@ -60,8 +60,10 @@ final class ClaudeIdentityRecoveryTests: XCTestCase {
         XCTAssertEqual(refreshEvents, [.init(.credentialRefresh, result: .bindingChanged, providerID: "claude")])
     }
 
-    func testInvalidGrantIsSubmittedOnceForIdenticalKeychainAndFileCredentials() async {
-        let files = FakeFiles([path: refreshableCredentials, metadataPath: claudeUsageTestIdentity()])
+    func testInvalidGrantIsSubmittedOnceForKeychainAndFileWithTheSameGrant() async {
+        let fallback = refreshableCredentials.replacingOccurrences(of: "\"token\"", with: "\"file-expired\"")
+        XCTAssertNotEqual(fallback, refreshableCredentials)
+        let files = FakeFiles([path: fallback, metadataPath: claudeUsageTestIdentity()])
         let keychain = ServiceKeychain()
         let auth = authStore(files: files, keychain: keychain)
         keychain.currentUserValues[auth.keychainServiceCandidates().first!] = refreshableCredentials
@@ -74,8 +76,7 @@ final class ClaudeIdentityRecoveryTests: XCTestCase {
 
         XCTAssertFalse(result.lines.isEmpty)
         XCTAssertTrue(result.lines.allSatisfy(\.isError))
-        XCTAssertEqual(http.requests.filter { $0.url.path.hasSuffix("/token") }.count, 1)
-        XCTAssertFalse(http.requests.contains { $0.url.path.hasSuffix("/usage") })
+        XCTAssertEqual(http.requests.map(\.url.path), ["/v1/oauth/token", "/api/oauth/profile"])
     }
 
     func testFileAccessTokenStillWorksAfterSharedRefreshGrantIsRejected() async {

@@ -250,16 +250,18 @@ extension ClaudeProvider {
         config: ClaudeOAuthConfig
     ) async throws -> RefreshedAccess {
         // 같은 조회의 다른 출처에 복사된 폐기 토큰은 한 번만 제출.
-        if let error = rejectedGrant?.error(matching: state.oauth, config: config) {
+        if rejectedGrant?.rejectsRefreshGrant(for: state.oauth, config: config) == true {
             try await validateUsageCredentials(state, expected: expectedGeneration)
-            throw error
+            throw ClaudeAuthError.sessionExpired
         }
         let allowAccountInteraction = ProviderRefreshContext.isManual
-        let managesRotation = try await loadOffMainActor { [authStore] in
+        let rotationCandidate = state
+        let rotation = try await loadOffMainActor { [authStore] in
             try authStore.beginManagedRotation(
-                ifUnchanged: expectedGeneration, allowAccountInteraction: allowAccountInteraction)
+                for: rotationCandidate, ifUnchanged: expectedGeneration,
+                allowAccountInteraction: allowAccountInteraction)
         }
-        defer { if managesRotation { AccountCredentialMutationLock.endClaudeRotation() } }
+        defer { withExtendedLifetime(rotation) {} }
         try Task.checkCancellation()
         AppLog.info(LogTag.auth("claude"), "token refresh attempt")
         let decoded: ClaudeRefreshResponse

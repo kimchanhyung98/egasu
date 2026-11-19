@@ -260,9 +260,9 @@ final class OpenCodeUsageScannerTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
 
-        let path = "private-workspace.fixture"
-        let sqlite = FakeSQLite(failing: [path])
-        let scanner = OpenCodeUsageScanner(sqlite: sqlite, databasePaths: { [path] })
+        let paths = ["/private-workspace/opencode-account-a.db", "/private-workspace/opencode-account-b.db"]
+        let sqlite = FakeSQLite(failing: Set(paths))
+        let scanner = OpenCodeUsageScanner(sqlite: sqlite, databasePaths: { paths })
         XCTAssertFalse(scanner.hasHostedUsage())
         do {
             _ = try await scanner.scan(now: now)
@@ -272,9 +272,12 @@ final class OpenCodeUsageScannerTests: XCTestCase {
         }
 
         let logged = try String(contentsOf: directory.appendingPathComponent("test.log"), encoding: .utf8)
-        XCTAssertTrue(logged.contains("history scan failed stage=schema_probe category=storage"))
-        XCTAssertTrue(logged.contains("history probe failed stage=usage_query category=storage"))
-        XCTAssertFalse(logged.contains(path))
+        for index in 1...paths.count {
+            XCTAssertTrue(logged.contains("history scan failed db_index=\(index) stage=schema_probe category=storage"))
+            XCTAssertTrue(logged.contains("history probe failed db_index=\(index) stage=usage_query category=storage"))
+        }
+        XCTAssertFalse(logged.contains("private-workspace"))
+        XCTAssertFalse(logged.contains("opencode-account-"))
         XCTAssertFalse(logged.contains("private SQLite message"))
     }
 
