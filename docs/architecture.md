@@ -449,7 +449,6 @@ egasu는 macOS 15(Sequoia) 이상에서 실행.
 최신 SDK로 빌드하면서 macOS 15도 지원.
 macOS 26(Tahoe)에서 사용하는 Liquid Glass 등 최신 UI API는 이전 버전에서 대응 기능으로 대체.
 공통 컨트롤의 버전 분기는 `Support/LiquidGlassFallbacks.swift`에서 관리.
-특수 효과인 `Support/TooMuchTransparencyEffect.swift`도 별도 버전 분기 사용.
 
 릴리스 빌드(`script/release.sh`)는 유니버설 바이너리(arm64 + x86_64)를 제공하므로, DMG 하나로 Apple Silicon과 Intel Mac 모두에서 네이티브 실행.
 개발 빌드(`script/build_and_run.sh`)는 빌드하는 Mac의 아키텍처만 생성해 빌드 시간 절약.

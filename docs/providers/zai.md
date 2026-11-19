@@ -81,7 +81,9 @@ egasu의 Z.ai 조회에는 사용자가 제공한 API 키 필요.
 5. **Add Account** 선택.
 
 조회에 성공하면 대시보드에 사용량 표시.
-지표를 고정하고 **Menu Bar Items**에서 **Priority** 또는 **Pinned Only**를 선택하면 메뉴 막대 표시 대상에 포함.
+소진 임박 한도는 고정 여부와 관계없이 **Running Out**과 **Priority**의 메뉴 막대 표시 대상에 포함.
+**Priority**는 고정한 지표를 먼저 표시하고 **Pinned Only**는 고정한 지표만 표시.
+표시 개수와 나머지 선택 조건은 [메뉴 막대 표시 항목](/docs/menu-bar.md#표시-항목) 참조.
 
 ### 환경 변수로 키 제공
 

@@ -15,7 +15,9 @@
 설정 위치는 [Settings → Display → Menu Bar Icons](/docs/settings.md#메뉴-막대-아이콘).
 
 - **Icon Style**에서 Text(프로바이더 마크·이름·값) 또는 Bars(한 아이콘에 쌓은 막대) 선택.
-  저장값이 없으면 기본값 Text.
+  이전 버전에서 기본 Bars를 쓰면서 스타일을 저장한 적이 없으면 업데이트 후 Text로 표시.
+  직접 저장한 스타일은 업데이트 후에도 유지.
+  새 설치의 기본값은 Text.
   선택은 즉시 적용하고 앱 재실행 뒤에도 유지.
 - **Menu Bar Items**에서 표시 기준 선택.
   - **Running Out**(기본): 곧 소진될 한도만 표시.

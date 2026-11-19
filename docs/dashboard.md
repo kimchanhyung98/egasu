@@ -335,6 +335,8 @@ All Usage의 프로바이더 섹션 공유 이미지는 현재 표시 중인 계
 | 계정 줄 | 계정 상태(문제가 있을 때), **Use {Provider}: {name}**(새 터미널 세션 계정이 아닐 때), **Refresh**, **Rename**(Claude·Codex 등록 계정), **Edit Account…** |
 | 섹션 머리 | **Refresh**, **Manage Accounts…**, 프로바이더 페이지 링크(Status, Console 등) |
 
+- 계정 추적·등록은 섹션 머리의 **Manage Accounts…**에서 관리.
+  **Remove Account…**가 계정 종류별로 지우는 데이터는 [계정 상세](/docs/accounts.md#계정-상세) 참조.
 - Priority 행 우클릭은 **Pin**/**Unpin**과 **Hide**만 표시.
 - **Hide**는 계정별 지표를 그 계정에서, 공통 지표를 프로바이더 전체에서 숨김.
   숨긴 지표는 All Usage·Priority·메뉴 막대에서 제외하고 해당 고정 해제.

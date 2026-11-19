@@ -6,6 +6,36 @@ import XCTest
 @MainActor
 final class AccountNamePrivacyRenderingTests: XCTestCase {
 
+    func testPrivacyBlursTheRenderedDashboardName() throws {
+        let account = DashboardAccount(
+            provider: MockData.codex, providerName: "Codex", name: "Private Alias", lines: [])
+        func darkestPixel(concealed: Bool) throws -> CGFloat {
+            let view = DashboardAccountCaption(account: account)
+                .environment(\.concealsAccountNames, concealed)
+                .environment(\.colorScheme, .light)
+                .padding(8)
+                .frame(width: 130)
+                .background(.white)
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 2
+            let bitmap = NSBitmapImageRep(cgImage: try XCTUnwrap(renderer.cgImage))
+            var minimum: CGFloat = 1
+            for y in 0..<bitmap.pixelsHigh {
+                for x in 0..<bitmap.pixelsWide {
+                    let color = try XCTUnwrap(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceGray))
+                    minimum = min(minimum, color.whiteComponent)
+                }
+            }
+            return minimum
+        }
+
+        let visible = try darkestPixel(concealed: false)
+        let blurred = try darkestPixel(concealed: true)
+        XCTAssertLessThan(visible, 0.9)
+        XCTAssertGreaterThan(blurred, visible + 0.05)
+        XCTAssertLessThan(blurred, 0.99)
+    }
+
     func testInlineEditorShowsAndCommitsTheUnmaskedAccountName() async throws {
         var savedName = "Private Alias"
         let renaming = AccountRenameStore(
