@@ -28,6 +28,35 @@ final class DashboardTabSwitchTests: XCTestCase {
         try await waitUntil { model.selection == "B" }
     }
 
+    func testOnlyPagesWithFooterActionsReserveBottomScrollSpace() async throws {
+        let footerHeight: CGFloat = 47
+        let routes: [(PopoverScreen, String?, CGFloat)] = [
+            (.settings, nil, 0), (.accounts, "codex", 0), (.accounts, nil, footerHeight),
+            (.dashboard, nil, footerHeight)
+        ]
+        for (screen, accountID, expectedInset) in routes {
+            var bottomInset: CGFloat?
+            _ = show(
+                PopoverScrollView { Color.blue.frame(height: 500) }
+                    .onScrollGeometryChange(for: EdgeInsets.self) {
+                        $0.contentInsets
+                    } action: { _, insets in
+                        if insets.top > 0 { bottomInset = insets.bottom }
+                    }
+                    .panelBars {
+                        Color.clear.frame(height: 30)
+                    } bottom: {
+                        PopoverFooter(screen: screen, accountDetailID: accountID).map { _ in
+                            Color.clear.frame(height: footerHeight)
+                        }
+                    },
+                size: CGSize(width: PanelMetrics.width, height: 200))
+            try await waitUntil { bottomInset != nil }
+            let inset = try XCTUnwrap(bottomInset)
+            XCTAssertEqual(inset, expectedInset, accuracy: 1, "\(screen) \(accountID ?? "")")
+        }
+    }
+
     /// 탭 전환은 패널이 새 높이를 받기 한 프레임 전에 새 행을 그림 — 그동안 아래 바가 패널 색으로 가림.
     func testTheBottomBarCoversContentOnlyWhileThePanelIsAtAnotherHeight() async throws {
         let barHeight: CGFloat = 30

@@ -155,7 +155,6 @@
 
 "%lld%% left" = "%lld%% left";
 "Alert when Reset Watch expects Codex limits to reset soon" = "Alert when Reset Watch expects Codex limits to reset soon";
-"Always Shown" = "Always Shown";
 "Check Automatically" = "Check Automatically";
 "Codex" = "Codex";
 "Combined spend across your providers at the top of the dashboard" = "Combined spend across your providers at the top of the dashboard";
@@ -178,7 +177,7 @@
 "Thresholds" = "Thresholds";
 "Usage" = "Usage";
 "When a limit turns critically low" = "When a limit turns critically low";
-"When a limit turns into a priority" = "When a limit turns into a priority";
+"When remaining quota becomes low" = "When remaining quota becomes low";
 "Where usage would be at an even pace" = "Where usage would be at an even pace";
 "Will run out before it resets" = "Will run out before it resets";
 "Experimental features may change or be removed." = "Experimental features may change or be removed.";

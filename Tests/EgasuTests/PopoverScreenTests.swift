@@ -23,6 +23,55 @@ final class PopoverScreenTests: XCTestCase {
         XCTAssertEqual(state.settingsTab, .general)
     }
 
+    func testHiddenPriorityTabUsesAllUsageAndRestoresLastSelection() throws {
+        let suiteName = "EgasuTests.PopoverScreen.PriorityVisibility.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let display = DisplaySettingsStore(defaults: defaults)
+        let state = PopoverState(dashboardTab: .priority, defaults: defaults, displaySettings: display)
+
+        display.showsWarning = false
+        display.showsCritical = false
+        display.showsBurningFast = false
+        XCTAssertTrue(state.showsDashboardTabs)
+        XCTAssertEqual(state.dashboardTab, .priority)
+        display.showsUseItOrLoseIt = false
+
+        XCTAssertFalse(state.showsDashboardTabs)
+        XCTAssertEqual(state.dashboardTab, .allUsage)
+        state.screen = .settings
+        state.reset()
+        state.show()
+        XCTAssertEqual(state.dashboardTab, .allUsage)
+        display.showsCritical = true
+        XCTAssertTrue(state.showsDashboardTabs)
+        XCTAssertEqual(state.dashboardTab, .priority)
+
+        state.dashboardTab = .allUsage
+        display.showsCritical = false
+        display.showsWarning = true
+        XCTAssertEqual(state.dashboardTab, .allUsage)
+    }
+
+    func testLaunchWithHiddenPriorityTabHonorsDisplaySettingsAndPreservesDefault() throws {
+        let suiteName = "EgasuTests.PopoverScreen.HiddenDefaultTab.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let display = DisplaySettingsStore(defaults: defaults)
+        display.showsWarning = false
+        display.showsCritical = false
+        display.showsBurningFast = false
+        display.showsUseItOrLoseIt = false
+
+        for defaultTab in DashboardTab.allCases {
+            defaults.set(defaultTab.rawValue, forKey: DashboardTab.defaultKey)
+            let state = PopoverState(defaults: defaults)
+            XCTAssertFalse(state.showsDashboardTabs)
+            XCTAssertEqual(state.dashboardTab, .allUsage)
+            XCTAssertEqual(DashboardTab.preferred(in: defaults), defaultTab)
+        }
+    }
+
     func testScreensReplaceEachOtherAndRecordSlide() {
         let state = PopoverState()
         state.screen = .accounts

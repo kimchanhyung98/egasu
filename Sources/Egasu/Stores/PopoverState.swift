@@ -70,7 +70,15 @@ final class PopoverState {
     var isAddingAccount = false
     /// 브라우저 재로그인이 진행 중인 등록 계정 — 취소 처리가 끝날 때까지 외부 클릭으로 닫지 않음.
     var signingInAgainAccountID: String?
-    var dashboardTab: DashboardTab
+    private let displaySettings: DisplaySettingsStore
+    private var selectedDashboardTab: DashboardTab
+    var showsDashboardTabs: Bool { displaySettings.hasVisiblePriorityConditions }
+
+    /// 표시 조건이 모두 꺼져 있는 동안에도 마지막 탭 선택을 보존.
+    var dashboardTab: DashboardTab {
+        get { showsDashboardTabs ? selectedDashboardTab : .allUsage }
+        set { selectedDashboardTab = newValue }
+    }
     var settingsTab = SettingsTab.general
     /// 패널 표시 여부 — makeKeyAndOrderFront·orderOut과 동기 변경.
     /// 창 가림·키 창 상태로 추정하지 않음 — Space 전환 중 잠깐 가려지는 상태와 닫힘 구분.
@@ -78,8 +86,12 @@ final class PopoverState {
 
     let shareNotice = TransientNotice<Bool>(clearedValue: false, timeout: .seconds(2.5))
 
-    init(dashboardTab: DashboardTab? = nil, defaults: UserDefaults = .standard) {
-        self.dashboardTab = dashboardTab ?? .preferred(in: defaults)
+    init(
+        dashboardTab: DashboardTab? = nil, defaults: UserDefaults = .standard,
+        displaySettings: DisplaySettingsStore? = nil
+    ) {
+        self.displaySettings = displaySettings ?? DisplaySettingsStore(defaults: defaults)
+        selectedDashboardTab = dashboardTab ?? .preferred(in: defaults)
     }
 
     func reconcileSettingsTab(betaUpdatesEnabled: Bool) {

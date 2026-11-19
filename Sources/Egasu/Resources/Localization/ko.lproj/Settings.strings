@@ -155,7 +155,6 @@
 
 "%lld%% left" = "%lld%% 남음";
 "Alert when Reset Watch expects Codex limits to reset soon" = "Reset Watch가 Codex 한도 초기화가 곧 있을 것으로 예상하면 알림";
-"Always Shown" = "항상 표시";
 "Check Automatically" = "자동으로 확인";
 "Codex" = "Codex";
 "Combined spend across your providers at the top of the dashboard" = "대시보드 상단에 프로바이더 전체 지출 합계 표시";
@@ -178,7 +177,7 @@
 "Thresholds" = "경고 기준";
 "Usage" = "사용량";
 "When a limit turns critically low" = "한도가 위험할 만큼 줄어드는 기준";
-"When a limit turns into a priority" = "한도를 우선순위에 올리는 기준";
+"When remaining quota becomes low" = "남은 한도가 경고 수준으로 줄어드는 기준";
 "Where usage would be at an even pace" = "고르게 썼다면 지금 사용량이 있을 위치";
 "Will run out before it resets" = "초기화 전에 소진될 예상";
 "Experimental features may change or be removed." = "실험 기능은 변경되거나 사라질 수 있습니다.";

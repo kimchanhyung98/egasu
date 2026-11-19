@@ -31,12 +31,14 @@ struct DashboardContentView: View {
                     TotalSpendCard()
                         .padding(.bottom, PanelMetrics.sectionSpacing)
                 }
-                CapsuleSegments(
-                    options: DashboardTab.allCases.map { ($0, $0.label) },
-                    selection: Bindable(popover).dashboardTab,
-                    selectsOnPress: true
-                )
+                if popover.showsDashboardTabs {
+                    CapsuleSegments(
+                        options: DashboardTab.allCases.map { ($0, $0.label) },
+                        selection: Bindable(popover).dashboardTab,
+                        selectsOnPress: true
+                    )
                     .padding(.bottom, PanelMetrics.sectionSpacing)
+                }
                 widgetContent
             }
             .animation(Motion.spring, value: updater.availableUpdateVersion)

@@ -19,7 +19,7 @@ extension View {
     /// 위쪽 바 아래는 내용 가림, 아래쪽 바 뒤는 흐림 — macOS 27 시스템 효과, 이전 버전은 별도 흐림 뷰 사용.
     /// 아래 바 밑에 내용이 없으면 아무것도 그리지 않음.
     /// 패널이 아직 페이지 높이에 맞지 않는 동안은 아래 바가 밑의 내용을 패널 색으로 가림.
-    func panelBars(@ViewBuilder top: () -> some View, @ViewBuilder bottom: () -> some View) -> some View {
+    func panelBars<Bottom: View>(@ViewBuilder top: () -> some View, bottom: () -> Bottom?) -> some View {
         modifier(PanelBars(top: top(), bottom: bottom()))
     }
 }
@@ -29,7 +29,7 @@ private struct PanelBars<Top: View, Bottom: View>: ViewModifier {
     private static var fullFrost: CGFloat { 12 }
 
     let top: Top
-    let bottom: Bottom
+    let bottom: Bottom?
     @State private var underBottom: CGFloat = 0
     /// 패널 높이가 이 페이지 높이와 다른지 — 탭 전환은 패널이 새 높이를 받기 한 프레임 전에 새 행을 그림.
     /// 그 프레임에 새 행이 아래 바(Next update)를 통해 비치지 않게 가림.
@@ -54,17 +54,19 @@ private struct PanelBars<Top: View, Bottom: View>: ViewModifier {
             .safeAreaInset(edge: .top, spacing: 0) {
                 top.background(Theme.panelBody)
             }
-        let footer = bottom.background { if isResizing { Theme.panelBody } }
+        let footer = bottom.map { $0.background { if isResizing { Theme.panelBody } } }
         if #available(macOS 27, *) {
             barred
                 .safeAreaBar(edge: .bottom, spacing: 0) { footer }
                 .scrollEdgeEffectStyle(.soft, for: .bottom)
-                .scrollEdgeEffectHidden(true, for: underBottom > 0 ? .top : .vertical)
+                .scrollEdgeEffectHidden(true, for: footer != nil && underBottom > 0 ? .top : .vertical)
         } else {
             barred.safeAreaInset(edge: .bottom, spacing: 0) {
-                footer.background {
-                    FooterFrost(opacity: underBottom)
-                        .padding(.top, -FooterFrost.reach)
+                if let footer {
+                    footer.background {
+                        FooterFrost(opacity: underBottom)
+                            .padding(.top, -FooterFrost.reach)
+                    }
                 }
             }
         }

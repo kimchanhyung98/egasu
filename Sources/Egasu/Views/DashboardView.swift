@@ -213,7 +213,7 @@ struct DashboardView: View {
             .panelBars {
                 PopoverTopBar(screen: screen)
             } bottom: {
-                PopoverFooter(screen: screen)
+                PopoverFooter(screen: screen, accountDetailID: popover.accountDetailID)
             }
             // 전환 중 두 페이지도 각 화면의 범위 유지 — Accounts 본문·상단 바·확인창은 항상 원문.
             .environment(\.concealsAccountNames, AccountNamePrivacy.concealsAccountNames(
@@ -242,6 +242,7 @@ struct DashboardView: View {
         case .settings:
             SettingsScreen(operations: settingsOperations)
                 .environment(container.iCloudSync)
+                .environment(container.notificationSettings)
         }
     }
 }

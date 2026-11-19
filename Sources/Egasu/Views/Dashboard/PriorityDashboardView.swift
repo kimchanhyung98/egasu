@@ -46,7 +46,6 @@ struct PriorityBoardList: View {
     var onFixAccount: ((String) -> Void)?
     var onMetricCommand: ((DashboardCommand) -> Void)?
 
-    private static let green = Color(nsColor: .systemGreen)
     private static let gaugeSide: CGFloat = 32
 
     var body: some View {
@@ -158,7 +157,7 @@ struct PriorityBoardList: View {
             pin.item?.runOutText(now: now).map { ($0, Theme.severityTextColor(.warning)) }
             ?? pin.item?.resetsInText(now: now).map { ($0, Theme.severityTextColor(.normal)) }
         return limitRow(
-            pin.account, pin.data, severity: pin.item?.reason.severity ?? pin.data.fillSeverity,
+            pin.account, pin.data, severity: pin.item?.severity ?? pin.data.fillSeverity,
             callout: callout, status: spent ? L10n.dashboard("Used Up") : nil
         )
     }
@@ -169,7 +168,7 @@ struct PriorityBoardList: View {
             if board.attention.isEmpty { clearRow }
             ForEach(board.attention) { item in
                 limitRow(
-                    item.account, item.data, severity: item.reason.severity,
+                    item.account, item.data, severity: item.severity,
                     callout: item.runOutText(now: now).map { ($0, Theme.severityTextColor(.warning)) }
                 )
                 .padding(.horizontal, 4)
@@ -197,7 +196,7 @@ struct PriorityBoardList: View {
             sectionLabel(L10n.dashboard("Use It or Lose It"))
             ForEach(board.useItOrLoseIt) { item in
                 limitRow(
-                    item.account, item.data, severity: item.reason.severity,
+                    item.account, item.data, severity: item.severity,
                     callout: item.resetsInText(now: now).map { ($0, Theme.severityTextColor(.normal)) }
                 )
                 .padding(.horizontal, 4)
@@ -329,21 +328,16 @@ struct PriorityBoardList: View {
 
     private var clearRow: some View {
         HStack(spacing: 10) {
-            Image(systemName: "checkmark")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Self.green)
-                .frame(width: Self.gaugeSide, height: Self.gaugeSide)
-                .background(Self.green.opacity(0.16), in: Circle())
-            VStack(alignment: .leading, spacing: 1) {
-                Text(L10n.dashboard("All Clear"))
-                    .font(.system(size: 13, weight: .medium))
-                Text(L10n.dashboard("Nothing is running out."))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
+            Image(systemName: "circle.dashed")
+                .font(.system(size: 16))
+                .frame(width: Self.gaugeSide)
+                .accessibilityHidden(true)
+            Text(L10n.dashboard("No Matching Limits"))
+                .font(.system(size: 13))
             Spacer(minLength: 0)
         }
-        .frame(height: 46)
+        .foregroundStyle(.secondary)
+        .frame(minHeight: Self.gaugeSide)
         .padding(.horizontal, 4)
         .accessibilityElement(children: .combine)
     }

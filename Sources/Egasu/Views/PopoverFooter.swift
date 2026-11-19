@@ -10,9 +10,14 @@ struct PopoverFooter: View {
     @Environment(LayoutStore.self) private var layout
     @Environment(UpdaterController.self) private var updater
     @Environment(\.colorScheme) private var colorScheme
-    let screen: PopoverScreen
+    private let screen: PopoverScreen
 
     private static let issuesURL = URL(string: "https://github.com/kimchanhyung98/egasu/issues/new/choose")!
+
+    init?(screen: PopoverScreen, accountDetailID: String?) {
+        guard screen == .dashboard || (screen == .accounts && accountDetailID == nil) else { return nil }
+        self.screen = screen
+    }
 
     @ViewBuilder
     var body: some View {
@@ -25,7 +30,7 @@ struct PopoverFooter: View {
                     optionsMenu
                 }
                 .padding(.horizontal, 4)
-            } else if screen == .accounts, popover.accountDetailID == nil {
+            } else {
                 Button {
                     popover.isAddingAccount = true
                 } label: {
@@ -33,8 +38,6 @@ struct PopoverFooter: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-            } else {
-                EmptyView()
             }
         }
         .frame(minHeight: 26)

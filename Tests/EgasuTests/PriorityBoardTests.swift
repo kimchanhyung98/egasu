@@ -115,15 +115,58 @@ final class PriorityBoardTests: XCTestCase {
             XCTAssertTrue(board.useItOrLoseIt.isEmpty)
             let runningOut = used >= 70 && used < 100
             XCTAssertEqual(board.runningOut.map(\.id), runningOut ? ["codex.weekly"] : [])
-            XCTAssertEqual(board.showsClearRow, !runningOut, "고정한 경고도 All Clear 판정에 포함")
+            XCTAssertEqual(board.showsClearRow, !runningOut, "고정한 경고도 소진 임박 항목에 포함")
             if used == 100 {
                 XCTAssertEqual(board.pinned.first?.item?.reason, .usedUp(resetsAt: now.addingTimeInterval(3 * 86_400)))
             } else if runningOut {
-                XCTAssertEqual(board.pinned.first?.item?.reason.severity, used >= 90 ? .critical : .warning)
+                XCTAssertEqual(board.pinned.first?.item?.severity, used >= 90 ? .critical : .warning)
             } else {
                 XCTAssertNil(board.pinned.first?.item)
             }
         }
+    }
+
+    func testWarningAndCriticalFilterTheirOwnBandsAndKeepPinsAndSpentItems() {
+        let warning = line("codex.warning", used: 70, resetIn: 86_400)
+        let critical = line("codex.critical", used: 90, resetIn: 86_400)
+        let spent = line("codex.spent", used: 100, resetIn: 86_400)
+        let pinned = line("codex.pinned", used: 75, resetIn: 86_400)
+        let account = account("codex", lines: [warning, critical, spent, pinned])
+        for levels: Set<WidgetData.MeterSeverity> in [[], [.warning], [.critical], [.warning, .critical]] {
+            let board = PriorityBoard.make(accounts: [account], pinned: [pinned.id], visibleLevels: levels, now: now)
+            let expected = [warning, critical].filter { levels.contains($0.data.severity) }
+            XCTAssertEqual(Set(board.attention.map(\.id)), Set(expected.map(\.id)))
+            XCTAssertEqual(board.runningOut.contains { $0.id == pinned.id }, levels.contains(.warning))
+            XCTAssertEqual(board.showsClearRow, levels.isEmpty)
+            XCTAssertEqual(board.pinned.map(\.id), [pinned.id])
+            XCTAssertEqual(board.usedUp.map(\.id), [spent.id])
+        }
+    }
+
+    func testHiddenThresholdCanStillQualifyForBurningFastWithoutChangingItsGauge() {
+        let line = line("codex.fast", used: 95, resetIn: 3.5 * 86_400)
+        let board = PriorityBoard.make(
+            accounts: [account("codex", lines: [line])], visibleLevels: [.warning], burningFast: BurningFast(), now: now
+        )
+        XCTAssertEqual(board.attention.map(\.id), [line.id])
+        XCTAssertNotNil(board.attention.first?.runOutText(now: now))
+        XCTAssertEqual(board.attention.first?.severity, .critical)
+    }
+
+    func testHiddenWarningStillSchedulesAndQualifiesForUseItOrLoseIt() {
+        let line = line("codex.soon", used: 40, resetIn: 30 * 3_600)
+        var data = line.data
+        data.priorityLimits = PriorityLimits(warning: 70, critical: 10)
+        let account = account("codex", lines: [DashboardLine(descriptor: line.descriptor, data: data)])
+        let start = now.addingTimeInterval(6 * 3_600)
+        let before = PriorityBoard.make(accounts: [account], visibleLevels: [.critical], useItOrLoseIt: true, now: now)
+        XCTAssertTrue(before.useItOrLoseIt.isEmpty)
+        XCTAssertEqual(before.nextUseItOrLoseItChange, start)
+        let during = PriorityBoard.make(
+            accounts: [account], visibleLevels: [.critical], useItOrLoseIt: true, now: start)
+        XCTAssertEqual(during.useItOrLoseIt.map(\.id), [line.id])
+        XCTAssertEqual(during.useItOrLoseIt.first?.severity, .warning)
+        XCTAssertEqual(during.nextUseItOrLoseItChange, data.resetsAt)
     }
 
     func testPinnedStatesKeepSavedOrderAndDoNotDuplicateAutomaticSections() throws {

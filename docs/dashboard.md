@@ -1,9 +1,9 @@
 # 대시보드
 
 메뉴 막대 아이콘에서 열리는 패널.
-총 지출 요약 아래 **Priority**와 **All Usage** 탭 배치.
-앱 시작 시 기본 Priority, 저장한 기본 탭이 있으면 해당 값 적용.
-패널만 닫았다 열면 마지막 선택 탭 유지.
+[알림 설정](/docs/settings.md#우선순위)에서 **우선순위 표시**를 하나라도 켜면 총 지출 요약 아래 **Priority(우선순위)**와 **All Usage(전체 사용량)** 탭 표시.
+네 조건을 모두 끄면 탭 선택을 숨기고 전체 사용량만 표시.
+탭을 선택할 수 있을 때는 앱 시작 시 저장한 기본 탭(기본값 Priority)을 열고, 패널만 닫았다 열면 마지막 선택 탭 유지.
 
 표시 언어는 [설정의 Language](/docs/settings.md#general)에서 선택.
 영어·한국어·일본어 지원이며 변경 후 앱 재실행 필요.
@@ -38,16 +38,16 @@ Claude와 Codex로 시작한 뒤 Mac의 로컬 인증 정보·사용 흔적을 �
 | 구역 | 내용 |
 |---|---|
 | Pinned | 고정한 지표. 소진 완료 후에도 저장된 계정·지표 순서 유지 |
-| Running Out | 고정하지 않은 한도 중 남은 양이 Warning 기준 이하이거나 빠르게 소진 중(Burning Fast)인 항목, 급한 순 |
+| Running Out | 고정하지 않은 한도 중 우선순위 표시를 켠 경고·위험·빠른 소진 조건에 해당하는 항목을 급한 순으로 표시 |
 | Use It or Lose It | 고정하지 않은 한도 중 주기가 하루보다 길고, 초기화가 24시간 이내로 남았으며, 잔량을 정수 퍼센트로 반올림한 값이 50%를 넘는 항목.<br>달러 단위 한도 제외. |
 | Needs Attention | 사용량을 가져오지 못한 계정 표시, **Fix**로 계정 상세 열기.<br>VoiceOver에서 조회 실패 사유 안내. Privacy Mode에서는 일반 오류 안내 사용.<br>Claude·Codex 계정의 Keychain 읽기 실패이면 **Fix**가 그 계정만 다시 조회하며 macOS Keychain 승인 창 표시 |
 | Used Up | 고정하지 않은 한도 중 다 쓴 항목(흐리게) |
 
-- [Alerts의 우선순위 설정](/docs/settings.md#우선순위)에서 **Use It or Lose It**의 **Show in Priority**로 구역 표시를 설정.
-  **Receive Alerts**는 macOS 알림 전송 여부를 별도로 제어.
-- 한도 데이터를 받았고, 수신 대기·계정 경고·소진 임박이 없으면 **All Clear**("Nothing is running out.") 행 표시.
-  고정한 경고 지표도 소진 임박 판정에 포함.
-  경고 지표가 모두 고정된 경우 Pinned에만 표시하며 Running Out 구역과 All Clear는 숨김.
+- [알림 설정](/docs/settings.md#우선순위)에서 경고·위험·빠른 소진·초기화 전 사용의 **우선순위 표시**를 개별 선택.
+  **알림 받기**에서 각 조건의 macOS 알림을 별도로 선택.
+- 한도 데이터를 받았고 수신 대기나 계정 경고가 없을 때, 켜진 소진 임박 조건에 맞는 한도가 없으면 **No Matching Limits**(표시 조건에 맞는 한도 없음) 표시.
+  고정한 지표도 표시를 켠 소진 임박 조건에 해당하면 판정에 포함.
+  조건에 맞는 지표가 모두 고정된 경우 Pinned에만 표시하며 Running Out 구역과 빈 목록 안내는 숨김.
 - 첫 조회 전인 계정은 자리 표시(**Waiting for Usage**).
 - 한도를 보고하는 계정이 없으면 **No Reported Limits**와 **View All Usage** 버튼.
 - 링의 채움 비율은 [Show Usage As](/docs/settings.md#사용량)의 Used / Left 설정 적용.
@@ -73,7 +73,7 @@ Claude와 Codex로 시작한 뒤 Mac의 로컬 인증 정보·사용 흔적을 �
 - 데이터 없는 한도·값 행은 고정 여부와 관계없이 숨김.
   고정 설정과 저장 순서는 유지하며, 데이터를 다시 받으면 원래 위치에 표시.
   이전 성공 값을 보존한 조회 실패에서는 해당 값과 고정 행 유지.
-  조회 오류가 있으면 Needs Attention에 계정을 표시하고 All Clear는 숨김.
+  조회 오류가 있으면 Needs Attention에 계정 표시.
 - 메뉴 막대에서 고정한 지표만 보려면 **Menu Bar Items → Pinned Only** 선택([메뉴 막대](/docs/menu-bar.md)).
 
 ## All Usage
@@ -117,7 +117,7 @@ VoiceOver에서 조회 오류·오래됨 상태의 안내 확인.
 
 ![Total Spend의 기간과 Cost/MTok 보기](/docs/assets/total-spend-light.png)
 
-Priority·All Usage 탭 선택 위에 공통으로 표시하는 카드.
+대시보드 위쪽에 표시하는 카드.
 켜진 프로바이더 중 하나라도 기간별 비용·토큰을 추적하면(Claude, Codex, Cursor, Antigravity, Copilot, Devin, Grok, Kimi, Kiro, OpenCode, OpenRouter, Z.ai) 표시.
 도넛 안쪽 원이나 오른쪽 범례 값을 클릭하면 **Cost**(비용) → **Cost/MTok** → **Tokens**(토큰) → **Cost** 순서로 전환.
 중앙 클릭 영역은 글자 주변의 빈 공간을 포함한 원 전체이며, 바깥의 색상 링은 전환 대상에서 제외.

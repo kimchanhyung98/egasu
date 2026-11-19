@@ -155,7 +155,6 @@
 
 "%lld%% left" = "残り%lld%%";
 "Alert when Reset Watch expects Codex limits to reset soon" = "Reset WatchがCodexの上限リセットが近いと予想したときに通知";
-"Always Shown" = "常に表示";
 "Check Automatically" = "自動的に確認";
 "Codex" = "Codex";
 "Combined spend across your providers at the top of the dashboard" = "ダッシュボードの上部にプロバイダ全体の支出合計を表示";
@@ -178,7 +177,7 @@
 "Thresholds" = "しきい値";
 "Usage" = "使用量";
 "When a limit turns critically low" = "上限が危険なほど少なくなる基準";
-"When a limit turns into a priority" = "上限を優先項目にする基準";
+"When remaining quota becomes low" = "残りの使用枠が警告レベルになる基準";
 "Where usage would be at an even pace" = "均等なペースで使った場合の使用量の位置";
 "Will run out before it resets" = "リセット前に使い切る見込み";
 "Experimental features may change or be removed." = "実験的な機能は変更または削除される場合があります。";

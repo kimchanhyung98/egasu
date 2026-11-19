@@ -33,7 +33,7 @@ final class AppContainer {
     let softLimitCoordinator: SoftLimitCoordinator
     /// Settings opt-in 토글과 앱 종료 flush가 공유하는 일간 rollup.
     let telemetry: TelemetryRecorder
-    let popover = PopoverState()
+    let popover: PopoverState
     /// 캡처 중 strip을 wordmark로 교체하도록 status item updater가 참조.
     let privacy: MenuBarPrivacyStore
     /// Codex reset credit claim 라우터. 카드별 자체 auth store·usage client 경유 —
@@ -123,6 +123,7 @@ final class AppContainer {
             isProviderEnabled: { [enablement] in enablement.isEnabled($0) }
         )
         let displaySettings = DisplaySettingsStore()
+        self.popover = PopoverState(displaySettings: displaySettings)
         // 이전 메뉴 막대 별표를 Priority 고정으로 1회 이전 — 메뉴 막대는 Priority 모드로 유지.
         if let migrated = layout.migrateMenuBarStars(isHiddenOnCard: Self.hidesMetric(_:onCard:)) {
             displaySettings.menuBarSelection = .priority
