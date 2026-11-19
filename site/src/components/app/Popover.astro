@@ -49,6 +49,7 @@ const optionItems = [
       </div>
       <div id={`${uid}-priority`} role="tabpanel" aria-label="Priority" data-dashboard-panel="Priority" hidden={initialDashboardTab !== 'Priority'}><Priority providerIDs={selected.map((card) => card.provider)} /></div>
       <div id={`${uid}-all-usage`} role="tabpanel" aria-label="All Usage" data-dashboard-panel="All Usage" hidden={initialDashboardTab !== 'All Usage'}>
+        <p class="am-note" data-hidden-metrics-notice hidden>No usage to show. Check visible metrics in Accounts.</p>
         {groups.map((provider) => <section class="am-family-section" data-family={provider.id} hidden={!selected.some((card) => card.provider === provider.id)}>
           <div class="am-family-header" data-provider-header={provider.id}>
             <span class="am-drag" draggable="true" data-drag-provider={provider.id} tabindex="0" role="button" aria-keyshortcuts="ArrowUp ArrowDown" aria-label={`Reorder ${provider.name}`}><Glyph name="grip" class="am-grip" /></span>

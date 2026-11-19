@@ -231,6 +231,26 @@ test('a saved dashboard without providers only shows its provider empty state', 
   await expect(app.locator('[data-priority-copy]')).toBeHidden();
 });
 
+test('All Usage explains how to restore hidden metrics on an enabled account', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('openusage.site.preview.v1', JSON.stringify({
+    preferences: { defaultTab: 'All Usage' }, activeAccounts: {}, enabledProviders: ['antigravity'],
+    hiddenMetrics: ['geminiPro', 'geminiWeekly', 'claude', 'claudeWeekly'].map((id) => `antigravity.${id}@default`),
+  })));
+  await openHome(page);
+  const app = page.locator('[data-mock]');
+  const notice = app.getByText('No usage to show. Check visible metrics in Accounts.', { exact: true });
+  await expect(notice).toBeVisible();
+  await expect(app.getByText('Add an Account', { exact: true })).toBeHidden();
+  await app.locator('[data-options]').click();
+  await app.locator('.am-optmenu [data-go="accounts"]').click();
+  await app.locator('[data-account-list] .am-open[data-go="account:antigravity:default"]').click();
+  await app.locator('[data-metric-toggle="antigravity.geminiPro"]').click();
+  await app.locator('.am-scr:not([hidden]) .am-back').click();
+  await app.locator('.am-scr:not([hidden]) .am-back').click();
+  await expect(notice).toBeHidden();
+  await expect(app.locator('[data-row="antigravity.geminiPro"]')).toBeVisible();
+});
+
 test('keyboard unpinning restores focus when the Priority row disappears', async ({ page }) => {
   await openHome(page);
   await allUsage(page);

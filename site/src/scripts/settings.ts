@@ -34,6 +34,11 @@ export function updatePreviewState(next: PreviewState): void {
   save();
 }
 
+export function renamePreviewAccount(family: string, id: string, value: string): void {
+  updatePreviewState(renameAccount(state, family, id, value,
+    (otherID) => previewAccountDisplayName(state, family, otherID).displayed));
+}
+
 export function setPreviewPreference(id: string, value: string | boolean): void {
   const next = changePreference(state, id, value);
   if (id === 'defaultTab') document.querySelectorAll<HTMLElement>('[data-mock]').forEach((mock) => { mock.dataset.dashboardTab = String(value); });
@@ -193,7 +198,7 @@ export function initPreviewSettings(refresh: () => void, showNotice: typeof noti
     const input = form.querySelector<HTMLInputElement>('[data-rename-input]')!;
     const error = form.querySelector<HTMLElement>('[data-rename-error]')!;
     try {
-      updatePreviewState(renameAccount(state, form.dataset.provider!, form.dataset.accountId!, input.value));
+      renamePreviewAccount(form.dataset.provider!, form.dataset.accountId!, input.value);
       input.value = accountName(state, form.dataset.provider!, form.dataset.accountId!);
       error.hidden = true;
       input.removeAttribute('aria-invalid');
