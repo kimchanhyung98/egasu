@@ -115,7 +115,10 @@ final class ProviderRefreshCoordinator {
         if refreshed > 0 || historyChanged {
             onLocalHistoryChanged?()
         }
-        AppLog.info(.refresh, "batch end (\(durationMs)ms, \(refreshed) ok / \(failed) failed / \(cached) cached / \(backedOff) backed off)")
+        AppLog.info(
+            .refresh,
+            "batch end (\(durationMs)ms, \(refreshed) refreshed / \(failed) failed / \(cached) cached / \(backedOff) backed off)"
+        )
     }
 
     func isRefreshQueued(for providerID: String) -> Bool {
@@ -164,6 +167,7 @@ final class ProviderRefreshCoordinator {
     func credentialsDidChange(for providerID: String) -> Int {
         let generation = credentialGenerations[providerID, default: 0] + 1
         credentialGenerations[providerID] = generation
+        snapshotStore.invalidateLiveQuota(for: providerID)
         onQuotaInvalidated?([providerID])
         providersNeedingCredentialRefresh.insert(providerID)
         refreshResults[providerID] = nil
@@ -193,13 +197,15 @@ final class ProviderRefreshCoordinator {
             return previousIdentityKeys[cardID] == identityKeys[cardID]
         }
         // 계정 식별 정보가 없으면 동일 계정을 확인할 수 없으므로 카탈로그 교체 시 알림도 무효화.
-        onCatalogInvalidated?(Set(providersByID.keys.filter { cardID in
-            !keepsState(cardID)
-                || (identityKeys[cardID] == nil
-                    && ProviderAccountID.families.contains(ProviderAccountID.family(of: cardID)))
-        }))
+        let invalidatedAccounts = Set(
+            providersByID.keys.filter { cardID in
+                !keepsState(cardID)
+                    || (identityKeys[cardID] == nil
+                        && ProviderAccountID.families.contains(ProviderAccountID.family(of: cardID)))
+            })
+        onCatalogInvalidated?(invalidatedAccounts)
         catalogGeneration += 1
-        onQuotaInvalidated?(nil)
+        onQuotaInvalidated?(invalidatedAccounts)
         self.registry = registry
         self.providersByID = Dictionary(uniqueKeysWithValues: providers.map { ($0.provider.id, $0) })
         let discardedSnapshotIDs = snapshotStore.replaceCatalog(
@@ -218,9 +224,10 @@ final class ProviderRefreshCoordinator {
         _ message: String, for providerID: String, presentation: LocalizedMessage? = nil
     ) {
         guard providersByID[providerID] != nil else {
-            AppLog.error(.refresh, "external provider error targeted an unknown provider (\(providerID))")
+            AppLog.error(.refresh, "external provider error targeted an unknown provider")
             return
         }
+        snapshotStore.invalidateLiveQuota(for: providerID)
         onQuotaInvalidated?([providerID])
         refreshResults[providerID] = .failed(ProviderRefreshFailure(message: message, presentation: presentation))
     }
@@ -245,6 +252,7 @@ final class ProviderRefreshCoordinator {
     ) async -> RefreshOutcome {
         guard !Task.isCancelled, isProviderEnabled(providerID) else { return .skipped }
         guard isRefreshSuspended?(providerID) != true else { return .skipped }
+        let family = AppLog.providerFamily(providerID)
         var cacheIdentity = snapshotStore.identityKeys[providerID]
         if !force, let cursor = providersByID[providerID] as? CursorProvider,
             snapshotStore.localSnapshots[providerID] != nil
@@ -263,24 +271,24 @@ final class ProviderRefreshCoordinator {
             providerID: providerID, force: force, trigger: trigger, currentIdentityKey: cacheIdentity)
         {
             // 값이 같으면 재할당 생략 — Observable의 불필요한 메뉴 막대 재렌더링 방지.
-            AppLog.debug(.refresh, "cache hit \(providerID)")
+            AppLog.debug(.refresh, "cache hit \(family)")
             if snapshotStore.useCachedSnapshot(cached) { rebuildRenderedSnapshots() }
             refreshSchedule.reusedCache(cached, trigger: trigger)
             return .cacheHit
         }
-        if !force { AppLog.debug(.refresh, "cache miss \(providerID)") }
+        if !force { AppLog.debug(.refresh, "cache miss \(family)") }
 
         // 현재 실패는 이력 캐시와 무관하게 대기 만료 후 재조회 — 수동 강제 갱신은 대기 무시.
         if refreshSchedule.isBackedOff(providerID, force: force) {
             AppLog.debug(
                 .refresh,
-                "backoff skip \(providerID) (failed <\(Int(ProviderRefreshSchedule.failureRetryBackoff))s ago)")
+                "backoff skip \(family) (failed <\(Int(ProviderRefreshSchedule.failureRetryBackoff))s ago)")
             return .backedOff
         }
 
         guard let provider = providersByID[providerID] else { return .skipped }
         guard let lease = refreshWork.begin(provider) else {
-            AppLog.debug(.refresh, "skipped \(providerID) (previous provider work has not finished)")
+            AppLog.debug(.refresh, "skipped \(family) (previous provider work has not finished)")
             return .skipped
         }
         var needsScheduleWake = trigger != .scheduled && RefreshSetting.cadence(for: providerID) == .claude
@@ -301,7 +309,7 @@ final class ProviderRefreshCoordinator {
         // 취소 후 반환된 조회 결과는 반영하지 않고 마지막 정상 결과 유지.
         guard !Task.isCancelled else {
             needsScheduleWake = true
-            AppLog.debug(.refresh, "cancelled \(providerID) refresh; keeping last-good snapshot")
+            AppLog.debug(.refresh, "cancelled \(family) refresh; keeping last-good snapshot")
             return .skipped
         }
         // 조회 중 카탈로그가 바뀌면 결과 폐기 — 같은 카드 ID가 다른 계정을 가리킬 수 있음.
@@ -309,13 +317,14 @@ final class ProviderRefreshCoordinator {
         guard isProviderEnabled(providerID), catalogGeneration == boundGeneration,
               authenticationGenerations[providerID, default: 0] == authenticationGeneration else {
             needsScheduleWake = true
-            AppLog.info(.refresh, "\(providerID) discarding result: the provider catalog or authentication changed mid-fetch")
+            AppLog.info(
+                .refresh, "\(family) discarding result: the provider catalog or authentication changed mid-fetch")
             AppDiagnostics.record(.accountBinding, result: .bindingChanged, providerID: providerID)
             return .skipped
         }
         guard credentialGenerations[providerID, default: 0] == boundCredentialGeneration else {
             needsScheduleWake = true
-            AppLog.info(.refresh, "\(providerID) discarding result: credentials changed mid-fetch")
+            AppLog.info(.refresh, "\(family) discarding result: credentials changed mid-fetch")
             return .skipped
         }
         var snapshot: ProviderSnapshot
@@ -347,21 +356,24 @@ final class ProviderRefreshCoordinator {
         if TimeInterval(durationMs) >= slowProviderRefreshThreshold * 1000 {
             AppLog.warn(
                 .refresh,
-                "\(providerID) slow refresh (\(durationMs)ms, threshold=\(Int(slowProviderRefreshThreshold * 1000))ms)"
+                "\(family) slow refresh (\(durationMs)ms, threshold=\(Int(slowProviderRefreshThreshold * 1000))ms)"
             )
         }
+        let context = "provider=\(family) trigger=\(trigger.rawValue) duration_ms=\(durationMs)"
         switch snapshotStore.accept(snapshot, from: provider) {
         case .failed(let failure, let render, let historyChanged):
             refreshResults[providerID] = .failed(failure)
             refreshSchedule.failed(providerID)
             if render { rebuildRenderedSnapshots() }
             if historyChanged, notifyHistoryChange { onLocalHistoryChanged?() }
-            if snapshot.errorCategory == .notLoggedIn || snapshot.errorCategory == .notAvailable {
-                AppLog.info(.refresh, "\(providerID) unavailable: \(failure.message)")
+            var diagnostic = "result=failure \(context) category=\(failure.category.rawValue)"
+            if case .timedOut = result { diagnostic += " reason=timeout" }
+            if failure.category == .notLoggedIn || failure.category == .notAvailable {
+                AppLog.info(.refresh, diagnostic)
             } else {
-                AppLog.error(.refresh, "\(providerID) failed: \(failure.message)")
+                AppLog.error(.refresh, diagnostic)
             }
-            onRefreshOutcome?(providerID, .failed, snapshot.errorCategory, trigger, false)
+            onRefreshOutcome?(providerID, .failed, failure.category, trigger, false)
             return .failed
         case .succeeded(let accepted, let degraded):
             refreshResults[providerID] = .succeeded
@@ -371,8 +383,13 @@ final class ProviderRefreshCoordinator {
                 accepted, trigger: trigger, unresolvedIdentity: snapshotStore.isUnresolvedClaude(providerID))
             rebuildRenderedSnapshots()
             if notifyHistoryChange { onLocalHistoryChanged?() }
-            AppLog.info(.refresh, "\(providerID) ok (\(durationMs)ms)")
-            onRefreshOutcome?(providerID, .refreshed, nil, trigger, degraded)
+            let category = accepted.partialRefreshErrorCategory
+            if degraded {
+                AppLog.warn(.refresh, "result=degraded \(context) category=\(category?.rawValue ?? "none")")
+            } else {
+                AppLog.info(.refresh, "result=success \(context)")
+            }
+            onRefreshOutcome?(providerID, .refreshed, category, trigger, degraded)
             onFreshSnapshot?(accepted, provider.widgetDescriptors, trigger)
             return .refreshed
         }
@@ -415,6 +432,7 @@ final class ProviderRefreshCoordinator {
         refreshSchedule.clear(providerID)
         guard providersByID[providerID] != nil else { return }
         authenticationGenerations[providerID, default: 0] &+= 1
+        snapshotStore.invalidateLiveQuota(for: providerID)
         onQuotaInvalidated?([providerID])
         invalidatedAuthentication.insert(providerID)
         refreshResults[providerID] = nil

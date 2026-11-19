@@ -44,11 +44,13 @@ final class CodexProvider: ProviderRuntime {
     var widgetDescriptors: [WidgetDescriptor] {
         [
             .percent(id: "\(provider.id).session", provider: provider, title: "Session")
-                .supportingSoftLimit(.fiveHours)
                 .exportingLimit("session", unit: "percent"),
             .percent(id: "\(provider.id).weekly", provider: provider, title: "Weekly")
                 .supportingSoftLimit(.weekly)
                 .exportingLimit("weekly", unit: "percent"),
+            .percent(id: "\(provider.id).monthly", provider: provider, title: "Monthly")
+                .supportingSoftLimit(.monthly)
+                .exportingLimit("monthly", unit: "percent"),
             .usageTrend(provider: provider)
                 .exportingHistory(
                     scope: .machineLocal,
@@ -62,11 +64,13 @@ final class CodexProvider: ProviderRuntime {
                 .exportingLimit("rateLimitResets", kind: .balance, unit: "resets", source: .value(kind: .count, label: "available")),
             // `additional_rate_limits`의 Spark 전용 limit (GPT-5.3-Codex-Spark) — `DefaultLayout`에서 On Demand·비활성·unpinned로 seed.
             .percent(id: "\(provider.id).spark", provider: provider, title: "Spark")
-                .supportingSoftLimit(.fiveHours)
                 .exportingLimit("spark", unit: "percent"),
             .percent(id: "\(provider.id).sparkWeekly", provider: provider, title: "Spark Weekly")
                 .supportingSoftLimit(.weekly)
                 .exportingLimit("sparkWeekly", unit: "percent"),
+            .percent(id: "\(provider.id).sparkMonthly", provider: provider, title: "Spark Monthly")
+                .supportingSoftLimit(.monthly)
+                .exportingLimit("sparkMonthly", unit: "percent"),
             .combined(id: "\(provider.id).credits", provider: provider, title: "Extra Usage", metricLabel: "Credits")
                 .exportingLimit("credits", kind: .balance, unit: "credits", source: .value(kind: .count, label: "credits"))
                 .exportingLimit("creditValue", kind: .balance, unit: "usd", source: .value(kind: .dollars))
@@ -336,6 +340,7 @@ final class CodexProvider: ProviderRuntime {
             warning: [warning, sharedCredentialWarning].compactMap { $0 }.joined(separator: " ").nilIfEmpty,
             warningPresentation: warningPresentation + [sharedCredentialWarningPresentation].compactMap { $0 },
             isDegraded: refreshIsDegraded ? true : nil,
+            incompleteQuotaWindows: mapped.incompleteQuotaWindows.isEmpty ? nil : mapped.incompleteQuotaWindows,
             liveQuotaObservedAt: quota.observedAt,
             codexResetClaimBinding: CodexResetClaimBinding(authState: authState)
         )
@@ -390,6 +395,7 @@ final class CodexProvider: ProviderRuntime {
                 } catch let error as CodexAuthError {
                     throw error
                 } catch {
+                    try ProviderAuthRetry.rethrowCancellation(error)
                     throw CodexUsageError.connectionFailed
                 }
             },

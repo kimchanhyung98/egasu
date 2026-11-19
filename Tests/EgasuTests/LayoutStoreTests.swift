@@ -447,7 +447,8 @@ final class LayoutStoreTests: XCTestCase {
             CodexProvider(),
             DevinProvider(),
             GrokProvider(),
-            CursorProvider()
+            CursorProvider(),
+            ZAIProvider()
         ])
         let store = LayoutStore(registry: registry, defaults: makeDefaults("FreshCustomizeOrder"), storageKey: "layout")
 
@@ -456,17 +457,22 @@ final class LayoutStoreTests: XCTestCase {
             "claude.sonnet", "claude.today", "claude.yesterday", "claude.last30"
         ])
         XCTAssertEqual(store.orderedSupportedMetrics(for: "codex").map(\.id), [
-            "codex.session", "codex.weekly", "codex.trend", "codex.resetWatch", "codex.rateLimitResets",
-            "codex.spark", "codex.sparkWeekly", "codex.credits",
+                "codex.session", "codex.weekly", "codex.monthly", "codex.trend", "codex.resetWatch",
+                "codex.rateLimitResets", "codex.spark", "codex.sparkWeekly", "codex.sparkMonthly", "codex.credits",
             "codex.today", "codex.yesterday", "codex.last30"
         ])
         XCTAssertEqual(store.orderedSupportedMetrics(for: "devin").map(\.id), [
             "devin.daily", "devin.weekly", "devin.extra"
         ])
         XCTAssertEqual(store.orderedSupportedMetrics(for: "grok").map(\.id), [
-            "grok.weekly", "grok.payAsYouGo",
+                "grok.weekly", "grok.monthly", "grok.payAsYouGo",
             "grok.trend", "grok.today", "grok.yesterday", "grok.last30"
         ])
+        XCTAssertEqual(
+            store.orderedSupportedMetrics(for: "zai").map(\.id),
+            [
+                "zai.session", "zai.weekly", "zai.monthly", "zai.webSearches"
+            ])
         // Cursor spend tile + usage trend 활성 — live meter 뒤에 선언 순서로 배치
         XCTAssertEqual(store.orderedSupportedMetrics(for: "cursor").map(\.id), [
             "cursor.usage", "cursor.auto", "cursor.api", "cursor.onDemand", "cursor.requests",

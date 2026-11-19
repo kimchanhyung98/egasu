@@ -6,11 +6,19 @@ struct CLIArguments: Equatable, Sendable {
     var showHelp = false
     var showVersion = false
     var account: AccountCommand?
+    var softLimitCardID: String?
 
     static func parse(_ arguments: [String]) throws -> CLIArguments {
         // `account` namespace는 예약 — 첫 token일 때 문법 전체 전환.
         if arguments.first == "account" {
             return CLIArguments(account: try AccountCommand.parse(Array(arguments.dropFirst())))
+        }
+        if arguments.first == "soft-limit" {
+            guard arguments.count == 3, arguments[1] == "check", !arguments[2].isEmpty, !arguments[2].hasPrefix("-")
+            else {
+                throw CLIError.usage("Usage: egasu soft-limit check <card-id>")
+            }
+            return CLIArguments(softLimitCardID: arguments[2].lowercased())
         }
         var parsed = CLIArguments()
         for argument in arguments {

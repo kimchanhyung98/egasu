@@ -56,14 +56,12 @@ final class AntigravityProvider: ProviderRuntime {
     var widgetDescriptors: [WidgetDescriptor] {
         [
             .percent(id: AntigravityMetric.geminiID, provider: provider, title: AntigravityMetric.sessionLabel, sessionStartSignal: .zeroUsage)
-                .supportingSoftLimit(.fiveHours)
                 .exportingLimit("geminiSession", unit: "percent")
                 .exportingHistory(scope: .machineLocal, estimatedCost: true, sourceNote: Self.historySourceNote),
             .percent(id: AntigravityMetric.geminiWeeklyID, provider: provider, title: AntigravityMetric.weeklyLabel)
                 .supportingSoftLimit(.weekly)
                 .exportingLimit("geminiWeekly", unit: "percent"),
             .percent(id: AntigravityMetric.claudeID, provider: provider, title: AntigravityMetric.claudeLabel, sessionStartSignal: .zeroUsage)
-                .supportingSoftLimit(.fiveHours)
                 .exportingLimit("nonGeminiSession", unit: "percent"),
             .percent(id: AntigravityMetric.claudeWeeklyID, provider: provider, title: AntigravityMetric.claudeWeeklyLabel)
                 .supportingSoftLimit(.weekly)
@@ -180,20 +178,24 @@ final class AntigravityProvider: ProviderRuntime {
                 modelSourceNote: Self.historySourceNote
             )
         }
-        return ProviderSnapshot.make(
+        var snapshot = ProviderSnapshot.make(
             provider: provider, plan: quota?.plan, lines: lines, refreshedAt: refreshedAt,
             usageHistory: history,
             warning: warnings.isEmpty ? nil : warnings.joined(separator: " "),
             warningPresentation: warningPresentations.isEmpty ? nil : warningPresentations,
             authenticationIssue: quotaError.flatMap { ProviderAuthenticationIssue(error: $0) },
             isDegraded: warnings.isEmpty ? nil : true,
-            liveQuotaObservedAt: usageTimerObservations.first?.observedAt ?? quotaObservedAt
+            incompleteQuotaWindows: quota?.hasIncompleteWeeklyQuota == true ? [.weekly] : nil,
+            liveQuotaObservedAt: quotaObservedAt
         )
+        snapshot.reportedPartialFailure = (quotaError ?? scanError).map(ErrorCategory.classify)
+        return snapshot
     }
 
     struct StrategyResult {
         var plan: String?
         var lines: [MetricLine]
+        var hasIncompleteWeeklyQuota = false
     }
 
     private func probe() async throws -> StrategyResult {
@@ -240,14 +242,15 @@ final class AntigravityProvider: ProviderRuntime {
             // quota summary가 authoritative(병합 pool + weekly window)라 최우선. 파싱된 summary는 usable bucket이 0이어도 probe 종료 — 아래 legacy endpoint는 quota 정보 부재를 "fully used"로 지어내므로 authoritative 답이 거기로 흘러가면 안 됨. 빈 lines는 "No data" 행으로 렌더.
             if let summary = await usageClient.callLS(scheme: endpoint.scheme, port: endpoint.port, csrf: discovered.csrf, method: "RetrieveUserQuotaSummary") {
                 if (200..<300).contains(summary.statusCode) {
-                    if let lines = AntigravityUsageMapper.parseQuotaSummary(summary.body) {
+                    if let parsed = AntigravityUsageMapper.parseQuotaSummary(summary.body) {
                         // plan은 독립적인 GetUserStatus 호출 — summary는 이에 gate되지 않고, plan 조회 실패는 빈 plan으로만 남음.
                         var plan: String?
                         if let status = await usageClient.callLS(scheme: endpoint.scheme, port: endpoint.port, csrf: discovered.csrf, method: "GetUserStatus"),
                            (200..<300).contains(status.statusCode) {
                             plan = AntigravityUsageMapper.parseUserStatus(status.body)?.plan
                         }
-                        return StrategyResult(plan: plan, lines: lines)
+                        return StrategyResult(
+                            plan: plan, lines: parsed.lines, hasIncompleteWeeklyQuota: parsed.hasIncompleteWeeklyQuota)
                     }
                     // 2xx지만 summary payload 아님 — parser가 경고, legacy 흐름으로 진행.
                 } else if summary.statusCode != 404 {
@@ -358,8 +361,12 @@ final class AntigravityProvider: ProviderRuntime {
         case .authFailed:
             return .authFailed
         case .ok(let bodies):
-            if let lines = AntigravityUsageMapper.parseQuotaSummaries(bodies) {
-                return .success(StrategyResult(plan: await loadPlan(token: token), lines: lines))
+            if let parsed = AntigravityUsageMapper.parseQuotaSummaries(bodies) {
+                return .success(
+                    StrategyResult(
+                        plan: await loadPlan(token: token), lines: parsed.lines,
+                        hasIncompleteWeeklyQuota: parsed.hasIncompleteWeeklyQuota
+                    ))
             }
         case .unavailable:
             break

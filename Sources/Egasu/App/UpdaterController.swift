@@ -4,13 +4,17 @@ import Foundation
 import Observation
 import Sparkle
 
+private extension UserDefaults {
+    @objc dynamic var betaUpdatesEnabled: Bool { bool(forKey: #keyPath(UserDefaults.betaUpdatesEnabled)) }
+}
+
 /// Sparkle 표준 업데이터 연결 — 앱의 다른 영역은 Sparkle에 의존하지 않음.
 /// SUFeedURL이 있는 패키지 번들에서만 동작 — swift run·개발 빌드는 비활성.
 @MainActor
 @Observable
 final class UpdaterController {
     /// 베타 채널 참여 설정 키 — SwiftUI 토글과 Sparkle 채널 선택이 공유하는 단일 값.
-    static let betaChannelDefaultsKey = "betaUpdatesEnabled"
+    static let betaChannelDefaultsKey = #keyPath(UserDefaults.betaUpdatesEnabled)
 
     // SPUUpdaterDelegate는 MainActor, SPUStandardUserDriverDelegate는 nonisolated이므로 별도 객체 사용.
     // 두 프로토콜을 한 클래스에서 구현하면 Swift 6 격리 규칙 충돌.
@@ -20,6 +24,10 @@ final class UpdaterController {
     private var updater: SPUUpdater?
     private var userDriver: BannerUpdateUserDriver?
     private var canCheckObservation: AnyCancellable?
+    private let defaults: UserDefaults
+    private var betaChannelObservation: AnyCancellable?
+    private var currentBetaChannel: Bool
+    @ObservationIgnored var onBetaChannelChange: ((Bool) -> Void)?
 
     /// 업데이트 피드가 있는 빌드에서의 활성 상태 — 자동 확인 설정의 활성화 조건.
     private(set) var isActive = false
@@ -31,13 +39,10 @@ final class UpdaterController {
 
     /// "Beta Updates" 설정 저장 — 변경 시 확인 주기를 재설정하여 다음 확인부터 새 채널 적용.
     var betaChannelEnabled: Bool {
-        didSet {
-            UserDefaults.standard.set(betaChannelEnabled, forKey: Self.betaChannelDefaultsKey)
-            if userDriver?.dismissDisallowedUpdate() == true {
-                availableUpdateVersion = nil
-            }
-            updater?.resetUpdateCycle()
-            AppLog.info(.updates, "channel set to \(self.betaChannelEnabled ? "early access" : "stable")")
+        get { currentBetaChannel }
+        set {
+            defaults.set(newValue, forKey: Self.betaChannelDefaultsKey)
+            applyBetaChannel(newValue)
         }
     }
 
@@ -47,9 +52,33 @@ final class UpdaterController {
         set { updater?.automaticallyChecksForUpdates = newValue }
     }
 
-    init(presentationController: UpdaterPresentationController = UpdaterPresentationController()) {
+    init(
+        presentationController: UpdaterPresentationController = UpdaterPresentationController(),
+        defaults: UserDefaults = .standard
+    ) {
         self.presentationController = presentationController
-        self.betaChannelEnabled = UserDefaults.standard.bool(forKey: Self.betaChannelDefaultsKey)
+        self.defaults = defaults
+        self.currentBetaChannel = defaults.betaUpdatesEnabled
+        betaChannelObservation = defaults.publisher(for: \.betaUpdatesEnabled, options: [.new])
+            .sink { @Sendable [weak self] enabled in
+                if Thread.isMainThread {
+                    MainActor.assumeIsolated { self?.applyBetaChannel(enabled) }
+                } else {
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self else { return }
+                        self.applyBetaChannel(self.defaults.betaUpdatesEnabled)
+                    }
+                }
+            }
+    }
+
+    private func applyBetaChannel(_ enabled: Bool) {
+        guard currentBetaChannel != enabled else { return }
+        currentBetaChannel = enabled
+        onBetaChannelChange?(enabled)
+        if userDriver?.dismissDisallowedUpdate() == true { availableUpdateVersion = nil }
+        updater?.resetUpdateCycle()
+        AppLog.info(.updates, "channel set to \(enabled ? "early access" : "stable")")
     }
 
     /// 업데이트 피드가 있는 빌드에서만 업데이터 시작 — 중복 호출 무시.

@@ -135,6 +135,7 @@ final class DevinUsageMapperTests: XCTestCase {
         XCTAssertNil(progress(mapped.lines, "Daily quota"))
         // hidden daily quota가 Weekly row를 채우며 remaining→used 반전 (30% remaining → 70% used)
         XCTAssertEqual(progress(mapped.lines, "Weekly quota")?.used, 70)
+        XCTAssertNil(progress(mapped.lines, "Weekly quota")?.periodDurationMs)
         XCTAssertEqual(try XCTUnwrap(dollars(mapped.lines, "Extra usage balance")), 964.22, accuracy: 0.0001)
     }
 
@@ -255,6 +256,7 @@ final class DevinProviderTests: XCTestCase {
         let snapshot = await provider.refresh()
 
         XCTAssertEqual(snapshot.plan, "Max")
+        XCTAssertEqual(snapshot.liveQuotaObservedAt, Date(timeIntervalSince1970: 1_800_000_000))
         XCTAssertEqual(snapshot.lines.count, 3)
         XCTAssertEqual(httpClient.requests.count, 1)
         XCTAssertEqual(httpClient.requests.first?.url.absoluteString, "https://server.codeium.test/exa.seat_management_pb.SeatManagementService/GetUserStatus")
@@ -306,9 +308,33 @@ final class DevinProviderTests: XCTestCase {
         let snapshot = await provider.refresh()
 
         XCTAssertEqual(snapshot.lines.first?.label, "Error")
+        XCTAssertNil(snapshot.liveQuotaObservedAt)
         XCTAssertEqual(errorText(snapshot.lines), DevinAuthError.notLoggedIn.localizedDescription)
         // 회귀 방지: message-only factory 사용으로 errorCategory가 nil이 되어 `other`로 분류되던 문제
         XCTAssertEqual(snapshot.errorCategory, .notLoggedIn)
+    }
+
+    func testHiddenDailyFallbackDoesNotRecordAWeeklyObservation() async {
+        let body = Data(
+            """
+            {"userStatus":{"planStatus":{"planInfo":{"hideDailyQuota":true},"dailyQuotaRemainingPercent":20}}}
+            """.utf8)
+        let http = FakeHTTPClient(response: .init(statusCode: 200, headers: [:], body: body))
+        let provider = DevinProvider(
+            authStore: DevinAuthStore(
+                files: FakeFiles([DevinAuthStore.credentialsPath: "windsurf_api_key = 'devin-session-token$cli'"]),
+                sqlite: FakeSQLite(), environment: FakeEnvironment()
+            ),
+            usageClient: DevinUsageClient(http: http),
+            usageScanner: isolatedUsageScanner(),
+            pricing: { .empty }
+        )
+
+        let snapshot = await provider.refresh()
+
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertEqual(snapshot.lines.map(\.label), ["Weekly quota"])
+        XCTAssertNil(snapshot.liveQuotaObservedAt)
     }
 
     private func isolatedUsageScanner() -> DevinUsageScanner {

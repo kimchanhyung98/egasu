@@ -11,8 +11,9 @@ enum TelemetryPrivacy {
         "fable", "sonnet", "credits", "balance", "webSearches", "premium", "orgCredits", "orgSpend",
         "chat", "completions", "payAsYouGo", "auto", "api", "plan", "resets", "resetWatch",
         "sonnetThinking", "gptOss", "geminiPro", "geminiFlash", "geminiWeekly", "claude", "claudeWeekly", "argonWeekly",
-        "rateLimitResets", "spark", "sparkWeekly", "usage", "onDemand", "requests", "yesterday", "last30", "keyLimit",
-        "total", "extraBalance",
+        "rateLimitResets", "spark", "sparkWeekly", "sparkMonthly", "usage", "onDemand", "requests", "yesterday",
+        "last30", "keyLimit",
+        "total", "extraBalance"
     ]
 
     /// 알려진 이벤트 형식만 허용 — 값이 없거나 모르면 기존 형식 2 사용.

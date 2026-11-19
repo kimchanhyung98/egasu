@@ -4,7 +4,134 @@ import XCTest
 
 @MainActor
 final class AppDiagnosticsCallSiteTests: XCTestCase {
-    func testTerminalHelperFailureWritesOneLocalErrorAndOneDiagnostic() throws {
+    func testAPIKeyFileErrorsKeepProviderMessagesAndRecordOneDiagnosticPerAttempt() throws {
+        let capture = try Capture()
+        defer { capture.cleanUp() }
+        let files = UnwritableKeyFiles()
+        let openRouter = OpenRouterAuthStore(files: files, environment: FakeEnvironment())
+        let zai = ZAIAuthStore(files: files, environment: FakeEnvironment())
+
+        XCTAssertThrowsError(try openRouter.saveAPIKey("PRIVATE_API_KEY")) {
+            XCTAssertEqual($0 as? OpenRouterAuthError, .saveFailed)
+        }
+        XCTAssertThrowsError(try zai.deleteAPIKey()) {
+            XCTAssertEqual($0 as? ZAIAuthError, .deleteFailed)
+        }
+
+        XCTAssertEqual(
+            capture.events,
+            [
+                DiagnosticEvent(.credentialSave, result: .failure, category: .permission, providerID: "openrouter"),
+                DiagnosticEvent(.accountRemove, result: .failure, category: .storage, providerID: "zai")
+            ])
+        let lines = try capture.lines()
+        XCTAssertEqual(lines.count, 2)
+        XCTAssertTrue(lines.contains { $0.contains("API key config write") })
+        XCTAssertTrue(lines.contains { $0.contains("API key config removal") })
+        XCTAssertFalse(lines.joined().contains("PRIVATE"))
+        XCTAssertFalse(lines.joined().contains(".json"))
+    }
+
+    func testAPIKeyFileSuccessIncludesBothProvidersWithoutRecordingReads() throws {
+        let capture = try Capture()
+        defer { capture.cleanUp() }
+        let files = FakeFiles()
+        let zai = ZAIAuthStore(files: files, environment: FakeEnvironment())
+        let openRouter = OpenRouterAuthStore(files: files, environment: FakeEnvironment())
+
+        try zai.saveAPIKey("PRIVATE_API_KEY")
+        _ = zai.keyStatus()
+        _ = zai.loadAPIKey()
+        try openRouter.deleteAPIKey()
+
+        XCTAssertEqual(
+            capture.events,
+            [
+                DiagnosticEvent(.credentialSave, result: .success, providerID: "zai"),
+                DiagnosticEvent(.accountRemove, result: .success, providerID: "openrouter")
+            ])
+        XCTAssertTrue(try capture.lines().isEmpty)
+    }
+
+    func testPartialAPIKeyRemovalReportsPermissionAndRetriesAllPaths() throws {
+        guard geteuid() != 0 else { throw XCTSkip("root can traverse mode-000 directories") }
+        let capture = try Capture()
+        defer { capture.cleanUp() }
+        let files = LocalTextFileAccessor()
+        let primary = capture.directory.appendingPathComponent("first-key")
+        let restricted = capture.directory.appendingPathComponent("PRIVATE_DIRECTORY")
+        let secondary = restricted.appendingPathComponent("second-key")
+        try files.writeText(primary.path, "fixture")
+        try files.writeText(secondary.path, "fixture")
+        let store = UserAPIKeyStore(
+            providerID: "zai", configPaths: [primary.path, secondary.path], environmentNames: [],
+            files: files, environment: FakeEnvironment(), makeError: { ZAIAuthError($0) })
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: restricted.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: restricted.path) }
+
+        XCTAssertFalse(files.exists(secondary.path))
+        XCTAssertThrowsError(try store.deleteKey()) { XCTAssertEqual($0 as? ZAIAuthError, .deleteFailed) }
+        XCTAssertFalse(files.exists(primary.path))
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: restricted.path)
+        XCTAssertTrue(files.exists(secondary.path))
+        try store.deleteKey()
+
+        XCTAssertFalse(files.exists(secondary.path))
+        XCTAssertEqual(
+            capture.events,
+            [
+                DiagnosticEvent(.accountRemove, result: .failure, category: .permission, providerID: "zai"),
+                DiagnosticEvent(.accountRemove, result: .success, providerID: "zai")
+            ])
+        let lines = try capture.lines()
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertFalse(lines.joined().contains("PRIVATE_DIRECTORY"))
+    }
+
+    func testUnreadableAPIKeyIsDistinctFromMissingAndPreservesFallbacks() async throws {
+        let openRouter = OpenRouterAuthStore(files: UnwritableKeyFiles(), environment: FakeEnvironment())
+        let zai = ZAIAuthStore(files: UnwritableKeyFiles(), environment: FakeEnvironment())
+        let providers: [any ProviderRuntime] = [OpenRouterProvider(authStore: openRouter), ZAIProvider(authStore: zai)]
+        for provider in providers {
+            let hasCredentials = await provider.hasLocalCredentials()
+            XCTAssertFalse(hasCredentials)
+            let snapshot = await provider.refresh()
+            XCTAssertEqual(snapshot.errorCategory, .credentialAccess)
+            XCTAssertNil(snapshot.authenticationIssue)
+            XCTAssertEqual(
+                snapshot.errorPresentation?.key,
+                "Couldn't read the saved API key. Check the configuration file permissions.")
+        }
+
+        let fallbackFile = UnwritableKeyFiles(readablePath: OpenRouterAuthStore.configPaths[1])
+        let fallback = OpenRouterAuthStore(
+            files: fallbackFile, environment: FakeEnvironment(["OPENROUTER_API_KEY": "env"]))
+        XCTAssertEqual(try fallback.requireAPIKey().apiKey, "PRIVATE_API_KEY")
+        let env = ZAIAuthStore(files: UnwritableKeyFiles(), environment: FakeEnvironment(["ZAI_API_KEY": "env"]))
+        XCTAssertEqual(try env.requireAPIKey().apiKey, "env")
+        XCTAssertThrowsError(try ZAIAuthStore(files: FakeFiles(), environment: FakeEnvironment()).requireAPIKey()) {
+            XCTAssertEqual($0 as? ZAIAuthError, .missingKey)
+        }
+    }
+
+    private struct UnwritableKeyFiles: TextFileAccessing {
+        var readablePath: String?
+        func exists(_ path: String) -> Bool { true }
+        func readText(_ path: String) throws -> String {
+            guard path == readablePath else { throw CocoaError(.fileReadNoPermission) }
+            return "PRIVATE_API_KEY"
+        }
+
+        func writeText(_ path: String, _ text: String) throws {
+            throw POSIXError(.EACCES, userInfo: [NSLocalizedDescriptionKey: text])
+        }
+
+        func remove(_ path: String) throws {
+            throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedDescriptionKey: "PRIVATE_FILE_PATH"])
+        }
+    }
+
+    func testTerminalHelperFailureWritesOneLocalErrorAndOneDiagnostic() async throws {
         let capture = try Capture()
         defer { capture.cleanUp() }
         let source = capture.directory.appendingPathComponent("helper")
@@ -16,7 +143,7 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
             performPrivileged: { _, _, _ in .failure("PRIVATE_AUTHORIZATION_MESSAGE", code: -60005) }
         )
 
-        installer.install()
+        await installer.install()
 
         let lines = try capture.lines()
         XCTAssertEqual(lines.count, 1, lines.joined(separator: "\n"))

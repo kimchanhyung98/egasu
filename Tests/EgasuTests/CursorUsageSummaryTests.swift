@@ -2,6 +2,43 @@ import XCTest
 @testable import Egasu
 
 final class CursorUsageSummaryMapperTests: XCTestCase {
+    func testMissingUsageDoesNotMaskMeasuredSummaryOrImplyZero() throws {
+        let incompleteRequests = ["gpt-4": ["maxRequestUsage": 500]]
+        XCTAssertFalse(CursorUsageSummaryMapper.hasUsableRequestPayload(incompleteRequests))
+        let incompletePool = ["limitType": "team", "teamUsage": ["pooled": ["limit": 40_000]]] as [String: Any]
+        XCTAssertFalse(CursorUsageSummaryMapper.hasUsableSummaryPayload(incompletePool))
+        XCTAssertThrowsError(
+            try CursorUsageSummaryMapper.map(
+                summary: incompletePool, requestUsage: incompleteRequests, planName: "Team",
+                unavailableMessage: "unavailable"
+            ))
+        let summary = incompletePool.merging(["individualUsage": ["plan": ["totalPercentUsed": 0]]]) { _, new in new }
+        let measured = try CursorUsageSummaryMapper.map(
+            summary: summary, requestUsage: incompleteRequests, planName: "Team", unavailableMessage: "unavailable"
+        )
+        XCTAssertEqual(measured.lines.map(\.label), ["Total usage"])
+        XCTAssertEqual(progress(measured.lines, "Total usage")?.used, 0)
+        XCTAssertEqual(measured.incompleteQuotaWindows, [.weekly, .monthly])
+    }
+
+    func testDamagedRequestBucketDoesNotInvalidateACompleteWeeklyPlan() throws {
+        let summary: [String: Any] = [
+            "billingCycleStart": "2026-02-01T00:00:00Z", "billingCycleEnd": "2026-02-08T00:00:00Z",
+            "individualUsage": ["plan": ["autoPercentUsed": 10], "onDemand": ["limit": 200]]
+        ]
+        let measured = try CursorUsageSummaryMapper.map(
+            summary: summary, requestUsage: ["gpt-4": ["maxRequestUsage": 500]],
+            planName: "Team", unavailableMessage: "unavailable"
+        )
+        XCTAssertEqual(measured.lines.map(\.label), ["Auto usage"])
+        XCTAssertEqual(measured.incompleteQuotaWindows, [.monthly])
+        let noQuota = try CursorUsageSummaryMapper.map(
+            summary: summary, requestUsage: ["gpt-4": ["maxRequestUsage": 0]],
+            planName: "Team", unavailableMessage: "unavailable"
+        )
+        XCTAssertTrue(noQuota.incompleteQuotaWindows.isEmpty)
+    }
+
     func testCombinesLiveEnterpriseRequestAndIndividualOnDemandShapes() throws {
         let mapped = try CursorUsageSummaryMapper.map(
             summary: [
@@ -49,6 +86,33 @@ final class CursorUsageSummaryMapperTests: XCTestCase {
         XCTAssertEqual(onDemand.used, 0)
         XCTAssertEqual(onDemand.limit, 250)
         XCTAssertEqual(onDemand.format, .dollars)
+    }
+
+    func testWeeklyPlanAndMonthlyRequestPoolKeepTheirOwnCycles() throws {
+        let summary: [String: Any] = [
+            "billingCycleStart": "2026-02-01T00:00:00Z",
+            "billingCycleEnd": "2026-02-08T00:00:00Z",
+            "individualUsage": ["plan": ["totalPercentUsed": 92, "autoPercentUsed": 18]]
+        ]
+        var request: [String: Any] = [
+            "startOfMonth": "2026-02-01T00:00:00Z",
+            "gpt-4": ["numRequests": 2, "maxRequestUsage": 10]
+        ]
+        let mapped = try CursorUsageSummaryMapper.map(
+            summary: summary, requestUsage: request,
+            planName: "Enterprise", unavailableMessage: "unavailable")
+        XCTAssertEqual(progress(mapped.lines, "Auto usage")?.periodDurationMs, MetricPeriod.weekMs)
+        XCTAssertEqual(progress(mapped.lines, "Total usage")?.used, 92)
+        XCTAssertEqual(progress(mapped.lines, "Total usage")?.periodDurationMs, MetricPeriod.weekMs)
+        XCTAssertEqual(progress(mapped.lines, "Requests")?.periodDurationMs, 28 * MetricPeriod.dayMs)
+        XCTAssertEqual(progress(mapped.lines, "Requests")?.resetsAt, EgasuISO8601.date(from: "2026-03-01T00:00:00Z"))
+
+        request.removeValue(forKey: "startOfMonth")
+        let partial = try CursorUsageSummaryMapper.map(
+            summary: summary, requestUsage: request,
+            planName: "Enterprise", unavailableMessage: "unavailable")
+        XCTAssertNil(progress(partial.lines, "Requests")?.periodDurationMs)
+        XCTAssertEqual(progress(partial.lines, "Requests")?.used, 2)
     }
 
     func testFallsBackToPooledTotalAndTeamOnDemandWhenIndividualBucketsAreMissing() throws {
@@ -225,6 +289,7 @@ final class CursorEnterpriseProviderTests: XCTestCase {
 
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertEqual(snapshot.plan, "Enterprise")
+        XCTAssertEqual(snapshot.liveQuotaObservedAt, now)
         XCTAssertEqual(progress(snapshot.lines, "Total usage")?.used, 37)
         XCTAssertEqual(progress(snapshot.lines, "Total usage")?.limit, 750)
         XCTAssertEqual(progress(snapshot.lines, "On-demand")?.limit, 250)

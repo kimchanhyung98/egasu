@@ -30,21 +30,7 @@ struct PopoverTopBar: View {
                 }
             }
         case .settings:
-            VStack(spacing: 10) {
-                ZStack {
-                    Text(L10n.common("Settings"))
-                        .font(.headline)
-                    HStack(spacing: 0) {
-                        backButton { popover.back() }
-                        Spacer(minLength: 0)
-                    }
-                }
-                .frame(height: 28)
-                SettingsTabBar()
-            }
-            .padding(.horizontal, PanelMetrics.margin)
-            .padding(.top, PanelMetrics.margin)
-            .padding(.bottom, DashboardContentView.barGap)
+            SettingsTopBar()
         }
     }
 
@@ -61,7 +47,7 @@ struct PopoverTopBar: View {
                 .frame(maxWidth: .infinity)
 
             HStack(spacing: 0) {
-                backButton(action: back)
+                PopoverBackButton(action: back)
                 Spacer(minLength: 8)
                 trailing()
             }
@@ -70,8 +56,35 @@ struct PopoverTopBar: View {
         .frame(height: 36, alignment: .bottom)
         .frame(maxWidth: .infinity)
     }
+}
 
-    private func backButton(action: @escaping () -> Void) -> some View {
+struct SettingsTopBar: View {
+    @Environment(PopoverState.self) private var popover
+    @Environment(UpdaterController.self) private var updater
+
+    var body: some View {
+        VStack(spacing: 10) {
+            ZStack {
+                Text(L10n.common("Settings"))
+                    .font(.headline)
+                HStack(spacing: 0) {
+                    PopoverBackButton { popover.back() }
+                    Spacer(minLength: 0)
+                }
+            }
+            .frame(height: 28)
+            SettingsTabBar(betaUpdatesEnabled: updater.betaChannelEnabled)
+        }
+        .padding(.horizontal, PanelMetrics.margin)
+        .padding(.top, PanelMetrics.margin)
+        .padding(.bottom, DashboardContentView.barGap)
+    }
+}
+
+private struct PopoverBackButton: View {
+    let action: () -> Void
+
+    var body: some View {
         Button(action: action) {
             Label(L10n.dashboard("Back"), systemImage: "chevron.backward")
                 .labelStyle(.iconOnly)
@@ -87,13 +100,14 @@ struct PopoverTopBar: View {
 }
 
 /// Settings 탭 막대 — 기호 + 이름, 고른 탭은 파란 글자와 배경.
-private struct SettingsTabBar: View {
+struct SettingsTabBar: View {
     @Environment(PopoverState.self) private var popover
     @Environment(\.reduceAnimations) private var reduceAnimations
+    let betaUpdatesEnabled: Bool
 
     var body: some View {
         HStack(spacing: 2) {
-            ForEach(SettingsTab.allCases, id: \.self) { tab(for: $0) }
+            ForEach(SettingsTab.visible(betaUpdatesEnabled: betaUpdatesEnabled), id: \.self) { tab(for: $0) }
         }
     }
 

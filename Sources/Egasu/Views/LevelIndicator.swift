@@ -10,7 +10,7 @@ struct LevelIndicator: View {
     let fill: Double
     let severity: WidgetData.MeterSeverity
     var paceMark: Double?
-    /// Soft Limit 위치(0…1) — 속도 눈금(캡슐)과 구분되는 막대 높이 전체의 1pt 실선.
+    /// Soft Limit 위치(0…1) — 실제 막대 가운데 표시하는 기준선.
     var softLimitMark: Double?
 
     @Environment(\.drawsLevelsAsShapes) private var drawsAsShapes
@@ -20,20 +20,6 @@ struct LevelIndicator: View {
 
     var body: some View {
         level
-            .overlay {
-                if let softLimitMark {
-                    Rectangle()
-                        .fill(Theme.severityColor(.warning))
-                        .frame(width: 1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .visualEffect { content, proxy in
-                            content.offset(
-                                x: MeterMarkerGeometry.offset(
-                                    track: proxy.size.width, fraction: softLimitMark, markerWidth: 1))
-                        }
-                        .accessibilityHidden(true)
-                }
-            }
             .overlay {
                 if let paceMark {
                     Capsule()
@@ -46,6 +32,23 @@ struct LevelIndicator: View {
                                     track: proxy.size.width, fraction: paceMark, markerWidth: 2))
                         }
                         .accessibilityHidden(true)
+                }
+            }
+            .overlay {
+                if let softLimitMark {
+                    let isOnFill = fill > 0 && softLimitMark <= fill
+                    GeometryReader { proxy in
+                        Rectangle()
+                            .fill(isOnFill ? Color.black.opacity(0.8) : Theme.severityTextColor(.warning))
+                            .frame(width: 1)
+                            .offset(
+                                x: MeterMarkerGeometry.offset(
+                                    track: proxy.size.width, fraction: softLimitMark, markerWidth: 1))
+                    }
+                    .frame(height: 4)
+                    .clipShape(Capsule())
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
                 }
             }
     }

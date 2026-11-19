@@ -21,6 +21,11 @@ enum KimiHistoryError: Error, LocalizedError, CategorizedError, UserPresentableE
     }
 
     var presentationMessage: LocalizedMessage { .init(errorDescription!) }
+
+    /// 파일 탐색 순서와 관계없이 읽기 실패를 형식 오류보다 우선.
+    static func representative(in errors: [Self]) -> Self? {
+        errors.contains(.unreadable) ? .unreadable : errors.first
+    }
 }
 
 /// Kimi Code wire의 요청별 토큰과 모델·캐시 조건을 확인한 요청의 API 비용 상당액 집계.
@@ -160,7 +165,9 @@ actor KimiUsageScanner {
                 supplemental.records.append(Record(timestamp: date, tokens: record.totalTokens))
             }
             files.append(supplemental)
-            if files.allSatisfy({ $0.records.isEmpty }), let error = fileErrors.first { throw error }
+            if files.allSatisfy({ $0.records.isEmpty }), let error = KimiHistoryError.representative(in: fileErrors) {
+                throw error
+            }
             var result = Self.aggregate(files, now: now, pricing: pricing)
             result.fileErrors = fileErrors
             return result

@@ -37,8 +37,11 @@ final class GrokProvider: ProviderRuntime {
     var widgetDescriptors: [WidgetDescriptor] {
         [
             .percent(id: "grok.weekly", provider: provider, title: "Weekly", metricLabel: "Weekly limit")
-                .supportingSoftLimit(.weekly)
+                .supportingSoftLimit(.weekly, allowsDSTOffset: true)
                 .exportingLimit("weekly", unit: "percent"),
+            .percent(id: "grok.monthly", provider: provider, title: "Monthly", metricLabel: "Monthly limit")
+                .supportingSoftLimit(.monthly, allowsDSTOffset: true)
+                .exportingLimit("monthly", unit: "percent"),
             .badge(id: "grok.payAsYouGo", provider: provider, title: "Extra Usage", metricLabel: "Pay as you go"),
             .usageTrend(provider: provider)
                 .exportingHistory(
@@ -67,24 +70,27 @@ final class GrokProvider: ProviderRuntime {
 
     private func loadAndProbe() async throws -> ProviderSnapshot {
         let candidates = try await loadOffMainActor { [authStore] in try authStore.loadAuthCandidates() }
-        var sawExpiredCandidate = false
+        var expiredCandidateFailure: GrokAuthError?
 
         for var state in candidates {
             if authStore.needsRefresh(entry: state.entry, token: state.token) {
-                if let refreshed = try await refreshAccessToken(state: &state) {
+                switch try await refreshAccessToken(state: &state) {
+                case .success(let refreshed):
                     return try await probe(state: &state, accessToken: refreshed)
-                }
-                if authStore.isExpired(entry: state.entry, token: state.token) {
-                    sawExpiredCandidate = true
-                    continue
+                case .failure(let error):
+                    // 유효한 토큰은 계속 사용. 모든 후보가 만료되면 실제 갱신 실패 원인을 우선 전달.
+                    if authStore.isExpired(entry: state.entry, token: state.token) {
+                        if expiredCandidateFailure == nil || expiredCandidateFailure == .expired {
+                            expiredCandidateFailure = error
+                        }
+                        continue
+                    }
                 }
             }
             return try await probe(state: &state, accessToken: state.token)
         }
 
-        if sawExpiredCandidate {
-            throw GrokAuthError.expired
-        }
+        if let expiredCandidateFailure { throw expiredCandidateFailure }
         throw GrokAuthError.invalidAuth
     }
 
@@ -93,6 +99,7 @@ final class GrokProvider: ProviderRuntime {
         // provider의 primary remote fetch — 실패 시 다른 usage 호출과 동일하게 provider 실패 처리
         let creditsResponse = try await fetchCreditsConfigWithRetry(accessToken: accessToken, state: &state)
         var mapped = try GrokUsageMapper.mapCreditsConfig(creditsResponse)
+        let observedAt = hasSoftLimitQuota(in: mapped.lines) ? now() : nil
 
         let plan = await fetchPlanName(accessToken: state.token)
 
@@ -131,11 +138,14 @@ final class GrokProvider: ProviderRuntime {
             usageHistory: usageHistory,
             warning: warning,
             warningPresentation: warningPresentation.isEmpty ? nil : warningPresentation,
-            metricPresentations: mapped.metricPresentations
+            metricPresentations: mapped.metricPresentations,
+            liveQuotaObservedAt: observedAt
         )
     }
 
-    private func fetchCreditsConfigWithRetry(accessToken: String, state: inout GrokAuthState) async throws -> HTTPResponse {
+    private func fetchCreditsConfigWithRetry(accessToken: String, state: inout GrokAuthState) async throws
+        -> HTTPResponse
+    {
         var working = state
         defer { state = working }
         return try await ProviderAuthRetry.fetch(
@@ -143,20 +153,16 @@ final class GrokProvider: ProviderRuntime {
             token: accessToken,
             attempt: { try await self.usageClient.fetchCreditsConfig(accessToken: $0) },
             refreshAccessToken: {
-                guard let refreshed = try await self.refreshAccessToken(state: &working) else {
-                    throw GrokAuthError.expired
-                }
-                return refreshed
+                try await self.refreshAccessToken(state: &working).get()
             },
             connectionFailed: GrokUsageError.connectionFailed,
             authExpired: GrokAuthError.expired
         )
     }
 
-    private func refreshAccessToken(state: inout GrokAuthState) async throws -> String? {
-        guard let refreshToken = authStore.refreshToken(for: state.entry) else {
-            return nil
-        }
+    /// 갱신 거절과 일시적 실패는 후보 선택에 전달하고, 로그인 변경과 취소는 즉시 전파.
+    private func refreshAccessToken(state: inout GrokAuthState) async throws -> Result<String, GrokAuthError> {
+        guard let refreshToken = authStore.refreshToken(for: state.entry) else { return .failure(.expired) }
 
         let response: HTTPResponse
         do {
@@ -165,21 +171,37 @@ final class GrokProvider: ProviderRuntime {
                 clientID: authStore.clientID(entryKey: state.entryKey, entry: state.entry)
             )
         } catch {
-            // transport 실패도 사용자에게는 "auth expired"로 표기되므로(nil refresh → .expired) 실제 원인은 이 로그로만 보존
-            AppLog.warn(LogTag.auth("grok"), "token refresh request failed (transport): \(error.localizedDescription)")
-            return nil
+            try ProviderAuthRetry.rethrowCancellation(error)
+            AppDiagnostics.record(
+                .credentialRefresh, result: .failure, category: .network, providerID: provider.id, error: error,
+                localContext: "token refresh request failed"
+            )
+            return .failure(.refreshConnectionFailed)
         }
 
         guard (200..<300).contains(response.statusCode) else {
-            AppLog.warn(LogTag.auth("grok"), "token refresh failed (HTTP \(response.statusCode))")
-            return nil
+            let invalidGrant =
+                response.statusCode == 400
+                && ProviderParse.jsonObject(response.body)?["error"] as? String == "invalid_grant"
+            let error: GrokAuthError =
+                ProviderAuthRetry.isAuthFailure(response) || invalidGrant
+                ? .expired : .refreshRequestFailed(response.statusCode)
+            AppDiagnostics.failure(
+                .credentialRefresh, error: error, providerID: provider.id,
+                localContext: "token refresh returned HTTP \(response.statusCode)"
+            )
+            return .failure(error)
         }
         guard let decoded = usageClient.decodeRefreshResponse(response),
-              !decoded.accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            !decoded.accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
-            AppLog.warn(LogTag.auth("grok"), "token refresh returned an undecodable or empty access token")
-            return nil
+            AppDiagnostics.failure(
+                .credentialRefresh, error: GrokAuthError.refreshResponseInvalid, providerID: provider.id,
+                localContext: "token refresh response contained no usable access token"
+            )
+            return .failure(.refreshResponseInvalid)
         }
+        AppDiagnostics.record(.credentialRefresh, result: .success, providerID: provider.id)
 
         let accessToken = decoded.accessToken.trimmingCharacters(in: .whitespacesAndNewlines)
         state.token = accessToken
@@ -193,18 +215,24 @@ final class GrokProvider: ProviderRuntime {
 
         let expiresAt = refreshExpiryDate(response: decoded, accessToken: accessToken)
         state.entry.expiresAt = EgasuISO8601.string(from: expiresAt)
-        // 원본 변경·재확인 실패는 중단 — 실제 쓰기 실패만 로그 후 갱신 token을 이번 세션에서 일시 사용.
+        // 동일한 로그인에만 갱신 결과를 저장. 쓰기만 실패하면 새 토큰을 이번 조회에 사용.
         do {
             state = try authStore.save(state)
+            AppDiagnostics.record(.credentialSave, result: .success, providerID: provider.id)
         } catch GrokAuthError.credentialsChanged {
-            AppLog.warn(LogTag.auth("grok"), "sign-in changed during token refresh; discarding refreshed credentials")
+            AppDiagnostics.record(.credentialSave, result: .bindingChanged, providerID: provider.id)
+            AppLog.info(LogTag.auth("grok"), "sign-in changed during token refresh; discarding refreshed credentials")
             throw GrokAuthError.credentialsChanged
         } catch GrokAuthError.credentialReadFailed {
             throw GrokAuthError.credentialReadFailed
         } catch {
-            AppLog.error(LogTag.auth("grok"), "failed to persist rotated credentials; using the refreshed token for this session only: \(error.localizedDescription)")
+            try ProviderAuthRetry.rethrowCancellation(error)
+            AppDiagnostics.record(
+                .credentialSave, result: .degraded, providerID: provider.id, error: error,
+                localContext: "could not persist rotated credentials; using the token for this session"
+            )
         }
-        return accessToken
+        return .success(accessToken)
     }
 
     private func refreshExpiryDate(response: GrokRefreshResponse, accessToken: String) -> Date {
@@ -222,7 +250,7 @@ final class GrokProvider: ProviderRuntime {
             return GrokUsageMapper.planName(from: try await usageClient.fetchSettings(accessToken: accessToken))
         } catch {
             if !(error is CancellationError), (error as? URLError)?.code != .cancelled {
-                AppLog.warn(LogTag.plugin("grok"), "optional plan request failed (category=\(ErrorCategory.classify(error).rawValue), error_code=\((error as NSError).code))")
+                AppLog.warn(LogTag.plugin("grok"), "optional plan request failed \(AppLog.errorDetails(error))")
             }
             return nil
         }

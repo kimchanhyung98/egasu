@@ -49,6 +49,18 @@ final class AntigravityCloudCodeTests: XCTestCase {
         assertNoLegacyRequests(routing)
     }
 
+    func testMalformedReportedArgonIsFilledFromProductionWhenAllSharedBucketsAreValid() async {
+        let daily = completeSummary.replacingOccurrences(
+            of: "\"buckets\":[", with: #""buckets":[{"bucketId":"gemini-argon-wtu-weekly","disabled":"unknown"},"#
+        )
+        let production = #"{"groups":[{"buckets":[{"bucketId":"gemini-argon-wtu-weekly","remainingFraction":0.3}]}]}"#
+        let routing = makeRouting(production: response(production), daily: response(daily))
+        let snapshot = await makeProvider(routing).refresh()
+        XCTAssertEqual(summaryHosts(routing), [dailyHost, productionHost])
+        XCTAssertNil(snapshot.incompleteQuotaWindows)
+        assertUsed(snapshot.lines, [25, 10, 60, 40, 70])
+    }
+
     func testQuotaSummaryUsesSupportedClientUserAgentToIncludeGemini() async {
         let complete = response(completeSummary)
         let claudeOnly = response(claudeSummary)
@@ -130,7 +142,8 @@ final class AntigravityCloudCodeTests: XCTestCase {
         let daily = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":0.75}]}]}"#
         let production = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":0.1,"resetTime":"2026-10-20T09:00:00Z"}]}]}"#
 
-        let lines = try XCTUnwrap(AntigravityUsageMapper.parseQuotaSummaries([daily, production].map { Data($0.utf8) }))
+        let lines = try XCTUnwrap(
+            AntigravityUsageMapper.parseQuotaSummaries([daily, production].map { Data($0.utf8) })?.lines)
 
         assertUsed(lines, [25])
         guard case .progress(_, _, _, _, let resetsAt, _, _)? = lines.first else {
@@ -143,7 +156,8 @@ final class AntigravityCloudCodeTests: XCTestCase {
         let daily = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":"unknown","resetTime":"2026-10-20T09:00:00Z"}]}]}"#
         let production = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":0.75}]}]}"#
 
-        let lines = try XCTUnwrap(AntigravityUsageMapper.parseQuotaSummaries([daily, production].map { Data($0.utf8) }))
+        let lines = try XCTUnwrap(
+            AntigravityUsageMapper.parseQuotaSummaries([daily, production].map { Data($0.utf8) })?.lines)
 
         assertUsed(lines, [25])
         guard case .progress(_, _, _, _, let resetsAt, _, _)? = lines.first else {
@@ -161,7 +175,8 @@ final class AntigravityCloudCodeTests: XCTestCase {
         ]}]}
         """
 
-        let lines = try XCTUnwrap(AntigravityUsageMapper.parseQuotaSummaries([daily, production].map { Data($0.utf8) }))
+        let lines = try XCTUnwrap(
+            AntigravityUsageMapper.parseQuotaSummaries([daily, production].map { Data($0.utf8) })?.lines)
 
         assertUsed(lines, [25])
         guard case .progress(_, _, _, _, let resetsAt, _, _)? = lines.first else {
@@ -174,7 +189,8 @@ final class AntigravityCloudCodeTests: XCTestCase {
         let daily = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":"unknown","resetTime":"2026-10-20T09:00:00Z"}]}]}"#
         let production = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","resetTime":"2026-10-20T12:00:00Z"}]}]}"#
 
-        let lines = try XCTUnwrap(AntigravityUsageMapper.parseQuotaSummaries([daily, production].map { Data($0.utf8) }))
+        let lines = try XCTUnwrap(
+            AntigravityUsageMapper.parseQuotaSummaries([daily, production].map { Data($0.utf8) })?.lines)
 
         XCTAssertTrue(lines.isEmpty)
     }

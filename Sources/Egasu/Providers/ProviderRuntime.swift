@@ -24,6 +24,16 @@ protocol ProviderRuntime: AnyObject {
 
 extension ProviderRuntime {
     var retainsDedicatedSpendOnScanFailure: Bool { false }
+
+    func hasSoftLimitQuota(in lines: [MetricLine]) -> Bool {
+        let descriptors = widgetDescriptors
+        return lines.contains { line in
+            guard case let .progress(label, _, _, _, _, duration, _) = line else { return false }
+            return descriptors.contains {
+                $0.metricLabel == label && $0.supportsSoftLimit(.all, periodDurationMs: duration)
+            }
+        }
+    }
 }
 
 /// blocking `Sendable` credential 로드를 MainActor 밖에서 실행.

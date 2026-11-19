@@ -184,6 +184,48 @@ final class FeatureTelemetryTests: XCTestCase {
         XCTAssertEqual(rollup?["trigger_counts"] as? [String: Int], ["account_change": 1, "reset_claim": 1, "manual": 1])
     }
 
+    func testPartialQuotaAndRateLimitAreCountedAsDegradedRefreshes() async throws {
+        let f = Fixture()
+        defer { f.cleanUp() }
+        let now = f.clock.value
+        let period: [MetricLine] = [.progress(label: "Weekly", used: 20, limit: 100, format: .percent)]
+        let runtime = TestProviderRuntime(
+            provider: MockData.codex, descriptors: [],
+            snapshot: .make(
+                provider: MockData.codex, plan: nil, lines: period, refreshedAt: now,
+                incompleteQuotaWindows: [.monthly], liveQuotaObservedAt: now))
+        let limited = TestProviderRuntime(
+            provider: MockData.claude, descriptors: [],
+            snapshot: .make(
+                provider: MockData.claude, plan: nil, lines: period, refreshedAt: now,
+                usageRetryAfter: now.addingTimeInterval(60)))
+        let store = WidgetDataStore(
+            registry: .from([runtime, limited]), providers: [runtime, limited],
+            cache: ProviderSnapshotCache(userDefaults: f.defaults), defaults: f.defaults)
+        store.onRefreshOutcome = { id, outcome, category, trigger, degraded in
+            f.recorder.record(
+                providerID: id, outcome: outcome, category: category, trigger: trigger, degraded: degraded)
+        }
+
+        for id in ["codex", "claude"] {
+            let outcome = await store.refresh(providerID: id, force: true)
+            XCTAssertEqual(outcome, .refreshed)
+        }
+
+        let events = f.sink.events("feature_operation_result")
+        XCTAssertEqual(events.compactMap { $0["result"] as? String }, ["degraded", "degraded"])
+        XCTAssertEqual(events.compactMap { $0["error_category"] as? String }, ["decoding", "rate_limited"])
+        f.clock.value = now.addingTimeInterval(86400)
+        f.recorder.tick()
+        let daily = f.sink.events("provider_refresh_daily")
+        XCTAssertEqual(daily.count, 2)
+        for rollup in daily {
+            XCTAssertEqual(rollup["success_count"] as? Int, 1)
+            XCTAssertEqual(rollup["failure_count"] as? Int, 0)
+            XCTAssertEqual(rollup["degraded_count"] as? Int, 1)
+        }
+    }
+
     private final class Runtime: ProviderRuntime {
         let provider = MockData.claude
         let widgetDescriptors: [WidgetDescriptor] = []

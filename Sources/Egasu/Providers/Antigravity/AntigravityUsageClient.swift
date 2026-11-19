@@ -141,12 +141,12 @@ struct AntigravityUsageClient: Sendable {
                 }
                 continue
             }
-            guard AntigravityUsageMapper.isQuotaSummary(response.body) else {
+            guard let summary = AntigravityUsageMapper.parseQuotaSummary(response.body) else {
                 AppLog.warn(LogTag.plugin("antigravity"), "quota summary response has no decodable groups on \(base)")
                 continue
             }
             bodies.append(response.body)
-            if AntigravityUsageMapper.isCompleteSummary(response.body) { break }
+            if summary.isComplete { break }
         }
         if !bodies.isEmpty { return .ok(bodies) }
         return sawAuthFailure ? .authFailed : .unavailable

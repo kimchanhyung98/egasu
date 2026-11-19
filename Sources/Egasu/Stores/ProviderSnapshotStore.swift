@@ -62,6 +62,10 @@ final class ProviderSnapshotStore {
         return cache.snapshot(providerID: providerID)
     }
 
+    func invalidateLiveQuota(for providerID: String, responseIdentity: String? = nil) {
+        cache.invalidateLiveQuota(providerID: providerID, identity: responseIdentity ?? identityKeys[providerID])
+    }
+
     @discardableResult
     func useCachedSnapshot(_ snapshot: ProviderSnapshot) -> Bool {
         guard localSnapshots[snapshot.providerID] != snapshot else { return false }
@@ -108,7 +112,7 @@ final class ProviderSnapshotStore {
         cache.loadSnapshots(providerIDs: providerIDs).filter { cardID, _ in
             guard !unresolvedIdentityCacheRejections.contains(cardID) else { return false }
             guard !cache.hasStaleAccountStamp(providerID: cardID, currentIdentityKey: identityKeys[cardID]) else {
-                AppLog.info(.cache, "stale account cache discarded for \(cardID)")
+                AppLog.info(.cache, "stale account cache discarded for \(AppLog.providerFamily(cardID))")
                 return false
             }
             return true
@@ -145,9 +149,11 @@ final class ProviderSnapshotStore {
             snapshot.warning = warning
             snapshot.warningPresentation = [.init(warning)]
             snapshot.isDegraded = true
-            AppLog.warn(.refresh, "\(providerID) local history unavailable; retained same-day totals")
+            AppLog.warn(
+                .refresh, "\(AppLog.providerFamily(providerID)) local history unavailable; retained same-day totals")
         }
         if let failure = snapshot.refreshFailure {
+            invalidateLiveQuota(for: providerID, responseIdentity: snapshot.producedByIdentityKey)
             var notifyHistoryChange = false
             var render = false
             if unresolvedClaudeIdentity {
@@ -204,7 +210,8 @@ final class ProviderSnapshotStore {
         }
         // 한도 조회는 성공했지만 로컬 이력이 없으면 마지막 정상 이력만 보존 — 새 한도·플랜·경고·시각은 반영.
         // nil이 아닌 빈 이력은 수집 완료 결과로 취급하여 기존 이력 제거.
-        var degraded = snapshot.warning != nil || snapshot.isDegraded == true
+        var degraded =
+            snapshot.warning != nil || snapshot.isDegraded == true || snapshot.partialRefreshErrorCategory != nil
         if snapshot.usageHistory == nil,
             let history = previousSnapshot(for: snapshot)?.usageHistory,
             let descriptor = registry.historyDescriptorsByProvider[providerID]
@@ -219,7 +226,8 @@ final class ProviderSnapshotStore {
                 now: now(),
                 combined: false
             )
-            AppLog.debug(.refresh, "preserved last-good history for \(providerID) after scan miss")
+            AppLog.debug(
+                .refresh, "preserved last-good history for \(AppLog.providerFamily(providerID)) after scan miss")
         }
         if provider.retainsDedicatedSpendOnScanFailure, snapshot.totalSpendLines == nil,
            let previous = localSnapshots[providerID],

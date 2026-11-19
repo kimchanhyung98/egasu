@@ -45,6 +45,7 @@ final class CopilotProvider: ProviderRuntime {
     var widgetDescriptors: [WidgetDescriptor] {
         [
             .percent(id: "copilot.premium", provider: provider, title: "Credits")
+                .supportingSoftLimit(.monthly)
                 .exportingLimit("premiumCredits", unit: "credits", source: .progressOrValue(kind: .count))
                 .exportingHistory(scope: .machineLocal, estimatedCost: false, sourceNote: Self.historySourceNote),
             .values(id: "copilot.extra", provider: provider, title: "Extra Usage", selection: .kind(.count))
@@ -54,8 +55,10 @@ final class CopilotProvider: ProviderRuntime {
             .values(id: "copilot.orgSpend", provider: provider, title: "Org Spend", selection: .kind(.dollars), valueWord: "spent")
                 .exportingLimit("orgSpend", unit: "usd", source: .value(kind: .dollars)),
             .percent(id: "copilot.chat", provider: provider, title: "Chat")
+                .supportingSoftLimit(.monthly)
                 .exportingLimit("chat", unit: "percent"),
             .percent(id: "copilot.completions", provider: provider, title: "Completions")
+                .supportingSoftLimit(.monthly)
                 .exportingLimit("completions", unit: "percent")
         ]
     }
@@ -134,21 +137,42 @@ final class CopilotProvider: ProviderRuntime {
             }
 
             let mapped = try CopilotUsageMapper.map(response)
+            let observedAt = mapped.isOrgManagedSeat ? nil : now()
 
-            // 개인 count와 조직 합계는 별도 scope — org 조회는 명시적 flag로 gate하고 기존 개인 행 뒤에 추가.
-            var lines = mapped.lines
-            if mapped.isOrgManagedSeat {
-                lines += await orgBillingLines(token: token.value)
-            }
-            if mapped.hasInvalidPersonalCredits {
+            let warning: String?
+            if mapped.hasIncompleteQuota {
+                AppLog.warn(LogTag.plugin("copilot"), "monthly quota response contained an incomplete bucket")
+                warning = "Some Copilot quota data is unavailable. Try refreshing again later."
+            } else if mapped.hasInvalidPersonalCredits {
                 AppLog.warn(LogTag.plugin("copilot"), "personal credits used is invalid; omitting personal credits")
+                warning = "Personal Credits are unavailable. Try refreshing again later."
+            } else {
+                warning = nil
             }
 
-            return ProviderSnapshot.make(
-                provider: provider, plan: mapped.plan, lines: lines, refreshedAt: refreshedAt,
-                warning: mapped.hasInvalidPersonalCredits ? "Personal Credits are unavailable. Try refreshing again later." : nil,
-                isDegraded: mapped.hasInvalidPersonalCredits ? true : nil
+            var snapshot = ProviderSnapshot.make(
+                provider: provider, plan: mapped.plan, lines: mapped.lines, refreshedAt: refreshedAt,
+                warning: warning,
+                isDegraded: warning == nil ? nil : true,
+                incompleteQuotaWindows: mapped.hasIncompleteQuota ? [.monthly] : nil,
+                liveQuotaObservedAt: observedAt
             )
+            // 조직 청구 실패 시 이미 확인한 개인 지표와 요금제 유지.
+            if mapped.isOrgManagedSeat {
+                do {
+                    snapshot.lines += try await orgBillingLines(token: token.value)
+                } catch {
+                    if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled {
+                        return snapshot
+                    }
+                    snapshot.reportedPartialFailure = ErrorCategory.classify(error)
+                    appendWarning(
+                        "Copilot organization billing is unavailable. Try refreshing again later.", to: &snapshot)
+                    AppLog.warn(
+                        LogTag.plugin("copilot"), "organization billing unavailable \(AppLog.errorDetails(error))")
+                }
+            }
+            return snapshot
         } catch let error as CopilotAuthError {
             throw error
         } catch let error as CopilotUsageError {
@@ -160,62 +184,51 @@ final class CopilotProvider: ProviderRuntime {
 
     // MARK: - Org billing lookup
 
-    /// 저장된 조직 우선 조회. 이후 반환된 조직 목록에서 크레딧 사용량이 있는 첫 조직을 저장.
-    /// 아무것도 못 읽으면 `[]` — 일반 org member의 403은 기대된 결과라 provider 오류 없이 기존 개인 행·plan 유지.
-    private func orgBillingLines(token: String) async -> [MetricLine] {
+    /// 저장한 조직의 일시 장애는 다음 갱신에 재시도. 탐색 중 다른 조직에서 정상 자료를 얻으면 그 결과 사용.
+    private func orgBillingLines(token: String) async throws -> [MetricLine] {
         if let cached = defaults.string(forKey: Self.billingOrgDefaultsKey) {
-            do {
-                if let lines = try await usageLines(org: cached, token: token) {
-                    return lines
-                }
-                // cached org가 응답했지만 더 이상 Copilot usage 없음(org 탈퇴, billing 역할 상실, org의 Copilot 중단) — 잊고 처음부터 재탐색.
-                defaults.removeObject(forKey: Self.billingOrgDefaultsKey)
-            } catch {
-                // 일시 실패 — 로그만 남기고 cached org는 다음 refresh를 위해 유지.
-                AppLog.warn(LogTag.plugin("copilot"), "org billing lookup failed for the remembered org: \(error.localizedDescription)")
-                return []
-            }
+            if let lines = try await usageLines(org: cached, token: token) { return lines }
+            try Task.checkCancellation()
+            defaults.removeObject(forKey: Self.billingOrgDefaultsKey)
         }
 
-        let orgs: [String]
-        do {
-            let response = try await orgBillingClient.fetchUserOrgs(token: token)
-            guard response.statusCode == 200 else {
-                // 조직 목록 조회 실패는 진단을 기록하고 개인 지표는 유지.
-                AppLog.info(LogTag.plugin("copilot"), "org list HTTP \(response.statusCode); skipping org billing lookup")
-                return []
-            }
-            orgs = CopilotOrgBillingMapper.orgLogins(response)
-        } catch {
-            AppLog.warn(LogTag.plugin("copilot"), "org list fetch failed: \(error.localizedDescription)")
-            return []
+        let response = try await orgBillingClient.fetchUserOrgs(token: token)
+        try Task.checkCancellation()
+        switch response.statusCode {
+        case 200: break
+        case 403, 404: return []
+        default: throw CopilotUsageError.requestFailed(response.statusCode)
         }
 
-        for org in orgs {
+        let orgs = try CopilotOrgBillingMapper.orgLogins(response)
+        var lookupError: Error?
+        for org in orgs.logins {
             do {
                 if let lines = try await usageLines(org: org, token: token) {
+                    try Task.checkCancellation()
                     defaults.set(org, forKey: Self.billingOrgDefaultsKey)
                     return lines
                 }
             } catch {
-                // 한 org의 billing 장애가 다른 org의 usage를 가리면 안 됨 — 계속 probe.
-                AppLog.warn(LogTag.plugin("copilot"), "org billing summary failed for one org; trying the next: \(error.localizedDescription)")
+                try ProviderAuthRetry.rethrowCancellation(error)
+                if lookupError == nil { lookupError = error }
+                AppLog.debug(
+                    LogTag.plugin("copilot"), "organization summary lookup failed \(AppLog.errorDetails(error))")
             }
         }
+        if let lookupError { throw lookupError }
+        if orgs.incomplete { throw CopilotUsageError.invalidResponse }
         return []
     }
 
-    /// org 하나의 billing summary → metric line, 확정적으로 보여줄 게 없으면 nil(접근 불가 — 일반 member의 기대된 403 — 또는 summary에 Copilot credit usage 없음).
-    /// 일시 실패(transport 오류, 429, 5xx)는 throw — 호출자가 짧은 장애를 stale org로 오인하지 않고 cached org 유지.
+    /// 조직의 청구 자료가 없거나 접근 권한이 없으면 nil. 일시적인 오류와 잘못된 응답은 호출부에 전달.
     private func usageLines(org: String, token: String) async throws -> [MetricLine]? {
         let response = try await orgBillingClient.fetchUsageSummary(org: org, token: token)
-        guard response.statusCode == 200 else {
-            AppLog.debug(LogTag.plugin("copilot"), "org billing summary for one org: HTTP \(response.statusCode)")
-            if response.statusCode == 429 || response.statusCode >= 500 {
-                throw CopilotUsageError.requestFailed(response.statusCode)
-            }
-            return nil
+        try Task.checkCancellation()
+        switch response.statusCode {
+        case 200: return try CopilotOrgBillingMapper.usageLines(response)
+        case 403, 404: return nil
+        default: throw CopilotUsageError.requestFailed(response.statusCode)
         }
-        return CopilotOrgBillingMapper.usageLines(response)
     }
 }

@@ -135,17 +135,17 @@ Antigravity는 잔여 비율에서 계산하므로 `used`·`remaining`이 정수
 | 프로바이더 | 리소스 키 |
 | --- | --- |
 | Claude | `session`, `weekly`, `sonnet`, `fable`, `extraUsage` |
-| Codex | `session`, `weekly`, `spark`, `sparkWeekly`, `credits`, `creditValue`, `rateLimitResets` |
+| Codex | `session`, `weekly`, `monthly`, `spark`, `sparkWeekly`, `sparkMonthly`, `credits`, `creditValue`, `rateLimitResets` |
 | Cursor | `totalUsage`, `autoUsage`, `apiUsage`, `onDemand`, `requests`, `credits` |
 | Antigravity | `geminiSession`, `geminiWeekly`, `nonGeminiSession`, `nonGeminiWeekly`, `argonWeekly` |
 | Copilot | `premiumCredits`, `extraUsage`, `orgCredits`, `orgSpend`, `chat`, `completions` |
 | Devin | `daily`, `weekly`, `extraUsageBalance` |
-| Grok | `weekly` |
+| Grok | `weekly`, `monthly` |
 | Kimi | `session`, `weekly`, `totalUsage`, `extraUsage`, `extraUsageBalance` |
 | Kiro | `credits` |
 | OpenCode | `session`, `weekly`, `monthly` |
 | OpenRouter | `credits`, `balance`, `keyLimit` |
-| Z.ai | `session`, `weekly`, `webSearches` |
+| Z.ai | `session`, `weekly`, `monthly`, `webSearches` |
 
 차트, 색상, 부제목, 형식화된 배지, 레이아웃 상태, 과거 지출 기간은 이 계약에서 제외.
 Codex의 결합된 Credits UI 행은 `credits`와 `creditValue` 두 스칼라 리소스로 분리.

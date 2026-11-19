@@ -57,6 +57,42 @@ final class SoftLimitPollingTests: XCTestCase {
         XCTAssertEqual(fixture.adapter.listCalls, 0)
     }
 
+    func testLeavingLabsCancelsPollingAndDiscardsThePendingCheck() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+        let polling = expectation(description: "Polling started")
+        fixture.sleeper.onSleep = { polling.fulfill() }
+        fixture.receive()
+        fixture.coordinator.start()
+        await fulfillment(of: [polling], timeout: 1)
+
+        let enumerating = expectation(description: "Pending task list")
+        let gate = Gate()
+        fixture.adapter.onList = {
+            enumerating.fulfill()
+            await gate.wait()
+        }
+        let check = Task { await fixture.coordinator.check() }
+        await fulfillment(of: [enumerating], timeout: 1)
+
+        let stopped = expectation(description: "Polling stopped")
+        fixture.sleeper.onCancel = { stopped.fulfill() }
+        let disconnects = fixture.adapter.disconnects
+        fixture.settings.setLabsAvailable(false)
+        await fulfillment(of: [stopped], timeout: 1)
+        XCTAssertEqual(fixture.adapter.disconnects, disconnects + 1)
+        fixture.receive()
+        fixture.coordinator.invalidate(providerID: "codex")
+        fixture.settings.setLabsAvailable(true)
+        gate.open()
+        await check.value
+        await fixture.coordinator.check()
+        XCTAssertFalse(fixture.settings.enabled)
+        XCTAssertTrue(fixture.coordinator.statuses.isEmpty)
+        XCTAssertEqual(fixture.adapter.listCalls, 1)
+        XCTAssertEqual(fixture.adapter.cancelCalls, 0)
+    }
+
     func testPollingChecksNewTasksThenStopsAtQuotaExpiry() async throws {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }
@@ -235,7 +271,7 @@ final class SoftLimitPollingTests: XCTestCase {
 
         init() throws {
             defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-            settings = SoftLimitSettingsStore(defaults: defaults)
+            settings = SoftLimitSettingsStore(defaults: defaults, labsAvailable: true)
             settings.enabled = true
         }
 
@@ -298,6 +334,7 @@ final class SoftLimitPollingTests: XCTestCase {
         let coverageNotice = "Fixture only."
         var tasks: [SoftLimitTask] = [.init(providerID: "codex", sessionID: "session", operationID: "turn")]
         var listCalls = 0
+        var disconnects = 0
         var cancelledOperationIDs: [String] = []
         var cancelCalls: Int { cancelledOperationIDs.count }
         var onList: (@MainActor () async -> Void)?
@@ -311,7 +348,7 @@ final class SoftLimitPollingTests: XCTestCase {
             cancelledOperationIDs.append(task.operationID)
             return .cancelled
         }
-        func disconnect() {}
+        func disconnect() { disconnects += 1 }
     }
 
     @MainActor

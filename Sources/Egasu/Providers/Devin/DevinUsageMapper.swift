@@ -52,12 +52,12 @@ enum DevinUsageMapper {
             ))
         } else if !hideWeeklyQuota, hideDailyQuota,
                   let dailyRemaining {
-            // 일간 행을 숨기는 계정에서 주간 잔여 비율이 없으면 일간 잔여 비율을 주간 행에 사용.
+            // 호환용 주간 행에는 일간 잔여 비율만 있으므로 주간 속도·소프트 한도 계산에서 제외.
             lines.append(quotaLine(
                 label: "Weekly quota",
                 remaining: dailyRemaining,
                 resetsAt: weeklyReset,
-                periodDurationMs: weekPeriodMs
+                    periodDurationMs: nil
             ))
         }
 
@@ -74,7 +74,9 @@ enum DevinUsageMapper {
     }
 
     /// 잔여 비율을 `100 - remaining`으로 사용 비율로 바꾸고 0…100 범위로 제한.
-    private static func quotaLine(label: String, remaining: Double, resetsAt: Date?, periodDurationMs: Int) -> MetricLine {
+    private static func quotaLine(label: String, remaining: Double, resetsAt: Date?, periodDurationMs: Int?)
+        -> MetricLine
+    {
         .progress(
             label: label,
             used: ProviderParse.clampPercent(100 - remaining),

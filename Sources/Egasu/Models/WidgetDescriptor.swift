@@ -17,7 +17,10 @@ struct WidgetDescriptor: Identifiable, Hashable {
     /// provider 정규화 일별 history의 명시적 집계 semantics — shared spend tile 보유 provider마다 descriptor 정확히 하나가 보유.
     var historyResource: UsageHistoryDescriptor? = nil
     /// 사용자 soft-limit 안내선 대상 window — provider 선언이 명시적으로 opt-in.
-    var softLimitWindow: SoftLimitWindow? = nil
+    var softLimitWindows: Set<SoftLimitWindow> = []
+    /// 원본 필드가 주기를 보장하지만 실제 기간 길이는 제공하지 않는 지표에만 허용.
+    var acceptsMissingSoftLimitDuration = false
+    var softLimitAllowsDSTOffset = false
 
     var title: String { sample.title }
 

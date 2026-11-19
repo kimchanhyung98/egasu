@@ -11,17 +11,24 @@ final class SoftLimitSettingsStore {
     private static let enabledKey = "openusage.softLimit.cancellationEnabled.v2"
     private static let windowKey = "openusage.softLimit.window.v1"
     private static let thresholdKey = "openusage.softLimit.thresholdPercent.v1"
+    private var storedEnabled: Bool
     private var storedThresholdPercent: Int
+    private(set) var labsAvailable: Bool
     @ObservationIgnored var onChange: (@MainActor () -> Void)?
 
     var enabled: Bool {
-        didSet {
-            defaults.set(enabled, forKey: Self.enabledKey)
-            if enabled != oldValue { onChange?() }
+        get { storedEnabled }
+        set {
+            guard (!newValue || labsAvailable), newValue != storedEnabled else { return }
+            storedEnabled = newValue
+            defaults.set(newValue, forKey: Self.enabledKey)
+            onChange?()
         }
     }
 
-    var window: SoftLimitWindow {
+    var isActive: Bool { labsAvailable && enabled }
+
+    var window: SoftLimitWindowSelection {
         didSet {
             defaults.set(window.rawValue, forKey: Self.windowKey)
             if window != oldValue { onChange?() }
@@ -39,13 +46,33 @@ final class SoftLimitSettingsStore {
         }
     }
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, labsAvailable: Bool) {
         self.defaults = defaults
-        self.enabled = defaults.bool(forKey: Self.enabledKey, default: false)
-        self.window = defaults.enumValue(forKey: Self.windowKey, default: .weekly)
+        self.labsAvailable = labsAvailable
+        self.storedEnabled = defaults.bool(forKey: Self.enabledKey, default: false)
+        self.window = defaults.enumValue(forKey: Self.windowKey, default: .all)
+        if defaults.string(forKey: Self.windowKey) == "fiveHours" {
+            defaults.set(SoftLimitWindowSelection.all.rawValue, forKey: Self.windowKey)
+        }
         self.storedThresholdPercent = Self.normalizedThreshold(
             defaults.object(forKey: Self.thresholdKey) as? Int ?? Self.defaultThresholdPercent
         )
+        applyLabsAvailability()
+    }
+
+    func setLabsAvailable(_ available: Bool) {
+        guard available != labsAvailable else { return }
+        labsAvailable = available
+        applyLabsAvailability()
+    }
+
+    private func applyLabsAvailability() {
+        if !labsAvailable && enabled {
+            enabled = false
+            AppLog.info(.config, "Soft Limit disabled because Beta Updates is off")
+        } else {
+            onChange?()
+        }
     }
 
     func setThreshold(from text: String) -> Bool {
@@ -58,8 +85,8 @@ final class SoftLimitSettingsStore {
         return true
     }
 
-    func usedFraction(for candidate: SoftLimitWindow?, periodDurationMs: Int?) -> Double? {
-        guard enabled, candidate == window, candidate?.matches(periodDurationMs: periodDurationMs) == true else {
+    func usedFraction(for descriptor: WidgetDescriptor, periodDurationMs: Int?) -> Double? {
+        guard isActive, descriptor.supportsSoftLimit(window, periodDurationMs: periodDurationMs) else {
             return nil
         }
         return Double(thresholdPercent) / 100

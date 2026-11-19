@@ -368,6 +368,7 @@ final class KiroUsageScannerTests: XCTestCase {
         XCTAssertNil(snapshot.totalSpendLines)
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertTrue(snapshot.isDegraded == true)
+        XCTAssertEqual(snapshot.partialRefreshErrorCategory, .storage)
         XCTAssertEqual(snapshot.warningPresentation?.count, 1)
         XCTAssertEqual(snapshot.warning, "Some local usage files could not be read. Usage history may be incomplete.")
     }

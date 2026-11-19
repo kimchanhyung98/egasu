@@ -125,6 +125,12 @@ extension GrokAuthError: UserPresentableError {
             .init("Grok sign-in changed while refreshing. Refresh again to use the current account.")
         case .credentialReadFailed:
             .init("Grok sign-in could not be read. Check access to the Grok auth file and refresh again.")
+        case .refreshConnectionFailed:
+            .init("Grok sign-in could not be refreshed. Check your connection.")
+        case .refreshRequestFailed(let status):
+            .init("Grok sign-in could not be refreshed (HTTP %@). Try again later.", [String(status)])
+        case .refreshResponseInvalid:
+            .init("Grok returned an invalid token refresh response. Try again later.")
         }
     }
 }

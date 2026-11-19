@@ -8,7 +8,8 @@ Codex CLI 로그인으로 ChatGPT/Codex 구독 한도를 추적하고, Codex 로
 |---|---|
 | Session | 5시간 순환 기간 사용량 |
 | Weekly | 7일 기간 사용량 |
-| Spark / Spark Weekly | GPT-5.3-Codex-Spark 모델 한도 — 5시간 기간과 주간 기간.<br>계정 응답에 해당 한도가 있을 때 표시 |
+| Monthly | 계정 응답에 월간 기간이 명시된 경우의 사용량 |
+| Spark / Spark Weekly / Spark Monthly | GPT-5.3-Codex-Spark 모델의 5시간·주간·월간 한도 중 계정 응답에 있는 기간 |
 | Reset Watch | 확률과 시각으로 표시하는 전역 재설정 예측 — 선택적이며 기본값은 꺼짐(아래 참조) |
 | Rate Limit Resets | 온디맨드 속도 제한 재설정 크레딧 — 개수로 표시(예: `2 available`)하고 가장 빠른 만료를 색상 점으로 표시하며, 값에 마우스를 올리면 크레딧별 만료 타임라인 제공 |
 | Extra Usage | Flex 크레딧 — 달러 + 크레딧 형식 그대로 표시(예: `$31.84 · 796 credits`) |
@@ -37,7 +38,7 @@ Free·Go·Plus·Business·Enterprise·Edu를 포함한 가격은 [구독 요금�
 
 `plan_type: pro`만으로 신규·기존 가입자의 사용량 배수 구분 불가.
 따라서 `Pro 20x` 고정 표시를 제거하고, x10·x20·x25 등의 배수를 가격이나 날짜로 추정하지 않음.
-Session·Weekly 사용률과 리셋 시각은 서버 응답 그대로 사용하며 플랜 가격으로 환산하거나 배율 적용하지 않음.
+기간별 사용률과 리셋 시각은 서버 응답 그대로 사용하며 플랜 가격으로 환산하거나 배율 적용하지 않음.
 새 x10·x25 배수의 공식 공개 문서 근거와 계정별 적용 여부는 미확인.
 
 ## 세션·주간 타이머 자동 시작
@@ -329,7 +330,7 @@ Codex 원장과 공유 도구의 가격 미확정 토큰은 유지하며, 해당
 Mac의 로컬 시간대를 기준으로 날짜를 묶어 사용자의 달력과 일치.
 비용을 확인할 수 있으면 기간별 비용과 토큰을 한 행에 표시(`$4.08 · 1.2M tokens`).
 누락된 기간에는 대시보드의 [기간 값 표시 규칙](/docs/dashboard.md#한도가-없는-지표) 적용.
-실시간 Session 및 Weekly 미터에는 영향 없음.
+실시간 세션·주간·월간 사용량에는 영향 없음.
 달러 금액은 토큰 수에 API 요율과 공유 [모델 가격](/docs/pricing.md)을 적용한 추정치(ⓘ의 의미)이며, 각 세션 로그에서 fast/priority 서비스 티어로 기록된 턴에만 fast 요율 적용.
 `ultrafast` 티어는 별도 공개 단가 적용 — GPT-6 Astra와 GPT-6.1 Sol은 일반 단가의 6배이며 Fast 배율 중복 적용 없음.
 공개 Ultrafast 요율이 없는 모델은 토큰을 유지하고 비용을 미확정 처리하며 모델 내역에 미산정 표시.
@@ -419,12 +420,15 @@ Codex가 활성화돼 있으면 실행 시, 활성화 시, 5분마다, 대시보
 
 Codex OAuth 토큰으로 `GET https://chatgpt.com/backend-api/wham/usage` 호출, `auth.openai.com`에서 갱신.
 401/403 응답 시 토큰을 한 번 갱신한 뒤 재시도.
-Session과 Weekly는 각 사용 기간의 primary/secondary 슬롯이 아닌 기간 길이로 분류.
+Session·Weekly·Monthly는 `primary`·`secondary` 슬롯에 담긴 기간 길이로 분류.
 Codex가 한도 하나를 일시적으로 제거하고 남은 주간 기간을 primary 슬롯으로 옮기는 경우에 필요한 처리.
-기간을 인식할 수 없는 페이로드에는 호환성을 위해 primary를 Session, secondary를 Weekly로 처리하는 대체 규칙을 유지하며, 응답 헤더로 해당 기간의 누락된 백분율 보완.
+기간 정보가 없는 응답은 호환성을 위해 primary를 Session, secondary를 Weekly로 표시하고 응답 헤더로 누락된 백분율 보완.
+기간을 확인할 수 없는 슬롯이 있으면 소프트 한도 미도달 판정 보류.
+주간·월간 슬롯의 사용률이나 초기화 값이 손상되면 해당 기간의 미도달 판정 보류.
+같은 기간에 확인한 다른 한도가 기준에 도달하면 도달로 판정.
 
-Spark와 Spark Weekly는 같은 응답의 `additional_rate_limits` 배열에서 가져오며, 기간 기반 Session/Weekly 분류를 재사용하는 모델별 한도.
-egasu는 이름으로 GPT-5.3-Codex-Spark를 식별한 한도를 두 미터에 표시.
+Spark 한도는 같은 응답의 `additional_rate_limits` 배열에서 GPT-5.3-Codex-Spark 이름으로 식별.
+기본 풀과 같은 규칙으로 세션·주간·월간 지표 분류.
 배열의 다른 모델 한도는 표시하지 않음.
 
 egasu는 Codex가 보고한 `used_percent`를 그대로 보존.

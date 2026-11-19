@@ -236,17 +236,20 @@ final class LocalLimitsAPITests: XCTestCase {
         }
         let expected: [String: Set<String>] = [
             "claude": ["session", "weekly", "sonnet", "fable", "extraUsage"],
-            "codex": ["session", "weekly", "spark", "sparkWeekly", "credits", "creditValue", "rateLimitResets"],
+            "codex": [
+                "session", "weekly", "monthly", "spark", "sparkWeekly", "sparkMonthly", "credits", "creditValue",
+                "rateLimitResets"
+            ],
             "cursor": ["totalUsage", "autoUsage", "apiUsage", "onDemand", "requests", "credits"],
             "antigravity": ["geminiSession", "geminiWeekly", "nonGeminiSession", "nonGeminiWeekly", "argonWeekly"],
             "copilot": ["premiumCredits", "extraUsage", "orgCredits", "orgSpend", "chat", "completions"],
             "devin": ["daily", "weekly", "extraUsageBalance"],
-            "grok": ["weekly"],
+            "grok": ["weekly", "monthly"],
             "kimi": ["session", "weekly", "totalUsage", "extraUsage", "extraUsageBalance"],
             "kiro": ["credits"],
             "opencode": ["session", "weekly", "monthly"],
             "openrouter": ["credits", "balance", "keyLimit"],
-            "zai": ["session", "weekly", "webSearches"]
+            "zai": ["session", "weekly", "monthly", "webSearches"]
         ]
 
         XCTAssertEqual(actual, expected)

@@ -6,6 +6,14 @@ final class TotalSpendAggregatorTests: XCTestCase {
     private let codex = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
     private let cursor = Provider(id: "cursor", displayName: "Cursor", icon: .providerMark("cursor"))
 
+    func testMetricCyclesThroughCostRateAndTokensBackToCost() {
+        var metric = TotalSpendMetric.cost
+        for expected in [TotalSpendMetric.costPerMtok, .tokens, .cost, .costPerMtok] {
+            metric = metric.next
+            XCTAssertEqual(metric, expected)
+        }
+    }
+
     private func snapshot(_ provider: Provider, lines: [MetricLine]) -> ProviderSnapshot {
         ProviderSnapshot(
             providerID: provider.id,

@@ -28,7 +28,7 @@ final class ZAITotalSpendTests: XCTestCase {
         XCTAssertTrue(layout.displayGroups.isEmpty)
         XCTAssertEqual(layout.spendCapableProviders.map(\.id), ["zai"])
         XCTAssertTrue(runtime.provider.usesDedicatedSpendLines)
-        XCTAssertEqual(registry.descriptors.count, 3)
+        XCTAssertEqual(registry.descriptors.map(\.id), ["zai.session", "zai.weekly", "zai.monthly", "zai.webSearches"])
         XCTAssertFalse(registry.descriptors.contains(where: \.isSpendTile))
         for (period, expected): (TotalSpendPeriod, Double) in [(.today, 300), (.yesterday, 200), (.last30, 600)] {
             let total = TotalSpendAggregator.total(

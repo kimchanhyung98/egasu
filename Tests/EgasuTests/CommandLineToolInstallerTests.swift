@@ -1,4 +1,4 @@
-import Foundation
+import SwiftUI
 import XCTest
 @testable import Egasu
 
@@ -14,12 +14,15 @@ final class CommandLineToolInstallerTests: XCTestCase {
         return (root, source.path, destination.path)
     }
 
-    func testInstallAndUninstallOwnSymlink() throws {
+    func testInstallAndUninstallOwnSymlink() async throws {
         let fixture = try fixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
+        var sawVerification = false
+        var checkVerifying: (() -> Void)?
         let installer = CommandLineToolInstaller(
             sourcePath: fixture.source,
             destinationPath: fixture.destination,
+            waitForVerification: { checkVerifying?() },
             performPrivileged: { operation, source, destination in
                 do {
                     switch operation {
@@ -39,14 +42,23 @@ final class CommandLineToolInstallerTests: XCTestCase {
             }
         )
 
+        checkVerifying = {
+            sawVerification = true
+            XCTAssertTrue(installer.isVerifying)
+            installer.refreshStatus()
+            XCTAssertTrue(installer.isVerifying)
+        }
         XCTAssertEqual(installer.status, .notInstalled)
-        installer.install()
+        await installer.install()
+        checkVerifying = nil
+        XCTAssertTrue(sawVerification)
+        XCTAssertFalse(installer.isVerifying)
         XCTAssertEqual(installer.status, .installed)
         installer.uninstall()
         XCTAssertEqual(installer.status, .notInstalled)
     }
 
-    func testPrivilegedCommandStatusesAreNotAuthorizationFailures() throws {
+    func testPrivilegedCommandStatusesAreNotAuthorizationFailures() async throws {
         let cases: [(Int?, CommandLineToolInstaller.Operation, ErrorCategory)] = [
             (1, .install, .subprocess),
             (1, .uninstall, .subprocess),
@@ -87,7 +99,7 @@ final class CommandLineToolInstallerTests: XCTestCase {
             let expectedOperation: DiagnosticOperation
             switch operation {
             case .install:
-                installer.install()
+                await installer.install()
                 expectedOperation = .cliInstall
                 XCTAssertEqual(installer.status, .notInstalled)
             case .uninstall:
@@ -113,7 +125,7 @@ final class CommandLineToolInstallerTests: XCTestCase {
         }
     }
 
-    func testCancelledAuthorizationDoesNotBecomeFailure() throws {
+    func testCancelledAuthorizationDoesNotBecomeFailure() async throws {
         let fixture = try fixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
         let diagnostics = DiagnosticEventRecorder()
@@ -123,14 +135,118 @@ final class CommandLineToolInstallerTests: XCTestCase {
             performPrivileged: { _, _, _ in .cancelled }
         )
 
-        installer.install()
+        await installer.install()
 
         XCTAssertEqual(diagnostics.events, [DiagnosticEvent(.cliInstall, result: .cancelled)])
         XCTAssertNil(installer.errorMessage)
         XCTAssertEqual(installer.status, .notInstalled)
     }
 
-    func testForeignPathIsNeverOverwritten() throws {
+    func testVerificationRequiresTheExpectedLinkAndAnExecutable() async throws {
+        for expectedStatus in [
+            CommandLineToolInstaller.Status.notInstalled, .conflict, .installed
+        ] {
+            let fixture = try fixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let destination = URL(fileURLWithPath: fixture.destination)
+            try FileManager.default.createDirectory(
+                at: destination.deletingLastPathComponent(),
+                withIntermediateDirectories: true)
+            let diagnostics = DiagnosticEventRecorder()
+            let installer = CommandLineToolInstaller(
+                sourcePath: fixture.source, destinationPath: fixture.destination,
+                waitForVerification: {
+                    do {
+                        switch expectedStatus {
+                        case .notInstalled: break
+                        case .conflict:
+                            try Data().write(to: destination)
+                        case .installed:
+                            try FileManager.default.createSymbolicLink(
+                                atPath: destination.path, withDestinationPath: fixture.source)
+                            try FileManager.default.setAttributes(
+                                [.posixPermissions: 0o644],
+                                ofItemAtPath: fixture.source)
+                        }
+                    } catch { XCTFail(error.localizedDescription) }
+                },
+                performPrivileged: { _, _, _ in .success })
+
+            await installer.install()
+            XCTAssertEqual(installer.status, expectedStatus)
+            XCTAssertNotNil(installer.errorMessage)
+            XCTAssertFalse(installer.isVerifying)
+            XCTAssertEqual(diagnostics.events, [DiagnosticEvent(.cliInstall, result: .failure, category: .storage)])
+        }
+    }
+
+    func testSearchableDirectoryAtHelperPathDoesNotRequestInstallation() async throws {
+        let fixture = try fixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        try FileManager.default.removeItem(atPath: fixture.source)
+        try FileManager.default.createDirectory(atPath: fixture.source, withIntermediateDirectories: false)
+        let installer = CommandLineToolInstaller(
+            sourcePath: fixture.source, destinationPath: fixture.destination,
+            performPrivileged: { _, _, _ in
+                XCTFail("A directory cannot provide the terminal command")
+                return .success
+            })
+
+        await installer.install()
+
+        XCTAssertEqual(installer.status, .notInstalled)
+        XCTAssertNotNil(installer.errorMessage)
+    }
+
+    func testRemovalSheetRequiresConfirmationAndPreservesLinkOnAuthorizationCancellation() async throws {
+        let fixture = try fixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let destination = URL(fileURLWithPath: fixture.destination)
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(atPath: destination.path, withDestinationPath: fixture.source)
+        var authorizationRequests = 0
+        let installer = CommandLineToolInstaller(
+            sourcePath: fixture.source, destinationPath: destination.path,
+            performPrivileged: { operation, _, _ in
+                XCTAssertEqual(operation, .uninstall)
+                authorizationRequests += 1
+                return .cancelled
+            })
+        let host = NSHostingView(rootView: Form { TerminalHelperSettingsSection(commandLineTool: installer) })
+        let window = NSWindow(
+            contentRect: .init(x: 0, y: 0, width: 360, height: 180),
+            styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.alphaValue = 0
+        window.setFrameOrigin(.init(x: (NSScreen.screens.map(\.frame.maxX).max() ?? 0) + 1000, y: 0))
+        window.orderFrontRegardless()
+        defer {
+            if let sheet = window.attachedSheet { window.endSheet(sheet) }
+            window.close()
+        }
+        func buttons(in view: NSView) -> [NSButton] {
+            (view as? NSButton).map { [$0] } ?? view.subviews.flatMap { buttons(in: $0) }
+        }
+        for action in ["Cancel", "Remove"] {
+            installer.isConfirmingRemoval = true
+            for _ in 0..<100 where window.attachedSheet == nil { try await Task.sleep(for: .milliseconds(20)) }
+            let sheet = try XCTUnwrap(window.attachedSheet?.contentView)
+            let button = try XCTUnwrap(buttons(in: sheet).first { $0.title == L10n.settings(action) })
+            XCTAssertEqual(authorizationRequests, 0)
+            XCTAssertTrue(button.sendAction(try XCTUnwrap(button.action), to: button.target))
+            for _ in 0..<100 where window.attachedSheet != nil { try await Task.sleep(for: .milliseconds(20)) }
+            XCTAssertFalse(installer.isConfirmingRemoval)
+            XCTAssertEqual(authorizationRequests, action == "Cancel" ? 0 : 1)
+            XCTAssertEqual(installer.status, .installed)
+            XCTAssertNil(installer.errorMessage)
+            XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: destination.path), fixture.source)
+        }
+    }
+
+    func testForeignPathIsNeverOverwritten() async throws {
         let fixture = try fixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
         try FileManager.default.createDirectory(
@@ -149,7 +265,7 @@ final class CommandLineToolInstallerTests: XCTestCase {
         )
 
         XCTAssertEqual(installer.status, .conflict)
-        installer.install()
+        await installer.install()
         XCTAssertFalse(operationRan)
         XCTAssertNotNil(installer.errorMessage)
         XCTAssertEqual(try String(contentsOfFile: fixture.destination, encoding: .utf8), "foreign")

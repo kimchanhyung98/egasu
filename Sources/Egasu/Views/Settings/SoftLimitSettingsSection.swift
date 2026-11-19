@@ -1,17 +1,44 @@
 import SwiftUI
 
-/// Soft Limit 실험 기능 설정 — 켜기 전 확인, 기준 기간·임계값, 취소 연결 상태와 연결 경고 툴팁.
+struct SoftLimitAccountStatus: Identifiable {
+    let id: String
+    let name: String
+    let quota: SoftLimitQuotaState
+    let usedFraction: Double?
+    let estimatedFraction: Double?
+    let cancellation: SoftLimitProviderStatus
+    var nextExpiry: Date?
+
+    var usageLabel: String {
+        switch quota {
+        case .unknown:
+            return estimatedFraction.map { L10n.settings("Estimated usage: %@", Self.percent($0)) }
+                ?? L10n.settings("Quota not verified")
+        case .belowLimit:
+            return usedFraction.map { L10n.metrics("%@ used", Self.percent($0)) }
+                ?? L10n.settings("Below the soft limit")
+        case .reached:
+            return usedFraction.map { L10n.settings("%@ used · Soft limit reached", Self.percent($0)) }
+                ?? L10n.dashboard("Limit reached")
+        }
+    }
+
+    private static func percent(_ fraction: Double) -> String {
+        fraction.formatted(.percent.precision(.fractionLength(0...1)).rounded(rule: .down).locale(L10n.locale))
+    }
+}
+
 struct SoftLimitSettingsSection: View {
     let settings: SoftLimitSettingsStore
-    let coordinator: SoftLimitCoordinator
-    let providers: [Provider]
+    let accounts: () -> [SoftLimitAccountStatus]
+    @State private var showsStatus = false
+    @State private var lastExpiry = Date.distantPast
     @State private var confirmActivation = false
 
     var body: some View {
         @Bindable var settings = settings
-        let connectionWarning = L10n.settings(
-            "The Codex cancellation connection has been tested, but automatic cancellation is unavailable until account scope is verified. Other Codex sessions and other providers are not protected yet."
-        )
+        let accounts = settings.isActive ? self.accounts() : []
+        let nextExpiry = showsStatus ? accounts.compactMap(\.nextExpiry).filter { $0 > lastExpiry }.min() : nil
         Section {
             Toggle(
                 L10n.settings("Enabled"),
@@ -22,77 +49,65 @@ struct SoftLimitSettingsSection: View {
             )
             .accessibilityLabel(L10n.settings("Enable Soft Limit"))
             .alert(L10n.settings("Enable Soft Limit?"), isPresented: $confirmActivation) {
-                Button(L10n.settings("Enable"), role: .destructive) { settings.enabled = true }
+                Button(L10n.settings("Enable")) { settings.enabled = true }
                 Button(L10n.settings("Cancel"), role: .cancel) {}
             } message: {
                 Text(
                     L10n.settings(
-                        "Shows the limit guide and allows cancellation only for verified client/account connections. The current Codex connection is not account-verified and will not cancel tasks. Unconnected sessions and unsupported providers are not protected."
+                        "Shows a guide on supported weekly and monthly quota bars. Automatic cancellation requires a verified connection to the same account."
                     ))
             }
 
             if settings.enabled {
-                Picker(L10n.settings("Window"), selection: $settings.window) {
-                    ForEach(SoftLimitWindow.allCases, id: \.self) { window in
-                        Text(window.label).tag(window)
-                    }
+                SettingsPicker(
+                    L10n.settings("Window"), selection: $settings.window, options: SoftLimitWindowSelection.allCases
+                ) {
+                    $0.label
                 }
                 SoftLimitThresholdField(settings: settings)
-                DisclosureGroup(L10n.settings("Cancellation Status")) {
+                DisclosureGroup(L10n.settings("Quota Status"), isExpanded: $showsStatus) {
                     VStack(alignment: .leading, spacing: 8) {
-                        ForEach(providers) { provider in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(provider.displayName).font(.caption.weight(.semibold))
-                                Text(coordinator.status(for: provider.id).message)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                        if accounts.isEmpty {
+                            Text(L10n.settings("No enabled accounts support this period."))
+                        } else {
+                            let guidesOnly = accounts.allSatisfy { $0.cancellation.phase == .unsupported }
+                            ForEach(accounts) { account in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(account.name)
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(.primary)
+                                    Text(account.usageLabel)
+                                    if !guidesOnly && account.cancellation.phase != .failed {
+                                        Text(account.cancellation.message)
+                                    }
+                                }
+                                .accessibilityElement(children: .combine)
+                            }
+                            if guidesOnly {
+                                Text(L10n.settings("Automatic cancellation is unavailable for these accounts."))
                             }
                         }
                     }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, 8)
-                }
-            }
-            DisclosureGroup {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(L10n.settings("Start the local server, then open a Codex terminal connected to it:"))
-                    Text("codex app-server daemon start\ncodex --remote unix://")
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                    Text(
-                        L10n.settings(
-                            "Existing independent CLI, app, and IDE sessions are not connected automatically. egasu does not restart them."
-                        ))
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 8)
-            } label: {
-                HStack(spacing: 4) {
-                    Text(L10n.settings("Codex"))
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.notice)
-                        .hoverTooltip(connectionWarning)
-                        .accessibilityLabel(connectionWarning)
+                    .padding(.vertical, 4)
                 }
             }
         } header: {
             Text(L10n.settings("Soft Limit"))
         } footer: {
-            VStack(alignment: .leading, spacing: 4) {
-                if settings.enabled {
-                    SettingsNote(
-                        L10n.settings(
-                            "Uses fresh quota data after the next successful refresh. Cancellation requires a verified client/account connection and must preserve apps, terminals, and conversations."
-                        ))
-                    ForEach(providers.filter { coordinator.status(for: $0.id).phase == .failed }) { provider in
-                        SettingsNote(
-                            L10n.settings("%@: %@", provider.displayName, coordinator.status(for: provider.id).message))
-                    }
+            if settings.enabled {
+                ForEach(accounts.filter { $0.cancellation.phase == .failed }) { account in
+                    SettingsNote(L10n.settings("%@: %@", account.name, account.cancellation.message))
                 }
             }
+        }
+        .task(id: nextExpiry) {
+            guard let nextExpiry else { return }
+            do { try await Task.sleep(for: .seconds(max(0, nextExpiry.timeIntervalSinceNow))) } catch { return }
+            lastExpiry = nextExpiry
         }
     }
 }

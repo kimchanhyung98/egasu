@@ -8,6 +8,8 @@ struct ProviderSnapshotCache {
         /// (`LocalUsageAPI`)로 그대로 직렬화되므로 필드가 아닌 sidecar map — stamp는 cache bookkeeping,
         /// wire 데이터 아님. 계정 식별을 확인하지 못한 프로바이더에는 부재.
         var producedByIdentityKeys: [String: String]
+        /// ISO 8601 캐시 날짜의 초 단위 정밀도를 보완. 같은 초의 인증 무효화와 다음 실측을 구분.
+        var liveQuotaTimestamps: [String: Double]?
     }
 
     /// persist blob의 in-memory mirror — 읽기마다 전 provider JSON을 MainActor에서 re-decode하던 비용 제거.
@@ -75,8 +77,26 @@ struct ProviderSnapshotCache {
             && !(snapshot.usageRetryAfter != nil && snapshot.quotaObservedAt == nil)
         let reason = !trusted ? "stale (not written this session)"
             : fresh ? "fresh" : "stale"
-        AppLog.debug(.cache, "\(providerID) staleness \(Int(age))s vs ttl \(Int(ttl))s -> \(reason)")
-        return fresh ? snapshot : nil
+        AppLog.debug(
+            .cache, "\(AppLog.providerFamily(providerID)) staleness \(Int(age))s vs ttl \(Int(ttl))s -> \(reason)")
+        return fresh ? applyingQuotaInvalidation(snapshot) : nil
+    }
+
+    /// 다른 프로세스가 이전 캐시를 다시 저장해도 실패 전 한도를 실행 근거로 재사용하지 않도록 시각만 별도 보존.
+    func invalidateLiveQuota(providerID: String, identity: String?) {
+        if let identity, let stored = producedByIdentityKey(providerID: providerID), identity != stored { return }
+        userDefaults.set(now(), forKey: "\(storageKey).quotaInvalidated.\(providerID)")
+    }
+
+    func applyingQuotaInvalidation(_ snapshot: ProviderSnapshot) -> ProviderSnapshot {
+        guard let observed = snapshot.liveQuotaObservedAt,
+            let invalidated = userDefaults.object(forKey: "\(storageKey).quotaInvalidated.\(snapshot.providerID)")
+                as? Date,
+            observed <= invalidated
+        else { return snapshot }
+        var checked = snapshot
+        checked.liveQuotaObservedAt = nil
+        return checked
     }
 
     /// `producedByIdentityKey`는 이 snapshot을 생산한 account identity(쓰기 시점의 카드 identity) —
@@ -86,10 +106,10 @@ struct ProviderSnapshotCache {
         _ snapshot: ProviderSnapshot, producedByIdentityKey: String? = nil, markSessionFresh: Bool = true
     ) {
         guard !snapshot.lines.contains(where: \.isError) else {
-            AppLog.debug(.cache, "skip write \(snapshot.providerID) (error snapshot)")
+            AppLog.debug(.cache, "skip write \(AppLog.providerFamily(snapshot.providerID)) (error snapshot)")
             return
         }
-        AppLog.debug(.cache, "write \(snapshot.providerID)")
+        AppLog.debug(.cache, "write \(AppLog.providerFamily(snapshot.providerID))")
         if markSessionFresh { sessionWrites.withLock { $0.insert(snapshot.providerID) } }
         var payload = loadPayload()
         payload.snapshots[snapshot.providerID] = snapshot
@@ -132,6 +152,12 @@ struct ProviderSnapshotCache {
         }
         do {
             var payload = try decoder.decode(Payload.self, from: data)
+            for id in payload.snapshots.keys where payload.snapshots[id]?.liveQuotaObservedAt != nil {
+                // 이전 캐시는 부분 한도 누락을 구분하지 않아 다음 실측까지 표시용으로만 복원.
+                payload.snapshots[id]?.liveQuotaObservedAt = payload.liveQuotaTimestamps?[id].map {
+                    Date(timeIntervalSinceReferenceDate: $0)
+                }
+            }
             for id in payload.snapshots.keys where ProviderAccountID.family(of: id) == "cursor" {
                 if payload.snapshots[id]?.usageHistory?.estimatedCost == nil {
                     payload.snapshots[id]?.usageHistory?.estimatedCost = true
@@ -139,7 +165,7 @@ struct ProviderSnapshotCache {
             }
             return payload
         } catch {
-            AppLog.warn(.cache, "cache decode failed, dropping stored snapshots: \(error.localizedDescription)")
+            AppLog.warn(.cache, "cache decode failed, dropping stored snapshots: \(AppLog.errorDetails(error))")
             return Payload(snapshots: [:], producedByIdentityKeys: [:])
         }
     }
@@ -149,10 +175,14 @@ struct ProviderSnapshotCache {
         memo.withLock { $0 = payload }
         // encode 실패는 크게 log — 조용히 삼키면 snapshot이 persisted cache에서 소리 없이 빠짐.
         do {
-            let data = try encoder.encode(payload)
+            var persisted = payload
+            persisted.liveQuotaTimestamps = payload.snapshots.compactMapValues {
+                $0.liveQuotaObservedAt?.timeIntervalSinceReferenceDate
+            }
+            let data = try encoder.encode(persisted)
             userDefaults.set(data, forKey: storageKey)
         } catch {
-            AppLog.warn(.cache, "encode failed, snapshot not persisted: \(error.localizedDescription)")
+            AppLog.warn(.cache, "encode failed, snapshot not persisted: \(AppLog.errorDetails(error))")
         }
     }
 }

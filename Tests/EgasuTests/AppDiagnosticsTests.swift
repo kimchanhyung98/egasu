@@ -174,7 +174,62 @@ final class AppDiagnosticsTests: XCTestCase {
         let recorded = try lines()
         let errors = recorded.filter { $0.contains("[ERROR]") }
         XCTAssertEqual(errors.count, 1, recorded.joined(separator: "\n"))
-        XCTAssertTrue(errors.allSatisfy { $0.contains("[ERROR] [refresh] antigravity failed:") })
+        XCTAssertTrue(errors.allSatisfy { $0.contains("[ERROR] [refresh] result=failure provider=antigravity") })
+        XCTAssertTrue(errors.allSatisfy { $0.contains("category=network") })
+        XCTAssertFalse(recorded.joined().contains("PRIVATE_"))
+    }
+
+    @MainActor
+    func testRefreshResultUsesOnlyFamilyAndTypedFailureDetails() async throws {
+        let provider = Provider(
+            id: "codex@profile-PRIVATE_ACCOUNT", displayName: "PRIVATE_NAME", icon: .providerMark("codex"))
+        let error = URLError(.timedOut, userInfo: [NSLocalizedDescriptionKey: "PRIVATE_RESPONSE"])
+        let runtime = TestProviderRuntime(
+            provider: provider, descriptors: [], snapshot: .error(provider: provider, error: error))
+        let suite = "AppDiagnosticsTests.Refresh." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let cache = ProviderSnapshotCache(userDefaults: defaults)
+        cache.store(.make(provider: provider, plan: nil, lines: [], refreshedAt: Date()))
+        let store = WidgetDataStore(
+            registry: .from([runtime]), providers: [runtime], cache: cache,
+            defaults: defaults)
+
+        let outcome = await store.refresh(providerID: provider.id, force: true, trigger: .manual)
+
+        XCTAssertEqual(outcome, .failed)
+        XCTAssertEqual(store.refreshResults[provider.id]?.failure?.category, .network)
+        XCTAssertEqual(store.refreshResults[provider.id]?.failure?.message, "PRIVATE_RESPONSE")
+        let results = try lines().filter { $0.contains("[refresh]") || $0.contains("[cache]") }
+        XCTAssertTrue(
+            results.contains {
+                $0.contains("result=failure provider=codex trigger=manual duration_ms=")
+                    && $0.contains("category=network")
+            })
+        XCTAssertTrue(results.contains { $0.contains("[cache] write codex") })
+        XCTAssertFalse(results.joined().contains("PRIVATE_"))
+    }
+
+    func testGrokOptionalPlanLogsHTTPAndDecodeFailuresButAcceptsAnAbsentTier() throws {
+        for (status, body) in [(200, "{}"), (200, #"{"subscription_tier_display":null}"#)] {
+            XCTAssertNil(
+                GrokUsageMapper.planName(from: HTTPResponse(statusCode: status, headers: [:], body: Data(body.utf8))))
+        }
+        XCTAssertTrue(try lines().isEmpty)
+        for (status, body) in [
+            (503, "PRIVATE_PLAN_ERROR"), (200, "PRIVATE_PLAN_JSON"),
+            (200, #"{"subscription_tier_display":["PRIVATE_TIER"]}"#)
+        ] {
+            XCTAssertNil(
+                GrokUsageMapper.planName(from: HTTPResponse(statusCode: status, headers: [:], body: Data(body.utf8))))
+        }
+        let recorded = try lines()
+        let planWarnings = recorded.filter { $0.contains("[plugin:grok]") }
+        XCTAssertEqual(planWarnings.count, 3)
+        XCTAssertTrue(planWarnings.contains { $0.contains("status=503 category=http_5xx") })
+        XCTAssertTrue(planWarnings.contains { $0.contains("stage=decode category=decoding") })
+        XCTAssertTrue(planWarnings.contains { $0.contains("stage=tier_type category=decoding") })
+        XCTAssertTrue(recorded.contains { $0.contains("[http]") && $0.contains("category=decoding") })
         XCTAssertFalse(recorded.joined().contains("PRIVATE_"))
     }
 

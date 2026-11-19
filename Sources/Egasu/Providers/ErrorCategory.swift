@@ -207,6 +207,9 @@ extension GrokAuthError: CategorizedError {
         case .expired: .authExpired
         case .credentialsChanged: .other
         case .credentialReadFailed: .credentialAccess
+        case .refreshConnectionFailed: .network
+        case .refreshRequestFailed(let status): ErrorCategory.http(status)
+        case .refreshResponseInvalid: .decoding
         }
     }
 }
@@ -310,7 +313,8 @@ extension OpenCodeUsageError: CategorizedError {
     var errorCategory: ErrorCategory {
         switch self {
         case .notLoggedIn: .notLoggedIn
-        case .credentialsUnreadable, .databaseUnreadable: .credentialAccess
+        case .credentialsUnreadable: .credentialAccess
+        case .databaseUnreadable: .storage
         }
     }
 }

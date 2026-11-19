@@ -44,6 +44,25 @@ final class ClaudeQuotaValidationTests: XCTestCase {
         XCTAssertTrue(UsageTimerObservation.hasExhaustedQuota(usage.lines))
     }
 
+    func testMalformedOptionalWeeklyBucketsKeepValidSiblingMeasurements() throws {
+        let fable: [String: Any] = ["kind": "weekly_scoped", "scope": ["model": ["display_name": "Fable"]]]
+        let malformed: [[String: Any]] = [
+            ["seven_day_sonnet": ["utilization": true]],
+            ["seven_day_sonnet": ["utilization": 10, "resets_at": "invalid"]],
+            ["limits": "invalid"], ["limits": [fable]], ["limits": [["kind": "weekly_scoped"]]]
+        ]
+        for optional in malformed {
+            let usage = try map(optional.merging(["seven_day": ["utilization": 95]]) { value, _ in value })
+            XCTAssertEqual(usage.hasIncompleteWeeklyQuota, true)
+            XCTAssertEqual(usage.lines.map(\.label), ["Weekly"])
+        }
+        for optional: [String: Any] in [[:], ["seven_day_sonnet": NSNull(), "limits": NSNull()], ["limits": []]] {
+            let usage = try map(optional.merging(["seven_day": ["utilization": 12]]) { value, _ in value })
+            XCTAssertNil(usage.hasIncompleteWeeklyQuota)
+            XCTAssertEqual(usage.lines.map(\.label), ["Weekly"])
+        }
+    }
+
     private func map(_ body: [String: Any]) throws -> ClaudeMappedUsage {
         let response = HTTPResponse(
             statusCode: 200, headers: [:], body: try JSONSerialization.data(withJSONObject: body))

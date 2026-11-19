@@ -8,10 +8,11 @@ final class SettingsOperations {
     lazy var relauncher = AppRelauncher()
 }
 
-/// General·Display·Alerts·Advanced 탭으로 구성한 Settings — 그룹형 Form 사용.
+/// Settings의 그룹형 Form — 베타 업데이트를 켜면 Labs 탭 표시.
 /// 탭을 바꾸거나 Settings에 들어오면 맨 위로.
 struct SettingsScreen: View {
     @Environment(PopoverState.self) private var popover
+    @Environment(UpdaterController.self) private var updater
     let operations: SettingsOperations
     @State private var scrollPosition = ScrollPosition(edge: .top)
 
@@ -21,11 +22,13 @@ struct SettingsScreen: View {
     var body: some View {
         Form {
             switch popover.settingsTab {
-            case .general:
+            case .labs where updater.betaChannelEnabled:
+                SettingsLabsTab(commandLineTool: operations.commandLineTool)
+            case .general, .labs:
                 SettingsGeneralTab(launchAtLogin: operations.launchAtLogin, relauncher: operations.relauncher)
             case .display: SettingsDisplayTab()
             case .alerts: SettingsAlertsTab()
-            case .advanced: SettingsAdvancedTab(commandLineTool: operations.commandLineTool)
+            case .advanced: SettingsAdvancedTab()
             }
         }
         .formStyle(.grouped)

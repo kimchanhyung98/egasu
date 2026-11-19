@@ -1,12 +1,11 @@
 import Foundation
 
 /// Z.ai `/api/monitor/usage/quota/limit` payload와 `/api/biz/subscription/list`의 plan 이름을 metric line으로 매핑.
-/// sub-daily credit/token quota는 session meter, multi-day는 weekly meter, `TIME_LIMIT`은 web-search count meter.
+/// 시간·일·주·월 단위 사용량 창과 웹 검색 횟수 한도 매핑.
 /// 두 endpoint 모두 Z.ai 자체 UI가 쓰는 비공개 내부 API — mapper는 순수(I/O 없음)라 sample payload로 테스트 가능.
 enum ZAIUsageMapper {
     /// 월간 web-search cycle 1회의 밀리초 (Z.ai 보고값 `unit: 5, number: 1`).
-    /// session/weekly meter는 payload의 실제 window 사용(`classifyTokenWindow` 참고) — 이 상수는 web-search 행과 widget-descriptor 기본값 전용.
-    static let monthlyPeriodMs = 30 * 24 * 60 * 60 * 1000
+    static let monthlyPeriodMs = MetricPeriod.monthMs
 
     /// quota + subscription payload에서 `(plan, lines)` 생성.
     /// 구독 응답은 선택 사항. 한도 배열에서 지원하는 지표만 생성.
@@ -28,7 +27,7 @@ enum ZAIUsageMapper {
         return ((root["msg"] as? String) ?? "").lowercased().contains("coding plan")
     }
 
-    /// quota payload에서 Session + Weekly + Web Searches meter 생성.
+    /// 응답에 있는 기간별 할당량과 웹 검색 한도 생성.
     /// 필수 값 누락은 0 사용량이 아닌 invalid response — 명시적 빈 배열은 유효한 no-data 상태.
     static func mapQuota(_ body: Data) throws -> [MetricLine] {
         guard let root = ProviderParse.jsonObject(body) else {
@@ -68,15 +67,17 @@ enum ZAIUsageMapper {
                 || name == "CREDIT_LIMIT" || name == "TOKENS_LIMIT"
         }
         for entry in percentageLimits {
-            guard let window = try classifyTokenWindow(entry) else { continue }
-            sawRecognizedLimit = true
-            let line: MetricLine
-            switch window {
-            case .session(let periodMs):
-                line = try percentLine(entry, label: "Session", periodMs: periodMs)
-            case .weekly(let periodMs):
-                line = try percentLine(entry, label: "Weekly", periodMs: periodMs)
+            guard let periodMs = try windowDuration(entry) else { continue }
+            let label: String
+            if SoftLimitWindow.monthly.matches(periodDurationMs: periodMs, allowsDSTOffset: false) {
+                label = "Monthly"
+            } else if ProviderParse.number(entry["unit"]) == 5 {
+                continue
+            } else {
+                label = periodMs < MetricPeriod.dayMs ? "Session" : "Weekly"
             }
+            sawRecognizedLimit = true
+            let line = try percentLine(entry, label: label, periodMs: periodMs)
             if let existing = lines.first(where: { $0.label == line.label }) {
                 // 동일 quota의 별칭만 병합 — 서로 다른 quota를 배열 순서로 선택하지 않음.
                 guard existing == line else { throw ZAIUsageError.invalidResponse }
@@ -110,15 +111,8 @@ enum ZAIUsageMapper {
 
     // MARK: - Private
 
-    /// credit/token quota의 window가 매핑되는 meter 구분.
-    /// `unit`과 `number`에서 기간 계산. 단위는 3 시간, 4 일, 5 월, 6 주. 하루 미만은 Session, 하루 이상은 Weekly.
-    /// 미지의 unit은 무시 — 새 Z.ai window가 이해 가능한 unit의 meter를 가리지 못하게 함.
-    private enum TokenWindow {
-        case session(periodMs: Int)
-        case weekly(periodMs: Int)
-    }
-
-    private static func classifyTokenWindow(_ entry: [String: Any]) throws -> TokenWindow? {
+    /// 시간(3)·일(4)·월(5)·주(6) 단위와 개수를 밀리초로 변환.
+    private static func windowDuration(_ entry: [String: Any]) throws -> Int? {
         guard let unit = ProviderParse.number(entry["unit"]),
               let number = ProviderParse.number(entry["number"]),
               number > 0 else {
@@ -129,22 +123,17 @@ enum ZAIUsageMapper {
         case 3: unitMs = 60 * 60 * 1000
         case 4: unitMs = 24 * 60 * 60 * 1000
         case 6: unitMs = 7 * 24 * 60 * 60 * 1000
-        case 5: unitMs = 30 * 24 * 60 * 60 * 1000
+        case 5: unitMs = Double(monthlyPeriodMs)
         default: return nil
         }
         let duration = unitMs * number
         guard duration >= 1, duration < Double(Int.max) else {
             throw ZAIUsageError.invalidResponse
         }
-        let periodMs = Int(duration)
-        // sub-daily → session, multi-day → weekly — 계산된 window를 함께 실어 meter cadence가 하드코딩 상수 대신 payload를 반영
-        if periodMs < 24 * 60 * 60 * 1000 {
-            return .session(periodMs: periodMs)
-        }
-        return .weekly(periodMs: periodMs)
+        return Int(duration)
     }
 
-    /// credit/token quota에서 percentage meter(Session 또는 Weekly) 생성.
+    /// 크레딧·토큰 할당량을 사용률로 변환.
     private static func percentLine(_ entry: [String: Any], label: String, periodMs: Int) throws -> MetricLine {
         guard let rawPercentage = ProviderParse.number(entry["percentage"]) else {
             throw ZAIUsageError.invalidResponse
@@ -169,15 +158,16 @@ enum ZAIUsageMapper {
               limit >= 0 else {
             throw ZAIUsageError.invalidResponse
         }
-        // 현행 payload의 TIME_LIMIT에는 nextResetTime(월간 갱신) 존재 — 있으면 실제 reset countdown, 없으면 "monthly" cadence 표기
+        // 기간을 생략한 이전 응답도 사용 횟수와 상한은 표시.
         let resetsAt = ProviderParse.number(entry["nextResetTime"]).map { epochMsToDate($0) }
+        let duration = entry["unit"] == nil && entry["number"] == nil ? nil : try windowDuration(entry)
         return .progress(
             label: "Web Searches",
             used: used,
             limit: limit,
             format: .count(suffix: "searches"),
             resetsAt: resetsAt,
-            periodDurationMs: monthlyPeriodMs
+            periodDurationMs: duration
         )
     }
 

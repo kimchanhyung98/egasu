@@ -16,7 +16,6 @@
 "Beta Updates" = "베타 업데이트";
 "Cancel" = "취소";
 "Cancel Login" = "로그인 취소";
-"Cancellation Status" = "취소 상태";
 "Cancelling Tokscale Login…" = "Tokscale 로그인 취소 중…";
 "Cancelling…" = "취소 중…";
 "Check for Updates…" = "업데이트 확인…";
@@ -45,7 +44,6 @@
 "Enter a whole number from 1 to 100. %d%% is still applied." = "1부터 100까지의 정수를 입력하세요. 현재 %d%%가 적용 중입니다.";
 "Error" = "오류";
 "Exact Time" = "정확한 시각";
-"Existing independent CLI, app, and IDE sessions are not connected automatically. egasu does not restart them." = "기존의 독립적인 CLI·앱·IDE 세션은 자동으로 연결되지 않습니다. egasu는 이 세션들을 다시 시작하지 않습니다.";
 "General" = "일반";
 "Global Shortcut" = "전역 단축키";
 "Hide From Screen Share" = "화면 공유 시 숨기기";
@@ -78,7 +76,7 @@
 "Party Mode" = "파티 모드";
 "Party mode is on, so this stays paused." = "파티 모드가 켜져 있어 이 설정은 일시 중지됩니다.";
 "Privacy" = "개인정보 보호";
-"Receive pre-release builds before they ship to everyone" = "정식 배포 전에 사전 출시 빌드 받기";
+"Shows the Labs tab and includes beta versions when checking for updates." = "실험실 탭을 표시하고, 업데이트를 확인할 때 베타 버전도 포함합니다.";
 "Record Shortcut" = "단축키 지정";
 "Remove egasu Override" = "egasu 지정 이름 삭제";
 "Reset Times" = "초기화 시각";
@@ -95,10 +93,8 @@
 "Show Total Spend" = "총 지출 표시";
 "Show Usage As" = "사용량 표시 방식";
 "Show how you're pacing on every metric, not just ones near their limit" = "한도에 가까운 지표뿐 아니라 모든 지표에 사용 속도 표시";
-"Shows the limit guide and allows cancellation only for verified client/account connections. The current Codex connection is not account-verified and will not cancel tasks. Unconnected sessions and unsupported providers are not protected." = "한도 안내를 표시하며, 검증된 클라이언트와 계정 연결에서만 취소를 허용합니다. 현재 Codex 연결은 계정이 검증되지 않아 작업을 취소하지 않습니다. 연결되지 않은 세션과 미지원 공급자는 보호되지 않습니다.";
 "Soft Limit" = "소프트 한도";
 "Soft Limit Threshold Percent" = "소프트 한도 기준 백분율";
-"Start the local server, then open a Codex terminal connected to it:" = "로컬 서버를 시작한 뒤, 연결된 Codex 터미널을 여세요:";
 "Sync" = "동기화";
 "Sync Across Macs" = "Mac 간 동기화";
 "Sync Available at %@" = "%@부터 동기화 가능";
@@ -108,7 +104,6 @@
 "System" = "시스템 설정";
 "Terminal Helper" = "터미널 도우미";
 "Text" = "텍스트";
-"The Codex cancellation connection has been tested, but automatic cancellation is unavailable until account scope is verified. Other Codex sessions and other providers are not protected yet." = "Codex 취소 연결은 테스트되었지만 계정 범위를 검증하기 전에는 자동 취소를 사용할 수 없습니다. 다른 Codex 세션과 다른 공급자는 아직 보호되지 않습니다.";
 "Theme" = "테마";
 "This Mac" = "이 Mac";
 "This label appears publicly on your Tokscale profile. Saving it locally does not run Tokscale or make a network request." = "이 이름은 Tokscale 프로필에 공개됩니다. 로컬에 저장해도 Tokscale을 실행하거나 네트워크 요청을 보내지 않습니다.";
@@ -132,7 +127,6 @@
 "Usage Display" = "사용량 표시";
 "Usage Sync" = "사용량 동기화";
 "Used" = "사용";
-"Uses fresh quota data after the next successful refresh. Cancellation requires a verified client/account connection and must preserve apps, terminals, and conversations." = "다음 새로고침이 성공하면 최신 한도 데이터를 사용합니다. 취소하려면 클라이언트와 계정의 연결을 검증해야 하며, 앱·터미널·대화를 유지해야 합니다.";
 "View Login…" = "로그인 상태 보기…";
 "Waiting for Tokscale Login…" = "Tokscale 로그인 대기 중…";
 "Waiting for this Mac’s first iCloud update…" = "이 Mac의 첫 iCloud 업데이트 대기 중…";
@@ -187,3 +181,18 @@
 "When a limit turns into a priority" = "한도를 우선순위에 올리는 기준";
 "Where usage would be at an even pace" = "고르게 썼다면 지금 사용량이 있을 위치";
 "Will run out before it resets" = "초기화 전에 소진될 예상";
+"Experimental features may change or be removed." = "실험 기능은 변경되거나 사라질 수 있습니다.";
+"Labs" = "실험실";
+"Remove" = "제거";
+"Remove Terminal Helper?" = "터미널 도우미를 제거할까요?";
+"The egasu command will no longer work in Terminal." = "터미널에서 egasu 명령을 사용할 수 없게 됩니다.";
+"Verifying…" = "확인 중…";
+"Weekly and Monthly" = "주간 및 월간";
+"Quota Status" = "한도 상태";
+"No enabled accounts support this period." = "이 기간의 한도를 지원하는 활성 계정이 없습니다.";
+"Quota not verified" = "한도 미확인";
+"Below the soft limit" = "소프트 한도 미만";
+"%@ used · Soft limit reached" = "%@ 사용 · 소프트 한도 도달";
+"Estimated usage: %@" = "추정 사용량 %@";
+"Automatic cancellation is unavailable for these accounts." = "이 계정에서는 실행 중인 작업이 자동으로 중단되지 않습니다.";
+"Shows a guide on supported weekly and monthly quota bars. Automatic cancellation requires a verified connection to the same account." = "지원하는 주간·월간 사용량 바에 기준선을 표시합니다. 작업을 자동으로 중단하려면 같은 계정의 클라이언트 연결을 확인할 수 있어야 합니다.";

@@ -379,8 +379,10 @@ final class WidgetDataStore {
     }
 
     func data(for descriptor: WidgetDescriptor) -> WidgetData {
+        let snapshot = snapshots[descriptor.providerID]
+        let date = now()
         var result = WidgetDataResolver.resolve(
-            descriptor, snapshot: snapshots[descriptor.providerID], codexResetWatch: codexResetWatch
+            descriptor, snapshot: snapshot, codexResetWatch: codexResetWatch
         )
 
         // 대시보드·공유 이미지·메뉴 막대의 공통 표시 설정 적용 지점.
@@ -389,13 +391,21 @@ final class WidgetDataStore {
         result.alwaysShowPacing = displaySettings.showsPaceMarks
         result.priorityLimits = displaySettings.priorityLimits
         result.showsPaceMarks = displaySettings.showsPaceMarks
-        result.softLimitUsedFraction = softLimitSettings?().usedFraction(
-            for: descriptor.softLimitWindow,
-            periodDurationMs: result.periodDurationMs
-        )
+        if result.hasData, result.isQuotaMeter, result.valueTextOverride == nil,
+            let limit = result.limit, limit.isFinite, limit > 0, result.used.isFinite, result.used >= 0,
+            let settings = softLimitSettings?(),
+            let fraction = settings.usedFraction(for: descriptor, periodDurationMs: result.periodDurationMs)
+        {
+            result.softLimitUsedFraction = fraction
+            if refreshResults[descriptor.providerID] == .succeeded, let snapshot {
+                result.softLimitReadingExpiresAt = SoftLimitObservation.project(
+                    snapshot: snapshot, descriptors: [descriptor], window: settings.window, now: date
+                )?.nextExpiry(after: date)
+            }
+        }
         // 행이 속한 카드 ID — 카드별 크레딧 사용 요청의 대상 키.
         result.providerID = descriptor.providerID
-        return result.presented(at: now())
+        return result.presented(at: date)
     }
 
     /// 현재 조회 결과의 플랜 이름 — 결과가 없거나 플랜을 제공하지 않으면 nil.

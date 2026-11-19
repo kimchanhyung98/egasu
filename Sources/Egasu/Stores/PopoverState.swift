@@ -19,7 +19,11 @@ enum PopoverScreen: Hashable, Sendable {
 
 /// Settings 탭 — 탭 막대의 SF Symbol과 제목.
 enum SettingsTab: Hashable, Sendable, CaseIterable {
-    case general, display, alerts, advanced
+    case general, display, alerts, advanced, labs
+
+    static func visible(betaUpdatesEnabled: Bool) -> [Self] {
+        allCases.filter { $0 != .labs || betaUpdatesEnabled }
+    }
 
     var title: String {
         switch self {
@@ -27,6 +31,7 @@ enum SettingsTab: Hashable, Sendable, CaseIterable {
         case .display: L10n.settings("Display")
         case .alerts: L10n.settings("Alerts")
         case .advanced: L10n.settings("Advanced")
+        case .labs: L10n.settings("Labs")
         }
     }
 
@@ -36,6 +41,7 @@ enum SettingsTab: Hashable, Sendable, CaseIterable {
         case .display: "macwindow"
         case .alerts: "bell"
         case .advanced: "terminal"
+        case .labs: "flask"
         }
     }
 }
@@ -74,6 +80,10 @@ final class PopoverState {
 
     init(dashboardTab: DashboardTab? = nil, defaults: UserDefaults = .standard) {
         self.dashboardTab = dashboardTab ?? .preferred(in: defaults)
+    }
+
+    func reconcileSettingsTab(betaUpdatesEnabled: Bool) {
+        if !betaUpdatesEnabled && settingsTab == .labs { settingsTab = .general }
     }
 
     /// 한 단계 뒤로 — 계정 상세 → 목록 → 대시보드. 대시보드면 false(패널 닫기).

@@ -32,15 +32,19 @@ final class CursorProvider: ProviderRuntime {
     var widgetDescriptors: [WidgetDescriptor] {
         [
             .percent(id: "cursor.usage", provider: provider, title: "Total Usage", metricLabel: "Total usage")
+                .supportingSoftLimit(.weekly, .monthly, allowsDSTOffset: true)
                 .exportingLimit("totalUsage", unit: "percent"),
             .percent(id: "cursor.auto", provider: provider, title: "Auto Usage", metricLabel: "Auto usage")
+                .supportingSoftLimit(.weekly, .monthly, allowsDSTOffset: true)
                 .exportingLimit("autoUsage", unit: "percent"),
             .percent(id: "cursor.api", provider: provider, title: "API Usage", metricLabel: "API usage")
+                .supportingSoftLimit(.weekly, .monthly, allowsDSTOffset: true)
                 .exportingLimit("apiUsage", unit: "percent"),
             .boundedDollars(id: "cursor.onDemand", provider: provider, title: "Extra Usage", metricLabel: "On-demand", limit: 100, valueWord: "spent")
                 .exportingLimit("onDemand", unit: "usd", source: .progressOrValue(kind: .dollars)),
             .boundedCount(id: "cursor.requests", provider: provider, title: "Requests", limit: 500,
                           suffix: "requests", periodDurationMs: CursorUsageMapper.billingPeriodMs)
+            .supportingSoftLimit(.weekly, .monthly, allowsDSTOffset: true)
                 .exportingLimit("requests", unit: "requests"),
             .dollarBalance(id: "cursor.credits", provider: provider, title: "Credits", valueWord: "left")
                 .exportingLimit("credits", kind: .balance, unit: "usd", source: .value(kind: .dollars)),
@@ -119,6 +123,7 @@ final class CursorProvider: ProviderRuntime {
         }
 
         let fetchedUsage = try await fetchUsageWithRetry(accessToken: accessToken, authState: &authState)
+        let usageObservedAt = now()
         let usageResponse = fetchedUsage.response
         try ProviderAuthRetry.requireSuccess(
             usageResponse,
@@ -138,13 +143,14 @@ final class CursorProvider: ProviderRuntime {
             planInfoUnavailable: planInfoUnavailable
         )
         if fallback.shouldFallback {
-            var mapped = try await usageSummaryAndRequestResult(
+            let (summary, observedAt) = try await usageSummaryAndRequestResult(
                 accessToken: currentToken,
                 planName: planName,
                 unavailableMessage: fallback.message
             )
-            let history = await appendSpendLines(to: &mapped.lines, accessToken: currentToken)
-            return snapshot(mapped, usageHistory: history, accessToken: currentToken)
+            var mapped = summary
+            CursorUsageMapper.includeUnresolvedPlanQuota(from: usage, in: &mapped)
+            return await snapshot(mapped, observedAt: observedAt, accessToken: currentToken)
         }
 
         if shouldTryGenericRequestFallback(usage: usage) {
@@ -154,8 +160,8 @@ final class CursorProvider: ProviderRuntime {
                     planName: planName,
                     unavailableMessage: "Cursor request-based usage data unavailable. Try again later."
                 )
-                let history = await appendSpendLines(to: &mapped.lines, accessToken: currentToken)
-                return snapshot(mapped, usageHistory: history, accessToken: currentToken)
+                CursorUsageMapper.includeUnresolvedPlanQuota(from: usage, in: &mapped)
+                return await snapshot(mapped, observedAt: now(), accessToken: currentToken)
             } catch {
                 noteDegraded(.cursorFallback, error: error, localContext: "optional request-based usage fallback failed")
             }
@@ -163,14 +169,13 @@ final class CursorProvider: ProviderRuntime {
 
         let creditGrants = await fetchCreditGrants(accessToken: currentToken)
         let stripeBalanceCents = await fetchStripeBalanceCents(accessToken: currentToken)
-        var mapped = try CursorUsageMapper.mapUsage(
+        let mapped = try CursorUsageMapper.mapUsage(
             usage: usage,
             planName: planName,
             creditGrants: creditGrants,
             stripeBalanceCents: stripeBalanceCents
         )
-        let history = await appendSpendLines(to: &mapped.lines, accessToken: currentToken)
-        return snapshot(mapped, usageHistory: history, accessToken: currentToken)
+        return await snapshot(mapped, observedAt: usageObservedAt, accessToken: currentToken)
     }
 
     /// 이력 실패 시 한도는 유지하고 저장소의 마지막 정상 이력을 경고와 함께 표시.
@@ -418,11 +423,14 @@ final class CursorProvider: ProviderRuntime {
         accessToken: String,
         planName: String?,
         unavailableMessage: String
-    ) async throws -> CursorMappedUsage {
+    ) async throws -> (CursorMappedUsage, Date) {
         let summary = await fetchOptionalJSONObject(label: "usage-summary", operation: .cursorSummary, request: {
             try await self.usageClient.fetchUsageSummary(accessToken: accessToken)
         })
-        if let summary, !CursorUsageSummaryMapper.hasUsableSummaryPayload(summary) {
+        let summaryObservedAt = summary.flatMap {
+            CursorUsageSummaryMapper.hasUsableSummaryPayload($0) ? now() : nil
+        }
+        if summary != nil, summaryObservedAt == nil {
             noteDegraded(.cursorSummary, category: .decoding, localContext: "optional usage-summary response contained no usable usage fields")
         }
         let requestUsage = await fetchOptionalJSONObject(label: "request-based usage", operation: .cursorFallback, request: {
@@ -431,18 +439,20 @@ final class CursorProvider: ProviderRuntime {
         if let requestUsage, !CursorUsageSummaryMapper.hasUsableRequestPayload(requestUsage) {
             noteDegraded(.cursorFallback, category: .decoding, localContext: "optional request-based usage response contained no usable usage fields")
         }
-        if let summary, CursorUsageSummaryMapper.hasUsableSummaryPayload(summary) {
+        if summaryObservedAt != nil {
             AppDiagnostics.record(.cursorSummary, result: .success, providerID: provider.id)
         }
         if let requestUsage, CursorUsageSummaryMapper.hasUsableRequestPayload(requestUsage) {
             AppDiagnostics.record(.cursorFallback, result: .success, providerID: provider.id)
         }
-        return try CursorUsageSummaryMapper.map(
+        let mapped = try CursorUsageSummaryMapper.map(
             summary: summary,
             requestUsage: requestUsage,
             planName: planName,
             unavailableMessage: unavailableMessage
         )
+        // 두 응답을 합친 한도는 먼저 받은 데이터의 시각부터 만료.
+        return (mapped, summaryObservedAt ?? now())
     }
 
     private func shouldTryGenericRequestFallback(usage: [String: Any]) -> Bool {
@@ -460,16 +470,21 @@ final class CursorProvider: ProviderRuntime {
     }
 
     private func snapshot(
-        _ mapped: CursorMappedUsage, usageHistory: ProviderUsageHistory?, accessToken: String
-    ) -> ProviderSnapshot {
+        _ mapped: CursorMappedUsage, observedAt: Date, accessToken: String
+    ) async -> ProviderSnapshot {
+        let quotaObservedAt = hasSoftLimitQuota(in: mapped.lines) ? observedAt : nil
+        var lines = mapped.lines
+        let usageHistory = await appendSpendLines(to: &lines, accessToken: accessToken)
         var snapshot = ProviderSnapshot.make(
             provider: provider,
             plan: mapped.plan,
-            lines: mapped.lines,
+            lines: lines,
             refreshedAt: now(),
             usageHistory: usageHistory,
             warning: usageHistory == nil ? "Cursor usage history could not be refreshed. Try again later." : nil,
-            isDegraded: refreshIsDegraded ? true : nil
+            isDegraded: refreshIsDegraded ? true : nil,
+            incompleteQuotaWindows: mapped.incompleteQuotaWindows.isEmpty ? nil : mapped.incompleteQuotaWindows,
+            liveQuotaObservedAt: quotaObservedAt
         )
         snapshot.producedByIdentityKey = CursorUsageClient.session(from: accessToken)?.userID
         return snapshot

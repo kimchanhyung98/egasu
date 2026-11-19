@@ -49,7 +49,6 @@ final class ClaudeProvider: ProviderRuntime {
     var widgetDescriptors: [WidgetDescriptor] {
         [
             .percent(id: "\(provider.id).session", provider: provider, title: "Session", sessionStartSignal: .missingResetDate)
-                .supportingSoftLimit(.fiveHours)
                 .exportingLimit("session", unit: "percent"),
             .percent(id: "\(provider.id).weekly", provider: provider, title: "Weekly")
                 .supportingSoftLimit(.weekly)
@@ -321,6 +320,7 @@ final class ClaudeProvider: ProviderRuntime {
             warningPresentation: warningPresentation.isEmpty ? nil : warningPresentation,
             authenticationIssue: authenticationIssue,
             isDegraded: refreshIsDegraded ? true : nil,
+            incompleteQuotaWindows: mapped.hasIncompleteWeeklyQuota == true ? [.weekly] : nil,
             liveQuotaObservedAt: mapped.liveQuotaObservedAt,
             quotaObservedAt: mapped.quotaObservedAt,
             usageRetryAfter: mapped.retryAfter

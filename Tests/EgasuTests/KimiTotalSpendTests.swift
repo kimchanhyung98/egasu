@@ -16,6 +16,7 @@ final class KimiTotalSpendTests: XCTestCase {
         let snapshot = await provider.refresh()
 
         XCTAssertNil(snapshot.errorCategory)
+        XCTAssertEqual(snapshot.partialRefreshErrorCategory, .other)
         XCTAssertNil(snapshot.warning)
         XCTAssertEqual(
             provider.widgetDescriptors.map(\.id),
@@ -122,6 +123,10 @@ final class KimiTotalSpendTests: XCTestCase {
         let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", now: { clock.withLock { $0 } })
         let store = WidgetDataStore(registry: .from([provider]), providers: [provider], cache: cache,
                                     defaults: defaults, now: { clock.withLock { $0 } })
+        var partialCategories: [ErrorCategory?] = []
+        store.onRefreshOutcome = { _, _, category, _, degraded in
+            if degraded { partialCategories.append(category) }
+        }
         await store.refreshAll(force: true)
         let previous = try XCTUnwrap(store.localSnapshots["kimi"])
         XCTAssertEqual(tokens(previous), 190)
@@ -149,6 +154,7 @@ final class KimiTotalSpendTests: XCTestCase {
         XCTAssertEqual(store.localSnapshots["kimi"]?.totalSpendRefreshedAt, now)
         XCTAssertEqual(store.localSnapshots["kimi"]?.refreshedAt, refreshedNow)
         XCTAssertEqual(store.localSnapshots["kimi"]?.isDegraded, true)
+        XCTAssertEqual(partialCategories, [.other, .decoding, .decoding])
         XCTAssertEqual(cache.loadSnapshots(providerIDs: ["kimi"])["kimi"]?.totalSpendRefreshedAt, now)
         XCTAssertNil(store.headerNotice(for: "kimi"))
         try FileManager.default.removeItem(at: work)
@@ -285,6 +291,7 @@ final class KimiTotalSpendTests: XCTestCase {
         XCTAssertNil(snapshot.totalSpendLines)
         XCTAssertTrue(snapshot.warning?.contains("usage history could not be read") == true)
         XCTAssertEqual(snapshot.isDegraded, true)
+        XCTAssertEqual(snapshot.partialRefreshErrorCategory, .storage)
     }
 
     func testUnsupportedHistoryFormatPreservesQuotaAndExplainsTheWarning() async throws {
@@ -300,17 +307,22 @@ final class KimiTotalSpendTests: XCTestCase {
         XCTAssertEqual(snapshot.warning, message)
         XCTAssertEqual(snapshot.warningPresentation, [LocalizedMessage(message)])
         XCTAssertEqual(snapshot.isDegraded, true)
+        XCTAssertEqual(snapshot.partialRefreshErrorCategory, .decoding)
     }
 
     func testMalformedHistoryKeepsValidTokensWithoutCardWarning() async throws {
         let root = try fixture()
         defer { try? FileManager.default.removeItem(at: root) }
         try writeHistory(root: root, suffix: "invalid-json\n")
+        let diagnostics = DiagnosticEventRecorder()
         let snapshot = await makeProvider(root: root).refresh()
 
         XCTAssertEqual(tokens(snapshot), 190)
         XCTAssertNil(snapshot.warning)
         XCTAssertEqual(snapshot.isDegraded, true)
+        XCTAssertEqual(snapshot.partialRefreshErrorCategory, .decoding)
+        XCTAssertTrue(diagnostics.events.contains { $0.operation == .historyScan && $0.category == .other })
+        XCTAssertTrue(diagnostics.events.contains { $0.operation == .historyScan && $0.category == .decoding })
     }
 
     func testQuotaAloneNeverCreatesTokenTotals() async throws {
@@ -320,7 +332,28 @@ final class KimiTotalSpendTests: XCTestCase {
 
         XCTAssertNil(snapshot.totalSpendLines)
         XCTAssertNil(snapshot.warning)
+        XCTAssertNil(snapshot.partialRefreshErrorCategory)
         XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Weekly"])
+    }
+
+    func testUnreadableWorkHistoryTakesPrecedenceOverMalformedNativeHistory() async throws {
+        let root = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let work = root.appendingPathComponent(
+            "Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home/sessions/work/session/agents/main/wire.jsonl"
+        )
+        try UsageRecordFixture.write("not-json\n", to: work)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: work.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: work.path) }
+        try writeHistory(root: root, version: "unsupported")
+        let failedHistory = await makeProvider(root: root).refresh()
+        XCTAssertEqual(failedHistory.partialRefreshErrorCategory, .storage)
+        XCTAssertNil(failedHistory.totalSpendLines)
+
+        try writeHistory(root: root, suffix: "invalid-json\n")
+        let partialHistory = await makeProvider(root: root).refresh()
+        XCTAssertEqual(partialHistory.partialRefreshErrorCategory, .storage)
+        XCTAssertEqual(tokens(partialHistory), 190)
     }
 
     func testFirstRefreshUsesCustomHistoryFromColdLoginShell() async throws {

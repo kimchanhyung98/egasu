@@ -27,6 +27,8 @@ struct WidgetData: Hashable {
     var alwaysShowPacing: Bool = false
     /// 사용자 soft-limit 안내선의 사용량 기준 위치 — 대상이 아니거나 설정이 꺼져 있으면 nil.
     var softLimitUsedFraction: Double?
+    /// 이 행의 실측 사용량으로 도달 여부를 확인할 수 있는 마지막 시각(미포함).
+    var softLimitReadingExpiresAt: Date?
     /// quota가 아닌 공개 reset forecast meter — Used/Left·pace·quota 알림 의미에서 분리.
     var forecast: Forecast?
     var resetsAt: Date?
@@ -577,8 +579,11 @@ extension WidgetData {
 
     /// forecast의 의미상 deadline을 transport/cache freshness보다 우선 적용.
     func presented(at date: Date = Date()) -> WidgetData {
-        guard isForecast, let forecastDeadline, date >= forecastDeadline else { return self }
         var copy = self
+        if let softLimitReadingExpiresAt, date >= softLimitReadingExpiresAt {
+            copy.softLimitReadingExpiresAt = nil
+        }
+        guard isForecast, let forecastDeadline, date >= forecastDeadline else { return copy }
         if forecast?.refreshFailed == true {
             copy.hasData = false
         } else {

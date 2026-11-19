@@ -92,7 +92,60 @@ final class FailureBackoffTests: XCTestCase {
         XCTAssertEqual(runtime.refreshCount, 2)
     }
 
+    func testOnlyAClaudeOrCodexKeychainFailureAsksForApprovalFromFix() async {
+        var clock = Date(timeIntervalSince1970: 1_800_000_000)
+        let keychainFailure = KeychainError.readFailed("Couldn't read the saved account from Keychain (status -25293).")
+        let providers = [
+            Provider(id: "claude", displayName: "Claude", icon: .providerMark("claude")),
+            Provider(id: "codex@profile-work", displayName: "Codex", icon: .providerMark("codex"))
+        ]
+        for provider in providers {
+            let runtime = SequenceProviderRuntime(
+                provider: provider, descriptors: [weeklyDescriptor(provider)],
+                snapshots: [
+                    .error(provider: provider, error: keychainFailure),
+                    .error(provider: provider, message: "Not logged in", category: .notLoggedIn),
+                    ProviderSnapshot(
+                        providerID: provider.id, displayName: provider.displayName,
+                        lines: [.progress(label: "Weekly quota", used: 12, limit: 100, format: .percent)],
+                        refreshedAt: Date(timeIntervalSince1970: 0)
+                    )
+                ]
+            )
+            let store = makeStore(runtime: runtime, clock: { clock })
+
+            await store.refreshAll()
+            XCTAssertTrue(store.needsKeychainApproval(provider.id), provider.id)
+
+            clock = clock.addingTimeInterval(1)
+            await store.refreshAll(force: true)
+            XCTAssertNotNil(store.errorMessage(for: provider.id), provider.id)
+            XCTAssertFalse(store.needsKeychainApproval(provider.id), provider.id)
+
+            clock = clock.addingTimeInterval(1)
+            await store.refreshAll(force: true)
+            XCTAssertNil(store.errorMessage(for: provider.id), provider.id)
+            XCTAssertFalse(store.needsKeychainApproval(provider.id), provider.id)
+        }
+
+        let devin = Provider(id: "devin", displayName: "Devin", icon: .providerMark("devin"))
+        let devinRuntime = CountingProviderRuntime(
+            provider: devin, descriptors: [weeklyDescriptor(devin)],
+            snapshot: .error(provider: devin, error: keychainFailure)
+        )
+        let devinStore = makeStore(runtime: devinRuntime, clock: { clock })
+        await devinStore.refreshAll()
+        XCTAssertFalse(devinStore.needsKeychainApproval(devin.id), "다른 프로바이더는 재시도해도 승인 창이 뜨지 않아 계정 상세로 안내")
+    }
+
     // MARK: - Helpers
+
+    private func weeklyDescriptor(_ provider: Provider) -> WidgetDescriptor {
+        WidgetDescriptor(
+            id: "\(provider.id).weekly", providerID: provider.id, metricLabel: "Weekly quota",
+            sample: WidgetData(title: "Weekly", icon: provider.icon, kind: .percent, used: 0, limit: 100)
+        )
+    }
 
     private func makeFailingRuntime() -> CountingProviderRuntime {
         let provider = Provider(id: "devin", displayName: "Devin", icon: .providerMark("devin"))

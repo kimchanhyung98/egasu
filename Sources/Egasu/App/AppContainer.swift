@@ -75,7 +75,7 @@ final class AppContainer {
 
     /// `isFreshInstall`은 `SettingsMigrator.migrate()` 실행 전 호출자 캡처 필수 — migrator의 schema stamp가
     /// defaults 도메인을 non-empty로 변경. `AppDelegate` 참고.
-    init(isFreshInstall: Bool = false, claudeShellMigrationIssue: LocalizedMessage? = nil) {
+    init(isFreshInstall: Bool = false, labsAvailable: Bool, claudeShellMigrationIssue: LocalizedMessage? = nil) {
         self.claudeShellMigrationIssue = claudeShellMigrationIssue
         let workQueue = BackgroundWorkQueue.shared
         self.workQueue = workQueue
@@ -115,7 +115,7 @@ final class AppContainer {
         let apiKeyProviders = providers.compactMap { $0 as? any APIKeyManaging }
         let enablement = ProviderEnablementStore()
         let notificationSettings = NotificationSettingsStore()
-        let softLimitSettings = SoftLimitSettingsStore()
+        let softLimitSettings = SoftLimitSettingsStore(labsAvailable: labsAvailable)
         let layout = LayoutStore(
             registry: registry,
             knownCardIDs: enablement.knownIDs.union(enablement.enabledIDs ?? []),
@@ -245,7 +245,7 @@ final class AppContainer {
         }
         softLimitSettings.onChange = { [weak softLimitCoordinator] in softLimitCoordinator?.settingsDidChange() }
         dataStore.onQuotaInvalidated = { [weak softLimitCoordinator, weak usageTimer] providerIDs in
-            softLimitCoordinator?.settingsDidChange()
+            softLimitCoordinator?.accountsDidChange(providerIDs)
             usageTimer?.invalidate(providerIDs: providerIDs)
         }
         dataStore.onFreshSnapshot = { [weak softLimitCoordinator, weak usageTimer] snapshot, descriptors, trigger in

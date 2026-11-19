@@ -16,7 +16,6 @@
 "Beta Updates" = "Beta Updates";
 "Cancel" = "Cancel";
 "Cancel Login" = "Cancel Login";
-"Cancellation Status" = "Cancellation Status";
 "Cancelling Tokscale Login…" = "Cancelling Tokscale Login…";
 "Cancelling…" = "Cancelling…";
 "Check for Updates…" = "Check for Updates…";
@@ -47,7 +46,6 @@
 "Enter a whole number from 1 to 100. %d%% is still applied." = "Enter a whole number from 1 to 100. %d%% is still applied.";
 "Error" = "Error";
 "Exact Time" = "Exact Time";
-"Existing independent CLI, app, and IDE sessions are not connected automatically. egasu does not restart them." = "Existing independent CLI, app, and IDE sessions are not connected automatically. egasu does not restart them.";
 "General" = "General";
 "Global Shortcut" = "Global Shortcut";
 "Hide From Screen Share" = "Hide From Screen Share";
@@ -80,7 +78,7 @@
 "Party Mode" = "Party Mode";
 "Party mode is on, so this stays paused." = "Party mode is on, so this stays paused.";
 "Privacy" = "Privacy";
-"Receive pre-release builds before they ship to everyone" = "Receive pre-release builds before they ship to everyone";
+"Shows the Labs tab and includes beta versions when checking for updates." = "Shows the Labs tab and includes beta versions when checking for updates.";
 "Record Shortcut" = "Record Shortcut";
 "Remove egasu Override" = "Remove egasu Override";
 "Reset Times" = "Reset Times";
@@ -95,10 +93,8 @@
 "Show Total Spend" = "Show Total Spend";
 "Show Usage As" = "Show Usage As";
 "Show how you're pacing on every metric, not just ones near their limit" = "Show how you're pacing on every metric, not just ones near their limit";
-"Shows the limit guide and allows cancellation only for verified client/account connections. The current Codex connection is not account-verified and will not cancel tasks. Unconnected sessions and unsupported providers are not protected." = "Shows the limit guide and allows cancellation only for verified client/account connections. The current Codex connection is not account-verified and will not cancel tasks. Unconnected sessions and unsupported providers are not protected.";
 "Soft Limit" = "Soft Limit";
 "Soft Limit Threshold Percent" = "Soft Limit Threshold Percent";
-"Start the local server, then open a Codex terminal connected to it:" = "Start the local server, then open a Codex terminal connected to it:";
 "Sync" = "Sync";
 "Sync Across Macs" = "Sync Across Macs";
 "Sync Available at %@" = "Sync Available at %@";
@@ -108,7 +104,6 @@
 "System" = "System";
 "Terminal Helper" = "Terminal Helper";
 "Text" = "Text";
-"The Codex cancellation connection has been tested, but automatic cancellation is unavailable until account scope is verified. Other Codex sessions and other providers are not protected yet." = "The Codex cancellation connection has been tested, but automatic cancellation is unavailable until account scope is verified. Other Codex sessions and other providers are not protected yet.";
 "Theme" = "Theme";
 "This Mac" = "This Mac";
 "This label appears publicly on your Tokscale profile. Saving it locally does not run Tokscale or make a network request." = "This label appears publicly on your Tokscale profile. Saving it locally does not run Tokscale or make a network request.";
@@ -132,7 +127,6 @@
 "Usage Display" = "Usage Display";
 "Usage Sync" = "Usage Sync";
 "Used" = "Used";
-"Uses fresh quota data after the next successful refresh. Cancellation requires a verified client/account connection and must preserve apps, terminals, and conversations." = "Uses fresh quota data after the next successful refresh. Cancellation requires a verified client/account connection and must preserve apps, terminals, and conversations.";
 "View Login…" = "View Login…";
 "Waiting for Tokscale Login…" = "Waiting for Tokscale Login…";
 "Waiting for this Mac’s first iCloud update…" = "Waiting for this Mac’s first iCloud update…";
@@ -187,3 +181,18 @@
 "When a limit turns into a priority" = "When a limit turns into a priority";
 "Where usage would be at an even pace" = "Where usage would be at an even pace";
 "Will run out before it resets" = "Will run out before it resets";
+"Experimental features may change or be removed." = "Experimental features may change or be removed.";
+"Labs" = "Labs";
+"Remove" = "Remove";
+"Remove Terminal Helper?" = "Remove Terminal Helper?";
+"The egasu command will no longer work in Terminal." = "The egasu command will no longer work in Terminal.";
+"Verifying…" = "Verifying…";
+"Weekly and Monthly" = "Weekly and Monthly";
+"Quota Status" = "Quota Status";
+"No enabled accounts support this period." = "No enabled accounts support this period.";
+"Quota not verified" = "Quota not verified";
+"Below the soft limit" = "Below the soft limit";
+"%@ used · Soft limit reached" = "%@ used · Soft limit reached";
+"Estimated usage: %@" = "Estimated usage: %@";
+"Automatic cancellation is unavailable for these accounts." = "Automatic cancellation is unavailable for these accounts.";
+"Shows a guide on supported weekly and monthly quota bars. Automatic cancellation requires a verified connection to the same account." = "Shows a guide on supported weekly and monthly quota bars. Automatic cancellation requires a verified connection to the same account.";

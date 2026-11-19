@@ -222,7 +222,7 @@ final class AppLogTests: XCTestCase {
     @MainActor
     func testSlowProviderRefreshWritesWarningAtDefaultLogLevel() async throws {
         AppLog.reloadLevel(.info)
-        let provider = Provider(id: "slow-test", displayName: "Slow Test", icon: .providerMark("codex"))
+        let provider = Provider(id: "codex@profile-slow", displayName: "Slow Test", icon: .providerMark("codex"))
         let runtime = TestProviderRuntime(
             provider: provider,
             descriptors: [],
@@ -244,7 +244,7 @@ final class AppLogTests: XCTestCase {
 
         let contents = try fileContents()
         XCTAssertTrue(
-            contents.contains("[WARN] [refresh] slow-test slow refresh (12500ms, threshold=10000ms)"),
+            contents.contains("[WARN] [refresh] codex slow refresh (12500ms, threshold=10000ms)"),
             contents
         )
     }
