@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 final class CopilotProvider: ProviderRuntime {
     /// Copilot credit usage를 실은 org slug를 caching하는 `UserDefaults` key — steady-state refresh는 모든 org 재탐색 대신 billing 호출 1회.
-    static let billingOrgDefaultsKey = "copilot.billingOrg"
+    nonisolated static let billingOrgDefaultsKey = "copilot.billingOrg"
 
     let provider = Provider(
         id: "copilot",

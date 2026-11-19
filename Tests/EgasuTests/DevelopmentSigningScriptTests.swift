@@ -99,10 +99,12 @@ final class DevelopmentSigningScriptTests: XCTestCase {
     }
 
     func testVerifyAcceptsOnlyThisCheckoutsExecutablePath() throws {
-        let result = try verify(processes: "123 /Applications/egasu.app/Contents/MacOS/egasu\n", includeCheckout: true)
-
-        XCTAssertEqual(result.status, 0, result.output)
-        XCTAssertTrue(result.output.contains("==> running"), result.output)
+        for useAlias in [false, true] {
+            let result = try verify(processes: "123 /Applications/egasu.app/Contents/MacOS/egasu\n",
+                                    includeCheckout: true, useAlias: useAlias)
+            XCTAssertEqual(result.status, 0, result.output)
+            XCTAssertTrue(result.output.contains("==> running"), result.output)
+        }
     }
 
     private func preflight(pin: String?, requested: String? = nil) throws -> (
@@ -173,11 +175,15 @@ final class DevelopmentSigningScriptTests: XCTestCase {
         )
     }
 
-    private func verify(processes: String, includeCheckout: Bool = false) throws -> (status: Int32, output: String) {
+    private func verify(
+        processes: String, includeCheckout: Bool = false, useAlias: Bool = false
+    ) throws -> (status: Int32, output: String) {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("egasu verify \(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let binary = root.appendingPathComponent("dist/egasu.app/Contents/MacOS/egasu")
+        let alias = root.appendingPathComponent("checkout alias")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: root)
+        let binary = (useAlias ? alias : root).appendingPathComponent("dist/egasu.app/Contents/MacOS/egasu")
         let listing = processes + (includeCheckout ? "789 \(binary.path)\n" : "")
         try listing.write(to: root.appendingPathComponent("ps-output"), atomically: true, encoding: .utf8)
         let ps = root.appendingPathComponent("ps-fixture")

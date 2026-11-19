@@ -83,10 +83,11 @@ SIGN_ENTITLEMENTS="$ROOT_DIR/script/Egasu.local.entitlements.plist"
 # 이름 변경 전후의 이 checkout 개발 앱만 종료. 설치된 운영 앱은 별도 경로에서 계속 실행.
 python3 - "$APP_BINARY" "$DIST_DIR/Egasu.app/Contents/MacOS/Egasu" "$DIST_DIR/OpenUsage.app/Contents/MacOS/OpenUsage" <<'PY'
 import os, signal, subprocess, sys
-executables = set(sys.argv[1:])
+executables = {os.path.realpath(path) for path in sys.argv[1:]}
+names = {os.path.basename(path) for path in sys.argv[1:]}
 for line in subprocess.check_output(["/bin/ps", "-axo", "pid=,comm="], text=True).splitlines():
     pid, executable = line.strip().split(None, 1)
-    if executable in executables:
+    if os.path.basename(executable) in names and os.path.realpath(executable) in executables:
         try:
             os.kill(int(pid), signal.SIGTERM)
         except ProcessLookupError:
@@ -276,10 +277,12 @@ case "$MODE" in
     launch_app
     sleep 1
     python3 - "$APP_BINARY" <<'PY'
-import subprocess, sys
+import os, subprocess, sys
+expected = os.path.realpath(sys.argv[1])
+name = os.path.basename(sys.argv[1])
 for line in subprocess.check_output(["/bin/ps", "-axo", "pid=,comm="], text=True).splitlines():
     fields = line.strip().split(None, 1)
-    if len(fields) == 2 and fields[1] == sys.argv[1]:
+    if len(fields) == 2 and os.path.basename(fields[1]) == name and os.path.realpath(fields[1]) == expected:
         print("==> running")
         break
 else:
