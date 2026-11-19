@@ -10,6 +10,22 @@ extension AccountCredentialSwitcherTests {
         return defaults
     }
 
+    @MainActor
+    private func assertMigrationFails(
+        defaults: UserDefaults, switcher: AccountCredentialSwitcher,
+        expecting expected: ClaudeShellLoginMigrationError? = nil,
+        file: StaticString = #filePath, line: UInt = #line
+    ) async {
+        do {
+            try await ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: switcher)
+            XCTFail("Expected migration to fail", file: file, line: line)
+        } catch {
+            if let expected {
+                XCTAssertEqual(error as? ClaudeShellLoginMigrationError, expected, file: file, line: line)
+            }
+        }
+    }
+
     @discardableResult
     private func installOldClaudeFunction(_ fixture: Fixture) throws -> URL {
         let rc = fixture.home.appendingPathComponent(".zshrc")
@@ -18,7 +34,7 @@ extension AccountCredentialSwitcherTests {
     }
 
     @MainActor
-    func testShellMigrationTransfersLoginBeforeRemovingBothFunctionsAndSkipsCompletedRun() throws {
+    func testShellMigrationTransfersLoginBeforeRemovingBothFunctionsAndSkipsCompletedRun() async throws {
         let f = try makeFixture()
         let defaults = try shellMigrationDefaults()
         defaults.set(true, forKey: StorageMigration.completedKey)
@@ -46,7 +62,7 @@ extension AccountCredentialSwitcherTests {
         let original = try credentialWithExtras(token: "active", marker: "scoped-only")
         f.keychain.currentUserValues[scoped] = original
 
-        try ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
+        try await ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
 
         XCTAssertEqual(try text(zsh), "")
         XCTAssertEqual(try text(fish), "# keep")
@@ -61,23 +77,77 @@ extension AccountCredentialSwitcherTests {
         XCTAssertEqual(f.keychain.currentUserValues[scoped], original)
         XCTAssertEqual(try Data(contentsOf: fallbackFile), originalFallback)
         let writes = f.keychain.writeCount
-        try ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
+        try await ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
         XCTAssertEqual(f.keychain.writeCount, writes)
     }
 
     @MainActor
-    func testShellMigrationFreshInstallSkipsCredentialsAndAddsNoFunction() throws {
+    func testShellMigrationFreshInstallSkipsCredentialsAndAddsNoFunction() async throws {
         let f = try makeFixture()
         let defaults = try shellMigrationDefaults()
         f.keychain.onSharedRead = { _ in XCTFail("A fresh installation must not read Claude credentials") }
-        try ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
+        try await ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
         XCTAssertTrue(defaults.bool(forKey: ClaudeLegacyShellMigration.completedKey))
         XCTAssertFalse(FileManager.default.fileExists(atPath: f.home.appendingPathComponent(".zshrc").path))
         XCTAssertEqual(f.keychain.writeCount, 0)
     }
 
     @MainActor
-    func testShellMigrationRespectsKeychainDenialAndRetriesOnTheNextLaunch() throws {
+    func testShellMigrationUsesShellOAuthScopeFromCaptureOrPinnedSnapshot() async throws {
+        let stdout = [
+            "__EGASU_ENV_BEGIN__", "CLAUDE_CODE_CUSTOM_OAUTH_URL=https://example.test",
+            "__EGASU_ENV_END__"
+        ].joined(separator: "\0")
+        for usesSnapshot in [false, true] {
+            let f = try makeFixture()
+            let defaults = try shellMigrationDefaults()
+            let rc = try installOldClaudeFunction(f)
+            let snapshot =
+                usesSnapshot
+                ? ShellEnvironmentSnapshot(
+                    values: ["CLAUDE_CODE_CUSTOM_OAUTH_URL": "https://example.test"], capturedAt: Date()) : nil
+            let shell = LoginShellEnvironment(runner: MigrationShellRunner(stdout: usesSnapshot ? nil : stdout))
+            let reader = ProcessEnvironmentReader(
+                processEnvironment: [:], shellEnvironment: shell, launchSnapshot: { snapshot })
+            let switcher = AccountCredentialSwitcher(
+                keychain: f.keychain, environment: reader, homeDirectory: f.home, workspace: f.workspace)
+            let custom = FakeEnvironment(["CLAUDE_CODE_CUSTOM_OAUTH_URL": "https://example.test"])
+            let service = ClaudeAuthStore.scopedKeychainServiceName(
+                forConfigDirLiteral: f.home.appendingPathComponent(".claude").path, environment: custom)
+            f.keychain.currentUserValues[service] = claudeCredential(token: "custom")
+            try switcher.mergeClaudeOAuthAccount(
+                claudeAccount("a"), at: f.home.appendingPathComponent(".claude/.claude.json"))
+
+            try await ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: switcher)
+
+            XCTAssertEqual(try text(rc), "")
+            XCTAssertEqual(
+                f.keychain.currentUserValues[ClaudeAuthStore.baseKeychainServiceName(environment: custom)],
+                claudeCredential(token: "custom"))
+            XCTAssertNil(f.keychain.currentUserValues[baseClaudeService()])
+        }
+    }
+
+    @MainActor
+    func testShellMigrationPreservesWrapperWhenCaptureFailsAndOAuthScopeIsNotPinned() async throws {
+        let f = try makeFixture()
+        let defaults = try shellMigrationDefaults()
+        let rc = try installOldClaudeFunction(f)
+        let partial = ShellEnvironmentSnapshot(values: [:], capturedAt: Date(), pinnedKeys: ["USER_TYPE"])
+        let reader = ProcessEnvironmentReader(
+            processEnvironment: [:], shellEnvironment: LoginShellEnvironment(runner: MigrationShellRunner(stdout: "")),
+            launchSnapshot: { partial })
+        let switcher = AccountCredentialSwitcher(
+            keychain: f.keychain, environment: reader, homeDirectory: f.home, workspace: f.workspace)
+        f.keychain.onSharedRead = { _ in XCTFail("An unknown OAuth scope must not read Keychain") }
+        await assertMigrationFails(defaults: defaults, switcher: switcher, expecting: .shellEnvironmentUnavailable)
+        XCTAssertEqual(try text(rc), legacyClaudeZshBlock(home: f.home))
+        XCTAssertFalse(defaults.bool(forKey: ClaudeLegacyShellMigration.completedKey))
+        XCTAssertEqual(f.keychain.writeCount, 0)
+    }
+
+    @MainActor
+    func testShellMigrationRespectsKeychainDenialAndRetriesOnTheNextLaunch() async throws {
         let f = try makeFixture()
         let defaults = try shellMigrationDefaults()
         let rc = try installOldClaudeFunction(f)
@@ -85,16 +155,16 @@ extension AccountCredentialSwitcherTests {
             XCTAssertTrue(allowsPrompt)
             throw KeychainError.readFailed("fixture denial")
         }
-        XCTAssertThrowsError(try ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher))
+        await assertMigrationFails(defaults: defaults, switcher: f.switcher)
         XCTAssertFalse(defaults.bool(forKey: ClaudeLegacyShellMigration.completedKey))
         XCTAssertEqual(try text(rc), legacyClaudeZshBlock(home: f.home))
         f.keychain.onSharedRead = nil
-        try ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
+        try await ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
         XCTAssertEqual(try text(rc), "")
     }
 
     @MainActor
-    func testShellMigrationConflictPreservesBothLoginsAndRetriesAfterResolution() throws {
+    func testShellMigrationConflictPreservesBothLoginsAndRetriesAfterResolution() async throws {
         let f = try makeFixture()
         let rc = try installOldClaudeFunction(f)
         let defaults = try shellMigrationDefaults()
@@ -105,9 +175,7 @@ extension AccountCredentialSwitcherTests {
         try Data("{\"oauthAccount\":\(claudeAccount("a"))}".utf8).write(to: accountState)
         let saved = f.keychain.currentUserValues
 
-        XCTAssertThrowsError(try ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)) {
-            XCTAssertEqual($0 as? ClaudeShellLoginMigrationError, .conflict)
-        }
+        await assertMigrationFails(defaults: defaults, switcher: f.switcher, expecting: .conflict)
         XCTAssertEqual(f.keychain.currentUserValues, saved)
         XCTAssertEqual(try text(rc), legacyClaudeZshBlock(home: f.home))
         XCTAssertFalse(defaults.bool(forKey: ClaudeLegacyShellMigration.completedKey))
@@ -115,13 +183,13 @@ extension AccountCredentialSwitcherTests {
         try Data("{\"oauthAccount\":\(claudeAccount("a"))}".utf8).write(
             to: f.home.appendingPathComponent(".claude.json"))
         f.keychain.currentUserValues[baseClaudeService()] = claudeCredential(token: "active")
-        try ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
+        try await ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
         XCTAssertEqual(f.keychain.currentUserValues[baseClaudeService()], claudeCredential(token: "active"))
         XCTAssertEqual(try text(rc), "")
     }
 
     @MainActor
-    func testShellMigrationOnlyCopiesAnIdenticalUnscopedDefaultLogin() throws {
+    func testShellMigrationOnlyCopiesAnIdenticalUnscopedDefaultLogin() async throws {
         for unscopedToken in ["other", "active"] {
             let f = try makeFixture()
             let defaults = try shellMigrationDefaults()
@@ -139,18 +207,14 @@ extension AccountCredentialSwitcherTests {
             f.keychain.values[base] = unscoped
 
             if unscopedToken == "other" {
-                XCTAssertThrowsError(
-                    try ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
-                ) {
-                    XCTAssertEqual($0 as? ClaudeShellLoginMigrationError, .defaultIdentity)
-                }
+                await assertMigrationFails(defaults: defaults, switcher: f.switcher, expecting: .defaultIdentity)
                 XCTAssertEqual(f.keychain.writeCount, 0)
                 XCTAssertNil(f.keychain.currentUserValues[base])
                 XCTAssertNil(try state(at: root)["oauthAccount"])
                 XCTAssertEqual(try text(rc), legacyClaudeZshBlock(home: f.home))
                 XCTAssertFalse(defaults.bool(forKey: ClaudeLegacyShellMigration.completedKey))
             } else {
-                try ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
+                try await ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
                 XCTAssertEqual(f.keychain.currentUserValues[base], active)
                 XCTAssertEqual(try f.switcher.readClaudeSwitchState().identities, ["acct-a|org-a"])
                 XCTAssertEqual(try text(rc), "")
@@ -161,25 +225,21 @@ extension AccountCredentialSwitcherTests {
     }
 
     @MainActor
-    func testShellMigrationDefersWhileAnotherProcessOwnsTheSharedLoginLock() throws {
+    func testShellMigrationDefersWhileAnotherProcessOwnsTheSharedLoginLock() async throws {
         let fixture = try makeFixture()
         let defaults = try shellMigrationDefaults()
         let rc = try installOldClaudeFunction(fixture)
         let lock = try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: fixture.home)
         defer { withExtendedLifetime(lock) {} }
 
-        XCTAssertThrowsError(
-            try ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: fixture.switcher)
-        ) {
-            XCTAssertEqual($0 as? ClaudeShellLoginMigrationError, .busy)
-        }
+        await assertMigrationFails(defaults: defaults, switcher: fixture.switcher, expecting: .busy)
         XCTAssertEqual(try text(rc), legacyClaudeZshBlock(home: fixture.home))
         XCTAssertFalse(defaults.bool(forKey: ClaudeLegacyShellMigration.completedKey))
         XCTAssertEqual(fixture.keychain.writeCount, 0)
     }
 
     @MainActor
-    func testShellMigrationPendingSwitchRetriesEvenWhenBothStoresAreLoggedOut() throws {
+    func testShellMigrationPendingSwitchRetriesEvenWhenBothStoresAreLoggedOut() async throws {
         let f = try makeFixture()
         let defaults = try shellMigrationDefaults()
         let rc = try installOldClaudeFunction(f)
@@ -187,21 +247,19 @@ extension AccountCredentialSwitcherTests {
             previousProfileID: "a", previousIdentity: "acct-a", selectedProfileID: "b", selectedIdentity: "acct-b",
             selectedCredentialFingerprint: AccountSwitchJournal.fingerprint("fixture"))
         try f.switcher.switchJournal.save(record, replacing: nil)
-        XCTAssertThrowsError(try ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)) {
-            XCTAssertEqual($0 as? ClaudeShellLoginMigrationError, .pendingSwitch)
-        }
+        await assertMigrationFails(defaults: defaults, switcher: f.switcher, expecting: .pendingSwitch)
         XCTAssertEqual(try f.switcher.switchJournal.load(), record)
         XCTAssertEqual(try text(rc), legacyClaudeZshBlock(home: f.home))
         try f.switcher.switchJournal.clear(record)
         try f.switcher.mergeClaudeOAuthAccount(
             claudeAccount("a"), at: f.home.appendingPathComponent(".claude/.claude.json"))
-        try ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
+        try await ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
         XCTAssertEqual(try text(rc), "")
         XCTAssertEqual(f.keychain.writeCount, 0)
     }
 
     @MainActor
-    func testShellMigrationRetainsTheLaterExpiryWhenBothLoginsHaveRotated() throws {
+    func testShellMigrationRetainsTheLaterExpiryWhenBothLoginsHaveRotated() async throws {
         for sourceIsNewer in [true, false] {
             let f = try makeFixture()
             let defaults = try shellMigrationDefaults()
@@ -213,7 +271,7 @@ extension AccountCredentialSwitcherTests {
             let earlier = #"{"claudeAiOauth":{"accessToken":"old","expiresAt":4070908800000}}"#
             f.keychain.currentUserValues[base] = sourceIsNewer ? earlier : later
             f.keychain.currentUserValues[scoped] = sourceIsNewer ? later : earlier
-            try ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
+            try await ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
             XCTAssertEqual(
                 ClaudeAuthStore.parseCredentials(try XCTUnwrap(f.keychain.currentUserValues[base]))?.claudeAiOauth?
                     .accessToken, "new")
@@ -222,7 +280,7 @@ extension AccountCredentialSwitcherTests {
     }
 
     @MainActor
-    func testShellMigrationPreservesWrapperIfSourceChangesDuringWrite() throws {
+    func testShellMigrationPreservesWrapperIfSourceChangesDuringWrite() async throws {
         let f = try makeFixture()
         let defaults = try shellMigrationDefaults()
         let rc = try installOldClaudeFunction(f)
@@ -232,12 +290,12 @@ extension AccountCredentialSwitcherTests {
             claudeAccount("a"), at: f.home.appendingPathComponent(".claude/.claude.json"))
         let rotated = claudeCredential(token: "rotated")
         f.keychain.afterSharedWrite = { keychain, _ in keychain.currentUserValues[scoped] = rotated }
-        XCTAssertThrowsError(try ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher))
+        await assertMigrationFails(defaults: defaults, switcher: f.switcher)
         XCTAssertEqual(f.keychain.currentUserValues[scoped], rotated)
         XCTAssertEqual(try text(rc), legacyClaudeZshBlock(home: f.home))
         XCTAssertFalse(defaults.bool(forKey: ClaudeLegacyShellMigration.completedKey))
         f.keychain.afterSharedWrite = nil
-        try ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
+        try await ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
         XCTAssertEqual(try text(rc), "")
         XCTAssertEqual(
             try f.switcher.readClaudeSwitchState().credentials[0], try ClaudeAccountLoginCredentials.loginOnly(rotated))
@@ -245,7 +303,7 @@ extension AccountCredentialSwitcherTests {
     }
 
     @MainActor
-    func testShellMigrationWriteFailureKeepsWrapperAndRetryRestoresLogin() throws {
+    func testShellMigrationWriteFailureKeepsWrapperAndRetryRestoresLogin() async throws {
         let f = try makeFixture()
         let defaults = try shellMigrationDefaults()
         let rc = try installOldClaudeFunction(f)
@@ -254,12 +312,26 @@ extension AccountCredentialSwitcherTests {
         try f.switcher.mergeClaudeOAuthAccount(
             claudeAccount("a"), at: f.home.appendingPathComponent(".claude/.claude.json"))
         f.keychain.failingCurrentUserServices.insert(baseClaudeService())
-        XCTAssertThrowsError(try ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher))
+        await assertMigrationFails(defaults: defaults, switcher: f.switcher)
         XCTAssertFalse(defaults.bool(forKey: ClaudeLegacyShellMigration.completedKey))
         XCTAssertEqual(try text(rc), legacyClaudeZshBlock(home: f.home))
         f.keychain.failingCurrentUserServices.removeAll()
-        try ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
+        try await ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
         XCTAssertEqual(try text(rc), "")
         XCTAssertEqual(try f.switcher.readClaudeSwitchState().identities, ["acct-a|org-a"])
+    }
+}
+
+private struct MigrationShellRunner: ProcessRunning {
+    let stdout: String?
+
+    func run(
+        executable: String, arguments: [String], environment: [String: String], timeout: TimeInterval
+    ) throws -> ProcessResult {
+        guard let stdout else {
+            XCTFail("A fully pinned OAuth scope must not require shell capture")
+            throw CocoaError(.fileReadUnknown)
+        }
+        return ProcessResult(exitCode: 0, stdout: stdout, stderr: "")
     }
 }

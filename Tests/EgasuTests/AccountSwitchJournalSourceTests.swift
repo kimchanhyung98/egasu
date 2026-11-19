@@ -121,4 +121,113 @@ final class AccountSwitchJournalSourceTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), fixture.entryA.credential)
         XCTAssertNil(try fixture.journal.load())
     }
+
+    func testFailedSwitchToThirdAccountCanRetryFromThePreviousMixedState() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let original = try fixture.stageIntent()
+        try fixture.switcher.mergeClaudeOAuthAccount(
+            fixture.entryB.claudeOAuthAccount, at: fixture.root.appendingPathComponent(".claude.json"))
+        let mixed = try fixture.switcher.readClaudeSwitchState()
+        let c = try fixture.store.add(family: "claude", label: "C", identityKey: "acct-c|org-c", id: "profile-c")
+        let entryC = AccountSwitchRecoveryFixture.entry("c")
+        try fixture.switcher.saveSnapshot(entryC, for: c)
+        let base = fixture.baseService
+        fixture.keychain.beforeWrite = { service, _ in
+            if service == base { throw SwitchRecoveryKeychain.Failure.injected }
+        }
+
+        await assertSwitchFails { try await fixture.selectionSwitcher.switchAuthentication(to: c, in: fixture.store) }
+
+        let failed = try XCTUnwrap(fixture.journal.load())
+        XCTAssertNotEqual(failed.id, original.id)
+        XCTAssertEqual(failed.selectedProfileID, c.id)
+        XCTAssertEqual(try fixture.switcher.readClaudeSwitchState(), mixed)
+        fixture.keychain.beforeWrite = nil
+
+        try await fixture.selectionSwitcher.switchAuthentication(to: c, in: fixture.store)
+
+        XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), entryC)
+        XCTAssertEqual(try fixture.freshStore().preferredProfileID(family: "claude"), c.id)
+        XCTAssertNil(try fixture.journal.load())
+        try fixture.assertSavedAccountsUnchanged()
+    }
+
+    func testRetryAfterAccountStagingRecognizesThePreviouslyObservedExternalLogin() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let external = AccountSwitchRecoveryFixture.entry("c")
+        try fixture.switcher.applySharedAuthentication(external, family: "claude")
+        let base = fixture.baseService
+        fixture.keychain.beforeWrite = { service, _ in
+            if service == base { throw SwitchRecoveryKeychain.Failure.injected }
+        }
+        await assertSwitchFails {
+            try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+        }
+        fixture.keychain.beforeWrite = nil
+        let record = try XCTUnwrap(fixture.journal.load())
+        try fixture.switcher.mergeClaudeOAuthAccount(
+            fixture.entryB.claudeOAuthAccount, at: fixture.root.appendingPathComponent(".claude.json"))
+        let rotated = AccountSwitchRecoveryFixture.entry("c", token: "rotated-c")
+        fixture.keychain.currentUserValues[base] = rotated.credential
+
+        await assertSwitchFails {
+            try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+        }
+
+        XCTAssertEqual(try fixture.journal.load(), record)
+        XCTAssertEqual(fixture.keychain.currentUserValues[base], rotated.credential)
+        fixture.keychain.currentUserValues[base] = external.credential
+
+        try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+
+        XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), fixture.entryB)
+        XCTAssertEqual(try fixture.freshStore().preferredProfileID(family: "claude"), fixture.b.id)
+        XCTAssertNil(try fixture.journal.load())
+        try fixture.assertSavedAccountsUnchanged()
+    }
+
+    func testRecoveryUsesTheRefreshInteractionPolicyForBothKeychainReads() async throws {
+        for isManual in [false, true] {
+            let fixture = try AccountSwitchRecoveryFixture(test: self)
+            _ = try fixture.stageIntent()
+            try fixture.switcher.applySharedAuthentication(fixture.entryB, family: "claude")
+            let before = fixture.keychain.noninteractiveReadServices.count
+            let store = try fixture.freshStore()
+            let result = try await ProviderRefreshContext.$isManual.withValue(isManual) {
+                try await fixture.importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: store)
+            }
+
+            XCTAssertEqual(result, .updated(profileID: fixture.b.id))
+            XCTAssertEqual(
+                Array(fixture.keychain.noninteractiveReadServices.dropFirst(before)),
+                isManual ? [] : [fixture.baseService, fixture.baseService])
+            XCTAssertNil(try fixture.journal.load())
+        }
+    }
+
+    func testRecoveryKeepsSelectionAndJournalWhileTheSharedLoginIsLocked() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let record = try fixture.stageIntent()
+        try fixture.switcher.applySharedAuthentication(fixture.entryB, family: "claude")
+        do {
+            let lock = try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: fixture.root)
+            defer { withExtendedLifetime(lock) {} }
+            XCTAssertThrowsError(try fixture.selectionSwitcher.recoverInterruptedSwitch(in: fixture.store)) {
+                XCTAssertEqual($0 as? ClaudeShellLoginMigrationError, .busy)
+            }
+            do {
+                try await fixture.selectionSwitcher.recoverInterruptedSwitchAfterStartup(
+                    in: fixture.store, allowInteraction: false)
+                XCTFail("Recovery should wait for the current shared login operation to finish")
+            } catch {
+                XCTAssertEqual(error as? ClaudeShellLoginMigrationError, .busy)
+            }
+            XCTAssertEqual(try fixture.journal.load(), record)
+            XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.a.id)
+        }
+
+        XCTAssertTrue(try fixture.selectionSwitcher.recoverInterruptedSwitch(in: fixture.store))
+        XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.b.id)
+        XCTAssertNil(try fixture.journal.load())
+    }
 }

@@ -43,6 +43,34 @@ final class AccountClaudeReSignInRecoveryTests: XCTestCase {
         XCTAssertEqual(saved.profileID, fixture.a.id)
     }
 
+    func testActiveReSignInRestoresLoggedOutCLIWhenCommitFails() throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let file = fixture.root.appendingPathComponent(".claude.json")
+        let preferences = #"{"theme":"dark"}"#
+        let externalCredentials = #"{"mcpOAuth":{"provider":"keep-me"}}"#
+        try Data(preferences.utf8).write(to: file)
+        fixture.keychain.currentUserValues[fixture.baseService] = externalCredentials
+        try fixture.switcher.writeWorkspaceAuthentication(AccountSwitchRecoveryFixture.entry("c"), for: fixture.a)
+
+        let keychain = fixture.keychain
+        let defaults = fixture.defaults
+        let base = fixture.baseService
+        keychain.beforeWrite = { service, _ in
+            guard service == base else { return }
+            keychain.beforeWrite = nil
+            defaults.removeObject(forKey: AccountProfilesStore.identityReplacementKey)
+        }
+
+        XCTAssertThrowsError(
+            try fixture.importer.completeReSignIn(profileID: fixture.a.id, in: fixture.store, isActive: true)
+        ) { XCTAssertEqual($0 as? AccountIdentityReplacementError, .invalidTransaction) }
+        XCTAssertNil(try fixture.switcher.readSharedAuthentication(family: "claude"))
+        XCTAssertEqual(keychain.currentUserValues[base], externalCredentials)
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), preferences)
+        try fixture.assertSavedAccountsUnchanged()
+        XCTAssertEqual(fixture.store.profile(id: fixture.a.id)?.identityKey, fixture.a.identityKey)
+    }
+
     func testReSignInPreservesNewCLIGenerationWhenVaultWriteTriggersRotation() throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         let replacement = AccountSwitchRecoveryFixture.entry("c")

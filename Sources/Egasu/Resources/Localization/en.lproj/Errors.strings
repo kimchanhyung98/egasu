@@ -316,6 +316,7 @@
 "The old shell and default Claude CLI use different accounts. Sign in to the same account in both, then restart egasu." = "The old shell and default Claude CLI use different accounts. Sign in to the same account in both, then restart egasu.";
 "Claude sign-in is incomplete. Finish signing in to Claude, then restart egasu to finish migrating the old shell setup." = "Claude sign-in is incomplete. Finish signing in to Claude, then restart egasu to finish migrating the old shell setup.";
 "Finish the pending Claude account switch in Accounts, then restart egasu." = "Finish the pending Claude account switch in Accounts, then restart egasu.";
+"egasu could not read your login shell environment. Check that your login shell starts, then restart egasu." = "egasu could not read your login shell environment. Check that your login shell starts, then restart egasu.";
 "Check access to your shell settings and Claude login files, then restart egasu." = "Check access to your shell settings and Claude login files, then restart egasu.";
 "Another egasu process is updating the shared Claude login. Wait for it to finish, then try again." = "Another egasu process is updating the shared Claude login. Wait for it to finish, then try again.";
 "Unlock your Keychain and restart egasu. Allow access to the Claude login if macOS asks." = "Unlock your Keychain and restart egasu. Allow access to the Claude login if macOS asks.";

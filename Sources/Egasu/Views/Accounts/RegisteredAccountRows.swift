@@ -283,14 +283,14 @@ struct RegisteredAccountRows: View {
         isBusy || hasUnreadableRegistry || !status.canSwitch
     }
 
-    /// 이 계정의 새로 고침이 끝났는데 저장 로그인을 아직 확인하지 못했으면 재확인 — Keychain 승인 뒤 화면을 다시 열지 않아도 상태 갱신.
+    /// 이 계정의 새로 고침이 끝나면 확인하지 못한 로그인을 다시 확인.
     static func needsSignInRecheck(
         state: AccountSignInProbe.State?, finishedCardIDs: Set<String>, profileID: String,
         profileIDForCard: (String) -> String?
     ) -> Bool {
         switch state {
-        case nil, .readFailed?: finishedCardIDs.contains { profileIDForCard($0) == profileID }
-        case .ready?, .needsSignIn?, .routeUnavailable?: false
+        case nil, .readFailed?, .routeUnavailable?: finishedCardIDs.contains { profileIDForCard($0) == profileID }
+        case .ready?, .needsSignIn?: false
         }
     }
 

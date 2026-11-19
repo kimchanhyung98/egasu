@@ -61,7 +61,9 @@ struct AccountSelectionSwitcher {
         guard let target = try switcher.loadSnapshot(for: selected, allowInteraction: true) else {
             throw AccountCredentialSwitcher.Error.missingSnapshot(selected.label)
         }
-        guard switcher.identity(of: target, family: "claude")?.identityKey == selected.identityKey else {
+        guard let targetAccount = target.claudeOAuthAccount,
+            switcher.identity(of: target, family: "claude")?.identityKey == selected.identityKey
+        else {
             throw AccountCredentialSwitcher.Error.snapshotIdentityMismatch(selected.label)
         }
 
@@ -109,7 +111,9 @@ struct AccountSelectionSwitcher {
             selectedProfileID: selected.id,
             selectedIdentity: selected.identityKey,
             selectedCredentialFingerprint: AccountSwitchJournal.fingerprint(target.credential),
-            sourceID: sourceID
+            sourceID: sourceID,
+            retryStateFingerprints: try state.retryStateFingerprints(
+                staging: targetAccount, identity: selected.identityKey)
         )
 
         let loginLock = try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: switcher.homeDirectory)
@@ -138,7 +142,7 @@ struct AccountSelectionSwitcher {
         else {
             throw AccountCredentialSwitcher.Error.switchRecoveryRequired
         }
-        try finish(record, selecting: selected.id, observed: applied, in: store)
+        try finish(record, selecting: selected.id, observed: applied, in: store, sharedLoginLockHeld: true)
     }
 
     private func verifiedDeparture(
@@ -199,16 +203,19 @@ struct AccountSelectionSwitcher {
     }
 
     @discardableResult
-    func recoverInterruptedSwitchAfterStartup(in store: AccountProfilesStore) async throws -> Bool {
+    func recoverInterruptedSwitchAfterStartup(
+        in store: AccountProfilesStore, allowInteraction: Bool = true
+    ) async throws -> Bool {
         guard let record = try journal.load() else { return false }
-        let state = try await readSwitchState(in: store, expecting: record)
-        return try recover(record, state: state, in: store)
+        let state = try await readSwitchState(in: store, expecting: record, allowInteraction: allowInteraction)
+        return try recover(record, state: state, in: store, allowInteraction: allowInteraction)
     }
 
     private func readSwitchState(
         in store: AccountProfilesStore,
         expecting record: AccountSwitchJournal.Record?,
-        legacyRecord: Bool? = nil
+        legacyRecord: Bool? = nil,
+        allowInteraction: Bool = true
     ) async throws -> AccountSwitchJournal.SharedState {
         guard !store.hasUnreadableRegistry, try journal.load() == record else {
             throw AccountIdentityReplacementError.pendingTransaction
@@ -219,7 +226,9 @@ struct AccountSelectionSwitcher {
         let identityReplacement = try store.pendingIdentityReplacement()
         let observer = switcher
         let readsLegacy = legacyRecord ?? (record != nil && record?.sourceID == nil)
-        let state = try await loadOffMainActor { try observer.readClaudeSwitchState(legacyRecord: readsLegacy) }
+        let state = try await loadOffMainActor {
+            try observer.readClaudeSwitchState(legacyRecord: readsLegacy, allowInteraction: allowInteraction)
+        }
         try Task.checkCancellation()
         guard !store.hasUnreadableRegistry,
               store.profiles == profiles,
@@ -239,13 +248,14 @@ struct AccountSelectionSwitcher {
     private func recover(
         _ record: AccountSwitchJournal.Record,
         state: AccountSwitchJournal.SharedState,
-        in store: AccountProfilesStore
+        in store: AccountProfilesStore,
+        allowInteraction: Bool = true
     ) throws -> Bool {
         guard let profileID = selection(for: record, state: state, in: store) else {
             AppLog.error(.auth, "account switch recovery found an unknown credential generation; preserving saved accounts")
             throw AccountCredentialSwitcher.Error.switchRecoveryRequired
         }
-        try finish(record, selecting: profileID, observed: state, in: store)
+        try finish(record, selecting: profileID, observed: state, in: store, allowInteraction: allowInteraction)
         return true
     }
 
@@ -288,13 +298,22 @@ struct AccountSelectionSwitcher {
         _ record: AccountSwitchJournal.Record,
         selecting profileID: String,
         observed state: AccountSwitchJournal.SharedState,
-        in store: AccountProfilesStore
+        in store: AccountProfilesStore,
+        allowInteraction: Bool = true,
+        sharedLoginLockHeld: Bool = false
     ) throws {
+        let loginLock =
+            sharedLoginLockHeld
+            ? nil : try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: switcher.homeDirectory)
+        defer { withExtendedLifetime(loginLock) {} }
         AccountCredentialMutationLock.acquire(family: "claude")
         defer { AccountCredentialMutationLock.release(family: "claude") }
         try AccountCredentialMutationLock.requireIdleClaudeRotation()
         guard try journal.load() == record else { throw AccountIdentityReplacementError.pendingTransaction }
-        guard try switcher.readClaudeSwitchState(legacyRecord: record.sourceID == nil) == state else {
+        guard
+            try switcher.readClaudeSwitchState(
+                legacyRecord: record.sourceID == nil, allowInteraction: allowInteraction) == state
+        else {
             throw ClaudeAuthError.credentialsChanged
         }
         try store.commitPreferredSelection(family: "claude", profileID: profileID)

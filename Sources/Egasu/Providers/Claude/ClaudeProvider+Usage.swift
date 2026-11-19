@@ -255,11 +255,13 @@ extension ClaudeProvider {
             throw ClaudeAuthError.sessionExpired
         }
         let allowAccountInteraction = ProviderRefreshContext.isManual
-        let managesRotation = try await loadOffMainActor { [authStore] in
+        let rotationCandidate = state
+        let rotation = try await loadOffMainActor { [authStore] in
             try authStore.beginManagedRotation(
-                ifUnchanged: expectedGeneration, allowAccountInteraction: allowAccountInteraction)
+                for: rotationCandidate, ifUnchanged: expectedGeneration,
+                allowAccountInteraction: allowAccountInteraction)
         }
-        defer { if managesRotation { AccountCredentialMutationLock.endClaudeRotation() } }
+        defer { withExtendedLifetime(rotation) {} }
         try Task.checkCancellation()
         AppLog.info(LogTag.auth("claude"), "token refresh attempt")
         let decoded: ClaudeRefreshResponse

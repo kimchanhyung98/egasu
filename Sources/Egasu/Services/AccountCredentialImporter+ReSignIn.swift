@@ -40,15 +40,10 @@ extension AccountCredentialImporter {
         } else {
             isolatedCodexAttempt = nil
         }
-        let claudeState = isActive && profile.family == "claude" ? try switcher.readClaudeSwitchState() : nil
-        let previousShared: AccountCredentialVault.Entry?
-        if let claudeState {
-            previousShared = claudeState.credentials[0].map {
-                AccountCredentialVault.Entry(credential: $0, claudeOAuthAccount: claudeState.accounts[0])
-            }
-        } else {
-            previousShared = isActive ? try switcher.readSharedAuthentication(family: profile.family) : nil
-        }
+        let previousClaudeLogin = isActive && profile.family == "claude" ? try switcher.sharedClaudeLogin() : nil
+        let claudeState = previousClaudeLogin?.state
+        let previousShared =
+            isActive && previousClaudeLogin == nil ? try switcher.readSharedAuthentication(family: profile.family) : nil
         let generation = try claudeState.map {
             try AccountIdentityReplacement.ClaudeGeneration(
                 state: $0, previousSnapshot: previousSnapshot, replacement: credential.entry
@@ -79,7 +74,7 @@ extension AccountCredentialImporter {
             let restored = rollbackCredentialTransaction(
                 profile: profile,
                 previousSnapshot: previousSnapshot,
-                previousShared: previousShared,
+                previousShared: previousShared, previousClaudeLogin: previousClaudeLogin,
                 transaction: transaction,
                 isolatedCodexAttempt: isolatedCodexAttempt,
                 context: "account re-sign-in"
@@ -103,6 +98,10 @@ extension AccountCredentialImporter {
             try store.cancelIdentityReplacement(transaction)
             return false
         }
+        let loginLock =
+            transaction.replacesSharedAuthentication && profile.family == "claude"
+            ? try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: switcher.homeDirectory) : nil
+        defer { withExtendedLifetime(loginLock) {} }
         AccountCredentialMutationLock.acquire(family: profile.family)
         defer { AccountCredentialMutationLock.release(family: profile.family) }
         if profile.family == "claude" { try AccountCredentialMutationLock.requireIdleClaudeRotation() }
@@ -134,6 +133,10 @@ extension AccountCredentialImporter {
                     allowInteraction: allowInteraction)
             }
         }
+        let loginLock =
+            transaction.replacesSharedAuthentication
+            ? try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: switcher.homeDirectory) : nil
+        defer { withExtendedLifetime(loginLock) {} }
         try AccountCredentialMutationLock.beginClaudeSwitch()
         defer { AccountCredentialMutationLock.endClaudeSwitch() }
         let recovery = try await loadOffMainActor { () -> (hasReplacement: Bool, revision: UInt64)? in
@@ -275,6 +278,7 @@ extension AccountCredentialImporter {
         profile: AccountProfile,
         previousSnapshot: AccountCredentialVault.Entry?,
         previousShared: AccountCredentialVault.Entry? = nil,
+        previousClaudeLogin: AccountCredentialSwitcher.SharedClaudeLogin? = nil,
         transaction: AccountIdentityReplacement? = nil, allowInteraction: Bool = true,
         isolatedCodexAttempt: (id: String, previousWorkspaceAuth: String?)? = nil,
         context: String
@@ -285,13 +289,10 @@ extension AccountCredentialImporter {
                 if let generation = transaction.claudeGeneration {
                     let current = try switcher.readClaudeSwitchState(allowInteraction: allowInteraction)
                     if try current.fingerprint() != generation.previousStateFingerprint {
-                        guard let previousShared,
+                        guard let previousClaudeLogin,
                             generation.matchesReplacement(current, identity: transaction.replacementIdentityKey)
                         else { throw ClaudeAuthError.credentialsChanged }
-                        try switcher.applySharedAuthentication(
-                            previousShared, family: profile.family, expectedClaudeState: current,
-                            allowInteraction: allowInteraction
-                        )
+                        try switcher.rollbackSharedClaudeLogin(to: previousClaudeLogin, replacing: current)
                     }
                 } else if let previousShared {
                     try switcher.applySharedAuthentication(previousShared, family: profile.family)

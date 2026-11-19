@@ -30,6 +30,7 @@ extension AccountCredentialSwitcher {
     struct SharedClaudeLogin {
         let source: ClaudeCredentialState.Source
         let stateURL: URL
+        let stateFileExisted: Bool
         let rawCredential: String?
         let allowInteraction: Bool
         let state: AccountSwitchJournal.SharedState
@@ -59,7 +60,8 @@ extension AccountCredentialSwitcher {
             identity(of: .init(credential: $0, claudeOAuthAccount: account), family: "claude")?.identityKey
         }
         return .init(
-            source: source, stateURL: stateURL, rawCredential: selected?.text, allowInteraction: allowInteraction,
+            source: source, stateURL: stateURL, stateFileExisted: files.exists(stateURL.path),
+            rawCredential: selected?.text, allowInteraction: allowInteraction,
             state: .init(
                 credentials: [login], accounts: [account], identities: [identityKey],
                 sourceID: "\(source.label):\(service)")
@@ -82,7 +84,6 @@ extension AccountCredentialSwitcher {
             decoding: try JSONSerialization.data(withJSONObject: account, options: [.sortedKeys]), as: UTF8.self)
         if before.state.credentials == [targetLogin], before.state.accounts == [canonicalAccount] { return }
 
-        let stateFileExisted = LocalTextFileAccessor().exists(before.stateURL.path)
         do {
             if before.state.accounts != [canonicalAccount] {
                 try mergeClaudeOAuthAccount(canonicalAccount, at: before.stateURL)
@@ -102,8 +103,7 @@ extension AccountCredentialSwitcher {
         } catch {
             do {
                 try restoreSharedClaudeLogin(
-                    before, replacing: targetLogin, account: canonicalAccount, createdState: !stateFileExisted,
-                    route: route)
+                    before, replacing: targetLogin, account: canonicalAccount, route: route)
             } catch {
                 AppDiagnostics.failure(
                     .accountRollback, error: error, providerID: "claude", localContext: "restore shared login")
@@ -112,9 +112,20 @@ extension AccountCredentialSwitcher {
         }
     }
 
+    func rollbackSharedClaudeLogin(
+        to before: SharedClaudeLogin, replacing applied: AccountSwitchJournal.SharedState
+    ) throws {
+        guard let credential = applied.credentials[0], let account = applied.accounts[0] else {
+            throw ClaudeAuthError.credentialsChanged
+        }
+        try restoreSharedClaudeLogin(before, replacing: credential, account: account, route: nil)
+        guard try sharedClaudeLogin(allowInteraction: before.allowInteraction).state == before.state else {
+            throw ClaudeAuthError.credentialsChanged
+        }
+    }
+
     private func restoreSharedClaudeLogin(
-        _ before: SharedClaudeLogin, replacing target: String, account: String, createdState: Bool,
-        route: ClaudeSharedLoginRoute?
+        _ before: SharedClaudeLogin, replacing target: String, account: String, route: ClaudeSharedLoginRoute?
     ) throws {
         let current = try sharedClaudeLogin(route: route, allowInteraction: before.allowInteraction)
         // CLI가 변경한 출처·계정·세대에는 이전 인증이나 계정 정보를 되쓰지 않음.
@@ -128,7 +139,8 @@ extension AccountCredentialSwitcher {
         guard restored.state.sourceID == before.state.sourceID, restored.state.credentials == before.state.credentials,
             restored.state.accounts == [account]
         else { return }
-        try mergeClaudeOAuthAccount(before.state.accounts[0], at: before.stateURL, removeCreatedState: createdState)
+        try mergeClaudeOAuthAccount(
+            before.state.accounts[0], at: before.stateURL, removeCreatedState: !before.stateFileExisted)
     }
 
     private func writeClaudeLogin(_ credential: String?, to destination: SharedClaudeLogin) throws {

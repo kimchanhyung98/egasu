@@ -22,7 +22,14 @@ final class LegacyClaudeShellSetupTests: XCTestCase {
         try (prefix + Data(block.utf8) + suffix).write(to: target)
         try FileManager.default.setAttributes([.posixPermissions: 0o640], ofItemAtPath: target.path)
 
+        func route() throws -> ClaudeSharedLoginRoute {
+            try ClaudeSharedLoginRoute.resolve(
+                homeDirectory: home, files: LocalTextFileAccessor(), environment: FakeEnvironment(["SHELL": "/bin/zsh"])
+            )
+        }
+        XCTAssertEqual(try route(), .legacy(configDir: home.appendingPathComponent(".claude").path))
         try XCTUnwrap(ClaudeLegacyShellProfile.find(in: home).first).remove()
+        XCTAssertEqual(try route(), .plain)
 
         XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: rc.path), target.path)
         XCTAssertEqual(try Data(contentsOf: rc), prefix + suffix)

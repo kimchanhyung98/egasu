@@ -134,8 +134,8 @@ enum AccountIdentityReplacementError: LocalizedError {
 @MainActor
 @Observable
 public final class AccountProfilesStore {
-    public static let storageKey = "openusage.accountProfiles.v2"
-    static let identityReplacementKey = "openusage.accountIdentityReplacement.v1"
+    nonisolated public static let storageKey = "openusage.accountProfiles.v2"
+    nonisolated static let identityReplacementKey = "openusage.accountIdentityReplacement.v1"
     public static let maxProfilesPerFamily = 10
     nonisolated static let maxLabelLength = 60
 

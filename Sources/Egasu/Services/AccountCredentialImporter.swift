@@ -271,11 +271,12 @@ struct AccountCredentialImporter {
     func reconcileSelectedClaudeSharedAuthenticationAfterStartup(
         in store: AccountProfilesStore
     ) async throws -> ExternalReauthenticationResult {
-        if try await AccountSelectionSwitcher(switcher: switcher).recoverInterruptedSwitchAfterStartup(in: store),
-           let profileID = store.preferredProfileID(family: "claude") {
+        let allowInteraction = ProviderRefreshContext.isManual
+        if try await AccountSelectionSwitcher(switcher: switcher).recoverInterruptedSwitchAfterStartup(
+            in: store, allowInteraction: allowInteraction), let profileID = store.preferredProfileID(family: "claude")
+        {
             return .updated(profileID: profileID)
         }
-        let allowInteraction = ProviderRefreshContext.isManual
         if let transaction = try store.pendingIdentityReplacement() {
             if let profile = store.profile(id: transaction.profileID) {
                 guard

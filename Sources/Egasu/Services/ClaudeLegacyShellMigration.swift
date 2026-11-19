@@ -2,7 +2,7 @@ import Foundation
 
 enum ClaudeShellLoginMigrationError: String, Error, UserPresentableError {
     case conflict, incompleteOAuth, sourceIdentity, defaultIdentity, missingAccount, missingOrganization, verification
-    case pendingSwitch, busy
+    case pendingSwitch, busy, shellEnvironmentUnavailable
 
     var presentationMessage: LocalizedMessage {
         switch self {
@@ -16,6 +16,10 @@ enum ClaudeShellLoginMigrationError: String, Error, UserPresentableError {
             )
         case .pendingSwitch:
             .init("Finish the pending Claude account switch in Accounts, then restart egasu.")
+        case .shellEnvironmentUnavailable:
+            .init(
+                "egasu could not read your login shell environment. Check that your login shell starts, then restart egasu."
+            )
         case .busy:
             .init("Another egasu process is updating the shared Claude login. Wait for it to finish, then try again.")
         }
@@ -45,12 +49,27 @@ enum ClaudeLegacyShellMigration {
     }
 
     @MainActor
-    static func runIfNeeded(defaults: UserDefaults = .standard, switcher: AccountCredentialSwitcher = .init()) throws {
+    static func runIfNeeded(
+        defaults: UserDefaults = .standard, switcher: AccountCredentialSwitcher = .init()
+    ) async throws {
         guard !defaults.bool(forKey: completedKey) else { return }
         let home = switcher.homeDirectory
         guard !(try ClaudeLegacyShellProfile.find(in: home)).isEmpty else {
             defaults.set(true, forKey: completedKey)
             return
+        }
+        if let reader = switcher.environment as? ProcessEnvironmentReader {
+            // Keychain 서비스의 OAuth 접미사를 결정하는 값은 미설정 여부까지 확인한 뒤 이전.
+            let scopeKeys = ["USER_TYPE", "USE_LOCAL_OAUTH", "USE_STAGING_OAUTH", "CLAUDE_CODE_CUSTOM_OAUTH_URL"]
+            let pinnedKeys = reader.launchSnapshot()?.pinnedKeys ?? []
+            let scopeKnown = scopeKeys.allSatisfy {
+                reader.processEnvironment[$0]?.nilIfEmpty != nil || pinnedKeys.contains($0)
+            }
+            if !scopeKnown {
+                guard await loadOffMainActor({ reader.shellEnvironment.ensureCaptured() }) else {
+                    throw ClaudeShellLoginMigrationError.shellEnvironmentUnavailable
+                }
+            }
         }
         let token = try acquireSharedLoginLock(home: home)
         defer { withExtendedLifetime(token) {} }
@@ -72,20 +91,26 @@ enum ClaudeLegacyShellMigration {
         defaults.set(true, forKey: completedKey)
     }
 
-    @MainActor
     private static func checkPendingSwitch(defaults: UserDefaults, switcher: AccountCredentialSwitcher) throws {
-        guard try switcher.switchJournal.load() == nil else { throw ClaudeShellLoginMigrationError.pendingSwitch }
+        try checkPendingSharedLoginChanges(
+            home: switcher.homeDirectory, defaults: defaults, ownJournal: switcher.switchJournal)
+    }
+
+    static func checkPendingSharedLoginChanges(
+        home: URL, defaults: UserDefaults = .standard, ownJournal: AccountSwitchJournal? = nil
+    ) throws {
+        guard try ownJournal?.load() == nil else { throw ClaudeShellLoginMigrationError.pendingSwitch }
         try checkIdentityReplacement(
             defaults.object(forKey: AccountProfilesStore.identityReplacementKey),
             profiles: defaults.data(forKey: AccountProfilesStore.storageKey))
-        // 두 번들이 공유하는 CLI 인증의 위치가 바뀌면 다른 번들의 전환 복구 기록도 무효화됨.
-        let support = switcher.homeDirectory.appendingPathComponent("Library/Application Support")
-        for identifier in [
-            StorageNamespace.productionBundleIdentifier, StorageNamespace.productionBundleIdentifier + ".dev"
-        ] {
+        // 공유 인증의 위치나 세대가 바뀌면 다른 번들의 복구 기록도 무효화됨.
+        let support = home.appendingPathComponent("Library/Application Support")
+        let production = StorageNamespace.productionBundleIdentifier
+        let identifiers = Set([production, production + ".dev", AppBundleLocator.current.bundleIdentifier])
+        for identifier in identifiers.sorted() {
             let directory = StorageNamespace(bundleIdentifier: identifier).name
             let journal = support.appendingPathComponent(directory + "/AccountSignIn/claude-switch.json")
-            if journal.path != switcher.switchJournal.path, try AccountSwitchJournal(path: journal.path).load() != nil {
+            if journal.path != ownJournal?.path, try AccountSwitchJournal(path: journal.path).load() != nil {
                 throw ClaudeShellLoginMigrationError.pendingSwitch
             }
             if defaults === UserDefaults.standard, let domain = defaults.persistentDomain(forName: identifier) {
@@ -96,7 +121,6 @@ enum ClaudeLegacyShellMigration {
         }
     }
 
-    @MainActor
     private static func checkIdentityReplacement(_ value: Any?, profiles: @autoclosure () -> Data?) throws {
         guard let value else { return }
         guard let data = value as? Data else { throw AccountIdentityReplacementError.invalidTransaction }

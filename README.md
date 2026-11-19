@@ -48,8 +48,8 @@ The app updates itself in place via signed, notarized [Sparkle](docs/updates.md)
   [프로바이더 섹션 공유 이미지](/docs/dashboard.md#공유)는 표시 중인 모든 계정과 지표 순서를 반영.
 - **[계정 전환](/docs/cli.md#계정).** Claude·Codex의 기본 인증 저장소를 쓰는 새 CLI 세션에 선택한 로그인 적용.
   이전 OpenUsage가 설치한 Claude 셸 함수는 앱 실행 시 [CLI 로그인을 기본 위치로 이전](/docs/accounts.md#이전-claude-셸-함수-정리)한 뒤 자동 제거.
-  Accounts에서 이전 OpenUsage의 Claude 셸 함수가 남은 파일과 제거 방법 안내.
-  셸 설정 파일·터미널 환경을 유지하며, Claude 첫 등록·외부 로그인과 전환 중 보존할 변경된 인증은 토큰의 계정·조직을 검증한 뒤 저장본에 반영.
+  이전이 보류되면 Accounts에서 사유 안내.
+  계정 전환 시 셸 설정 파일·터미널 환경을 유지하며, Claude 첫 등록·외부 로그인과 전환 중 보존할 변경된 인증은 토큰의 계정·조직을 검증한 뒤 저장본에 반영.
   선택된 Claude 공유 로그인은 사용량 조회에서도 계정·조직 일치 검증.
 - **[구독 타이머](/docs/refreshing.md#구독-타이머-자동-시작).** Codex·Claude·Antigravity·Kimi·Z.ai의 지원 한도를 확인하고 짧은 구독 메시지로 시작 유도.
   Claude·Antigravity·Kimi·Z.ai는 CLI 준비가 끝난 뒤 서버 한도를 다시 조회.

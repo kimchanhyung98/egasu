@@ -33,6 +33,7 @@ struct ProcessEnvironmentReader: EnvironmentReading {
 
 protocol TextFileAccessing: Sendable {
     func exists(_ path: String) -> Bool
+    func readDataIfPresent(_ path: String) throws -> Data?
     /// UTF-8 파일 존재 시 read — `nil`은 경로 부재만 의미.
     /// 권한·인코딩 실패는 throw — 저장소 고장을 로그아웃으로 오인 금지.
     func readTextIfPresent(_ path: String) throws -> String?
@@ -43,6 +44,10 @@ protocol TextFileAccessing: Sendable {
 }
 
 extension TextFileAccessing {
+    func readDataIfPresent(_ path: String) throws -> Data? {
+        try readTextIfPresent(path).map { Data($0.utf8) }
+    }
+
     /// 테스트 double용 호환 경로 — production accessor는 read 에러를 직접 분류해 exists-then-read race 없음.
     func readTextIfPresent(_ path: String) throws -> String? {
         guard exists(path) else { return nil }
@@ -57,6 +62,14 @@ struct LocalTextFileAccessor: TextFileAccessing {
 
     func exists(_ path: String) -> Bool {
         FileManager.default.fileExists(atPath: expandHome(path))
+    }
+
+    func readDataIfPresent(_ path: String) throws -> Data? {
+        do {
+            return try Data(contentsOf: URL(fileURLWithPath: expandHome(path)))
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return nil
+        }
     }
 
     func readText(_ path: String) throws -> String {

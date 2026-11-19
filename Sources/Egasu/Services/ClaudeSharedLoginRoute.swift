@@ -25,18 +25,18 @@ enum ClaudeSharedLoginRoute: Hashable, Sendable {
         }
         guard let shell = ClaudeLegacyShellProfile.Shell(rawValue: URL(fileURLWithPath: shellPath).lastPathComponent)
         else { return .plain }
-        let text: String
+        let bytes: Data
         do {
             guard
-                let contents = try files.readTextIfPresent(
+                let contents = try files.readDataIfPresent(
                     homeDirectory.appendingPathComponent(shell.relativePath).path)
             else { return .plain }
-            text = contents
+            bytes = contents
         } catch {
             throw UnrecognizedSetup()
         }
         let configDir = ClaudeLegacyShellProfile.configDirectory(in: homeDirectory)
-        return try shell.installedRange(in: Data(text.utf8), configDirectory: configDir) == nil
+        return try shell.installedRange(in: bytes, configDirectory: configDir) == nil
             ? .plain : .legacy(configDir: configDir)
     }
 

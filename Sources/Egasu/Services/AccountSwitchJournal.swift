@@ -14,6 +14,7 @@ struct AccountSwitchJournal: Sendable {
         var selectedIdentity: String
         var selectedCredentialFingerprint: String
         var sourceID: String?
+        var retryStateFingerprints: [String]? = nil
     }
 
     struct SharedState: Codable, Equatable, Sendable {
@@ -26,6 +27,16 @@ struct AccountSwitchJournal: Sendable {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
             return AccountSwitchJournal.fingerprint(try encoder.encode(self))
+        }
+
+        /// 공유 계정 정보가 먼저 쓰이는 두 중단 지점의 지문.
+        func retryStateFingerprints(staging account: String, identity: String) throws -> [String] {
+            let parsed = try JSONSerialization.jsonObject(with: Data(account.utf8))
+            let canonical = try JSONSerialization.data(withJSONObject: parsed, options: [.sortedKeys])
+            let staged = Self(
+                credentials: credentials, accounts: [String(decoding: canonical, as: UTF8.self)],
+                identities: [credentials[0] == nil ? nil : identity], sourceID: sourceID)
+            return try [fingerprint(), staged.fingerprint()]
         }
 
         func matches(credentialFingerprint: String, identity: String, requiresAllSources: Bool) -> Bool {
@@ -43,10 +54,16 @@ struct AccountSwitchJournal: Sendable {
 
         /// 명시적 재시도는 이전·대상 인증이 섞인 부분 쓰기만 허용. 외부 로그인과 새 토큰 세대 보존.
         func permitsRetry(of record: Record) -> Bool {
+            guard sourceID == record.sourceID else { return false }
+            if let knownStates = record.retryStateFingerprints,
+                let observed = try? fingerprint(), knownStates.contains(observed)
+            {
+                return true
+            }
             let knownCredentials = [record.previousCredentialFingerprint, record.selectedCredentialFingerprint]
                 .compactMap { $0 }
             let presentCredentials = credentials.compactMap { $0 }
-            return sourceID == record.sourceID && !presentCredentials.isEmpty
+            return !presentCredentials.isEmpty
                 && presentCredentials.allSatisfy { knownCredentials.contains(AccountSwitchJournal.fingerprint($0)) }
                 && identities.compactMap { $0 }.allSatisfy {
                     $0 == record.previousIdentity || $0 == record.selectedIdentity
@@ -72,7 +89,10 @@ struct AccountSwitchJournal: Sendable {
             record.priorSelectionIDs.allSatisfy({ !$0.isEmpty }),
             Self.isFingerprint(record.selectedCredentialFingerprint),
             record.previousCredentialFingerprint.map(Self.isFingerprint) ?? true,
-            record.previousStateFingerprint.map(Self.isFingerprint) ?? true
+            record.previousStateFingerprint.map(Self.isFingerprint) ?? true,
+            record.retryStateFingerprints.map({
+                record.sourceID != nil && $0.count == 2 && $0.allSatisfy(Self.isFingerprint)
+            }) ?? true
         else {
             AppLog.error(.auth, "account switch journal is unreadable; preserving it and blocking reconciliation")
             throw AccountIdentityReplacementError.invalidTransaction
