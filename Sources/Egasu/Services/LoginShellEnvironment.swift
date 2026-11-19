@@ -81,7 +81,7 @@ final class LoginShellEnvironment: @unchecked Sendable {
     private func capture() -> [String: String] {
         let shell = ProcessInfo.processInfo.environment["SHELL"]?.nilIfEmpty ?? "/bin/zsh"
         // `-i -l -c`: rc 파일과 profile 파일 모두 source; `env -0`은 NUL 구분 `KEY=VALUE`로 개행 포함 값에 안전.
-        let command = "printf '%s\\0' \(Self.beginMarker); /usr/bin/env -0; printf '%s\\0' \(Self.endMarker)"
+        let command = "printf '\\0%s\\0' \(Self.beginMarker); /usr/bin/env -0; printf '%s\\0' \(Self.endMarker)"
         do {
             let result = try runner.run(
                 executable: shell,

@@ -23,6 +23,18 @@ final class LoginShellEnvironmentTests: XCTestCase {
         XCTAssertNil(parsed["MOTD"])
     }
 
+    func testCapturesPathWhenZshrcPrintsBanner() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try "echo 'shell ready'\nexport PATH=/example/bin:/usr/bin:/bin\n"
+            .write(to: directory.appendingPathComponent(".zshrc"), atomically: true, encoding: .utf8)
+
+        let env = LoginShellEnvironment(runner: IsolatedZshRunner(directory: directory))
+        let path = await Task.detached { env.value(for: "PATH") }.value
+        XCTAssertEqual(path, "/example/bin:/usr/bin:/bin")
+    }
+
     func testKeepsValuesContainingEquals() {
         let output = [begin, "TOKEN=a=b=c", end].joined(separator: "\0")
         XCTAssertEqual(LoginShellEnvironment.parse(output)["TOKEN"], "a=b=c")
@@ -69,5 +81,18 @@ private final class RecordingRunner: ProcessRunning, @unchecked Sendable {
     func run(executable: String, arguments: [String], environment: [String: String], timeout: TimeInterval) throws -> ProcessResult {
         lock.lock(); count += 1; lock.unlock()
         return ProcessResult(exitCode: 0, stdout: stdout, stderr: "")
+    }
+}
+
+private struct IsolatedZshRunner: ProcessRunning {
+    let directory: URL
+
+    func run(
+        executable: String, arguments: [String], environment: [String: String], timeout: TimeInterval
+    ) throws -> ProcessResult {
+        try SystemProcessRunner().run(
+            executable: "/bin/zsh", arguments: arguments,
+            environment: ["HOME": directory.path, "ZDOTDIR": directory.path], timeout: timeout
+        )
     }
 }
