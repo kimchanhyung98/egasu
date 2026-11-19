@@ -61,6 +61,32 @@ test('metric order and custom names survive reload and privacy keeps Accounts ed
   await expect(detail.locator('[data-metric-list][data-shared="false"] > div').first()).toHaveAttribute('data-metric-setting', 'claude.weekly');
 });
 
+for (const [language, duplicate] of [['한국어', '계정 2'], ['日本語', 'アカウント2']]) {
+  test(`renaming rejects the sibling's visible default name in ${language}`, async ({ page }) => {
+    await openHome(page);
+    const app = page.locator('[data-mock]');
+    await openSettings(page);
+    await chooseSetting(page, 'Language', language);
+    await app.locator('[data-scr="settings"] .am-back').click();
+    await app.locator('[data-options]').click();
+    await app.locator('.am-optmenu [data-go="accounts"]').click();
+    const sibling = app.locator('[data-account-list-row][data-provider="claude"][data-account-id="account-2"] [data-account-name]');
+    await expect(sibling).toHaveText(duplicate);
+    await app.locator('[data-account-list] .am-open[data-go="account:claude:account-1"]').click();
+    const detail = app.locator('[data-scr="account:claude:account-1"]');
+    const input = detail.locator('[data-rename-input]');
+    await input.fill(duplicate);
+    await input.press('Enter');
+    await expect(input).toHaveAttribute('aria-invalid', 'true');
+    await expect(detail.locator('[data-rename-error]')).toBeVisible();
+    await detail.locator('[data-metric-toggle="claude.weekly"]').click();
+    await expect(input).toHaveValue(duplicate);
+    await expect(input).toHaveAttribute('aria-invalid', 'true');
+    await detail.locator('.am-back').click();
+    await expect(sibling).toHaveText(duplicate);
+  });
+}
+
 test('a saved literal name stays distinct from a localized default after switching languages', async ({ page }) => {
   await openHome(page);
   const app = page.locator('[data-mock]');

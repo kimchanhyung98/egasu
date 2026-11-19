@@ -1,7 +1,7 @@
 import { metricKey, providerMetrics } from '../data/metrics';
-import { setMetric, setProviderEnabled, moveMetric, renameAccount, accountName } from '../data/preview-state';
+import { setMetric, setProviderEnabled, moveMetric, accountName } from '../data/preview-state';
 import { renderDashboard, setDashboardTab } from './dashboard';
-import { initPreviewSettings, applySettingsToMock, choosePreviewSetting, handleSettingsClick, previewState, updatePreviewState } from './settings';
+import { initPreviewSettings, applySettingsToMock, choosePreviewSetting, handleSettingsClick, previewState, renamePreviewAccount, updatePreviewState } from './settings';
 import { openMenu, closeMenu } from './menus';
 import { localizePreview } from './localization';
 
@@ -167,7 +167,7 @@ function inlineRename(mock: HTMLElement, family: string, id: string): void {
   const finish = (restoreFocus: boolean): void => {
     if (finished) return;
     finished = true;
-    try { updatePreviewState(renameAccount(previewState(), family, id, input.value)); }
+    try { renamePreviewAccount(family, id, input.value); }
     catch (error) { console.warn('Preview account rename failed'); pill(mock, error instanceof Error ? error.message : 'Could not rename this account.', true); }
     input.remove(); name.hidden = false;
     if (restoreFocus) name.focus({ preventScroll: true });

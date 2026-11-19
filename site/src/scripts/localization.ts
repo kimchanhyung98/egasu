@@ -35,15 +35,16 @@ function localeForLanguage(language: string): PreviewLocale {
 }
 
 /** 기본 이름의 번역이 사용자 지정 이름과 겹치면 기본 이름만 영어로 표시. */
-export function previewAccountDisplayName(state: PreviewState, family: string, id: string): { name: string; literal: boolean } {
+export function previewAccountDisplayName(state: PreviewState, family: string, id: string): { name: string; literal: boolean; displayed: string } {
   const name = accountName(state, family, id);
-  if (Object.hasOwn(state.accountNames, `${family}:${id}`)) return { name, literal: true };
+  if (Object.hasOwn(state.accountNames, `${family}:${id}`)) return { name, literal: true, displayed: name };
   const locale = localeForLanguage(String(state.preferences.language));
-  const translatedKey = translator(locale, 'Accounts')(name).normalize('NFC').toLowerCase();
+  const translated = translator(locale, 'Accounts')(name);
+  const translatedKey = translated.normalize('NFC').toLowerCase();
   const profiles = accountFamilies.find((entry) => entry.id === family)!.profiles;
   const literal = profiles.some((profile) =>
     state.accountNames[`${family}:${profile.id}`]?.normalize('NFC').toLowerCase() === translatedKey);
-  return { name, literal };
+  return { name, literal, displayed: literal ? name : translated };
 }
 
 export function setPreviewAccountText(

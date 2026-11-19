@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { test } from 'node:test';
 import { accountFamilies } from '../src/data/accounts.ts';
 import { settingGroups, settingsTabs, alertConditions } from '../src/data/settings.ts';
-import { softLimitWindows } from '../src/data/metrics.ts';
+import { providerMetrics, softLimitWindows } from '../src/data/metrics.ts';
 import { initialPreviewState, changePreference, activateAccount, renameAccount, restorePreviewState, previewTime } from '../src/data/preview-state.ts';
 
 const source = (path: string): string => readFileSync(new URL(`../../Sources/Egasu/${path}`, import.meta.url), 'utf8');
@@ -122,9 +122,21 @@ test('Soft Limit preserves its threshold, rejects invalid percentages, and defau
   assert.equal(initial.preferences.codexResetWatch, false);
 });
 
+const antigravityConstants = Object.fromEntries([...source('Providers/Antigravity/AntigravityMetric.swift')
+  .matchAll(/static let (\w+) = "([^"]+)"/g)].map(([, key, value]) => [`AntigravityMetric.${key}`, value]));
+
+test('the preview lists every Antigravity and Kimi widget in native declaration order', () => {
+  for (const provider of ['Antigravity', 'Kimi']) {
+    const descriptors = source(`Providers/${provider}/${provider}Provider.swift`)
+      .match(/var widgetDescriptors: \[WidgetDescriptor\] \{([\s\S]*?)\n    \}/)?.[1];
+    assert.ok(descriptors, provider);
+    const native = [...descriptors.matchAll(/\bid:\s*("[^"]+"|AntigravityMetric\.\w+)/g)]
+      .map(([, id]) => id.startsWith('"') ? id.slice(1, -1) : antigravityConstants[id]);
+    assert.deepEqual(providerMetrics[provider.toLowerCase()].rows.map((row) => row.id), native, provider);
+  }
+});
+
 test('Soft Limit windows match every native provider declaration', () => {
-  const constants = Object.fromEntries([...source('Providers/Antigravity/AntigravityMetric.swift')
-    .matchAll(/static let (\w+) = "([^"]+)"/g)].map((match) => [`AntigravityMetric.${match[1]}`, match[2]]));
   const native: Record<string, string> = {};
   const files = readdirSync(new URL('../../Sources/Egasu/Providers/', import.meta.url), { recursive: true, encoding: 'utf8' })
     .filter((path) => path.endsWith('Provider.swift'));
@@ -133,7 +145,7 @@ test('Soft Limit windows match every native provider declaration', () => {
     let metric: string | undefined;
     for (const match of source(`Providers/${file}`).matchAll(/\bid:\s*("[^"]+"|AntigravityMetric\.\w+)|\.supportingSoftLimit\(\.(fiveHours|weekly)\)/g)) {
       if (match[1]) {
-        metric = match[1].startsWith('"') ? match[1].slice(1, -1).replace('\\(provider.id)', family) : constants[match[1]];
+        metric = match[1].startsWith('"') ? match[1].slice(1, -1).replace('\\(provider.id)', family) : antigravityConstants[match[1]];
       } else {
         assert.ok(metric, `The native metric ID must be resolved in ${file}`);
         native[metric] = match[2] === 'fiveHours' ? '5 Hours' : 'Weekly';

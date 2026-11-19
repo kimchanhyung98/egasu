@@ -76,13 +76,16 @@ function validatedAccountName(family: string, id: string, value: string): string
   return name;
 }
 
-export function renameAccount(state: PreviewState, family: string, id: string, value: string): PreviewState {
+export function renameAccount(
+  state: PreviewState, family: string, id: string, value: string, displayedName?: (id: string) => string,
+): PreviewState {
   account(family, id);
   const name = validatedAccountName(family, id, value);
   const siblings = accountFamilies.find((entry) => entry.id === family)!.profiles;
   const nameKey = name.normalize('NFC').toLowerCase();
+  const matchesName = (candidate?: string) => candidate?.normalize('NFC').toLowerCase() === nameKey;
   if (siblings.some((other) => other.id !== id
-    && accountName(state, family, other.id).normalize('NFC').toLowerCase() === nameKey)) {
+    && (matchesName(accountName(state, family, other.id)) || matchesName(displayedName?.(other.id))))) {
     throw new Error('This account name is already in use.');
   }
   return { ...state, accountNames: { ...state.accountNames, [`${family}:${id}`]: name } };

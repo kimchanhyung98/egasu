@@ -37,6 +37,8 @@ export function renderDashboard(mock: HTMLElement, state: PreviewState): void {
     [...container.children].sort((a, b) => order.indexOf((a as HTMLElement).dataset.accountId!) - order.indexOf((b as HTMLElement).dataset.accountId!)).forEach((account) => container.append(account));
   });
   const allUsage = mock.querySelector<HTMLElement>('[data-dashboard-panel="All Usage"]')!;
+  allUsage.querySelector<HTMLElement>('[data-hidden-metrics-notice]')!.hidden =
+    !state.enabledProviders.length || lines.length > 0 || board.pending.length > 0;
   state.providerOrder.forEach((id) => {
     const family = allUsage.querySelector<HTMLElement>(`[data-family="${id}"]`);
     if (family) allUsage.append(family);
@@ -166,7 +168,9 @@ function renderAccountNames(mock: HTMLElement, state: PreviewState): void {
   mock.querySelectorAll<HTMLElement>('[data-in-use]').forEach((badge) => { badge.hidden = state.activeAccounts[badge.dataset.inUse!] !== badge.dataset.accountId; });
   mock.querySelectorAll<HTMLInputElement>('[data-rename-input]').forEach((input) => {
     const form = input.closest<HTMLElement>('[data-rename-form]')!;
-    if (input !== document.activeElement) input.value = accountName(state, form.dataset.provider!, form.dataset.accountId!);
+    if (input !== document.activeElement && !input.hasAttribute('aria-invalid')) {
+      input.value = accountName(state, form.dataset.provider!, form.dataset.accountId!);
+    }
   });
   mock.querySelectorAll<HTMLButtonElement>('[data-rename-account]').forEach((button) => { button.disabled = state.preferences.privacyMode === true; });
 }
