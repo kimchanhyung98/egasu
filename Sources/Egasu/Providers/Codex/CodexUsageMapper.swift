@@ -191,7 +191,8 @@ enum CodexUsageMapper {
         if kind != .session, !exact.isEmpty {
             let hasReportedUsage =
                 ProviderParse.number(candidate.window["used_percent"]).map { (0...100).contains($0) } == true
-            if exact.count != 1 || !hasReportedUsage || hasMalformedReset(candidate.window) {
+            let hasUnusableReset = hasMalformedReset(candidate.window) && resetDate(candidate.window, now: now) == nil
+            if exact.count != 1 || !hasReportedUsage || hasUnusableReset {
                 incompleteWindows.insert(kind == .weekly ? .weekly : .monthly)
                 duration = nil
             }

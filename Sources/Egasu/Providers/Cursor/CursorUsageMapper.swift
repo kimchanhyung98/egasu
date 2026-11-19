@@ -286,6 +286,7 @@ enum CursorUsageMapper {
                 guard case let .progress(name, _, _, _, _, duration?, _) = line,
                     name == label || (name == "Requests" && label == "Total usage")
                 else { return false }
+                guard cycle.periodDurationMs != nil else { return false }
                 return cycle.possibleSoftLimitWindows.contains { $0.matches(periodDurationMs: duration) }
             }
             if !recovered {

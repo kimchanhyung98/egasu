@@ -2,6 +2,22 @@ import XCTest
 @testable import Egasu
 
 final class CursorUsageSummaryMapperTests: XCTestCase {
+    func testMeasuredOverallBucketCompletesKnownMonthlyTotal() throws {
+        let summary: [String: Any] = [
+            "billingCycleStart": "2026-01-01T00:00:00Z",
+            "billingCycleEnd": "2026-02-01T00:00:00Z",
+            "individualUsage": [
+                "plan": ["limit": 500],
+                "overall": ["limit": 500, "used": 100]
+            ]
+        ]
+        let mapped = try CursorUsageSummaryMapper.map(
+            summary: summary, requestUsage: nil, planName: nil, unavailableMessage: "unavailable")
+
+        XCTAssertNotNil(progress(mapped.lines, "Total usage"))
+        XCTAssertTrue(mapped.incompleteQuotaWindows.isEmpty)
+    }
+
     func testMissingUsageDoesNotMaskMeasuredSummaryOrImplyZero() throws {
         let incompleteRequests = ["gpt-4": ["maxRequestUsage": 500]]
         XCTAssertFalse(CursorUsageSummaryMapper.hasUsableRequestPayload(incompleteRequests))

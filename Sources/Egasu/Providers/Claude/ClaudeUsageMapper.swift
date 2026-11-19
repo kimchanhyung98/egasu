@@ -161,6 +161,7 @@ enum ClaudeUsageMapper {
         guard let limits, !(limits is NSNull) else { return true }
         guard let entries = limits as? [Any] else { return false }
         var complete = true
+        var matched = false
         for entry in entries {
             guard let object = entry as? [String: Any] else {
                 complete = false
@@ -174,8 +175,14 @@ enum ClaudeUsageMapper {
                 continue
             }
             guard name == modelName else { continue }
-            return appendUsageWindow(
-                object, label: label, periodDurationMs: weeklyPeriodMs, valueKey: "percent", to: &lines) && complete
+            guard !matched else {
+                complete = false
+                continue
+            }
+            matched = true
+            let usable = appendUsageWindow(
+                object, label: label, periodDurationMs: weeklyPeriodMs, valueKey: "percent", to: &lines)
+            complete = complete && usable
         }
         return complete
     }

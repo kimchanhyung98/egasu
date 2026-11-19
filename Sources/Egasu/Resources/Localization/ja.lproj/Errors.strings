@@ -104,7 +104,7 @@
 "Invalid account name." = "アカウント名が無効です。";
 "Invalid sign-in workspace component: %@" = "ログイン作業領域の構成要素が無効です: %@";
 "Keychain delete failed." = "キーチェーンの項目を削除できませんでした。";
-"Couldn't read the Claude login from Keychain. Refresh Claude manually and allow access if macOS asks." = "キーチェーンから Claude のログイン情報を読み取れませんでした。Claude を手動で更新し、macOS に求められたらアクセスを許可してください。";
+"Couldn't read the Claude login from Keychain. Refresh Claude manually and allow access if macOS asks." = "キーチェーンから Claude のログイン情報を読み取れませんでした。Claude の使用量を手動で更新し、macOS に求められたらアクセスを許可してください。";
 "Keychain is busy. Respond to the open Keychain dialog, then try again." = "キーチェーンは使用中です。開いているキーチェーンのダイアログに応答してから、もう一度お試しください。";
 "Keychain item names contain unsupported control characters." = "キーチェーンの項目名に、対応していない制御文字が含まれています。";
 "Keychain read failed." = "キーチェーンを読み取れませんでした。";

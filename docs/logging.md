@@ -87,7 +87,7 @@ OpenCode 디렉터리 읽기 실패 후 데이터베이스를 다시 발견하�
 - 분류하지 못한 실패: `other`.
 - 저장된 계정 인증 데이터 손상: `auth_invalid`.
 - 키체인 접근 실패: `credential_access`.
-- OpenRouter·Z.ai API 키 파일의 접근 거절: `credential_access`. 대체 키를 읽을 수 있으면 그 키 사용.
+- OpenRouter·Z.ai API 키 파일의 읽기 실패: `credential_access`. 대체 키를 읽을 수 있으면 그 키 사용.
 - OpenCode 사용량 데이터베이스 읽기 실패: `storage`.
 - 업데이트 다운로드의 네트워크 실패: `network`.
   Sparkle 다운로드 오류에 포함되어도 같은 범주 유지.

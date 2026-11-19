@@ -65,20 +65,25 @@ enum CursorUsageSummaryMapper {
         return CursorMappedUsage(
             plan: planLabel(planName) ?? planLabel(summary?["membershipType"] as? String),
             lines: lines,
-            incompleteQuotaWindows: incompleteQuotaWindows(summary: summary, requestUsage: requestUsage, cycle: cycle)
+            incompleteQuotaWindows: incompleteQuotaWindows(
+                summary: summary, requestUsage: requestUsage, cycle: cycle, lines: lines)
         )
     }
 
     private static func incompleteQuotaWindows(
-        summary: [String: Any]?, requestUsage: [String: Any]?, cycle: CursorUsageMapper.BillingCycle
+        summary: [String: Any]?, requestUsage: [String: Any]?, cycle: CursorUsageMapper.BillingCycle,
+        lines: [MetricLine]
     ) -> Set<SoftLimitWindow> {
         let individual = summary?["individualUsage"] as? [String: Any]
         let plan = individual?["plan"] as? [String: Any]
         let team = summary?["teamUsage"] as? [String: Any]
         let requestMeter = CursorUsageMapper.includedRequests(in: requestUsage)
-        let requestPeriod = CursorUsageMapper.requestBillingCycle(requestUsage).periodDurationMs
         let recoversTotal =
-            requestMeter != nil && requestPeriod != nil && cycle.possibleSoftLimitWindows.contains(.monthly)
+            cycle.periodDurationMs != nil
+            && lines.contains { line in
+                guard case let .progress("Total usage", _, _, _, _, duration?, _) = line else { return false }
+                return cycle.possibleSoftLimitWindows.contains { $0.matches(periodDurationMs: duration) }
+            }
         let hasTotal = CursorPlanUsageFacts.percent(plan?["totalPercentUsed"]) != nil || recoversTotal
         let incompletePool = [individual?["overall"], team?["pooled"]].contains { value in
             guard let bucket = value as? [String: Any], ProviderParse.bool(bucket["enabled"]) != false,

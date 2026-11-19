@@ -90,13 +90,17 @@ struct ProviderSnapshotCache {
 
     func applyingQuotaInvalidation(_ snapshot: ProviderSnapshot) -> ProviderSnapshot {
         guard let observed = snapshot.liveQuotaObservedAt,
-            let invalidated = userDefaults.object(forKey: "\(storageKey).quotaInvalidated.\(snapshot.providerID)")
-                as? Date,
-            observed <= invalidated
+            isQuotaInvalidated(providerID: snapshot.providerID, observedAt: observed)
         else { return snapshot }
         var checked = snapshot
         checked.liveQuotaObservedAt = nil
         return checked
+    }
+
+    /// 새 실행 직전에도 CLI와 공유하는 무효화 시각을 확인.
+    func isQuotaInvalidated(providerID: String, observedAt: Date) -> Bool {
+        let invalidated = userDefaults.object(forKey: "\(storageKey).quotaInvalidated.\(providerID)") as? Date
+        return invalidated.map { observedAt <= $0 } ?? false
     }
 
     /// `producedByIdentityKey`는 이 snapshot을 생산한 account identity(쓰기 시점의 카드 identity) —
