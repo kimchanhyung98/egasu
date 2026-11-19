@@ -9,7 +9,7 @@ enum ErrorCategory: String, Sendable, CaseIterable, Codable {
     case authExpired = "auth_expired"
     /// 만료가 아니라 구조적으로 잘못된 auth (payload 손상, OAuth URL 오설정, 미지원 key).
     case authInvalid = "auth_invalid"
-    /// 로컬 credential은 존재하나 file·database·Keychain 항목 읽기 실패.
+    /// 로컬 자격 증명 저장소 접근 실패. 사용량 DB 읽기 오류는 storage로 분류.
     case credentialAccess = "credential_access"
     /// 요청 자체가 완료되지 못한 경우 (transport/connection 실패).
     case network = "network"
@@ -151,6 +151,15 @@ extension ClaudeUsageError: CategorizedError {
         case .connectionFailed: .network
         case .invalidResponse: .decoding
         case .requestFailed(let status): ErrorCategory.http(status)
+        }
+    }
+}
+
+extension ClaudeDesktopCredentialError: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .permissionRequired, .invalidSafeStorageKey, .keychainFailure: .credentialAccess
+        case .invalidCiphertext, .invalidAccountMetadata, .decryptionFailed: .authInvalid
         }
     }
 }
