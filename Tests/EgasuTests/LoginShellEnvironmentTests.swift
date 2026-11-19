@@ -87,7 +87,9 @@ private final class RecordingRunner: ProcessRunning, @unchecked Sendable {
 private struct IsolatedZshRunner: ProcessRunning {
     let directory: URL
 
-    func run(executable: String, arguments: [String], environment: [String: String], timeout: TimeInterval) throws -> ProcessResult {
+    func run(
+        executable: String, arguments: [String], environment: [String: String], timeout: TimeInterval
+    ) throws -> ProcessResult {
         try SystemProcessRunner().run(
             executable: "/bin/zsh", arguments: arguments,
             environment: ["HOME": directory.path, "ZDOTDIR": directory.path], timeout: timeout
