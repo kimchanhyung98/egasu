@@ -247,6 +247,37 @@ final class OpenCodeUsageScannerTests: XCTestCase {
         XCTAssertNotNil(scan.logScan.readWarning)
     }
 
+    func testFailedQueriesRecordStagesWithoutDatabasePathsOrSQLiteMessages() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let sink = LogFile(directory: directory, fileName: "test.log")
+        sink.open()
+        let previous = AppLog.sink
+        AppLog.sink = sink
+        AppLog.reloadLevel(.warn)
+        defer {
+            AppLog.sink = previous
+            AppLog.reloadLevel()
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let path = "private-workspace.fixture"
+        let sqlite = FakeSQLite(failing: [path])
+        let scanner = OpenCodeUsageScanner(sqlite: sqlite, databasePaths: { [path] })
+        XCTAssertFalse(scanner.hasHostedUsage())
+        do {
+            _ = try await scanner.scan(now: now)
+            XCTFail("expected databaseUnreadable")
+        } catch {
+            XCTAssertEqual(error as? OpenCodeUsageError, .databaseUnreadable)
+        }
+
+        let logged = try String(contentsOf: directory.appendingPathComponent("test.log"), encoding: .utf8)
+        XCTAssertTrue(logged.contains("history scan failed stage=schema_probe category=storage"))
+        XCTAssertTrue(logged.contains("history probe failed stage=usage_query category=storage"))
+        XCTAssertFalse(logged.contains(path))
+        XCTAssertFalse(logged.contains("private SQLite message"))
+    }
+
     func testAllDatabasesFailingThrowsInsteadOfEmptyScan() async {
         // 전 DB locked/corrupt — 빈 "success"는 $0 meter를 사실처럼 렌더 (silent-empty-scan 회귀 방지)
         let scanner = OpenCodeUsageScanner(
@@ -405,7 +436,7 @@ private final class FakeSQLite: SQLiteAccessing, @unchecked Sendable {
     }
 
     func queryValue(path: String, sql: String) throws -> String? {
-        if failing.contains(path) { throw SQLiteError.queryFailed("boom") }
+        if failing.contains(path) { throw SQLiteError.queryFailed("private SQLite message") }
         if sql.contains("json_group_array") { return data[path] }
         if sql.contains("MIN(time_created)") { return anchors[path] }
         if sql.contains("SELECT 1") {

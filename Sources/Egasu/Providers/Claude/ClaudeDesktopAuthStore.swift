@@ -162,7 +162,7 @@ struct ClaudeDesktopAuthStore: Sendable {
             AppLog.warn(LogTag.auth("claude"), "Claude Desktop credential read delayed by another Keychain operation")
             return ClaudeDesktopCredentialResult(oauth: nil, status: .permissionRequired)
         } catch {
-            AppLog.error(LogTag.auth("claude"), "Claude Desktop credential read failed: \(error.localizedDescription)")
+            AppLog.error(LogTag.auth("claude"), "Claude Desktop credential read failed: \(AppLog.errorDetails(error))")
             return ClaudeDesktopCredentialResult(oauth: nil, status: .invalid)
         }
     }

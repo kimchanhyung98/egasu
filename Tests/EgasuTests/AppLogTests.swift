@@ -28,6 +28,35 @@ final class AppLogTests: XCTestCase {
         try String(contentsOf: tempDir.appendingPathComponent("egasu.log"), encoding: .utf8)
     }
 
+    func testCLIUsesTheContainingAppsLogLevel() throws {
+        let suite = "EgasuTests.AppLog.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        defaults.set("debug", forKey: LogLevelSetting.key)
+        AppLog.reloadLevel(defaults: defaults)
+        AppLog.debug(.refresh, "visible-cli-debug")
+        defaults.set("error", forKey: LogLevelSetting.key)
+        AppLog.reloadLevel(defaults: defaults)
+        AppLog.warn(.refresh, "hidden-cli-warning")
+
+        let log = try fileContents()
+        XCTAssertTrue(log.contains("visible-cli-debug"))
+        XCTAssertFalse(log.contains("hidden-cli-warning"))
+    }
+
+    func testProviderLogTagsGroupAccountsAndPreserveCollectorNames() throws {
+        AppLog.error(LogTag.plugin("codex@profile-private"), "quota unavailable")
+        AppLog.error(LogTag.auth("claude@profile-private"), "login unavailable")
+        AppLog.error(LogTag.plugin("pi"), "history unavailable")
+
+        let log = try fileContents()
+        XCTAssertTrue(log.contains("[plugin:codex] quota unavailable"))
+        XCTAssertTrue(log.contains("[auth:claude] login unavailable"))
+        XCTAssertTrue(log.contains("[plugin:pi] history unavailable"))
+        XCTAssertFalse(log.contains("profile-private"))
+    }
+
     func testInfoFloorSuppressesDebugButKeepsInfoAndError() throws {
         AppLog.reloadLevel(.info)
         AppLog.debug(.cache, "debug-below-floor")
@@ -79,6 +108,37 @@ final class AppLogTests: XCTestCase {
         ] {
             XCTAssertFalse(contents.contains(value), contents)
         }
+    }
+
+    func testDynamicProviderURLsUseFixedLogLabels() async throws {
+        let http = FakeHTTPClient(response: HTTPResponse(statusCode: 200, headers: [:], body: Data()))
+        let tenant = "https://private-org.example.invalid/private-account"
+        let config = ClaudeOAuthConfig(
+            usageURL: try XCTUnwrap(URL(string: tenant + "/usage")),
+            refreshURL: try XCTUnwrap(URL(string: tenant + "/refresh")), clientID: "fixture")
+        let claude = ClaudeUsageClient(httpClient: http)
+        _ = try await claude.fetchUsage(accessToken: "fixture", config: config)
+        _ = try await claude.fetchProfile(accessToken: "fixture", config: config)
+        _ = try await claude.refreshToken("fixture", config: config)
+        _ = try await DevinUsageClient(http: http).fetchUserStatus(
+            auth: DevinAuth(apiKey: "fixture"), apiServerURL: tenant)
+        _ = try await CopilotOrgBillingClient(http: http).fetchUsageSummary(org: "private-org", token: "fixture")
+        let service = KimiService(baseURL: tenant, oauthHost: tenant)
+        let kimi = KimiUsageClient(http: http)
+        _ = try await kimi.fetchUsage(accessToken: "fixture", service: service)
+        http.response = HTTPResponse(
+            statusCode: 200, headers: [:],
+            body: Data(#"{"access_token":"fixture","refresh_token":"fixture","expires_in":3600}"#.utf8))
+        _ = try await kimi.refreshToken(refreshToken: "fixture", service: service)
+
+        XCTAssertTrue(http.requests.allSatisfy { $0.url.absoluteString.contains("private-org") })
+        XCTAssertEqual(
+            http.requests.map(\.logTarget),
+            [
+                "claude.usage", "claude.profile", "claude.oauth_refresh", "devin.user_status",
+                "copilot.org_billing_summary",
+                "kimi.usage", "kimi.oauth_refresh"
+            ])
     }
 
     @MainActor

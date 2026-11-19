@@ -24,7 +24,7 @@ struct CopilotOrgBillingClient: Sendable {
         guard let url = URL(string: Self.userOrgsURL) else {
             throw CopilotUsageError.invalidResponse
         }
-        return try await send(url: url, token: token)
+        return try await send(url: url, token: token, logEndpoint: "copilot.org_list")
     }
 
     /// 조직 하나의 월 누적 청구 사용량 요약 조회.
@@ -32,20 +32,22 @@ struct CopilotOrgBillingClient: Sendable {
         guard let url = Self.usageSummaryURL(org: org) else {
             throw CopilotUsageError.invalidResponse
         }
-        return try await send(url: url, token: token)
+        return try await send(url: url, token: token, logEndpoint: "copilot.org_billing_summary")
     }
 
-    private func send(url: URL, token: String) async throws -> HTTPResponse {
-        try await http.send(HTTPRequest(
-            method: "GET",
-            url: url,
-            headers: [
-                "Authorization": "token \(token)",
-                "Accept": "application/vnd.github+json",
-                "User-Agent": "egasu",
-                "X-GitHub-Api-Version": "2022-11-28"
-            ],
-            timeout: 15
-        ))
+    private func send(url: URL, token: String, logEndpoint: StaticString) async throws -> HTTPResponse {
+        try await http.send(
+            HTTPRequest(
+                method: "GET",
+                url: url,
+                headers: [
+                    "Authorization": "token \(token)",
+                    "Accept": "application/vnd.github+json",
+                    "User-Agent": "egasu",
+                    "X-GitHub-Api-Version": "2022-11-28"
+                ],
+                timeout: 15,
+                logEndpoint: logEndpoint
+            ))
     }
 }

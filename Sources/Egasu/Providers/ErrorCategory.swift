@@ -55,6 +55,15 @@ protocol CategorizedError: Error {
     var errorCategory: ErrorCategory { get }
 }
 
+extension SQLiteError: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .queryFailed: .storage
+        case .boundParametersUnsupported: .other
+        }
+    }
+}
+
 extension KeychainError: CategorizedError {
     var errorCategory: ErrorCategory {
         switch self {
@@ -249,7 +258,8 @@ extension OpenCodeUsageError: CategorizedError {
     var errorCategory: ErrorCategory {
         switch self {
         case .notLoggedIn: .notLoggedIn
-        case .credentialsUnreadable, .databaseUnreadable: .credentialAccess
+        case .credentialsUnreadable: .credentialAccess
+        case .databaseUnreadable: .storage
         }
     }
 }

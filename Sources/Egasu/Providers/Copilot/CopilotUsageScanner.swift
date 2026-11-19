@@ -87,7 +87,7 @@ struct CopilotUsageScanner: Sendable {
         } catch {
             let newlyFailing = await readFailureReporter.update(checkedPaths: [path], failingPaths: [path])
             if !newlyFailing.isEmpty {
-                AppLog.warn(LogTag.plugin("copilot"), "local usage history read failed: \(error.localizedDescription)")
+                AppLog.warn(LogTag.plugin("copilot"), "local usage history read failed: \(AppLog.errorDetails(error))")
             }
             throw (error as? CopilotHistoryError) ?? .databaseUnreadable
         }

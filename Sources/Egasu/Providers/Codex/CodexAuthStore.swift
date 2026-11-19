@@ -222,7 +222,10 @@ struct CodexAuthStore: Sendable {
         do {
             current = try sourceText(state, allowInteraction: allowInteraction)
         } catch {
-            AppLog.error(.auth, "Codex credential verification before saving failed: \(error.localizedDescription)")
+            AppLog.error(
+                LogTag.auth("codex"),
+                "credential verification before saving failed: \(AppLog.errorDetails(error))"
+            )
             throw CodexAuthError.credentialsChanged
         }
         guard let current, current.utf8.elementsEqual(original.utf8) else {
@@ -318,7 +321,10 @@ struct CodexAuthStore: Sendable {
             try save(snapshot, allowInteraction: allowInteraction)
             AppLog.info(.auth, "Codex rotated credentials preserved in the departed account snapshot")
         } catch {
-            AppLog.error(.auth, "Codex rotated snapshot credentials could not be saved: \(error.localizedDescription)")
+            AppLog.error(
+                LogTag.auth("codex"),
+                "rotated snapshot credentials could not be saved: \(AppLog.errorDetails(error))"
+            )
         }
     }
 

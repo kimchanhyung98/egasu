@@ -186,7 +186,7 @@ final class OpenCodeProviderTests: XCTestCase {
             sharedUsage: .init(collectors: []), now: { now }
         )
         let snapshot = await provider.refresh()
-        XCTAssertEqual(snapshot.errorCategory, .credentialAccess)
+        XCTAssertEqual(snapshot.errorCategory, .storage)
         XCTAssertNil(snapshot.line(label: "Session"))
     }
 
@@ -251,7 +251,7 @@ final class OpenCodeProviderTests: XCTestCase {
 
         let snapshot = await provider.refresh()
 
-        XCTAssertEqual(snapshot.errorCategory, .credentialAccess)
+        XCTAssertEqual(snapshot.errorCategory, .storage)
         XCTAssertEqual(snapshot.errorPresentation, UserFacingErrors.presentation(OpenCodeUsageError.databaseUnreadable))
         XCTAssertNil(snapshot.usageHistory)
         XCTAssertNil(snapshot.line(label: "Session"))

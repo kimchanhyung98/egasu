@@ -26,16 +26,18 @@ struct DevinUsageClient: Sendable {
             ]
         ]
 
-        return try await http.send(HTTPRequest(
-            method: "POST",
-            url: url,
-            headers: [
-                "Content-Type": "application/json",
-                "Connect-Protocol-Version": "1"
-            ],
-            body: try JSONSerialization.data(withJSONObject: body),
-            timeout: 15
-        ))
+        return try await http.send(
+            HTTPRequest(
+                method: "POST",
+                url: url,
+                headers: [
+                    "Content-Type": "application/json",
+                    "Connect-Protocol-Version": "1"
+                ],
+                body: try JSONSerialization.data(withJSONObject: body),
+                timeout: 15,
+                logEndpoint: "devin.user_status"
+            ))
     }
 
 }

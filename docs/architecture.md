@@ -16,6 +16,8 @@ Xcode 프로젝트는 없음.
 - `Providers/` — 프로바이더별 폴더 하나씩(Claude, Codex, Cursor, Devin, Grok, OpenCode 등).
 - `Stores/` — UI가 관찰하는 변경 가능한 상태.
 - `Services/` — 공통 인프라(HTTP, 로컬 API, 프로세스 실행).
+- `Usage/` — 로컬 사용 기록 수집과 집계.
+- `Pricing/` — 모델 가격 조회와 토큰 비용 계산.
 - `Support/` — 작은 공통 헬퍼(포맷팅, 파싱, 애니메이션).
 - `Views/` — SwiftUI 화면(대시보드, Accounts, 설정, 메뉴 막대 스트립).
 
@@ -25,6 +27,9 @@ Xcode 프로젝트는 없음.
 시작 시 `ProviderCatalog`의 프로바이더 목록으로 `WidgetRegistry` 구성.
 필요한 스토어를 생성한 뒤 주기적 새로 고침과 로컬 HTTP API 시작.
 구성 요소 사이의 의존성은 여기서 전달해 개별 테스트 지원.
+프로바이더는 조회 결과를 `ProviderSnapshot`으로 반환하고 `ProviderRefreshCoordinator`는 현재 계정의 결과를 확정한 뒤 기록.
+인증 저장·계정 복구 등 개별 작업의 실패는 해당 단계에서 `AppDiagnostics`에 전달.
+메뉴 막대 앱은 공유 동의가 있을 때 `TelemetryRecorder`로 익명 집계. [로깅](/docs/logging.md) 참조.
 갱신·백그라운드 처리에는 `BackgroundWorkQueue` 하나를 공유해 요청 순서대로 실행.
 각 타이머는 예정 시각만 관리하며, 실제 작업이 실행될 때 큐 점유.
 취소된 대기는 제거하고, 시간 초과 작업의 점유는 실제 종료 뒤 해제.

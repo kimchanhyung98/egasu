@@ -57,6 +57,20 @@ final class LocalTextFileAccessorTests: XCTestCase {
         XCTAssertTrue(isDirectory.boolValue)
     }
 
+    func testRemovePreservesDirectoriesAndIsIdempotentForFilesAndLinks() throws {
+        let accessor = LocalTextFileAccessor()
+        let file = temporaryDirectory.appendingPathComponent("saved-key")
+        let link = temporaryDirectory.appendingPathComponent("key-link")
+        try accessor.writeText(file.path, "fixture")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: file)
+        XCTAssertThrowsError(try accessor.remove(temporaryDirectory.path))
+        try accessor.remove(link.path)
+        XCTAssertEqual(try accessor.readText(file.path), "fixture")
+        try accessor.remove(file.path)
+        try accessor.remove(file.path)
+        XCTAssertEqual(try siblingNames(of: file), [])
+    }
+
     private func permissions(of file: URL) throws -> Int {
         let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
         return try XCTUnwrap(attributes[.posixPermissions] as? NSNumber).intValue & 0o777

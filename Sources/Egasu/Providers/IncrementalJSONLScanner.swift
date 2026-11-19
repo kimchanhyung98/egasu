@@ -286,7 +286,7 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
             invalidPersistenceIdentities.insert(identity)
             AppLog.warn(
                 .cache,
-                "\(persistence.namespace) log parse cache unreadable; rebuilding: \(error.localizedDescription)"
+                "\(persistence.namespace) log parse cache unreadable; rebuilding: \(AppLog.errorDetails(error))"
             )
         }
     }
@@ -379,7 +379,7 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
         } catch {
             AppLog.warn(
                 .cache,
-                "could not persist \(persistence.namespace) log parse cache: \(error.localizedDescription)"
+                "could not persist \(persistence.namespace) log parse cache: \(AppLog.errorDetails(error))"
             )
         }
     }

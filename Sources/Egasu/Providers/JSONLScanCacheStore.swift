@@ -301,7 +301,7 @@ actor JSONLScanCacheWriter {
             } catch {
                 AppLog.warn(
                     .cache,
-                    "could not mark \(persistence.namespace) log parse cache as used: \(error.localizedDescription)"
+                    "could not mark \(persistence.namespace) log parse cache as used: \(AppLog.errorDetails(error))"
                 )
             }
             return JSONLScanCacheReadSnapshot(
@@ -351,7 +351,7 @@ actor JSONLScanCacheWriter {
             } catch {
                 AppLog.warn(
                     .cache,
-                    "could not prune stale \(persistence.namespace) log parse cache: \(error.localizedDescription)"
+                    "could not prune stale \(persistence.namespace) log parse cache: \(AppLog.errorDetails(error))"
                 )
             }
         }
