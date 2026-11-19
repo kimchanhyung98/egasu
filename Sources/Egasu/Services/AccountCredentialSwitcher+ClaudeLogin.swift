@@ -34,7 +34,7 @@ extension AccountCredentialSwitcher {
 
     func sharedClaudeLogin(
         route explicitRoute: ClaudeSharedLoginRoute? = nil, allowInteraction: Bool = true,
-        includePlainFallbacks: Bool = false
+        fallbacks: ClaudeSharedLoginRoute.CredentialFallbacks? = nil
     ) throws -> SharedClaudeLogin {
         let files = LocalTextFileAccessor()
         let route =
@@ -46,7 +46,7 @@ extension AccountCredentialSwitcher {
         let selected = try route.readCredential(
             keychain: keychain, files: files, filePath: file.path, environment: environment,
             allowInteraction: allowInteraction, requireCompleteOAuth: explicitRoute != nil,
-            includeFallbacks: explicitRoute == nil || includePlainFallbacks
+            fallbacks: fallbacks ?? (explicitRoute == nil ? .legacyKeychainAndFile : .disabled)
         )
         let source = selected?.source ?? .keychainCurrentUser(service: service)
         let stateURL = route.stateURL(homeDirectory: homeDirectory).resolvingSymlinksInPath()

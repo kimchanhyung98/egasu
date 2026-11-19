@@ -113,7 +113,8 @@ extension AccountCredentialSwitcher {
     fileprivate func preparePlainClaudeLogin(from source: AccountSwitchJournal.SharedState) throws {
         // macOS CLI의 기본 Keychain에 복사. 파일에 남은 토큰만으로 이전 완료를 판정하지 않음.
         let destination = try sharedClaudeLogin(
-            route: .plain, allowInteraction: true, includePlainFallbacks: source.credentials[0] == nil
+            route: .plain, allowInteraction: true,
+            fallbacks: source.credentials[0] == nil ? .legacyKeychainAndFile : .disabled
         ).state
         guard let login = source.credentials[0] else {
             try verifyLoggedOut(destination)
@@ -148,6 +149,14 @@ extension AccountCredentialSwitcher {
                 }
             }
         }
+        if destination.credentials[0] == nil {
+            // 이전 앱이 남긴 파일 사본과 달리 기본 Keychain의 계정 미지정 항목은 별도 로그인일 수 있음.
+            let fallback = try sharedClaudeLogin(route: .plain, allowInteraction: true, fallbacks: .legacyKeychain)
+                .state
+            if let existing = fallback.credentials[0], existing != login {
+                throw ClaudeShellLoginMigrationError.defaultIdentity
+            }
+        }
         try applySharedClaudeLogin(
             .init(credential: login, claudeOAuthAccount: destination.accounts[0] ?? account), expecting: destination,
             allowInteraction: true, route: .plain)
@@ -155,7 +164,8 @@ extension AccountCredentialSwitcher {
 
     fileprivate func verifyPlainClaudeLogin(from source: AccountSwitchJournal.SharedState) throws {
         let destination = try sharedClaudeLogin(
-            route: .plain, allowInteraction: true, includePlainFallbacks: source.credentials[0] == nil
+            route: .plain, allowInteraction: true,
+            fallbacks: source.credentials[0] == nil ? .legacyKeychainAndFile : .disabled
         ).state
         if source.credentials[0] == nil {
             try verifyLoggedOut(destination)

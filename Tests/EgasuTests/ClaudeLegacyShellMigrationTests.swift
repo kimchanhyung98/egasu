@@ -121,6 +121,46 @@ extension AccountCredentialSwitcherTests {
     }
 
     @MainActor
+    func testShellMigrationOnlyCopiesAnIdenticalUnscopedDefaultLogin() throws {
+        for unscopedToken in ["other", "active"] {
+            let f = try makeFixture()
+            let defaults = try shellMigrationDefaults()
+            let rc = try installOldClaudeFunction(f)
+            let root = f.home.appendingPathComponent(".claude.json")
+            try seedClaudeSharedHome(f, token: "stale", account: claudeAccount("a"))
+            try Data(#"{"theme":"keep"}"#.utf8).write(to: root)
+
+            let base = baseClaudeService()
+            let scoped = scopedClaudeService(home: f.home.appendingPathComponent(".claude").path)
+            let active = claudeCredential(token: "active")
+            let unscoped = claudeCredential(token: unscopedToken)
+            f.keychain.currentUserValues[base] = nil
+            f.keychain.currentUserValues[scoped] = active
+            f.keychain.values[base] = unscoped
+
+            if unscopedToken == "other" {
+                XCTAssertThrowsError(
+                    try ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
+                ) {
+                    XCTAssertEqual($0 as? ClaudeShellLoginMigrationError, .defaultIdentity)
+                }
+                XCTAssertEqual(f.keychain.writeCount, 0)
+                XCTAssertNil(f.keychain.currentUserValues[base])
+                XCTAssertNil(try state(at: root)["oauthAccount"])
+                XCTAssertEqual(try text(rc), legacyClaudeZshBlock(home: f.home))
+                XCTAssertFalse(defaults.bool(forKey: ClaudeLegacyShellMigration.completedKey))
+            } else {
+                try ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
+                XCTAssertEqual(f.keychain.currentUserValues[base], active)
+                XCTAssertEqual(try f.switcher.readClaudeSwitchState().identities, ["acct-a|org-a"])
+                XCTAssertEqual(try text(rc), "")
+                XCTAssertTrue(defaults.bool(forKey: ClaudeLegacyShellMigration.completedKey))
+            }
+            XCTAssertEqual(f.keychain.values[base], unscoped)
+        }
+    }
+
+    @MainActor
     func testShellMigrationPendingSwitchRetriesEvenWhenBothStoresAreLoggedOut() throws {
         let f = try makeFixture()
         let defaults = try shellMigrationDefaults()
