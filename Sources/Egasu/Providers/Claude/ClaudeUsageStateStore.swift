@@ -135,7 +135,7 @@ struct ClaudeUsageStateStore: Sendable {
                 }
                 return record
             } catch {
-                AppLog.error(LogTag.plugin("claude"), "usage retry state read failed: \(error.localizedDescription)")
+                AppLog.error(LogTag.plugin("claude"), "usage retry state read failed: \(AppLog.errorDetails(error))")
                 throw StoreError.invalidRecord
             }
         }
@@ -156,7 +156,7 @@ struct ClaudeUsageStateStore: Sendable {
                 try handle.close()
                 guard Darwin.rename(temporary.path, fileURL.path) == 0 else { throw StoreError.storageUnavailable }
             } catch {
-                AppLog.error(LogTag.plugin("claude"), "usage retry state write failed: \(error.localizedDescription)")
+                AppLog.error(LogTag.plugin("claude"), "usage retry state write failed: \(AppLog.errorDetails(error))")
                 throw StoreError.storageUnavailable
             }
         }
@@ -216,7 +216,7 @@ struct ClaudeUsageStateStore: Sendable {
                 at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true,
                 attributes: [.posixPermissions: 0o700])
         } catch {
-            AppLog.error(LogTag.plugin("claude"), "usage retry directory unavailable: \(error.localizedDescription)")
+            AppLog.error(LogTag.plugin("claude"), "usage retry directory unavailable: \(AppLog.errorDetails(error))")
             throw StoreError.storageUnavailable
         }
         let descriptor = Darwin.open(

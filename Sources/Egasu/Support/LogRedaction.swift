@@ -23,27 +23,32 @@ enum LogRedaction {
     private static let urlSensitiveParams = [
         "key", "api_key", "apikey", "token", "access_token", "secret", "password",
         "auth", "authorization", "bearer", "credential", "user", "user_id", "userid",
-        "account_id", "accountid", "profilearn", "profile_arn", "email", "login"
+        "account_id", "accountid", "profilearn", "profile_arn", "email", "login", "signature", "code", "state"
     ]
 
-    /// URL의 민감 query parameter redaction — query string만 대상, path는 그대로 둠.
+    /// 고정 라우트의 인증 정보와 fragment를 제거하고 인코딩된 쿼리 이름도 검사.
     static func redactURL(_ url: String) -> String {
-        guard let queryStart = url.firstIndex(of: "?") else { return url }
-        let base = String(url[..<url.index(after: queryStart)]) // '?' 포함
-        let query = String(url[url.index(after: queryStart)...])
+        guard var components = URLComponents(string: url), components.host != nil else { return "[URL]" }
+        let query = components.percentEncodedQuery
+        components.user = nil
+        components.password = nil
+        components.fragment = nil
+        components.query = nil
+        guard let base = components.string else { return "[URL]" }
+        guard let query else { return base }
 
         let redactedParams = query.split(separator: "&", omittingEmptySubsequences: false).map { rawParam -> String in
             let param = String(rawParam)
             guard let eqPos = param.firstIndex(of: "=") else { return param }
             let name = String(param[..<eqPos])
             let value = String(param[param.index(after: eqPos)...])
-            let nameLower = name.lowercased()
+            let nameLower = (name.removingPercentEncoding ?? name).lowercased()
             if !value.isEmpty, urlSensitiveParams.contains(where: { nameLower.contains($0) }) {
                 return "\(name)=\(redactValue(value))"
             }
             return param
         }
-        return base + redactedParams.joined(separator: "&")
+        return base + "?" + redactedParams.joined(separator: "&")
     }
 
     // MARK: - Log message

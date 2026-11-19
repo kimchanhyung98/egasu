@@ -71,7 +71,8 @@ struct ClaudeUsageClient: Sendable {
                 url: config.refreshURL,
                 headers: ["Content-Type": "application/json"],
                 body: bodyData,
-                timeout: 15
+                timeout: 15,
+                logEndpoint: "claude.oauth_refresh"
             )
         )
     }
@@ -88,7 +89,8 @@ struct ClaudeUsageClient: Sendable {
                     "anthropic-beta": "oauth-2025-04-20",
                     "User-Agent": "claude-code/2.1.69"
                 ],
-                timeout: 10
+                timeout: 10,
+                logEndpoint: "claude.usage"
             )
         )
     }
@@ -104,7 +106,8 @@ struct ClaudeUsageClient: Sendable {
                     "Cache-Control": "no-cache",
                     "User-Agent": "claude-code/2.1.69"
                 ],
-                timeout: 10
+                timeout: 10,
+                logEndpoint: "claude.profile"
             )
         )
     }

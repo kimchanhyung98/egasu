@@ -111,7 +111,7 @@ struct AntigravityAuthStore: Sendable {
             try files.writeText(Self.cachePath, String(decoding: data, as: UTF8.self))
         } catch {
             // 갱신된 token은 이번 세션에 유효 — cache 실패는 다음 cycle에 다시 refresh할 뿐. live fetch를 실패시키지 않고 크게 로그.
-            AppLog.warn(LogTag.auth("antigravity"), "failed to cache refreshed token: \(error.localizedDescription)")
+            AppLog.warn(LogTag.auth("antigravity"), "failed to cache refreshed token: \(AppLog.errorDetails(error))")
         }
     }
 

@@ -179,6 +179,7 @@ final class TelemetryRecorder {
         updateDiagnosticSubscription()
     }
 
+    /// 공유를 껐다 켜면 구독을 교체해 이전 동의 기간에 대기하던 이벤트 제외.
     private func updateDiagnosticSubscription() {
         if let diagnosticObserver { AppDiagnostics.removeObserver(diagnosticObserver) }
         diagnosticObserver = nil
@@ -191,6 +192,7 @@ final class TelemetryRecorder {
         }
     }
 
+    /// 모든 결과를 일별로 집계하고, 예상 밖의 실패·부분 실패·복구는 하루 한도 안에서 먼저 전송.
     func recordDiagnostic(_ event: DiagnosticEvent) {
         guard store.enabled else { return }
         let today = Self.dayString(now())

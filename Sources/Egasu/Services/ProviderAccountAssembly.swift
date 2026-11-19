@@ -129,7 +129,7 @@ struct ProviderAccountAssembly: Equatable {
                     label: label,
                     sources: [ProviderAccountSource(kind: .defaultHome, anchor: anchor, holdsDefaultSource: true)]
                 ))
-                AppLog.info(.config, "accounts: \(family) default identity resolved (\(ProviderAccountID.make(family: family, identityKey: identityKey)))")
+                AppLog.info(.config, "accounts: \(family) default identity resolved")
             case .unresolved(let reason):
                 // 실제 로그인이 계정을 식별 못 하는 빈도 관측용 로그.
                 AppLog.info(.config, "accounts: \(family) default identity unresolved — \(reason)")
@@ -177,7 +177,7 @@ struct ProviderAccountAssembly: Equatable {
                     } else {
                         // 등록하지 않은 계정 — 카드도 record도 만들지 않음. Settings 등록이 노출의 유일한 경로.
                         foundClaudeAccounts.append((identityKey, findings.first?.label, findings))
-                        AppLog.info(.config, "discovery: config-dir login \(ProviderAccountID.make(family: "claude", identityKey: identityKey)) is not registered → not shown")
+                        AppLog.info(.config, "discovery: config-dir login is not registered → not shown")
                     }
                 }
             }

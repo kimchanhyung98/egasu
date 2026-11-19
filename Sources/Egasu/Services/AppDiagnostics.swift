@@ -10,6 +10,7 @@ enum DiagnosticOperation: String, Codable, CaseIterable, Sendable {
     case credentialSave = "credential_save"
     case accountAdd = "account_add"
     case accountSwitch = "account_switch"
+    case accountRollback = "account_rollback"
     case accountSignIn = "account_sign_in"
     case accountRemove = "account_remove"
     case accountReconcile = "account_reconcile"
@@ -52,9 +53,10 @@ enum DiagnosticOperation: String, Codable, CaseIterable, Sendable {
     var tracksRecovery: Bool {
         switch self {
         case .providerRefresh, .historyScan, .credentialRefresh, .credentialSave,
-             .accountAdd, .accountSwitch, .accountSignIn, .accountRemove, .accountReconcile, .accountBinding,
-             .resetClaim, .postClaimRefresh, .weeklyTimer, .resetCreditFetch,
-             .cursorPlan, .cursorCredits, .cursorBalance, .cursorSummary, .cursorFallback,
+            .accountAdd, .accountSwitch, .accountRollback, .accountSignIn, .accountRemove, .accountReconcile,
+            .accountBinding,
+            .resetClaim, .postClaimRefresh, .weeklyTimer, .resetCreditFetch,
+            .cursorPlan, .cursorCredits, .cursorBalance, .cursorSummary, .cursorFallback,
             .iCloudIdentity, .localAPIRequest, .appRestart, .storageMigration:
             false
         case .iCloudRead, .iCloudWrite, .iCloudDelete,
@@ -72,7 +74,9 @@ enum DiagnosticOperation: String, Codable, CaseIterable, Sendable {
         case .appRestart, .storageMigration: "lifecycle"
         case .providerRefresh, .historyScan, .resetCreditFetch, .cursorPlan, .cursorCredits, .cursorBalance, .cursorSummary, .cursorFallback: "usage"
         case .credentialRefresh, .credentialSave: "authentication"
-        case .accountAdd, .accountSwitch, .accountSignIn, .accountRemove, .accountReconcile, .accountBinding: "accounts"
+        case .accountAdd, .accountSwitch, .accountRollback, .accountSignIn, .accountRemove, .accountReconcile,
+            .accountBinding:
+            "accounts"
         case .iCloudRead, .iCloudWrite, .iCloudDelete, .iCloudIdentity: "icloud"
         case .tokscaleCheck, .tokscaleInstall, .tokscaleLogin, .tokscaleSubmit: "tokscale"
         case .resetWatchFetch, .resetVoteFetch: "reset_watch"
@@ -164,12 +168,13 @@ enum AppDiagnostics {
 
     private static func log(_ event: DiagnosticEvent, error: Error?, context: String?) {
         guard event.result == .failure || event.result == .degraded else { return }
-        var message = "operation=\(event.operation.rawValue) result=\(event.result.rawValue) category=\(event.category?.rawValue ?? "other")"
-        if let context { message += " context=\(context)" }
+        var message = "operation=\(event.operation.rawValue) result=\(event.result.rawValue)"
         if let error {
-            let error = error as NSError
-            message += " error_domain=\(error.domain) error_code=\(error.code)"
+            message += " " + AppLog.errorDetails(error, category: event.category)
+        } else {
+            message += " category=\(event.category?.rawValue ?? "other")"
         }
+        if let context { message += " context=\(context)" }
         let tag: String
         if let provider = event.provider {
             tag = event.operation.feature == "authentication" ? LogTag.auth(provider) : LogTag.plugin(provider)

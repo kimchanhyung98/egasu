@@ -114,9 +114,10 @@ struct LocalTextFileAccessor: TextFileAccessing {
     }
 
     func remove(_ path: String) throws {
-        let expanded = expandHome(path)
-        guard FileManager.default.fileExists(atPath: expanded) else { return }
-        try FileManager.default.removeItem(atPath: expanded)
+        // 경로 부재만 삭제 성공으로 처리. 심볼릭 링크는 링크만 지우고 디렉터리는 보존.
+        try expandHome(path).withCString { path in
+            if Darwin.unlink(path) != 0, errno != ENOENT { throw Self.currentPOSIXError() }
+        }
     }
 
     private static func writeAll(_ data: Data, to descriptor: Int32) throws {

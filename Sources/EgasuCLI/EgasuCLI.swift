@@ -21,6 +21,7 @@ struct EgasuCLI {
             guard let defaults = UserDefaults(suiteName: app.bundleIdentifier) else {
                 throw CLIError.appDefaultsUnavailable
             }
+            AppLog.reloadLevel(defaults: defaults)
             if let account = arguments.account {
                 let code = try AccountCommandRunner(defaults: defaults).run(account)
                 exit(code)

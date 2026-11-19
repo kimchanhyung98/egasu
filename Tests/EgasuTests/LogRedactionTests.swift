@@ -55,6 +55,12 @@ final class LogRedactionTests: XCTestCase {
         XCTAssertEqual(LogRedaction.redactURL("https://api.example.com/v1"), "https://api.example.com/v1")
     }
 
+    func testURLRemovesUserInfoAndFragmentAndMasksEncodedQueryNames() {
+        let url = "https://private-user:private-password@example.invalid/usage?%74oken=SECRET&limit=10#private-fragment"
+        XCTAssertEqual(LogRedaction.redactURL(url), "https://example.invalid/usage?%74oken=[REDACTED]&limit=10")
+        XCTAssertEqual(LogRedaction.redactURL("invalid-private-url"), "[URL]")
+    }
+
     // MARK: - redactLogMessage
 
     func testRedactLogMessageJWTAndBareApiKey() {

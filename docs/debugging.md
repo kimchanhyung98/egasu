@@ -118,11 +118,7 @@ log show --last 10m --info --debug --predicate 'process == "egasu"'
 
 앱은 통합 로그와 별도로 `~/Library/Logs/egasu/egasu.log`에 파일 로그 기록.
 일반적으로 파일당 약 10 MB를 유지하며 `egasu.1.log` 아카이브 하나 보관.
-지원 요청에 로그를 첨부하려면 다음 순서로 수집:
-
-1. **Settings → Advanced → Log Level**에서 필요한 상세 수준 선택.
-2. 추가 상세 정보가 필요하면 **Debug** 선택 후 문제 재현.
-3. 같은 섹션의 **Copy Log Path**로 경로 복사 또는 **Reveal in Finder**로 파일 위치 열기.
+지원 요청에 사용할 기록은 [오류 제보용 로그 수집](/docs/logging.md#오류-제보용-로그-수집) 참조.
 
 로그 레벨·태그·마스킹 범위는 [로깅](/docs/logging.md) 참조.
 
@@ -130,8 +126,8 @@ log show --last 10m --info --debug --predicate 'process == "egasu"'
 
 앱 시작 시 Claude/Codex 기본 설정 홈의 로그인 계정을 확인하며 다음 로그 기록:
 
-- `accounts: claude default identity resolved (claude@<hash>)` — 기본 로그인의 계정이 확인된 경우.
-  해시는 계정 식별 정보에서 파생되므로 같은 식별 정보를 사용한 실행끼리 비교 가능.
+- `accounts: claude default identity resolved` — 기본 로그인의 계정이 확인된 경우.
+  이 메시지에는 계정 식별자와 해시를 기록하지 않음.
 - `accounts: codex default identity unresolved — …` — 로그인은 있지만 이번 실행에서 계정을 확실히 특정할 수 없는 경우(계정 ID가 없는 인증 파일, 또는 실행 시 비밀 값을 읽지 않는 키체인 인증 정보).
   계정 신원을 확인하지 못했다는 의미이며, 이 로그만으로 사용량 조회 성공 여부를 판단할 수 없음.
 - `stale account cache discarded for claude` — 실행 사이에 기본 홈의 계정이 바뀌어, 새 로그인 아래에 이전 계정의 캐시 스냅샷을 그리는 대신 폐기한 경우.

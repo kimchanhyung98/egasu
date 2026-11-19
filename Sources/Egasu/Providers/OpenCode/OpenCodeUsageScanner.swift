@@ -40,21 +40,21 @@ struct OpenCodeUsageScanner: Sendable {
         )
     }
 
-    /// 최근 `daysBack`일 집계. DB 부재는 `nil`, 정상 빈 DB는 빈 집계 결과.
-    /// database가 존재하는데 하나도 못 읽으면 `databaseUnreadable` throw — 전부 실패한 refresh를 0 사용량으로 렌더링 금지.
-    /// 기본 33일은 가장 넓은 meter window(anchored month)+여유분 — tile/trend는 아래에서 31일로 재제한.
+    /// 최근 사용량 집계. DB 부재는 nil, 읽기 성공 후 기록 부재는 빈 집계, 모든 DB 읽기 실패는 오류.
+    /// 기본 33일은 Go 월간 한도를 포함하는 조회 기간. 지출 타일과 추이는 최근 31일만 사용.
     func scan(now: Date, daysBack: Int = 33, hasGoKey: Bool = false) async throws -> OpenCodeUsageScan? {
         let directoryMarker = "<data directory>"
         let paths: [String]
         do {
             paths = try databasePaths()
         } catch {
-            // data directory가 존재하나 열거 불가 — 읽기 불가 database와 동일 실패군, reporter edge-log로 반복 spam 방지
+            // DB 목록 조회가 계속 실패하면 첫 실패만 기록.
             let newlyFailing = await readFailureReporter.update(
                 checkedPaths: [directoryMarker], failingPaths: [directoryMarker]
             )
             if !newlyFailing.isEmpty {
-                AppLog.warn(LogTag.plugin("opencode"), "data directory unreadable: \(error.localizedDescription)")
+                AppLog.warn(
+                    LogTag.plugin("opencode"), "history scan failed stage=directory \(AppLog.errorDetails(error))")
             }
             throw OpenCodeUsageError.databaseUnreadable
         }
@@ -70,21 +70,24 @@ struct OpenCodeUsageScanner: Sendable {
         var failures: [String: String] = [:]
         var rejectedNumericRows = 0
 
-        for path in paths {
+        for (index, path) in paths.enumerated() {
             try Task.checkCancellation()
             checked.insert(path)
+            var stage = "schema_probe"
             do {
                 let hasParts = try sqlite.queryValue(path: path, sql: Self.partsProbeSQL) == "part"
                 // 집계 조회 성공은 빈 DB도 "[]" 반환 — nil은 발견 후 사라진 DB 등 읽기 불가 상태.
+                stage = "usage_query"
                 guard let json = try sqlite.queryValue(path: path, sql: Self.dataSQL(cutoffMs: cutoffMs, hasParts: hasParts)) else {
                     throw OpenCodeUsageError.databaseUnreadable
                 }
+                stage = "decode_rows"
                 let parsed = try Self.parseRows(json)
                 rows.append(contentsOf: parsed.rows)
                 rejectedNumericRows += parsed.rejectedNumericRows
             } catch {
                 if error is CancellationError { throw error }
-                failures[path] = error.localizedDescription
+                failures[path] = "db_index=\(index + 1) stage=\(stage) \(AppLog.errorDetails(error))"
                 continue
             }
             // monthly cycle anchor는 최초 로컬 Go 사용 시각(무제한 조회라 day-window cutoff와 무관) — best-effort, 실패 시 calendar month fallback
@@ -93,12 +96,14 @@ struct OpenCodeUsageScanner: Sendable {
                 anchorMs = Swift.min(anchorMs ?? value, value)
             }
         }
-        // 경로별 상세는 새로 실패한 경로만 로그(reporter edge-trigger) — 계속 잠긴 database는 5분마다가 아닌 1회만 경고
+        // 실패 경로는 중복 판정에만 사용. 로그에는 조회 목록 순번과 오류 분류 기록.
         let newlyFailing = await readFailureReporter.update(
             checkedPaths: checked.union([directoryMarker]), failingPaths: Set(failures.keys)
         )
-        for path in newlyFailing.sorted() {
-            AppLog.warn(LogTag.plugin("opencode"), "usage query failed for \(path): \(failures[path] ?? "unknown error")")
+        for path in newlyFailing {
+            if let detail = failures[path] {
+                AppLog.warn(LogTag.plugin("opencode"), "history scan failed \(detail)")
+            }
         }
         if failures.count == checked.count {
             throw OpenCodeUsageError.databaseUnreadable
@@ -149,24 +154,25 @@ struct OpenCodeUsageScanner: Sendable {
         return OpenCodeUsageScan(logScan: logScan, goWindows: goWindows)
     }
 
-    /// `hasLocalCredentials()`용 저비용 로컬 probe — 추적 database에 numeric cost의 hosted assistant 행 존재 여부 확인.
-    /// 읽기 전용이며 네트워크에 접속하지 않음. 감지 실패는 로그로 보고.
-    /// 읽기 불가 data directory도 OpenCode 흔적으로 취급 — `refresh()`가 실제 에러를 노출하게 함.
+    /// 로컬 DB의 OpenCode 호스팅 사용 기록으로 설치 여부 확인.
+    /// 데이터 디렉터리 읽기 실패도 설치 흔적으로 처리해 첫 조회에서 오류 표시.
     func hasHostedUsage() -> Bool {
         let paths: [String]
         do {
             paths = try databasePaths()
         } catch {
-            AppLog.warn(LogTag.plugin("opencode"), "usage probe: data directory unreadable: \(error.localizedDescription)")
+            AppLog.warn(LogTag.plugin("opencode"), "history probe failed stage=directory \(AppLog.errorDetails(error))")
             return true
         }
-        for path in paths {
+        for (index, path) in paths.enumerated() {
             do {
                 if let value = try sqlite.queryValue(path: path, sql: Self.probeSQL), !value.isEmpty {
                     return true
                 }
             } catch {
-                AppLog.warn(LogTag.plugin("opencode"), "usage probe failed for \(path): \(error.localizedDescription)")
+                AppLog.warn(
+                    LogTag.plugin("opencode"),
+                    "history probe failed db_index=\(index + 1) stage=usage_query \(AppLog.errorDetails(error))")
             }
         }
         return false

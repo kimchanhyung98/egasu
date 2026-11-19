@@ -25,22 +25,28 @@ final class AppDiagnosticsTests: XCTestCase {
             .split(separator: "\n").map(String.init)
     }
 
-    func testFailureKeepsLocalErrorIdentityAndPublishesOneSafeEvent() throws {
+    func testFailureKeepsLocalCodeAndDropsUntrustedDomainAndDescription() throws {
         let diagnostics = DiagnosticEventRecorder()
-        let error = NSError(domain: "FixtureDiagnosticError", code: 17,
-                            userInfo: [NSLocalizedDescriptionKey: "PRIVATE_ERROR_TOKEN_AND_ACCOUNT"])
+        let error = NSError(
+            domain: "private-account@example.invalid", code: 17,
+            userInfo: [NSLocalizedDescriptionKey: "PRIVATE_ERROR_TOKEN_AND_ACCOUNT"])
         AppDiagnostics.failure(.resetVoteFetch, error: error, providerID: "codex@profile-private")
 
         let recorded = try lines()
         XCTAssertEqual(recorded.count, 1)
         let line = try XCTUnwrap(recorded.first)
         XCTAssertTrue(line.contains("[ERROR] [plugin:codex]"), line)
-        XCTAssertTrue(line.contains("error_domain=FixtureDiagnosticError"), line)
+        XCTAssertTrue(line.contains("error_domain=other"), line)
+        XCTAssertFalse(line.contains("private-account@example.invalid"))
         XCTAssertTrue(line.contains("error_code=17"), line)
         XCTAssertFalse(line.contains("PRIVATE_ERROR_TOKEN_AND_ACCOUNT"))
-        XCTAssertEqual(diagnostics.events, [DiagnosticEvent(.resetVoteFetch, result: .failure, category: .other, providerID: "codex")])
+        XCTAssertEqual(
+            diagnostics.events,
+            [DiagnosticEvent(.resetVoteFetch, result: .failure, category: .other, providerID: "codex")])
         let eventJSON = String(decoding: try JSONEncoder().encode(diagnostics.events), as: UTF8.self)
-        for value in ["FixtureDiagnosticError", "error_code", "PRIVATE_ERROR_TOKEN_AND_ACCOUNT", "profile-private"] {
+        for value in [
+            "private-account@example.invalid", "error_code", "PRIVATE_ERROR_TOKEN_AND_ACCOUNT", "profile-private"
+        ] {
             XCTAssertFalse(eventJSON.contains(value), eventJSON)
         }
     }
