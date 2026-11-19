@@ -36,21 +36,16 @@ final class UsageTimerRouter {
             guard let provider = self.bindings[providerID]?.provider else { return nil }
             return try await provider.prepareUsageTimer(observation, executors: self.executors)
         },
-        execute: { [weak self] providerID, bindingID, session, observationIsCurrent in
+        execute: { [weak self] _, _, session, canLaunch in
             guard let self, let ticket = await self.workQueue.acquire("weekly-timer:execute") else {
                 return UsageTimerExecutionResult(launched: false, completed: false)
             }
             defer { self.workQueue.finish(ticket) }
-            guard self.isCurrent(providerID, bindingID: bindingID, accountKey: session.observation.accountKey),
-                  observationIsCurrent() else {
+            guard canLaunch() else {
                 return UsageTimerExecutionResult(launched: false, completed: false)
             }
             let hadStartupFailure = self.executors.codex.startupFailureDescription != nil
-            let result = await session.send { [weak self] in
-                observationIsCurrent()
-                    && self?.isCurrent(providerID, bindingID: bindingID,
-                                       accountKey: session.observation.accountKey) == true
-            }
+            let result = await session.send { canLaunch() }
             if !self.isShuttingDown, hadStartupFailure, self.executors.codex.startupFailureDescription == nil {
                 for (id, binding) in self.bindings where binding.provider is CodexProvider && self.isProviderEnabled(id) {
                     self.report(id, binding.accountKey.flatMap { self.warning(for: $0) })

@@ -121,19 +121,30 @@ final class KimiProvider: ProviderRuntime {
     }
 
     func quotaSnapshot() async -> ProviderSnapshot {
+        await readQuota().snapshot
+    }
+
+    func readQuota(using prepared: KimiCredentialDocument? = nil) async -> (
+        snapshot: ProviderSnapshot, observation: UsageTimerObservation?, credential: KimiCredentialDocument?
+    ) {
         usageTimerObservations = []
         usageTimerCredential = nil
         do {
-            guard var document = try await loadOffMainActor({ [authStore] in
+            var document: KimiCredentialDocument
+            if let prepared {
+                document = prepared
+            } else if let current = try await loadOffMainActor({ [authStore] in
                 try authStore.loadCredentialDocument()
-            }) else {
+            }) {
+                document = current
+            } else {
                 throw KimiAuthError.notLoggedIn
             }
             guard authStore.isUsable(document, now: now()) else {
                 throw KimiAuthError.authExpired
             }
 
-            if authStore.needsRefresh(document, now: now()) {
+            if prepared == nil && authStore.needsRefresh(document, now: now()) {
                 document = try await rotate(document, force: false)
             }
             guard var accessToken = document.credentials.accessToken?.nilIfEmpty else {
@@ -146,7 +157,7 @@ final class KimiProvider: ProviderRuntime {
                 if usesAPIKey {
                     throw KimiAuthError.apiKeyRejected
                 }
-                guard case .current = document.credentials.source,
+                guard prepared == nil, case .current = document.credentials.source,
                       authStore.oauthLockEnabled
                 else {
                     throw KimiAuthError.authExpired
@@ -169,26 +180,33 @@ final class KimiProvider: ProviderRuntime {
             )
             let mapped = try KimiUsageMapper.map(response.body)
             let observedAt = now()
+            let observation: UsageTimerObservation?
             if !usesAPIKey,
                let subject = ProviderParse.jwtPayload(accessToken)?["sub"] as? String, !subject.isEmpty,
                !UsageTimerObservation.hasExhaustedQuota(mapped.lines) {
                 // 기존 기본 서버의 계정 키 유지, 다른 서버의 동명 계정은 분리.
                 let identity = document.service == .standard
                     ? subject : "\(document.service.baseURL)|\(document.service.oauthHost)|\(subject)"
-                usageTimerCredential = document
-                usageTimerObservations = [UsageTimerObservation.from(
+                observation = UsageTimerObservation.from(
                     lines: mapped.lines, accountKey: UsageTimerObservation.accountKey(family: "kimi", identity: identity),
                     timerID: "kimi.session", observedAt: observedAt
-                )].compactMap { $0 }
+                )
+            } else {
+                observation = nil
             }
-            return ProviderSnapshot.make(
+            usageTimerObservations = [observation].compactMap { $0 }
+            usageTimerCredential = observation == nil ? nil : document
+            let snapshot = ProviderSnapshot.make(
                 provider: provider,
                 plan: mapped.plan,
                 lines: mapped.lines,
                 refreshedAt: observedAt, liveQuotaObservedAt: observedAt
             )
+            return (snapshot, observation, usageTimerCredential)
         } catch {
-            return ProviderSnapshot.error(provider: provider, error: normalized(error))
+            usageTimerObservations = []
+            usageTimerCredential = nil
+            return (ProviderSnapshot.error(provider: provider, error: normalized(error)), nil, nil)
         }
     }
 

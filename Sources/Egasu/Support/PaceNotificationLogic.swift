@@ -69,13 +69,23 @@ struct NotificationState: Equatable, Sendable {
     var firedMilestones: Set<PaceMilestone> = []
     var previousBucket: PaceBucket = .untracked
     var previousSeverity: WidgetData.MeterSeverity = .normal
-    var previousUsed: Double?
+    var positiveUsageObservedAt: Date?
+    /// 사용량이 먼저 0으로 돌아온 관측 — 이후 확인한 주기의 시작과 종료를 비교.
+    struct Recovery: Equatable, Sendable {
+        let lastPositiveAt: Date
+        let priorReset: Date
+    }
+    var pendingRecovery: Recovery?
     /// 첫 실제 관측을 기준선으로 기록했는지 — 실행 직후 이미 나쁜 지표는 알리지 않음.
     var primed: Bool = false
 }
 
 /// 순수 알림 판정(SwiftUI·UserNotifications 없음) — 스위치와 무관하게 후보를 내고, 보낼지는 호출자가 결정.
 enum PaceNotificationLogic {
+    enum WindowChange {
+        case unchanged, newWindow, delayedRecovery
+    }
+
     struct Transition: Equatable {
         var fire: [PaceMilestone]
         var newState: NotificationState
@@ -99,6 +109,7 @@ enum PaceNotificationLogic {
         severity: WidgetData.MeterSeverity,
         used: Double,
         resetsAt: Date?,
+        windowChange: WindowChange,
         hasPaceContext: Bool,
         unusedNearReset: Bool,
         previous: NotificationState,
@@ -108,7 +119,7 @@ enum PaceNotificationLogic {
         if state == .noData {
             return Transition(fire: [], newState: previous)
         }
-        var next = carriedOver(previous, used: used, resetsAt: resetsAt, now: now)
+        var next = carriedOver(previous, used: used, resetsAt: resetsAt, change: windowChange, now: now)
         let currentBucket = bucket(for: state, used: used, hasPaceContext: hasPaceContext)
 
         // 실행 후 첫 관측은 기준선만 — 이미 초기화 직전인 지표는 이번 주기에 보낸 것으로 침.
@@ -144,18 +155,47 @@ enum PaceNotificationLogic {
         return Transition(fire: fire, newState: next)
     }
 
-    /// 새 주기로 넘어가면 보낸 기록과 이전 단계를 비움.
-    static func carriedOver(_ previous: NotificationState, used: Double, resetsAt: Date?, now: Date) -> NotificationState {
+    static func windowChange(
+        from previous: NotificationState, used: Double, resetsAt: Date?, period: TimeInterval?, now: Date
+    ) -> WindowChange {
+        guard let oldReset = previous.resetsAt, let resetsAt else { return .unchanged }
+        if let recovery = previous.pendingRecovery, let period,
+            resetsAt.timeIntervalSince(recovery.priorReset) > resetWindowJitterTolerance
+        {
+            let start = resetsAt.addingTimeInterval(-period)
+            if start >= recovery.lastPositiveAt.addingTimeInterval(-resetWindowJitterTolerance),
+                start < recovery.priorReset.addingTimeInterval(-resetWindowJitterTolerance),
+                start <= now.addingTimeInterval(resetWindowJitterTolerance)
+            {
+                return .delayedRecovery
+            }
+        }
+        let usageReset = used == 0 && previous.positiveUsageObservedAt != nil
+        return resetWindowAdvanced(resetsAt: resetsAt, previousReset: oldReset, now: now, usageReset: usageReset)
+            ? .newWindow : .unchanged
+    }
+
+    static func carriedOver(
+        _ previous: NotificationState, used: Double, resetsAt: Date?, change: WindowChange, now: Date
+    ) -> NotificationState {
         var next = previous
-        let usageReset = used == 0 && (previous.previousUsed ?? 0) > 0
-        if previous.resetsAt != nil,
-           resetWindowAdvanced(resetsAt: resetsAt, previousReset: previous.resetsAt, now: now, usageReset: usageReset) {
+        switch change {
+        case .newWindow:
             next.firedMilestones = []
             next.previousSeverity = .normal
             next.previousBucket = .untracked
+            next.pendingRecovery = nil
+        case .delayedRecovery:
+            // 0 회복으로 이미 재활성화된 단계·속도 알림은 새 시각 도착 전에 전송됐을 수 있음.
+            next.firedMilestones.remove(.useItOrLoseIt)
+            next.pendingRecovery = nil
+        case .unchanged:
+            if used == 0, let positiveAt = previous.positiveUsageObservedAt, let priorReset = previous.resetsAt {
+                next.pendingRecovery = .init(lastPositiveAt: positiveAt, priorReset: priorReset)
+            }
         }
         next.resetsAt = resetsAt ?? previous.resetsAt
-        next.previousUsed = used
+        next.positiveUsageObservedAt = used > 0 ? now : nil
         return next
     }
 

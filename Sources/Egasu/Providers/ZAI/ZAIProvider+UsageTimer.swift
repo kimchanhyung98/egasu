@@ -13,7 +13,7 @@ extension ZAIProvider: UsageTimerProviding {
             ].compactMap { $0 }
     }
 
-    private func timerQuota(expected: UsageTimerObservation) async throws -> (UsageTimerObservation, String) {
+    private func timerQuota(expected: UsageTimerObservation) async throws -> (UsageTimerObservation?, String) {
         guard let auth = await loadOffMainActor({ [authStore] in authStore.loadAPIKey() }),
             UsageTimerObservation.accountKey(family: "zai", identity: auth.apiKey) == expected.accountKey
         else { throw UsageTimerError.accountChanged }
@@ -21,25 +21,19 @@ extension ZAIProvider: UsageTimerProviding {
         guard (200..<300).contains(response.statusCode) else { throw ZAIUsageError.requestFailed(response.statusCode) }
         let lines = try ZAIUsageMapper.mapQuota(response.body)
         recordUsageTimer(lines: lines, apiKey: auth.apiKey, observedAt: now())
-        guard let observation = usageTimerObservations.first else { throw UsageTimerError.usageUnavailable }
-        return (observation, auth.apiKey)
+        return (usageTimerObservations.first, auth.apiKey)
     }
 
     func prepareUsageTimer(
         _ expected: UsageTimerObservation, executors: UsageTimerExecutors
     ) async throws -> UsageTimerSession? {
         let (observation, apiKey) = try await timerQuota(expected: expected)
-        return UsageTimerSession(
-            observation: observation,
-            send: { [authStore] canLaunch in
-                await executors.cli.execute(.zai(apiKey: apiKey)) {
-                    guard await canLaunch(),
-                        let auth = await loadOffMainActor({ authStore.loadAPIKey() }), auth.apiKey == apiKey
-                    else { return false }
-                    return await canLaunch()
-                }
+        guard let observation else { throw UsageTimerError.usageUnavailable }
+        return executors.cli.session(
+            observation: observation, configuration: .zai(apiKey: apiKey), now: now,
+            validateLogin: { [authStore] in
+                await loadOffMainActor { authStore.loadAPIKey()?.apiKey == apiKey }
             },
-            verify: { [self] in try await timerQuota(expected: expected).0 }
-        )
+            readQuota: { [self] in try await timerQuota(expected: expected).0 })
     }
 }

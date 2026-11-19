@@ -84,6 +84,49 @@ final class QuotaResetWindowTests: XCTestCase {
         XCTAssertEqual(nextWindow, ["codex.useItOrLoseIt"], "주간 기간까지 새로 시작되었다면 다음 초기화 전 알림도 필요")
     }
 
+    func testDelayedResetTimestampRearmsOnlyTheNewWindowsUnusedReminder() async {
+        let evaluator = QuotaNotificationEvaluator()
+        let oldReset = base.addingTimeInterval(12 * 3600)
+        let newReset = base.addingTimeInterval(week + 30)
+        func read(_ used: Double, _ reset: Date, _ now: Date, hasData: Bool = true) async -> [String] {
+            await evaluate(
+                evaluator, used: used, reset: reset, now: now, period: week,
+                enabled: [.critical, .useItOrLoseIt], hasData: hasData)
+        }
+        _ = await read(60, oldReset, base)
+        let firstReminder = await read(40, oldReset, base)
+        XCTAssertEqual(firstReminder, ["codex.useItOrLoseIt"])
+        _ = await read(0, oldReset, base.addingTimeInterval(60))
+        _ = await read(0, newReset, base.addingTimeInterval(90), hasData: false)
+        let critical = await read(95, oldReset, base.addingTimeInterval(120))
+        XCTAssertEqual(critical, ["codex.underTenPercent"])
+        let missingPeriod = await evaluate(
+            evaluator, used: 95, reset: newReset, now: base.addingTimeInterval(150),
+            period: nil, enabled: [.critical, .useItOrLoseIt])
+        XCTAssertTrue(missingPeriod.isEmpty)
+        let confirmed = await read(95, newReset, base.addingTimeInterval(180))
+        XCTAssertTrue(confirmed.isEmpty, "시각을 뒤늦게 확인해도 회복 후 이미 보낸 Critical 알림 유지")
+        let next = await read(5, newReset, newReset.addingTimeInterval(-12 * 3600))
+        XCTAssertEqual(next, ["codex.useItOrLoseIt"])
+        let repeated = await read(5, newReset, newReset.addingTimeInterval(-11 * 3600))
+        XCTAssertTrue(repeated.isEmpty)
+    }
+
+    func testSameWindowRecoveryDoesNotSuppressCriticalAfterNaturalRollover() async {
+        let evaluator = QuotaNotificationEvaluator()
+        let oldReset = base.addingTimeInterval(12 * 3600)
+        _ = await evaluate(evaluator, used: 60, reset: oldReset, now: base, period: week)
+        _ = await evaluate(evaluator, used: 0, reset: oldReset, now: base, period: week)
+        let first = await evaluate(
+            evaluator, used: 95, reset: oldReset, now: base.addingTimeInterval(60),
+            period: week, enabled: [.critical])
+        XCTAssertEqual(first, ["codex.underTenPercent"])
+        let next = await evaluate(
+            evaluator, used: 95, reset: oldReset.addingTimeInterval(week),
+            now: oldReset.addingTimeInterval(60), period: week, enabled: [.critical])
+        XCTAssertEqual(next, ["codex.underTenPercent"])
+    }
+
     func testTimeExtensionAloneDoesNotRepeatPaceCriticalOrUnusedAlerts() async {
         for used in [40.0, 95.0] {
             let evaluator = QuotaNotificationEvaluator()

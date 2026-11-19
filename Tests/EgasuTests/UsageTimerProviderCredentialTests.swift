@@ -35,7 +35,46 @@ final class UsageTimerProviderCredentialTests: XCTestCase {
 
             XCTAssertEqual(result.launched, replacement == "original")
             XCTAssertEqual(cli.launchCount, replacement == "original" ? 1 : 0)
+            if case .zai(let apiKey) = cli.launchedConfiguration {
+                XCTAssertEqual(apiKey, "original")
+            } else {
+                XCTAssertNotEqual(replacement, "original")
+            }
             XCTAssertEqual(files.files[path], replacement)
+        }
+    }
+
+    func testQueuedZAITimerRechecksMovingResetAfterCLIPreparation() async throws {
+        for resetAdvance in [0, 65] {
+            let clock = OSAllocatedUnfairLock(initialState: Self.now)
+            let preparedAt = Self.now
+            let client = RoutingHTTPClient { _ in
+                let elapsed = clock.withLock { $0.timeIntervalSince(preparedAt) }
+                let reset = 1_800_018_000_000 + (elapsed > 0 ? resetAdvance * 1000 : 0)
+                return .init(
+                    statusCode: 200, headers: [:],
+                    body: Data(
+                        """
+                        {"data":{"limits":[{"type":"CREDIT_LIMIT","unit":3,"number":5,
+                        "percentage":0,"nextResetTime":\(reset)}]}}
+                        """.utf8))
+            }
+            let provider = ZAIProvider(
+                authStore: ZAIAuthStore(files: FakeFiles(), environment: FakeEnvironment(["ZAI_API_KEY": "fixture"])),
+                usageClient: ZAIUsageClient(http: client), now: { clock.withLock { $0 } }, pricing: { .empty })
+            _ = await provider.refresh()
+            let observation = try XCTUnwrap(provider.usageTimerObservations.first)
+            let probe = LaunchProbe()
+            let prepared = try await provider.prepareUsageTimer(
+                observation, executors: .init(codex: UsageTimerRouterTests.Executor(), cli: probe))
+            let session = try XCTUnwrap(prepared)
+            clock.withLock { $0.addTimeInterval(65) }
+
+            let result = await session.send { true }
+
+            XCTAssertEqual(result.launched, resetAdvance == 65)
+            XCTAssertEqual(result.launchObservationInvalidated, resetAdvance == 0)
+            XCTAssertEqual(probe.launchCount, resetAdvance == 65 ? 1 : 0)
         }
     }
 
@@ -239,12 +278,14 @@ final class UsageTimerProviderCredentialTests: XCTestCase {
     private final class LaunchProbe: UsageTimerCLIExecuting {
         var launchCount = 0
         var executionCount = 0
+        var launchedConfiguration: UsageTimerCLIConfiguration?
         func execute(
             _ configuration: UsageTimerCLIConfiguration,
             canLaunch: @escaping @MainActor () async -> Bool
         ) async -> UsageTimerExecutionResult {
             executionCount += 1
             guard await canLaunch() else { return .init(launched: false, completed: false) }
+            launchedConfiguration = configuration
             launchCount += 1
             return .init(launched: true, completed: true)
         }

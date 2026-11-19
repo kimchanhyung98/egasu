@@ -14,11 +14,17 @@ struct PriorityLimits: Hashable, Sendable {
         stride(from: criticalRange.upperBound, through: criticalRange.lowerBound, by: -step))
 
     var warning: Int {
-        didSet { if critical >= warning { critical = warning - Self.step } }
+        didSet {
+            warning = Self.snapped(warning, to: Self.warningRange)
+            if critical >= warning { critical = warning - Self.step }
+        }
     }
 
     var critical: Int {
-        didSet { if warning <= critical { warning = critical + Self.step } }
+        didSet {
+            critical = Self.snapped(critical, to: Self.criticalRange)
+            if warning <= critical { warning = critical + Self.step }
+        }
     }
 
     init(warning: Int, critical: Int) {
@@ -27,7 +33,7 @@ struct PriorityLimits: Hashable, Sendable {
     }
 
     private static func snapped(_ value: Int, to range: ClosedRange<Int>) -> Int {
-        let stepped = Int((Double(value) / Double(step)).rounded()) * step
-        return min(max(stepped, range.lowerBound), range.upperBound)
+        let bounded = min(max(value, range.lowerBound), range.upperBound)
+        return Int((Double(bounded) / Double(step)).rounded()) * step
     }
 }

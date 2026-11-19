@@ -14,6 +14,23 @@ final class PriorityLimitsTests: XCTestCase {
         XCTAssertEqual(PriorityLimits(warning: 33, critical: 12).warning, 35)
     }
 
+    func testAssignmentsUseTheSameStepsAndRangesAsInitialization() {
+        var limits = PriorityLimits.standard
+        limits.warning = 33
+        XCTAssertEqual(limits.warning, 35)
+        limits.critical = 14
+        XCTAssertEqual(limits.critical, 15)
+        limits.warning = .min
+        limits.critical = .max
+        XCTAssertEqual(limits.warning, 30)
+        XCTAssertEqual(limits.critical, 25)
+        limits.warning = .max
+        limits.critical = .min
+        XCTAssertEqual(limits, PriorityLimits(warning: .max, critical: .min))
+        XCTAssertEqual(limits.warning, 70)
+        XCTAssertEqual(limits.critical, 5)
+    }
+
     func testCriticalStaysBelowWarning() {
         var limits = PriorityLimits.standard
         limits.critical = 25

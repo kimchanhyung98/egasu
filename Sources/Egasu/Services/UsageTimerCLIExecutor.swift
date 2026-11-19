@@ -24,6 +24,52 @@ protocol UsageTimerCLIExecuting {
     ) async -> UsageTimerExecutionResult
 }
 
+extension UsageTimerCLIExecuting {
+    func session(
+        observation: UsageTimerObservation, configuration: UsageTimerCLIConfiguration,
+        now: @escaping @Sendable () -> Date,
+        validateLogin: @escaping @MainActor @Sendable () async throws -> Bool,
+        readQuota: @escaping @MainActor @Sendable () async throws -> UsageTimerObservation?,
+        verify: (@MainActor @Sendable () async throws -> UsageTimerObservation?)? = nil
+    ) -> UsageTimerSession {
+        UsageTimerSession(
+            observation: observation,
+            send: { canLaunch in
+                var quotaChanged = false
+                var validationFailure: UsageTimerError?
+                var result = await self.execute(configuration) {
+                    guard await canLaunch() else { return false }
+                    do {
+                        guard try await validateLogin() else { throw UsageTimerError.accountChanged }
+                        let latest = try await readQuota()
+                        guard try await validateLogin() else { throw UsageTimerError.accountChanged }
+                        guard await canLaunch() else { return false }
+                        if let latest,
+                            latest.storageKey != observation.storageKey || latest.observedAt < observation.observedAt
+                        {
+                            throw UsageTimerError.usageUnavailable
+                        }
+                        guard latest?.canStart(after: observation, at: now()) == true else {
+                            quotaChanged = true
+                            return false
+                        }
+                        return true
+                    } catch {
+                        AppDiagnostics.failure(.weeklyTimer, error: error, localContext: "CLI launch validation failed")
+                        validationFailure = error as? UsageTimerError ?? .usageUnavailable
+                        return false
+                    }
+                }
+                result.launchObservationInvalidated = quotaChanged
+                if result.verificationCanClearFailure, quotaChanged || validationFailure != nil {
+                    result.failureDescription = validationFailure?.errorDescription
+                }
+                return result
+            },
+            verify: verify ?? readQuota)
+    }
+}
+
 /// 공식 CLI에 도구 없는 짧은 요청 전달. 응답 본문·자격 증명은 로그에 기록하지 않음.
 @MainActor
 final class UsageTimerCLIExecutor: UsageTimerCLIExecuting {
@@ -120,6 +166,8 @@ final class UsageTimerCLIExecutor: UsageTimerCLIExecuting {
                 failureDescription: completed
                     ? nil : "Usage timer message did not complete. Check the provider's CLI login and refresh."
             )
+        } catch UsageTimerError.accountChanged {
+            result = failure(UsageTimerError.accountChanged.errorDescription!)
         } catch {
             AppDiagnostics.failure(
                 .weeklyTimer, error: error,
