@@ -191,7 +191,8 @@ enum CodexUsageMapper {
         if kind != .session, !exact.isEmpty {
             let hasReportedUsage =
                 ProviderParse.number(candidate.window["used_percent"]).map { (0...100).contains($0) } == true
-            if exact.count != 1 || !hasReportedUsage || hasMalformedReset(candidate.window) {
+            let hasUnusableReset = hasMalformedReset(candidate.window) && resetDate(candidate.window, now: now) == nil
+            if exact.count != 1 || !hasReportedUsage || hasUnusableReset {
                 incompleteWindows.insert(kind == .weekly ? .weekly : .monthly)
                 duration = nil
             }
@@ -215,7 +216,14 @@ enum CodexUsageMapper {
     private static func sparkLines(body: [String: Any], now: Date, incompleteWindows: inout Set<SoftLimitWindow>)
         -> [MetricLine]
     {
-        guard let rawEntries = body["additional_rate_limits"] as? [Any] else { return [] }
+        guard let raw = body["additional_rate_limits"], !(raw is NSNull) else { return [] }
+        guard let rawEntries = raw as? [Any] else {
+            incompleteWindows.formUnion(SoftLimitWindow.allCases)
+            return []
+        }
+        if rawEntries.contains(where: { !($0 is NSNull) && !($0 is [String: Any]) }) {
+            incompleteWindows.formUnion(SoftLimitWindow.allCases)
+        }
         let entries = rawEntries.compactMap { $0 as? [String: Any] }
         guard let spark = entries.first(where: isSparkEntry) else { return [] }
 

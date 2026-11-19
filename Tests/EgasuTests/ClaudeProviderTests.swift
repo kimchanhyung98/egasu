@@ -197,6 +197,18 @@ final class ClaudeAuthStoreTests: XCTestCase {
 }
 
 final class ClaudeUsageMapperTests: XCTestCase {
+    func testFableDoesNotHideALaterMalformedScopedLimit() throws {
+        let body = Data(
+            #"""
+            {"limits":[{"kind":"weekly_scoped","scope":{"model":{"display_name":"Fable"}},"percent":15},null]}
+            """#.utf8)
+        let mapped = try ClaudeUsageMapper.mapUsageResponse(
+            HTTPResponse(statusCode: 200, headers: [:], body: body), credentials: ClaudeOAuth())
+
+        XCTAssertEqual(progress(mapped.lines, "Fable")?.used, 15)
+        XCTAssertEqual(mapped.hasIncompleteWeeklyQuota, true)
+    }
+
     func testMapsUsageWindowsExtraUsageAndPlan() throws {
         let response = HTTPResponse(
             statusCode: 200,

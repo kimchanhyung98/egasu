@@ -10,7 +10,7 @@ struct AccountsView: View {
 
     @State private var rowFrames: [String: CGRect] = [:]
 
-    private var showsClaudeShellNotice: Bool {
+    private var isClaudeAccountContext: Bool {
         guard let id = popover.accountDetailID else { return true }
         return ProviderAccountID.family(of: id) == "claude"
     }
@@ -23,10 +23,12 @@ struct AccountsView: View {
     var body: some View {
         PopoverScrollView {
             VStack(alignment: .leading, spacing: PanelMetrics.sectionSpacing) {
-                if popover.accountDetailID == nil, let failure = container.dataStore.claudeReconciliationFailure {
+                if isClaudeAccountContext, popover.accountDetailID != "claude",
+                    let failure = container.dataStore.claudeReconciliationFailure
+                {
                     ProblemCard(message: failure.localizedMessage)
                 }
-                if showsClaudeShellNotice, let issue = container.claudeShellMigrationIssue {
+                if isClaudeAccountContext, let issue = container.claudeShellMigrationIssue {
                     ProblemCard(message: L10n.accounts("Claude login migration paused. %@", issue.localized))
                 }
                 content

@@ -47,7 +47,8 @@ Claude와 Codex로 시작한 뒤 Mac의 로컬 인증 정보·사용 흔적을 �
   **알림 받기**에서 각 조건의 macOS 알림을 별도로 선택.
 - 한도 데이터를 받았고 수신 대기나 계정 경고가 없을 때, 켜진 소진 임박 조건에 맞는 한도가 없으면 **No Matching Limits**(표시 조건에 맞는 한도 없음) 표시.
   고정한 지표도 표시를 켠 소진 임박 조건에 해당하면 판정에 포함.
-  조건에 맞는 지표가 모두 고정된 경우 Pinned에만 표시하며 Running Out 구역과 빈 목록 안내는 숨김.
+  **빠른 소진**에 맞는 지표가 모두 고정된 경우 해당 지표는 Pinned에만 표시.
+  다른 표시 조건에 해당하는 항목이 있는지는 별도로 판정.
 - 첫 조회 전인 계정은 자리 표시(**Waiting for Usage**).
 - 한도를 보고하는 계정이 없으면 **No Reported Limits**와 **View All Usage** 버튼.
 - 링의 채움 비율은 [Show Usage As](/docs/settings.md#사용량)의 Used / Left 설정 적용.

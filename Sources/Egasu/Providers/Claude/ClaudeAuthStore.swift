@@ -30,6 +30,7 @@ struct ClaudeAuthStore: Sendable {
     let allowsDesktopFallback: Bool
     /// 관리형 기본 카드는 CLI가 쓰는 공유 로그인과 그 경로의 계정 정보만 조회.
     let pinsSharedHome: Bool
+    private let sharedLoginHome: URL?
 
     init(
         environment: EnvironmentReading = ProcessEnvironmentReader(),
@@ -39,6 +40,7 @@ struct ClaudeAuthStore: Sendable {
         scope: ClaudeCredentialScope = .standard,
         allowsDesktopFallback: Bool = true,
         pinsSharedHome: Bool = false,
+        sharedLoginHome: URL? = nil,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.environment = environment
@@ -48,6 +50,7 @@ struct ClaudeAuthStore: Sendable {
         self.scope = scope
         self.allowsDesktopFallback = allowsDesktopFallback
         self.pinsSharedHome = pinsSharedHome
+        self.sharedLoginHome = sharedLoginHome
         self.now = now
     }
 
@@ -76,7 +79,7 @@ struct ClaudeAuthStore: Sendable {
                 let credential = try route.readCredential(
                     keychain: keychain, files: files, filePath: credentialsPath(),
                     environment: environment, allowInteraction: allowAccountInteraction
-                )
+                ).login
                 let candidates =
                     credential.map {
                         [
@@ -190,18 +193,48 @@ struct ClaudeAuthStore: Sendable {
         return ClaudeCredentialGeneration(load.candidates)
     }
 
+    final class ManagedRotation: Sendable {
+        private let sharedLock: SingleInstanceLock.Token?
+
+        fileprivate init(sharedLock: SingleInstanceLock.Token?) {
+            self.sharedLock = sharedLock
+        }
+
+        deinit { AccountCredentialMutationLock.endClaudeRotation() }
+    }
+
     func beginManagedRotation(
-        ifUnchanged expected: ClaudeCredentialGeneration, allowAccountInteraction: Bool
-    ) throws -> Bool {
+        for state: ClaudeCredentialState, ifUnchanged expected: ClaudeCredentialGeneration,
+        allowAccountInteraction: Bool
+    ) throws -> ManagedRotation? {
+        let home = sharedRotationHome(for: state)
         switch scope {
-        case .standard where pinsSharedHome, .accountSnapshot:
+        case .standard where pinsSharedHome || home != nil, .accountSnapshot:
+            let sharedLock = try home.map { try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: $0) }
             try AccountCredentialMutationLock.beginClaudeRotation {
+                if let home { try ClaudeLegacyShellMigration.checkPendingSharedLoginChanges(home: home) }
                 guard try credentialGeneration(allowAccountInteraction: allowAccountInteraction) == expected
                 else { throw ClaudeAuthError.credentialsChanged }
             }
-            return true
+            return ManagedRotation(sharedLock: sharedLock)
         default:
-            return false
+            return nil
+        }
+    }
+
+    /// 같은 CLI 인증을 소비하는 갱신은 OAuth 요청부터 저장까지 운영·개발 앱과 직렬화.
+    private func sharedRotationHome(for state: ClaudeCredentialState) -> URL? {
+        guard scope == .standard, let home = sharedLoginHome else { return nil }
+        if state.sharedLoginRoute != nil { return home }
+        switch state.source {
+        case .keychainCurrentUser(let service), .keychainLegacy(let service):
+            return service == Self.baseKeychainServiceName(environment: environment) ? home : nil
+        case .file:
+            guard let override = claudeHomeOverride() else { return home }
+            let resolved = URL(fileURLWithPath: (override as NSString).expandingTildeInPath).resolvingSymlinksInPath()
+            return resolved.path == home.appendingPathComponent(".claude").resolvingSymlinksInPath().path ? home : nil
+        default:
+            return nil
         }
     }
 
@@ -346,14 +379,13 @@ struct ClaudeAuthStore: Sendable {
     /// 원격 OAuth는 HTTPS 필수. HTTP는 명시적 loopback 개발 주소만 허용.
     private func validatedOAuthURL(_ value: String) throws -> URL {
         guard let url = URL(string: value) else {
-            throw ClaudeAuthError.invalidOAuthURL(value)
+            throw ClaudeAuthError.invalidOAuthURL
         }
         let scheme = url.scheme?.lowercased()
         let host = url.host?.lowercased() ?? ""
         let isLoopback = ["localhost", "127.0.0.1", "::1"].contains(host)
         guard !host.isEmpty, scheme == "https" || (scheme == "http" && isLoopback) else {
-            // 새로 거부한 주소의 userinfo·경로·query·fragment를 오류에 노출하지 않음.
-            throw ClaudeAuthError.invalidOAuthURL("\(scheme ?? "")://\(host)")
+            throw ClaudeAuthError.invalidOAuthURL
         }
         return url
     }

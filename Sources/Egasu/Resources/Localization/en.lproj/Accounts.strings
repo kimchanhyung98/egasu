@@ -53,6 +53,7 @@
 "No Accounts" = "No Accounts";
 "No sign-in found. Sign in with %@ on this Mac first." = "No sign-in found. Sign in with %@ on this Mac first.";
 "Not Set" = "Not Set";
+"Can't Read Saved Key" = "Can't Read Saved Key";
 "Open %@" = "Open %@";
 "Pin %@" = "Pin %@";
 "Position %lld of %lld" = "Position %lld of %lld";
@@ -65,7 +66,7 @@
 "Turn On" = "Turn On";
 "Unpin %@" = "Unpin %@";
 "Use This Account" = "Use This Account";
-"egasu deletes the API key it saved and stops tracking this account. Keys in your environment stay as they are." = "egasu deletes the API key it saved and stops tracking this account. Keys in your environment stay as they are.";
+"egasu removes API keys from local configuration files and stops tracking this account. Environment keys remain available when you add the account again." = "egasu removes API keys from local configuration files and stops tracking this account. Environment keys remain available when you add the account again.";
 "egasu reads the %@ sign-in already on this Mac." = "egasu reads the %@ sign-in already on this Mac.";
 "egasu stops tracking this account. Your %@ sign-in stays as it is." = "egasu stops tracking this account. Your %@ sign-in stays as it is.";
 

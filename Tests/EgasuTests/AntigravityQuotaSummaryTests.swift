@@ -346,6 +346,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
         let snapshot = await provider.refresh()
         XCTAssertEqual(used(snapshot.line(label: "Weekly")), 0)
         XCTAssertEqual(snapshot.liveQuotaObservedAt, lsTime)
+        XCTAssertEqual(snapshot.usageTimerObservedAt, cloudTime)
         XCTAssertEqual(provider.usageTimerObservations.first?.observedAt, cloudTime)
     }
 

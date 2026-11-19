@@ -53,6 +53,7 @@
 "No Accounts" = "アカウントなし";
 "No sign-in found. Sign in with %@ on this Mac first." = "ログイン情報が見つかりません。先にこのMacで%@にログインしてください。";
 "Not Set" = "未設定";
+"Can't Read Saved Key" = "保存したキーを読み取れません";
 "Open %@" = "%@を開く";
 "Pin %@" = "%@を固定";
 "Position %lld of %lld" = "全 %2$lld 件中 %1$lld 番目";
@@ -65,7 +66,7 @@
 "Turn On" = "オンにする";
 "Unpin %@" = "%@の固定を解除";
 "Use This Account" = "このアカウントを使用";
-"egasu deletes the API key it saved and stops tracking this account. Keys in your environment stay as they are." = "egasuが保存したAPIキーを削除し、このアカウントの追跡を停止します。環境変数のキーはそのまま残ります。";
+"egasu removes API keys from local configuration files and stops tracking this account. Environment keys remain available when you add the account again." = "egasuはローカル設定ファイルからAPIキーを削除し、このアカウントの追跡を停止します。環境変数のキーはアカウントを再追加するときに使用できます。";
 "egasu reads the %@ sign-in already on this Mac." = "egasuはこのMacにすでにある%@のログイン情報を読み取ります。";
 "egasu stops tracking this account. Your %@ sign-in stays as it is." = "egasuはこのアカウントの追跡を停止します。%@のログインはそのまま残ります。";
 

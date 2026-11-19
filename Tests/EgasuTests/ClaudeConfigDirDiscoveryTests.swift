@@ -127,6 +127,22 @@ final class ClaudeConfigDirDiscoveryTests: XCTestCase {
         XCTAssertEqual(result.notes, ["claude config discovery: accepted source=file"])
     }
 
+    func testObservedDefaultHomeDoesNotExcludeAnAdditionalXDGLogin() {
+        let shared = "/Users/dev/.claude"
+        let xdg = "/Users/dev/.config/claude"
+        let discovery = makeDiscovery(
+            files: [
+                shared + "/.claude.json": #"{"oauthAccount":{"accountUuid":"SAME"}}"#,
+                shared + "/.credentials.json": #"{"claudeAiOauth":{"accessToken":"fixture"}}"#,
+                xdg + "/.claude.json": #"{"oauthAccount":{"accountUuid":"SAME"}}"#,
+                xdg + "/.credentials.json": #"{"claudeAiOauth":{"accessToken":"fixture"}}"#
+            ],
+            subdirectories: [shared, xdg]
+        )
+
+        XCTAssertEqual(discovery.run(observedDefaultHome: shared).findings.map(\.anchorPath), [xdg])
+    }
+
     func testCommaInConfigDirExcludesOneCompleteDefaultHome() {
         let configDir = "/Users/dev/.claude-team,inc"
         let otherDir = "/Users/dev/.claude-team"

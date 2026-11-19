@@ -78,6 +78,29 @@ struct AccountIdentityReplacement: Codable, Equatable, Sendable {
     var replacementIdentityKey: String
     var replacesSharedAuthentication: Bool
     var claudeGeneration: ClaudeGeneration?
+    var externalClaudeGeneration: ExternalClaudeGeneration? = nil
+
+    /// 외부 로그인에서 검증한 공유 세대와 저장본 교체 전·후의 지문.
+    struct ExternalClaudeGeneration: Codable, Equatable, Sendable {
+        var sharedFingerprint: String
+        var previousSnapshotFingerprint: String?
+        var replacementSnapshotFingerprint: String
+
+        init(
+            state: AccountSwitchJournal.SharedState, previous: AccountCredentialVault.Entry?,
+            replacement: AccountCredentialVault.Entry
+        ) throws {
+            sharedFingerprint = try state.fingerprint()
+            previousSnapshotFingerprint = try previous.map(Self.fingerprint)
+            replacementSnapshotFingerprint = try Self.fingerprint(replacement)
+        }
+
+        static func fingerprint(_ entry: AccountCredentialVault.Entry) throws -> String {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            return AccountSwitchJournal.fingerprint(String(decoding: try encoder.encode(entry), as: UTF8.self))
+        }
+    }
 
     /// 재로그인 복구는 같은 저장소의 변경 전·후 인증만 이어서 적용.
     struct ClaudeGeneration: Codable, Equatable, Sendable {
@@ -134,8 +157,8 @@ enum AccountIdentityReplacementError: LocalizedError {
 @MainActor
 @Observable
 public final class AccountProfilesStore {
-    public static let storageKey = "openusage.accountProfiles.v2"
-    static let identityReplacementKey = "openusage.accountIdentityReplacement.v1"
+    nonisolated public static let storageKey = "openusage.accountProfiles.v2"
+    nonisolated static let identityReplacementKey = "openusage.accountIdentityReplacement.v1"
     public static let maxProfilesPerFamily = 10
     nonisolated static let maxLabelLength = 60
 
@@ -168,6 +191,12 @@ public final class AccountProfilesStore {
         self.defaults = defaults
         self.synchronizeDefaults = synchronizeDefaults ?? { defaults.synchronize() }
         load()
+    }
+
+    /// 공유 로그인 잠금 안에서 다른 번들의 복구 기록 확인.
+    func checkPendingPeerClaudeLoginChanges(home: URL, ownJournal: AccountSwitchJournal) throws {
+        try ClaudeLegacyShellMigration.checkPendingSharedLoginChanges(
+            home: home, defaults: defaults, ownJournal: ownJournal, checkingPeersOnly: true)
     }
 
     /// 한 family의 active profile — 등록순(표시 순서).
@@ -311,7 +340,8 @@ public final class AccountProfilesStore {
         profileID: String,
         with identityKey: String,
         replacesSharedAuthentication: Bool,
-        claudeGeneration: AccountIdentityReplacement.ClaudeGeneration? = nil
+        claudeGeneration: AccountIdentityReplacement.ClaudeGeneration? = nil,
+        externalClaudeGeneration: AccountIdentityReplacement.ExternalClaudeGeneration? = nil
     ) throws -> AccountIdentityReplacement {
         try ensureRegistryWritable()
         guard let profile = profile(id: profileID) else {
@@ -331,7 +361,8 @@ public final class AccountProfilesStore {
             previousIdentityKey: profile.identityKey,
             replacementIdentityKey: replacementIdentityKey,
             replacesSharedAuthentication: replacesSharedAuthentication,
-            claudeGeneration: claudeGeneration
+            claudeGeneration: claudeGeneration,
+            externalClaudeGeneration: externalClaudeGeneration
         )
         defaults.set(try JSONEncoder().encode(transaction), forKey: Self.identityReplacementKey)
         return transaction

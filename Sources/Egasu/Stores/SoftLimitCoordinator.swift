@@ -14,6 +14,7 @@ final class SoftLimitCoordinator {
     @ObservationIgnored private let adapters: [String: any SoftLimitCancelling]
     @ObservationIgnored private let isProviderEnabled: (String) -> Bool
     @ObservationIgnored private let isCancellationScopeVerified: (String) -> Bool
+    @ObservationIgnored private let isQuotaInvalidated: (String, Date) -> Bool
     @ObservationIgnored private let now: () -> Date
     @ObservationIgnored private let pollingSleep: @MainActor () async throws -> Void
     @ObservationIgnored private let workQueue: BackgroundWorkQueue
@@ -33,6 +34,7 @@ final class SoftLimitCoordinator {
         adapters: [any SoftLimitCancelling],
         isProviderEnabled: @escaping (String) -> Bool,
         isCancellationScopeVerified: @escaping (String) -> Bool = { _ in false },
+        isQuotaInvalidated: @escaping (String, Date) -> Bool = { _, _ in false },
         now: @escaping () -> Date = Date.init,
         pollingSleep: @escaping @MainActor () async throws -> Void = { try await Task.sleep(for: .seconds(2)) },
         workQueue: BackgroundWorkQueue = BackgroundWorkQueue()
@@ -41,6 +43,7 @@ final class SoftLimitCoordinator {
         self.adapters = Dictionary(uniqueKeysWithValues: adapters.map { ($0.providerID, $0) })
         self.isProviderEnabled = isProviderEnabled
         self.isCancellationScopeVerified = isCancellationScopeVerified
+        self.isQuotaInvalidated = isQuotaInvalidated
         self.now = now
         self.pollingSleep = pollingSleep
         self.workQueue = workQueue
@@ -55,6 +58,7 @@ final class SoftLimitCoordinator {
         guard isStarted, settings.isActive else { return false }
         return observations.contains { providerID, observation in
             isProviderEnabled(providerID) && canControl(providerID)
+                && !isQuotaInvalidated(providerID, observation.observedAt)
                 && observation.quotaState(thresholdPercent: settings.thresholdPercent, at: now()) == .reached
         }
     }
@@ -171,8 +175,10 @@ final class SoftLimitCoordinator {
     }
 
     private func currentObservation(for providerID: String) -> SoftLimitObservation? {
-        guard settings.isActive, isProviderEnabled(providerID) else { return nil }
-        return observations[providerID]
+        guard settings.isActive, isProviderEnabled(providerID),
+            let observation = observations[providerID], !isQuotaInvalidated(providerID, observation.observedAt)
+        else { return nil }
+        return observation
     }
 
     func quotaReading(for providerID: String) -> (state: SoftLimitQuotaState, usedFraction: Double?, nextExpiry: Date?)

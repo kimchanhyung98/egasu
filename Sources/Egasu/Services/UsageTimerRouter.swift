@@ -124,7 +124,8 @@ final class UsageTimerRouter {
     func receive(_ snapshot: ProviderSnapshot, trigger: RefreshTrigger) {
         guard !isShuttingDown, trigger != .cli, trigger != .weeklyTimer,
               var binding = bindings[snapshot.providerID],
-              let observedAt = snapshot.liveQuotaObservedAt else { return }
+              let quotaObservedAt = snapshot.liveQuotaObservedAt else { return }
+        let observedAt = snapshot.usageTimerObservedAt ?? quotaObservedAt
         guard observedAt <= now() else {
             AppLog.debug(.refresh, "Ignored quota observation from before a backward clock change")
             return

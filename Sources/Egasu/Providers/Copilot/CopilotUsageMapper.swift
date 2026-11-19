@@ -91,7 +91,7 @@ enum CopilotUsageMapper {
     private static func snapshotLine(
         label: String, _ raw: Any?, resetsAt: Date?, incomplete: inout Set<String>
     ) -> MetricLine? {
-        guard let raw, !(raw is NSNull) else { return nil }
+        guard let raw else { return nil }
         guard let snapshot = raw as? [String: Any] else {
             incomplete.insert(label)
             return nil

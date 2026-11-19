@@ -53,7 +53,8 @@ export async function openSettings(page: Page): Promise<void> {
 export async function enableLabs(page: Page): Promise<void> {
   const app = page.locator('[data-mock]');
   await app.getByRole('tab', { name: 'General', exact: true }).click();
-  await app.getByRole('switch', { name: 'Beta Updates', exact: true }).click();
+  const beta = app.getByRole('switch', { name: 'Beta Updates', exact: true });
+  if (await beta.getAttribute('aria-checked') !== 'true') await beta.click();
   await app.getByRole('tab', { name: 'Labs', exact: true }).click();
 }
 

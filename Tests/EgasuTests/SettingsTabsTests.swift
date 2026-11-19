@@ -304,13 +304,13 @@ final class SettingsTabsTests: XCTestCase {
 }
 
 @MainActor
-func settingsBitmap(in host: NSView) throws -> NSBitmapImageRep {
+func settingsBitmap(in host: NSView, scale: CGFloat = 2) throws -> NSBitmapImageRep {
     host.layoutSubtreeIfNeeded()
     let bounds = host.bounds
     let bitmap = try XCTUnwrap(
         NSBitmapImageRep(
-            bitmapDataPlanes: nil, pixelsWide: Int(ceil(bounds.width * 2)),
-            pixelsHigh: Int(ceil(bounds.height * 2)),
+            bitmapDataPlanes: nil, pixelsWide: Int(ceil(bounds.width * scale)),
+            pixelsHigh: Int(ceil(bounds.height * scale)),
             bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
             colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
         ))

@@ -130,9 +130,11 @@ final class AppContainer {
             displaySettings.menuBarLimit = MenuBarLimit(count: min(max(migrated, 3), 5))
             AppLog.info(.config, "menu bar stars migrated to \(migrated) Priority pins")
         }
+        let snapshotCache = ProviderSnapshotCache()
         let dataStore = WidgetDataStore(
             registry: registry,
             providers: providers,
+            cache: snapshotCache,
             isProviderEnabled: { [enablement] in enablement.isEnabled($0) },
             orderedDescriptors: { [layout] in layout.orderedRenderedDescriptors() },
             notificationSettings: { notificationSettings },
@@ -225,6 +227,7 @@ final class AppContainer {
             settings: softLimitSettings,
             adapters: [CodexSoftLimitAdapter()],
             isProviderEnabled: { [enablement] in enablement.isEnabled($0) },
+            isQuotaInvalidated: { snapshotCache.isQuotaInvalidated(providerID: $0, observedAt: $1) },
             workQueue: workQueue
         )
         self.softLimitCoordinator = softLimitCoordinator

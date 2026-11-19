@@ -24,7 +24,7 @@ final class AccountExternalLoginFinalReadTests: XCTestCase {
             rootState, fixture.root.appendingPathComponent(".claude/.claude.json"),
             fixture.root.appendingPathComponent(".claude/.credentials.json")
         ]
-        let beforeFiles = cliFiles.map { try? Data(contentsOf: $0) }
+        let beforeFiles = try cliFiles.map(readIfPresent)
         let registry = fixture.defaults.data(forKey: AccountProfilesStore.storageKey)
         let writes = keychain.writeCount
         let scoped = keychain.currentUserValues[fixture.scopedService]
@@ -39,12 +39,18 @@ final class AccountExternalLoginFinalReadTests: XCTestCase {
         XCTAssertEqual(keychain.currentUserValues[baseService], external.credential)
         XCTAssertEqual(keychain.currentUserValues[fixture.scopedService], scoped)
         XCTAssertEqual(keychain.writeCount, writes)
-        XCTAssertEqual(cliFiles.map { try? Data(contentsOf: $0) }, beforeFiles)
+        XCTAssertEqual(try cliFiles.map(readIfPresent), beforeFiles)
         XCTAssertEqual(fixture.defaults.data(forKey: AccountProfilesStore.storageKey), registry)
         XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.a.id)
         XCTAssertEqual(fixture.store.authenticationRevision, 0)
         XCTAssertNil(try fixture.store.pendingIdentityReplacement())
         try fixture.assertSavedAccountsUnchanged()
+    }
+
+    private func readIfPresent(_ url: URL) throws -> Data? {
+        do { return try Data(contentsOf: url) } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return nil
+        }
     }
 }
 

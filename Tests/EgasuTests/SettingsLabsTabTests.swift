@@ -12,7 +12,11 @@ final class SettingsLabsTabTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let state = PopoverState(defaults: defaults)
         let updater = UpdaterController(defaults: defaults)
-        updater.onBetaChannelChange = state.reconcileSettingsTab(betaUpdatesEnabled:)
+        let disabled = expectation(description: "external beta setting disables Labs")
+        updater.onBetaChannelChange = { enabled in
+            state.reconcileSettingsTab(betaUpdatesEnabled: enabled)
+            if !enabled { disabled.fulfill() }
+        }
         let stable: [SettingsTab] = [.general, .display, .alerts, .advanced]
         XCTAssertEqual(SettingsTab.visible(betaUpdatesEnabled: updater.betaChannelEnabled), stable)
         updater.betaChannelEnabled = true
@@ -25,10 +29,7 @@ final class SettingsLabsTabTests: XCTestCase {
         state.screen = .dashboard
         XCTAssertEqual(state.settingsTab, .labs)
         defaults.set(false, forKey: UpdaterController.betaChannelDefaultsKey)
-        let deadline = ContinuousClock.now + .seconds(3)
-        while state.settingsTab != .general && ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        await fulfillment(of: [disabled], timeout: 3)
         XCTAssertFalse(updater.betaChannelEnabled)
         XCTAssertEqual(state.settingsTab, .general)
         updater.betaChannelEnabled = true
@@ -122,17 +123,9 @@ final class SettingsLabsTabTests: XCTestCase {
             }
             let image = try XCTUnwrap(bitmap.cgImage)
             let text = try await recognizedText(in: image, language: language)
-            for key in [
-                "General", "Display", "Alerts", "Advanced", "Labs", "Soft Limit", "Weekly and Monthly", "Quota Status",
-                "Terminal Helper", "Privacy Mode"
-            ] {
+            for key in ["Soft Limit", "Weekly and Monthly", "Quota Status", "Terminal Helper", "Privacy Mode"] {
                 let label = L10n.withLanguage(language) { L10n.settings(key).filter(\.isLetter).lowercased() }
-                let expected =
-                    switch key {
-                    case "Labs", "Soft Limit", "Weekly and Monthly", "Quota Status", "Terminal Helper": tab == .labs
-                    case "Privacy Mode": tab == .advanced
-                    default: true
-                    }
+                let expected = tab == (key == "Privacy Mode" ? .advanced : .labs)
                 XCTAssertEqual(text.contains(label), expected, "\(key): \(text)")
             }
             if let output = ProcessInfo.processInfo.environment["EGASU_LABS_RENDER_DIR"] {

@@ -1,8 +1,66 @@
+import Darwin
 import XCTest
 @testable import Egasu
 
 final class AccountCredentialSwitcherTests: XCTestCase {
     // MARK: - Claude
+
+    func testMalformedWorkspaceCredentialDoesNotChangeKeychainOrAccount() throws {
+        let fixture = try makeFixture()
+        let account = profile(id: "profile-a", family: "claude", label: "Personal", identityKey: "acct-a|org-a")
+        let directory = try fixture.workspace.prepare(family: "claude", profileID: account.id)
+        let credentialFile = directory.appendingPathComponent(".credentials.json")
+        let accountFile = directory.appendingPathComponent(".claude.json")
+        try Data("{".utf8).write(to: credentialFile)
+        try Data(#"{"oauthAccount":{"accountUuid":"old"}}"#.utf8).write(to: accountFile)
+        let service = scopedClaudeService(home: directory.path)
+        let previous = claudeCredential(token: "token-old")
+        fixture.keychain.currentUserValues[service] = previous
+
+        XCTAssertThrowsError(
+            try fixture.switcher.writeWorkspaceAuthentication(
+                .init(credential: claudeCredential(token: "token-a"), claudeOAuthAccount: claudeAccount("a")),
+                for: account))
+
+        XCTAssertEqual(fixture.keychain.currentUserValues[service], previous)
+        XCTAssertEqual(try text(credentialFile), "{")
+        XCTAssertEqual(try text(accountFile), #"{"oauthAccount":{"accountUuid":"old"}}"#)
+    }
+
+    func testWorkspaceRejectsLinkedAndNonregularCredentialsBeforeKeychainAccess() throws {
+        let f = try makeFixture()
+        let account = profile(id: "profile-a", family: "claude", label: "Personal", identityKey: "acct-a|org-a")
+        let directory = try f.workspace.prepare(family: "claude", profileID: account.id)
+        let credential = directory.appendingPathComponent(".credentials.json")
+        let outside = f.home.appendingPathComponent("outside.json")
+        let external = Data(#"{"mcpOAuth":{"server":"external"}}"#.utf8)
+        try external.write(to: outside)
+        let entry = AccountCredentialVault.Entry(
+            credential: claudeCredential(token: "a"), claudeOAuthAccount: claudeAccount("a"))
+        f.keychain.onSharedRead = { _ in XCTFail("Invalid workspace files must be rejected before reading Keychain") }
+        for target in [outside, f.home.appendingPathComponent("missing.json")] {
+            try FileManager.default.createSymbolicLink(at: credential, withDestinationURL: target)
+            XCTAssertThrowsError(try f.switcher.writeWorkspaceAuthentication(entry, for: account)) {
+                guard case .symlinkedComponent = $0 as? AccountSignInWorkspace.WorkspaceError else {
+                    return XCTFail("Expected a workspace symlink error")
+                }
+            }
+            XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: credential.path), target.path)
+            try FileManager.default.removeItem(at: credential)
+        }
+
+        XCTAssertEqual(mkfifo(credential.path, 0o600), 0)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 1) {
+            let fd = Darwin.open(credential.path, O_WRONLY | O_NONBLOCK)
+            if fd >= 0 { Darwin.close(fd) }
+        }
+        XCTAssertThrowsError(try f.switcher.writeWorkspaceAuthentication(entry, for: account)) {
+            XCTAssertEqual(($0 as? POSIXError)?.code, .EFTYPE)
+        }
+        XCTAssertEqual(f.keychain.writeCount, 0)
+        XCTAssertEqual(try Data(contentsOf: outside), external)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent(".claude.json").path))
+    }
 
     func testSharedClaudeStateAcceptsANullAccountAndRejectsMalformedAccounts() throws {
         let fixture = try makeFixture()

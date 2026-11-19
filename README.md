@@ -42,7 +42,8 @@ DMG 하나로 Apple Silicon과 Intel Mac 모두 지원.
 
 대부분의 프로바이더는 Mac의 Keychain, 인증 파일 또는 앱에 저장된 로그인 정보 재사용.
 [OpenRouter](/docs/providers/openrouter.md)와 [Z.ai](/docs/providers/zai.md)는 앱에 저장하거나 지원 환경 변수로 제공한 API 키 사용.
-저장한 API 키를 읽지 못하면 프로바이더 카드에 파일 접근 오류 표시.
+쓸 수 있는 키가 없고 저장 파일을 읽지 못하면, 미등록 상태와 구분해 파일 접근 오류 표시.
+계정 제거 시 설정 파일의 API 키를 제거하고, JSON의 다른 설정은 보존.
 인증 정보는 해당 프로바이더 요청에만 사용.
 익명 요약과 공개 가격표 다운로드는 [개인정보 및 사용 데이터](/docs/privacy.md) 참조.
 
@@ -58,8 +59,10 @@ DMG 하나로 Apple Silicon과 Intel Mac 모두 지원.
   행 우클릭으로 지표 숨기기·Priority 고정·새로 고침·Accounts 관리 연결.
   [프로바이더 섹션 공유 이미지](/docs/dashboard.md#공유)는 표시 중인 모든 계정과 지표 순서를 반영.
 - **[계정 전환](/docs/cli.md#계정).** Claude·Codex의 기본 인증 저장소를 쓰는 새 CLI 세션에 선택한 로그인 적용.
-  이전 OpenUsage가 설치한 Claude 셸 함수는 앱 실행 시 [CLI 로그인을 기본 위치로 이전](/docs/accounts.md#이전-claude-셸-함수-정리)한 뒤 자동 제거.
-  Claude 첫 등록·외부 로그인과 계정 전환 중 보존할 변경된 인증은 토큰의 계정·조직을 검증한 뒤 저장본에 반영.
+  업데이트 후 첫 실행에서 이전 OpenUsage의 Claude 셸 함수를 확인하고 [CLI 로그인 이전](/docs/accounts.md#이전-claude-셸-함수-정리)을 완료하면 해당 함수 제거.
+  이전이 보류되면 Accounts에서 사유 안내.
+  계정 전환 시 셸 설정 파일과 터미널 환경 유지.
+  Claude 첫 등록·외부 로그인과 전환 중 보존할 변경된 인증은 토큰의 계정·조직을 검증한 뒤 저장본에 반영.
   선택된 Claude 공유 로그인은 사용량 조회에서도 계정·조직 일치 검증.
 - **[구독 타이머](/docs/refreshing.md#구독-타이머-자동-시작).** Codex·Claude·Antigravity·Kimi·Z.ai의 지원 한도를 확인하고 짧은 구독 메시지로 시작 유도.
   Claude·Antigravity·Kimi·Z.ai는 CLI 준비가 끝난 뒤 서버 한도를 다시 조회.
@@ -71,6 +74,7 @@ DMG 하나로 Apple Silicon과 Intel Mac 모두 지원.
 - **[전역 단축키](/docs/settings.md#general).** Settings → General에서 지정한 키 조합으로 패널 열기·닫기.
 - **[계정 관리](/docs/accounts.md).** Accounts에서 계정 추가·전환·재로그인, API 키와 계정별 지표 표시·순서 관리.
   숨긴 계정 복원과 이름 변경·중단된 Claude 전환 복구 지원.
+  기존 Claude 계정의 토큰 갱신 중에도 새 작업 공간의 로그인 등록 가능.
 - **[사용량 자동 갱신](/docs/refreshing.md).** 앱을 열면 저장된 사용량부터 표시.
   기본 갱신 주기는 Claude 15분, 나머지 프로바이더 5분.
 - **[iCloud 동기화](/docs/icloud-sync.md).** 여러 Mac의 사용 내역을 선택적으로 합산.
@@ -90,19 +94,12 @@ DMG 하나로 Apple Silicon과 Intel Mac 모두 지원.
   베타 업데이트를 켜면 [실험실(Labs)](/docs/settings.md#labs)에서 주간·월간 구독 한도에 사용률 기준선을 설정하거나 터미널 도우미 설치·제거 가능.
 - **[자동 업데이트](/docs/updates.md).** Sparkle이 새 버전의 서명을 확인한 뒤 설치하며, 베타 채널은 설정에서 선택.
 
+## 문서
 
-
-## Documentation
-
-Behavior docs live in [docs/](docs/README.md): the [dashboard](docs/dashboard.md), [menu bar display](/docs/menu-bar.md), [settings](docs/settings.md), [refresh & caching](docs/refreshing.md), the [CLI](docs/cli.md), the [local HTTP API](docs/local-http-api.md), the [proxy](docs/proxy.md), and one page per provider.
+[사용자 안내](/docs/README.md)에서 대시보드·메뉴 막대·설정·새로 고침·CLI·로컬 API·프록시와 프로바이더별 문서 확인.
 
 개발자는 [아키텍처](/docs/architecture.md), [프로바이더 추가](/docs/adding-a-provider.md), [디버깅](/docs/debugging.md) 참조.
 사용량 조회·계정 전환 오류를 제보할 때는 [로그 수집 방법](/docs/logging.md#오류-제보용-로그-수집)에 따라 발생 시각 주변의 기록 공유.
-
-## Requirements
-
-- macOS 15 (Sequoia) or later
-- Universal binary — runs natively on both Apple Silicon and Intel Macs
 
 비용·토큰의 기간별 집계는 프로바이더마다 로컬 기록 또는 서버 사용량을 사용.
 [집계 범위](/docs/dashboard.md#총-지출) 참조.

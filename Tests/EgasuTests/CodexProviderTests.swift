@@ -105,6 +105,20 @@ final class CodexAuthStoreTests: XCTestCase {
 }
 
 final class CodexUsageMapperTests: XCTestCase {
+    func testMalformedAbsoluteResetKeepsValidWeeklyRelativeReset() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let body = Data(
+            #"""
+            {"rate_limit":{"primary_window":{"used_percent":12,"limit_window_seconds":604800,
+              "reset_at":"invalid","reset_after_seconds":3600}}}
+            """#.utf8)
+        let mapped = try CodexUsageMapper.mapUsageResponse(
+            HTTPResponse(statusCode: 200, headers: [:], body: body), now: now)
+
+        XCTAssertTrue(mapped.incompleteQuotaWindows.isEmpty)
+        XCTAssertEqual(progress(mapped.lines, "Weekly")?.resetsAt, now.addingTimeInterval(3600))
+    }
+
     func testFreshSessionWindowPreservesReportedOnePercent() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let body = Data("""

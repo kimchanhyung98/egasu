@@ -11,7 +11,7 @@ enum SingleInstanceLock {
     }
 
     /// process 수명 동안 lock 소유 — descriptor를 열어 두어 `flock` 유지. token 해제 시 unlock + close.
-    final class Token {
+    final class Token: Sendable {
         private let fd: CInt
 
         fileprivate init(fd: CInt) {

@@ -236,7 +236,9 @@ final class AccountExternalLoginPreservationTests: XCTestCase {
             }
             XCTAssertEqual(try fixture.switcher.readClaudeSwitchState(), before)
             try fixture.assertSavedAccountsUnchanged()
-            XCTAssertNil(try fixture.store.pendingIdentityReplacement())
+            XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.a.id)
+            XCTAssertEqual(try fixture.freshStore().preferredProfileID(family: "claude"), fixture.a.id)
+            XCTAssertEqual(try fixture.store.pendingIdentityReplacement() == nil, snapshotMatches)
             XCTAssertEqual(fixture.store.authenticationRevision, 0)
 
             fixture.defaults.set(registry, forKey: AccountProfilesStore.storageKey)

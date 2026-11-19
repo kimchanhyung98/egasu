@@ -98,8 +98,10 @@ final class AccountsScreenTests: XCTestCase {
             )
         }
         XCTAssertTrue(recheck(.readFailed("Keychain locked"), finished: ["claude"]), "Keychain 승인 뒤 화면을 다시 열지 않아도 재확인")
+        XCTAssertTrue(recheck(.routeUnavailable("Invalid shell setup"), finished: ["claude"]), "셸 설정 복구 뒤 재확인")
         XCTAssertTrue(recheck(nil, finished: ["claude"]))
         XCTAssertFalse(recheck(.readFailed("Keychain locked"), finished: ["claude@profile-home"]), "다른 계정의 새로 고침")
+        XCTAssertFalse(recheck(.routeUnavailable("Invalid shell setup"), finished: ["claude@profile-home"]))
         XCTAssertFalse(recheck(.readFailed("Keychain locked"), finished: []), "아직 새로 고침 중")
         XCTAssertFalse(recheck(.ready(identityKey: "id", label: nil), finished: ["claude"]))
         XCTAssertFalse(recheck(.needsSignIn, finished: ["claude"]))
@@ -109,6 +111,7 @@ final class AccountsScreenTests: XCTestCase {
 
     func testKeychainApprovalReplacesSignInOnlyWhenTheSavedSignInCouldNotBeRead() {
         XCTAssertTrue(RegisteredAccountRows.offersKeychainApproval(.readFailed("Keychain locked")))
+        XCTAssertFalse(RegisteredAccountRows.offersKeychainApproval(.routeUnavailable("Invalid shell setup")))
         XCTAssertFalse(RegisteredAccountRows.offersKeychainApproval(.needsSignIn), "저장 로그인이 없으면 다시 로그인")
         XCTAssertFalse(RegisteredAccountRows.offersKeychainApproval(.ready(identityKey: "id", label: nil)))
         XCTAssertFalse(RegisteredAccountRows.offersKeychainApproval(nil), "확인 전")

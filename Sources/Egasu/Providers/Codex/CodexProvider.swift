@@ -294,7 +294,7 @@ final class CodexProvider: ProviderRuntime {
             accessToken: currentToken,
             accountID: authState.auth.tokens?.accountID
         )
-        var mapped = try CodexUsageMapper.mapUsageResponse(response, resetCredits: resetCredits, now: now())
+        var mapped = try CodexUsageMapper.mapUsageResponse(response, resetCredits: resetCredits, now: quota.observedAt)
 
         // Codex 원장과 공유 도구 사용량 병합. 두 스캔 모두 전용 액터에서 실행.
         let pricing = await pricing()

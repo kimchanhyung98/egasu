@@ -49,6 +49,7 @@ enum ClaudeUsageError: Error, LocalizedError, Equatable, Codable {
 }
 
 struct ClaudeUsageClient: Sendable {
+    static let profileTimeout: TimeInterval = 10
     private static let scopes = "user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload"
 
     var httpClient: HTTPClient
@@ -95,7 +96,9 @@ struct ClaudeUsageClient: Sendable {
         )
     }
 
-    func fetchProfile(accessToken: String, config: ClaudeOAuthConfig) async throws -> HTTPResponse {
+    func fetchProfile(
+        accessToken: String, config: ClaudeOAuthConfig, timeout: TimeInterval = Self.profileTimeout
+    ) async throws -> HTTPResponse {
         try await httpClient.send(
             HTTPRequest(
                 method: "GET",
@@ -106,7 +109,7 @@ struct ClaudeUsageClient: Sendable {
                     "Cache-Control": "no-cache",
                     "User-Agent": "claude-code/2.1.69"
                 ],
-                timeout: 10,
+                timeout: timeout,
                 logEndpoint: "claude.profile"
             )
         )

@@ -64,11 +64,16 @@ final class PopoverScreenTests: XCTestCase {
         display.showsUseItOrLoseIt = false
 
         for defaultTab in DashboardTab.allCases {
+            display.showsWarning = false
             defaults.set(defaultTab.rawValue, forKey: DashboardTab.defaultKey)
-            let state = PopoverState(defaults: defaults)
+            let liveDisplay = DisplaySettingsStore(defaults: defaults)
+            let state = PopoverState(defaults: defaults, displaySettings: liveDisplay)
             XCTAssertFalse(state.showsDashboardTabs)
             XCTAssertEqual(state.dashboardTab, .allUsage)
             XCTAssertEqual(DashboardTab.preferred(in: defaults), defaultTab)
+            liveDisplay.showsWarning = true
+            XCTAssertTrue(state.showsDashboardTabs)
+            XCTAssertEqual(state.dashboardTab, defaultTab)
         }
     }
 

@@ -137,7 +137,7 @@ enum ClaudeUsageMapper {
 
     /// 미제공 한도는 정상 처리하고, 응답에 있는 한도를 읽을 수 없을 때만 false 반환.
     private static func appendUsageWindow(
-        _ value: Any?, label: String, periodDurationMs: Int, valueKey: String = "utilization",
+        _ value: Any?, label: String, periodDurationMs: Int?, valueKey: String = "utilization",
         to lines: inout [MetricLine]
     ) -> Bool {
         guard let value, !(value is NSNull) else { return true }
@@ -161,6 +161,8 @@ enum ClaudeUsageMapper {
         guard let limits, !(limits is NSNull) else { return true }
         guard let entries = limits as? [Any] else { return false }
         var complete = true
+        var firstMatch: [String: Any]?
+        var hasDuplicate = false
         for entry in entries {
             guard let object = entry as? [String: Any] else {
                 complete = false
@@ -174,10 +176,17 @@ enum ClaudeUsageMapper {
                 continue
             }
             guard name == modelName else { continue }
-            return appendUsageWindow(
-                object, label: label, periodDurationMs: weeklyPeriodMs, valueKey: "percent", to: &lines) && complete
+            if firstMatch == nil {
+                firstMatch = object
+            } else {
+                hasDuplicate = true
+            }
         }
-        return complete
+        // 중복된 모델 한도는 첫 값을 표시하되 한도 판정에서는 제외.
+        let usable = appendUsageWindow(
+            firstMatch, label: label, periodDurationMs: hasDuplicate ? nil : weeklyPeriodMs,
+            valueKey: "percent", to: &lines)
+        return complete && usable && !hasDuplicate
     }
 
     private static func appendExtraUsage(_ value: Any?, to lines: inout [MetricLine]) {

@@ -422,12 +422,12 @@ Codex OAuth 토큰으로 `GET https://chatgpt.com/backend-api/wham/usage` 호출
 401/403 응답 시 토큰을 한 번 갱신한 뒤 재시도.
 Session·Weekly·Monthly는 `primary`·`secondary` 슬롯에 담긴 기간 길이로 분류.
 Codex가 한도 하나를 일시적으로 제거하고 남은 주간 기간을 primary 슬롯으로 옮기는 경우에 필요한 처리.
-기간 정보가 없는 응답은 호환성을 위해 primary를 Session, secondary를 Weekly로 표시하고 응답 헤더로 누락된 백분율 보완.
+기간 정보가 없거나 인식할 수 없는 응답은 호환성을 위해 primary를 Session, secondary를 Weekly로 표시하고 응답 헤더로 누락된 백분율 보완.
 기간을 확인할 수 없는 슬롯이 있으면 소프트 한도 미도달 판정 보류.
-주간·월간 슬롯의 사용률이나 초기화 값이 손상되면 해당 기간의 미도달 판정 보류.
+주간·월간 슬롯의 사용률이 손상됐거나 초기화 값이 손상되어 대체 시각도 계산할 수 없으면 해당 기간의 미도달 판정 보류.
 같은 기간에 확인한 다른 한도가 기준에 도달하면 도달로 판정.
 
-Spark 한도는 같은 응답의 `additional_rate_limits` 배열에서 GPT-5.3-Codex-Spark 이름으로 식별.
+Spark 한도는 같은 응답의 `additional_rate_limits` 배열에서 `limit_name` 또는 `metered_feature`에 Spark 표기가 있는 항목으로 식별.
 기본 풀과 같은 규칙으로 세션·주간·월간 지표 분류.
 배열의 다른 모델 한도는 표시하지 않음.
 

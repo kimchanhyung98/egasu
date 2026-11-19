@@ -175,9 +175,11 @@ struct ClaudeConfigDirDiscovery {
 
     /// 셸 함수가 환경 변수를 덮어쓰면 관찰한 기본 홈만 추가 계정 탐색에서 제외.
     private func defaultClaudeConfigDirs(observedDefaultHome: String?) -> [String] {
+        if let observedDefaultHome { return [observedDefaultHome] }
         if let raw = environment.value(for: "CLAUDE_CONFIG_DIR")?
-            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
-            return [observedDefaultHome ?? expandTilde(raw)]
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        {
+            return [expandTilde(raw)]
         }
         let home = homeDirectory()
         let xdg = environment.value(for: "XDG_CONFIG_HOME")?.nilIfEmpty.map(expandTilde)

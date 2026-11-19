@@ -88,7 +88,12 @@ public struct UsageReader {
 
         let descriptors = context.registry.descriptors(for: id)
         let window = settings.window
-        guard descriptors.contains(where: { $0.softLimitWindows.contains(where: window.includes) }) else {
+        guard
+            descriptors.contains(where: { descriptor in
+                descriptor.softLimitWindows.contains(where: window.includes)
+                    && descriptor.limitResources.contains(where: { $0.kind == .consumption && !$0.estimated })
+            })
+        else {
             return unknown("unsupported_window")
         }
         let loaded = await load(context: context, matchedIDs: [id], force: false, preflightCardID: id)
@@ -194,7 +199,10 @@ public struct UsageReader {
         }
         // 귀속 정보가 없는 디스크 캐시는 이전 로그인일 수 있어 사전 검사 때만 직접 조회.
         let trustsPersistedFreshness = preflightCardID.map { identityKeys[$0] != nil } ?? true
-        let cache = ProviderSnapshotCache(userDefaults: defaults, allowsPersistedFreshness: trustsPersistedFreshness)
+        // 사전 검사에서 계정 확인 전 조회된 결과와 무효화는 현재 검사 메모리에만 유지.
+        let cache = ProviderSnapshotCache(
+            userDefaults: defaults, allowsPersistedFreshness: trustsPersistedFreshness,
+            persistsWrites: preflightCardID == nil)
         let allProviderIDs = registry.providers.map(\.id)
         // 앱과 동일한 계정 guard — 타 계정 캐시와 신원 미확인 Claude 캐시는 TTL 안에서도 재조회.
         let staleAccountStampIDs = Set(
@@ -226,7 +234,6 @@ public struct UsageReader {
                 cache: cache,
                 defaults: defaults,
                 isProviderEnabled: includesProvider,
-                // CLI는 앱의 snapshot cache 공유 — 쓰기에 동일한 계정 stamp 필수, 미stamp claude/codex entry는 앱의 다음 launch에 폐기.
                 providerIdentityKeys: identityKeys,
                 workQueue: .shared
             )

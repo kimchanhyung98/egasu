@@ -99,7 +99,7 @@
 "Grok sign-in could not be refreshed (HTTP %@). Try again later." = "Grok sign-in could not be refreshed (HTTP %@). Try again later.";
 "Grok returned an invalid token refresh response. Try again later." = "Grok returned an invalid token refresh response. Try again later.";
 "Grok sign-in could not be read. Check access to the Grok auth file and refresh again." = "Grok sign-in could not be read. Check access to the Grok auth file and refresh again.";
-"Invalid Claude OAuth URL: %@. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE." = "Invalid Claude OAuth URL: %@. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE.";
+"Invalid Claude OAuth URL. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE." = "Invalid Claude OAuth URL. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE.";
 "Invalid HTTP response." = "Invalid HTTP response.";
 "Invalid account name." = "Invalid account name.";
 "Invalid sign-in workspace component: %@" = "Invalid sign-in workspace component: %@";
@@ -277,6 +277,7 @@
 "Weekly timer message could not be started. Retries wait at least five minutes and are limited to 2 attempts per 24 hours." = "Weekly timer message could not be started. Retries wait at least five minutes and are limited to 2 attempts per 24 hours.";
 "Weekly timer messages paused: this account reached the limit of 2 attempts in 24 hours. Usage checks will continue." = "Weekly timer messages paused: this account reached the limit of 2 attempts in 24 hours. Usage checks will continue.";
 "Weekly" = "Weekly";
+"Z.ai API key changed while refreshing. Refresh again to use the current key." = "Z.ai API key changed while refreshing. Refresh again to use the current key.";
 "Z.ai API key invalid. Check your key at z.ai/manage-apikey/apikey-list." = "Z.ai API key invalid. Check your key at z.ai/manage-apikey/apikey-list.";
 "iCloud Drive isn’t available. Check that this Mac is signed into iCloud and iCloud Drive is on." = "iCloud Drive isn’t available. Check that this Mac is signed into iCloud and iCloud Drive is on.";
 "macOS couldn't prepare the authorization request." = "macOS couldn't prepare the authorization request.";
@@ -325,6 +326,10 @@
 "The old shell and default Claude CLI use different accounts. Sign in to the same account in both, then restart egasu." = "The old shell and default Claude CLI use different accounts. Sign in to the same account in both, then restart egasu.";
 "Claude sign-in is incomplete. Finish signing in to Claude, then restart egasu to finish migrating the old shell setup." = "Claude sign-in is incomplete. Finish signing in to Claude, then restart egasu to finish migrating the old shell setup.";
 "Finish the pending Claude account switch in Accounts, then restart egasu." = "Finish the pending Claude account switch in Accounts, then restart egasu.";
+"Claude login settings differ between egasu and your current login shell. Check your shell settings, then restart egasu." = "Claude login settings differ between egasu and your current login shell. Check your shell settings, then restart egasu.";
+"egasu could not read your login shell environment. Check that your login shell starts, then restart egasu." = "egasu could not read your login shell environment. Check that your login shell starts, then restart egasu.";
+"Your shell sets CLAUDE_CONFIG_DIR outside the old Claude function. Check which login you want to use before removing the function." = "Your shell sets CLAUDE_CONFIG_DIR outside the old Claude function. Check which login you want to use before removing the function.";
+"Your shell settings changed during migration. Check your changes and any .egasu-recovery file next to your shell settings, then restart egasu." = "Your shell settings changed during migration. Check your changes and any .egasu-recovery file next to your shell settings, then restart egasu.";
 "Check access to your shell settings and Claude login files, then restart egasu." = "Check access to your shell settings and Claude login files, then restart egasu.";
-"Another egasu process is migrating the Claude login. Restart egasu after it finishes." = "Another egasu process is migrating the Claude login. Restart egasu after it finishes.";
+"Another egasu process is updating the shared Claude login. Wait for it to finish, then try again." = "Another egasu process is updating the shared Claude login. Wait for it to finish, then try again.";
 "Unlock your Keychain and restart egasu. Allow access to the Claude login if macOS asks." = "Unlock your Keychain and restart egasu. Allow access to the Claude login if macOS asks.";

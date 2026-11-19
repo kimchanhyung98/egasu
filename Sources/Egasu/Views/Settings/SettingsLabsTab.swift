@@ -16,6 +16,7 @@ struct SettingsLabsTab: View {
         let registry = container.registry
         let selection = container.softLimitSettings.window
         let cardIDs = container.orderedAccountCardIDs(registry.providers.map(\.id))
+        let now = Date()
         return cardIDs.compactMap { cardID in
             guard container.enablement.isEnabled(cardID), let provider = registry.provider(id: cardID) else {
                 return nil
@@ -26,8 +27,17 @@ struct SettingsLabsTab: View {
             guard !descriptors.isEmpty else { return nil }
             let coordinator = container.softLimitCoordinator
             let reading = coordinator.quotaReading(for: cardID)
+            let estimateExpiry: Date?
+            if case .succeeded? = container.dataStore.refreshResults[cardID],
+                let snapshot = container.dataStore.localSnapshots[cardID], snapshot.freshnessDate <= now
+            {
+                let expiry = snapshot.freshnessDate.addingTimeInterval(RefreshSetting.interval(for: cardID))
+                estimateExpiry = expiry > now ? expiry : nil
+            } else {
+                estimateExpiry = nil
+            }
             let estimate =
-                reading.state == .unknown
+                reading.state == .unknown && estimateExpiry != nil
                 ? descriptors.compactMap { descriptor -> Double? in
                     guard descriptor.limitResources.contains(where: { $0.kind == .consumption && $0.estimated }) else {
                         return nil
@@ -44,7 +54,7 @@ struct SettingsLabsTab: View {
                 name: container.dataStore.resolveDisplayName?(cardID) ?? container.displayName(for: provider),
                 quota: reading.state, usedFraction: reading.usedFraction,
                 estimatedFraction: estimate, cancellation: coordinator.status(for: cardID),
-                nextExpiry: reading.nextExpiry
+                nextExpiry: estimate == nil ? reading.nextExpiry : estimateExpiry
             )
         }
     }

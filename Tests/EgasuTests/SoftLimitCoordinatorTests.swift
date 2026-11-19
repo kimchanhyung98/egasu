@@ -33,6 +33,30 @@ final class SoftLimitCoordinatorTests: XCTestCase {
         XCTAssertEqual(adapter.requests.count, 1)
     }
 
+    func testDiskInvalidationStopsCancellationWithoutANewSnapshot() async throws {
+        let suite = "EgasuTests.SoftLimitDiskInvalidation.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let appCache = ProviderSnapshotCache(userDefaults: defaults)
+        let cliDefaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let cliCache = ProviderSnapshotCache(userDefaults: cliDefaults, now: { [instant] in instant })
+        let adapter = RecordingSoftLimitAdapter("codex", operations: ["first"])
+        let coordinator = SoftLimitCoordinator(
+            settings: makeSettings(), adapters: [adapter], isProviderEnabled: { _ in true },
+            isCancellationScopeVerified: { _ in true },
+            isQuotaInvalidated: { appCache.isQuotaInvalidated(providerID: $0, observedAt: $1) },
+            now: { [instant] in instant })
+        observe("codex", used: 100, coordinator: coordinator)
+        XCTAssertEqual(coordinator.quotaState(for: "codex"), .reached)
+
+        cliCache.invalidateLiveQuota(providerID: "codex", identity: nil)
+        await coordinator.check(providerID: "codex")
+
+        XCTAssertEqual(coordinator.quotaState(for: "codex"), .unknown)
+        XCTAssertEqual(adapter.listCalls, 0)
+        XCTAssertTrue(adapter.requests.isEmpty)
+    }
+
     func testCachedFallbackExpiredAndFutureObservationsNeverCancel() async {
         let adapter = RecordingSoftLimitAdapter("codex", operations: ["first"])
         let coordinator = makeCoordinator([adapter])
@@ -71,12 +95,13 @@ final class SoftLimitCoordinatorTests: XCTestCase {
         let adapter = RecordingSoftLimitAdapter(id, operations: ["inactive"])
         let coordinator = makeCoordinator([adapter])
         var reading = snapshot(id, used: 100)
-        reading.liveQuotaObservedAt = instant.addingTimeInterval(-600)
+        let age = (RefreshSetting.interval + RefreshSetting.slowInterval) / 2
+        reading.liveQuotaObservedAt = instant.addingTimeInterval(-age)
         coordinator.receive(reading, descriptors: [descriptor(id)])
         XCTAssertEqual(coordinator.quotaState(for: id), .reached)
         let readingState = coordinator.quotaReading(for: id)
         XCTAssertEqual(readingState.usedFraction, 1)
-        XCTAssertEqual(readingState.nextExpiry, instant.addingTimeInterval(300))
+        XCTAssertEqual(readingState.nextExpiry, instant.addingTimeInterval(RefreshSetting.slowInterval - age))
         XCTAssertEqual(coordinator.quotaState(for: "claude"), .unknown)
         await coordinator.check()
         XCTAssertEqual(adapter.listCalls, 0)

@@ -19,6 +19,7 @@ struct ProviderSnapshotCache {
     /// 이 cache 인스턴스에서 정상 refresh로 저장한 provider ID — 로컬 이력만 갱신한 쓰기는 제외.
     /// launch에 disk에서 로드된 snapshot은 표시만 되고 fresh로 취급되지 않아 첫 pass에 refresh 강제(#697).
     private let sessionWrites = OSAllocatedUnfairLock<Set<String>>(initialState: [])
+    private let localQuotaInvalidations = OSAllocatedUnfairLock<[String: Date]>(initialState: [:])
 
     private let userDefaults: UserDefaults
     private let storageKey: String
@@ -27,6 +28,7 @@ struct ProviderSnapshotCache {
     private let ttl: TimeInterval?
     /// timestamp-only freshness opt-in — 메뉴바 앱은 launch당 1회 refresh를 강제하지만 one-shot reader에는 세션 개념이 없음.
     private let allowsPersistedFreshness: Bool
+    private let persistsWrites: Bool
     private let now: () -> Date
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
@@ -38,12 +40,14 @@ struct ProviderSnapshotCache {
         storageKey: String = "openusage.providerSnapshots.v10",
         ttl: TimeInterval? = nil,
         allowsPersistedFreshness: Bool = false,
+        persistsWrites: Bool = true,
         now: @escaping () -> Date = Date.init
     ) {
         self.userDefaults = userDefaults
         self.storageKey = storageKey
         self.ttl = ttl
         self.allowsPersistedFreshness = allowsPersistedFreshness
+        self.persistsWrites = persistsWrites
         self.now = now
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -85,18 +89,30 @@ struct ProviderSnapshotCache {
     /// 다른 프로세스가 이전 캐시를 다시 저장해도 실패 전 한도를 실행 근거로 재사용하지 않도록 시각만 별도 보존.
     func invalidateLiveQuota(providerID: String, identity: String?) {
         if let identity, let stored = producedByIdentityKey(providerID: providerID), identity != stored { return }
-        userDefaults.set(now(), forKey: "\(storageKey).quotaInvalidated.\(providerID)")
+        let invalidatedAt = now()
+        if persistsWrites {
+            userDefaults.set(invalidatedAt, forKey: "\(storageKey).quotaInvalidated.\(providerID)")
+        } else {
+            localQuotaInvalidations.withLock { $0[providerID] = invalidatedAt }
+        }
     }
 
     func applyingQuotaInvalidation(_ snapshot: ProviderSnapshot) -> ProviderSnapshot {
         guard let observed = snapshot.liveQuotaObservedAt,
-            let invalidated = userDefaults.object(forKey: "\(storageKey).quotaInvalidated.\(snapshot.providerID)")
-                as? Date,
-            observed <= invalidated
+            isQuotaInvalidated(providerID: snapshot.providerID, observedAt: observed)
         else { return snapshot }
         var checked = snapshot
         checked.liveQuotaObservedAt = nil
         return checked
+    }
+
+    /// 새 실행 직전에도 CLI와 공유하는 무효화 시각을 확인.
+    func isQuotaInvalidated(providerID: String, observedAt: Date) -> Bool {
+        if !persistsWrites, let local = localQuotaInvalidations.withLock({ $0[providerID] }), observedAt <= local {
+            return true
+        }
+        let invalidated = userDefaults.object(forKey: "\(storageKey).quotaInvalidated.\(providerID)") as? Date
+        return invalidated.map { observedAt <= $0 } ?? false
     }
 
     /// `producedByIdentityKey`는 이 snapshot을 생산한 account identity(쓰기 시점의 카드 identity) —
@@ -173,6 +189,7 @@ struct ProviderSnapshotCache {
     private func save(_ payload: Payload) {
         // mirror 먼저 갱신 — encode 실패해도 세션 내 읽기는 이 쓰기를 반영(persist만 best-effort).
         memo.withLock { $0 = payload }
+        guard persistsWrites else { return }
         // encode 실패는 크게 log — 조용히 삼키면 snapshot이 persisted cache에서 소리 없이 빠짐.
         do {
             var persisted = payload

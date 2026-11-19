@@ -72,6 +72,24 @@ final class SoftLimitSettingsStoreTests: XCTestCase {
         XCTAssertTrue(SoftLimitSettingsStore(defaults: defaults, labsAvailable: true).enabled)
     }
 
+    func testDisablingLabsClearsRunningConsentWithoutResettingSettings() {
+        let defaults = makeDefaults("active-labs-consent")
+        let store = SoftLimitSettingsStore(defaults: defaults, labsAvailable: true)
+        store.enabled = true
+        store.window = .monthly
+        store.thresholdPercent = 83
+        XCTAssertTrue(store.isActive)
+
+        store.setLabsAvailable(false)
+
+        XCTAssertFalse(store.enabled)
+        XCTAssertFalse(store.isActive)
+        let reloaded = SoftLimitSettingsStore(defaults: defaults, labsAvailable: true)
+        XCTAssertFalse(reloaded.enabled)
+        XCTAssertEqual(reloaded.window, .monthly)
+        XCTAssertEqual(reloaded.thresholdPercent, 83)
+    }
+
     func testThresholdAssignmentsSupportTheFullPercentageRange() {
         let store = SoftLimitSettingsStore(defaults: makeDefaults("assignment-range"), labsAvailable: true)
 

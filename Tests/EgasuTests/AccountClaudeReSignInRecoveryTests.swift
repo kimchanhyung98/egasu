@@ -43,6 +43,64 @@ final class AccountClaudeReSignInRecoveryTests: XCTestCase {
         XCTAssertEqual(saved.profileID, fixture.a.id)
     }
 
+    func testActiveReSignInRestoresLoggedOutCLIWhenCommitFails() throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let file = fixture.root.appendingPathComponent(".claude.json")
+        let preferences = #"{"theme":"dark"}"#
+        let externalCredentials =
+            #"{"claudeAiOauth":{"accessToken":" ","refreshToken":"prior-refresh"},"mcpOAuth":{"provider":"keep-me"}}"#
+        try Data(preferences.utf8).write(to: file)
+        fixture.keychain.currentUserValues[fixture.baseService] = externalCredentials
+        try fixture.switcher.writeWorkspaceAuthentication(AccountSwitchRecoveryFixture.entry("c"), for: fixture.a)
+
+        let keychain = fixture.keychain
+        let defaults = fixture.defaults
+        let base = fixture.baseService
+        keychain.beforeWrite = { service, _ in
+            guard service == base else { return }
+            keychain.beforeWrite = nil
+            defaults.removeObject(forKey: AccountProfilesStore.identityReplacementKey)
+        }
+
+        XCTAssertThrowsError(
+            try fixture.importer.completeReSignIn(profileID: fixture.a.id, in: fixture.store, isActive: true)
+        ) { XCTAssertEqual($0 as? AccountIdentityReplacementError, .invalidTransaction) }
+        XCTAssertNil(try fixture.switcher.readSharedAuthentication(family: "claude"))
+        XCTAssertEqual(keychain.currentUserValues[base], externalCredentials)
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), preferences)
+        try fixture.assertSavedAccountsUnchanged()
+        XCTAssertEqual(fixture.store.profile(id: fixture.a.id)?.identityKey, fixture.a.identityKey)
+    }
+
+    func testGuardedMetadataWritePreservesAnUnrelatedCLIAccount() throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let state = fixture.root.appendingPathComponent(".claude.json")
+        let foreign = AccountSwitchRecoveryFixture.entry("c")
+        let account = try XCTUnwrap(foreign.claudeOAuthAccount)
+        let profile = Data(#"{"oauthAccount":\#(account),"theme":"keep"}"#.utf8)
+        try profile.write(to: state)
+
+        XCTAssertThrowsError(
+            try fixture.switcher.mergeClaudeOAuthAccount(
+                fixture.entryA.claudeOAuthAccount, at: state, expecting: fixture.entryB.claudeOAuthAccount)
+        ) { XCTAssertEqual($0 as? ClaudeAuthError, .credentialsChanged) }
+        XCTAssertEqual(try Data(contentsOf: state), profile)
+    }
+
+    func testWhitespaceAccessTokenDoesNotBlockApplyingSharedLogin() throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        fixture.keychain.currentUserValues[fixture.baseService] =
+            #"{"claudeAiOauth":{"accessToken":"   "},"mcpOAuth":{"provider":"keep-me"}}"#
+        XCTAssertNil(try fixture.switcher.readSharedAuthentication(family: "claude"))
+
+        try fixture.switcher.applySharedAuthentication(fixture.entryB, family: "claude")
+
+        XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), fixture.entryB)
+        let raw = try XCTUnwrap(fixture.keychain.currentUserValues[fixture.baseService])
+        let document = try XCTUnwrap(ProviderParse.jsonObjectWithHexFallback(raw))
+        XCTAssertEqual(document["mcpOAuth"] as? [String: String], ["provider": "keep-me"])
+    }
+
     func testReSignInPreservesNewCLIGenerationWhenVaultWriteTriggersRotation() throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         let replacement = AccountSwitchRecoveryFixture.entry("c")
@@ -66,7 +124,35 @@ final class AccountClaudeReSignInRecoveryTests: XCTestCase {
         XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), rotated)
         XCTAssertEqual(keychain.currentUserValues[fixture.scopedService], alternate.credential)
         XCTAssertEqual(fixture.store.profile(id: fixture.a.id)?.identityKey, fixture.a.identityKey)
+        XCTAssertEqual(try fixture.switcher.loadSnapshot(for: fixture.a), replacement)
         XCTAssertNotNil(try fixture.store.pendingIdentityReplacement())
+    }
+
+    func testActiveReSignInPreservesPeerBundlesPendingSwitch() throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let record = try fixture.stageIntent()
+        try fixture.journal.clear(record)
+        let production = StorageNamespace.productionBundleIdentifier
+        let development = production + ".dev"
+        let peer = AppBundleLocator.current.bundleIdentifier == development ? production : development
+        let namespace = StorageNamespace(bundleIdentifier: peer)
+        let journal = AccountSwitchJournal(
+            path: fixture.root.appendingPathComponent(
+                "Library/Application Support/\(namespace.name)/AccountSignIn/claude-switch.json"
+            ).path)
+        try journal.save(record, replacing: nil)
+        try fixture.switcher.writeWorkspaceAuthentication(AccountSwitchRecoveryFixture.entry("c"), for: fixture.a)
+        let writes = fixture.keychain.writeCount
+
+        XCTAssertThrowsError(
+            try fixture.importer.completeReSignIn(profileID: fixture.a.id, in: fixture.store, isActive: true)
+        ) {
+            XCTAssertEqual($0 as? ClaudeShellLoginMigrationError, .pendingSwitch)
+        }
+        XCTAssertEqual(fixture.keychain.writeCount, writes)
+        XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), fixture.entryA)
+        XCTAssertEqual(try journal.load(), record)
+        XCTAssertNil(try fixture.store.pendingIdentityReplacement())
     }
 
     func testActiveRotationDefersReSignInBeforeCreatingRecoveryOrWritingCredentials() throws {
@@ -169,6 +255,70 @@ final class AccountClaudeReSignInRecoveryTests: XCTestCase {
                 savedReplacement ? replacement : fixture.entryA)
             XCTAssertNil(try fixture.store.pendingIdentityReplacement())
         }
+    }
+
+    func testExternalRenewalRecoveryDiscardsIntentWhenReplacementWasNeverSaved() throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let rotated = try fixture.rotateDefaultCredentials()
+        let generation = try AccountIdentityReplacement.ExternalClaudeGeneration(
+            state: fixture.switcher.readClaudeSwitchState(), previous: fixture.entryA, replacement: rotated)
+        _ = try fixture.store.beginIdentityReplacement(
+            profileID: fixture.a.id, with: fixture.a.identityKey, replacesSharedAuthentication: false,
+            externalClaudeGeneration: generation)
+        let writes = fixture.keychain.writeCount
+
+        XCTAssertFalse(try fixture.importer.recoverInterruptedIdentityReplacement(in: fixture.store))
+        XCTAssertEqual(fixture.keychain.writeCount, writes)
+        XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), rotated)
+        XCTAssertNil(try fixture.store.pendingIdentityReplacement())
+        try fixture.assertSavedAccountsUnchanged()
+    }
+
+    func testVerifiedExternalReplacementRecoversBeforeObservingNewerCLILogin() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let replacement = AccountSwitchRecoveryFixture.entry("c")
+        try fixture.switcher.applySharedAuthentication(replacement, family: "claude")
+        let generation = try AccountIdentityReplacement.ExternalClaudeGeneration(
+            state: fixture.switcher.readClaudeSwitchState(), previous: fixture.entryA, replacement: replacement)
+        _ = try fixture.store.beginIdentityReplacement(
+            profileID: fixture.a.id, with: "acct-c|org-c", replacesSharedAuthentication: false,
+            externalClaudeGeneration: generation)
+        try fixture.switcher.saveSnapshot(replacement, for: fixture.a)
+        try fixture.switcher.applySharedAuthentication(fixture.entryB, family: "claude")
+
+        let result = await claudeReconciliationResult(fixture.importer, in: fixture.store)
+
+        XCTAssertEqual(try result.get(), .updated(profileID: fixture.b.id))
+        XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.b.id)
+        XCTAssertEqual(fixture.store.profile(id: fixture.a.id)?.identityKey, "acct-c|org-c")
+        XCTAssertEqual(try fixture.switcher.loadSnapshot(for: fixture.a), replacement)
+        XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), fixture.entryB)
+        XCTAssertNil(try fixture.store.pendingIdentityReplacement())
+    }
+
+    func testActiveRecoveryKeepsRecordWhenCLIChangesAtIdentityCommit() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let replacement = AccountSwitchRecoveryFixture.entry("c")
+        let record = try beginReplacement(in: fixture, replacement: replacement, identity: "acct-c|org-c")
+        try fixture.switcher.saveSnapshot(replacement, for: fixture.a)
+        let keychain = fixture.keychain
+        let base = fixture.baseService
+        let external = fixture.entryB
+        let account = try XCTUnwrap(external.claudeOAuthAccount)
+        let state = fixture.root.appendingPathComponent(".claude.json")
+        keychain.beforeRead = { service in
+            guard service == base, Thread.isMainThread else { return }
+            keychain.beforeRead = nil
+            keychain.currentUserValues[base] = external.credential
+            try Data(#"{"oauthAccount":\#(account)}"#.utf8).write(to: state)
+        }
+
+        let result = await claudeReconciliationResult(fixture.importer, in: fixture.store)
+
+        XCTAssertThrowsError(try result.get()) { XCTAssertEqual($0 as? ClaudeAuthError, .credentialsChanged) }
+        XCTAssertEqual(try fixture.store.pendingIdentityReplacement(), record)
+        XCTAssertEqual(fixture.store.profile(id: fixture.a.id)?.identityKey, fixture.a.identityKey)
+        XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), external)
     }
 
     func testCrashBetweenAccountAndTokenWritesCompletesThePendingSignIn() throws {

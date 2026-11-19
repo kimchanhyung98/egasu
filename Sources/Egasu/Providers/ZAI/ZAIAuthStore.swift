@@ -7,6 +7,7 @@ struct ZAIAuth: Hashable, Sendable {
 enum ZAIAuthError: Error, LocalizedError, Equatable {
     case missingKey
     case invalidKey
+    case credentialsChanged
     case saveFailed
     case deleteFailed
 
@@ -24,6 +25,8 @@ enum ZAIAuthError: Error, LocalizedError, Equatable {
             return "No Z.ai API key. Set ZAI_API_KEY or add it to \(ZAIAuthStore.configPaths[0])."
         case .invalidKey:
             return "Z.ai API key invalid. Check your key at z.ai/manage-apikey/apikey-list."
+        case .credentialsChanged:
+            return "Z.ai API key changed while refreshing. Refresh again to use the current key."
         case .saveFailed:
             return "Couldn't save the Z.ai API key."
         case .deleteFailed:
@@ -65,6 +68,7 @@ struct ZAIAuthStore: Sendable {
         return ZAIAuth(apiKey: key)
     }
 
+    /// 자동 등록과 타이머는 현재 읽을 수 있는 키만 사용. 실패는 requireAPIKey에서 전달.
     func loadAPIKey() -> ZAIAuth? { try? requireAPIKey() }
     func currentAPIKey() -> String? { loadAPIKey()?.apiKey }
     func keyStatus() -> APIKeyStatus { store.keyStatus() }

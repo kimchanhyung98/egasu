@@ -21,8 +21,8 @@ extension ClaudeAuthError: UserPresentableError {
             .init("Claude login changed during refresh. Refresh again.")
         case .rotationInProgress:
             .init("Claude is renewing a login. Try again when the refresh finishes.")
-        case .invalidOAuthURL(let value):
-            .init("Invalid Claude OAuth URL: %@. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE.", [String(value)])
+        case .invalidOAuthURL:
+            .init("Invalid Claude OAuth URL. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE.")
         }
     }
 }
@@ -323,6 +323,8 @@ extension ZAIAuthError: UserPresentableError {
             .init("No Z.ai API key. Set ZAI_API_KEY or add it to %@.", [ZAIAuthStore.configPaths[0]])
         case .invalidKey:
             .init("Z.ai API key invalid. Check your key at z.ai/manage-apikey/apikey-list.")
+        case .credentialsChanged:
+            .init("Z.ai API key changed while refreshing. Refresh again to use the current key.")
         case .saveFailed:
             .init("Couldn't save the Z.ai API key.")
         case .deleteFailed:

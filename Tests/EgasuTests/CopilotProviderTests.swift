@@ -127,6 +127,18 @@ final class CopilotAuthStoreTests: XCTestCase {
 }
 
 final class CopilotUsageMapperTests: XCTestCase {
+    func testNullChatBucketIsIncompleteEvenWithValidCredits() throws {
+        var body = makePaidBody()
+        var quota = body["quota_snapshots"] as! [String: Any]
+        quota["chat"] = NSNull()
+        body["quota_snapshots"] = quota
+
+        let mapped = try CopilotUsageMapper.map(body: body)
+
+        XCTAssertTrue(mapped.hasIncompleteQuota)
+        XCTAssertNotNil(progress(mapped.lines, "Credits"))
+    }
+
     func testMapsPaidCreditsAndChatAsPercentUsed() throws {
         let mapped = try CopilotUsageMapper.map(body: makePaidBody())
 

@@ -6,11 +6,13 @@ final class UsageReaderTests: XCTestCase {
     private final class StubProvider: ProviderRuntime {
         let provider: Provider
         var widgetDescriptors: [WidgetDescriptor] {
-            [WidgetDescriptor.percent(id: "\(provider.id).weekly", provider: provider, title: "Weekly")
+            descriptorsOverride ?? [
+                .percent(id: "\(provider.id).weekly", provider: provider, title: "Weekly")
                     .exportingLimit("weekly", unit: "percent", estimated: estimated)
                     .supportingSoftLimit(.weekly, acceptsMissingDuration: true)
             ]
         }
+        var descriptorsOverride: [WidgetDescriptor]?
         var refreshCount = 0
         var refreshError: String?
         var refreshedAt = Date()
@@ -93,6 +95,31 @@ final class UsageReaderTests: XCTestCase {
         XCTAssertEqual(provider.refreshCount, 0)
     }
 
+    func testPreflightSkipsOpenCodeEstimatesAndRefreshesMixedProvider() async throws {
+        let defaults = defaults()
+        enableSoftLimit(defaults)
+        let openCode = StubProvider(id: "opencode")
+        openCode.descriptorsOverride = OpenCodeProvider().widgetDescriptors
+        let mixed = StubProvider()
+        mixed.descriptorsOverride =
+            [
+                .percent(id: "stub.estimatedWeekly", provider: mixed.provider, title: "Estimated Weekly")
+                    .exportingLimit("estimatedWeekly", unit: "percent", estimated: true)
+                    .supportingSoftLimit(.weekly, acceptsMissingDuration: true)
+            ] + mixed.widgetDescriptors
+        mixed.observedAt = Date()
+        mixed.used = 95
+        let reader = UsageReader(userDefaults: defaults, providers: [openCode, mixed])
+
+        let ignored = try await reader.checkSoftLimit(cardID: "opencode")
+        let reached = try await reader.checkSoftLimit(cardID: "stub")
+
+        XCTAssertEqual(ignored, .unknown)
+        XCTAssertEqual(openCode.refreshCount, 0)
+        XCTAssertEqual(reached, .reached)
+        XCTAssertEqual(mixed.refreshCount, 1)
+    }
+
     func testPreflightFileLogDistinguishesDisabledProviderAndUnresolvedIdentity() async throws {
         let defaults = defaults()
         enableSoftLimit(defaults)
@@ -131,13 +158,8 @@ final class UsageReaderTests: XCTestCase {
         let reader = UsageReader(userDefaults: defaults, providers: [provider], identityKeys: { ["codex": "current"] })
         let valid = try await reader.checkSoftLimit(cardID: "codex")
         XCTAssertEqual(valid, .belowLimit)
-        var identityChecks = 0
-        let concurrentFailure = UsageReader(userDefaults: defaults, providers: [provider]) {
-            identityChecks += 1
-            if identityChecks == 2 { cache.invalidateLiveQuota(providerID: "codex", identity: "current") }
-            return ["codex": "current"]
-        }
-        let invalidated = try await concurrentFailure.checkSoftLimit(cardID: "codex")
+        cache.invalidateLiveQuota(providerID: "codex", identity: "current")
+        let invalidated = try await reader.checkSoftLimit(cardID: "codex")
         XCTAssertEqual(invalidated, .unknown)
         let unresolved = try await UsageReader(userDefaults: defaults, providers: [provider]).checkSoftLimit(
             cardID: "codex")
@@ -152,17 +174,77 @@ final class UsageReaderTests: XCTestCase {
         XCTAssertEqual(provider.refreshCount, 1)
     }
 
-    func testPreflightRejectsAccountSwitchDuringCurrentRead() async throws {
+    func testPreflightRecognizesSharedInvalidationDuringRefresh() async throws {
         let defaults = defaults()
         enableSoftLimit(defaults)
         let provider = StubProvider(id: "codex")
-        provider.observedAt = Date()
-        var login = "before"
-        provider.onRefresh = { login = "after" }
-        let reader = UsageReader(userDefaults: defaults, providers: [provider], identityKeys: { ["codex": login] })
+        let observedAt = Date().addingTimeInterval(-1)
+        let cache = ProviderSnapshotCache(userDefaults: defaults, now: { observedAt.addingTimeInterval(1) })
+        provider.observedAt = observedAt
+        provider.used = 95
+        provider.onRefresh = { cache.invalidateLiveQuota(providerID: "codex", identity: "current") }
+        let reader = UsageReader(userDefaults: defaults, providers: [provider], identityKeys: { ["codex": "current"] })
+
         let result = try await reader.checkSoftLimit(cardID: "codex")
+
         XCTAssertEqual(result, .unknown)
         XCTAssertEqual(provider.refreshCount, 1)
+        XCTAssertTrue(cache.isQuotaInvalidated(providerID: "codex", observedAt: observedAt))
+    }
+
+    func testPreflightDoesNotPublishAnotherAccountsQuotaDuringAccountSwitch() async throws {
+        let defaults = defaults()
+        enableSoftLimit(defaults)
+        let provider = StubProvider(id: "claude")
+        provider.refreshedAt = Date().addingTimeInterval(-RefreshSetting.interval(for: "claude") - 1)
+        provider.observedAt = provider.refreshedAt
+        let original = await provider.refresh()
+        ProviderSnapshotCache(userDefaults: defaults).store(original, producedByIdentityKey: "account-a")
+        provider.refreshCount = 0
+        provider.refreshedAt = Date()
+        provider.observedAt = provider.refreshedAt
+        var login = "account-a"
+        provider.onRefresh = {
+            login = "account-b"
+            provider.used = 95
+        }
+        let reader = UsageReader(userDefaults: defaults, providers: [provider], identityKeys: { ["claude": login] })
+
+        let switched = try await reader.checkSoftLimit(cardID: "claude")
+        XCTAssertEqual(switched, .unknown)
+        XCTAssertEqual(provider.refreshCount, 1)
+        let appCache = ProviderSnapshotCache(userDefaults: defaults)
+        XCTAssertEqual(appCache.producedByIdentityKey(providerID: "claude"), "account-a")
+        XCTAssertEqual(appCache.loadSnapshots(providerIDs: ["claude"])["claude"]?.lines, original.lines)
+
+        login = "account-a"
+        provider.onRefresh = nil
+        provider.used = 20
+        let returned = try await reader.checkSoftLimit(cardID: "claude")
+        XCTAssertEqual(returned, .belowLimit)
+        XCTAssertEqual(provider.refreshCount, 2)
+    }
+
+    func testFailedPreflightDoesNotInvalidateSharedQuota() async throws {
+        let defaults = defaults()
+        enableSoftLimit(defaults)
+        let provider = StubProvider()
+        let observedAt = Date().addingTimeInterval(-1)
+        provider.observedAt = observedAt
+        let appCache = ProviderSnapshotCache(userDefaults: defaults)
+        appCache.store(await provider.refresh())
+        provider.refreshCount = 0
+        provider.refreshError = "Unavailable"
+        let reader = UsageReader(userDefaults: defaults, providers: [provider])
+
+        let preflight = try await reader.checkSoftLimit(cardID: "stub")
+        XCTAssertEqual(preflight, .unknown)
+        XCTAssertEqual(provider.refreshCount, 1)
+        XCTAssertFalse(appCache.isQuotaInvalidated(providerID: "stub", observedAt: observedAt))
+
+        _ = try await reader.read(providerID: "stub", force: true)
+        XCTAssertEqual(provider.refreshCount, 2)
+        XCTAssertTrue(appCache.isQuotaInvalidated(providerID: "stub", observedAt: observedAt))
     }
 
     func testUnstampedPreflightReadsCurrentLoginAndHonorsRetryAfter() async throws {
