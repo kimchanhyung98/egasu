@@ -9,35 +9,44 @@ macOS 메뉴 막대에서 AI 코딩 구독 사용량을 확인하는 Swift 앱.
 |---|---|
 | ![All Usage Minimal](/docs/assets/all-usage-light.png) | ![All Usage Cards](/docs/assets/all-usage-cards-light.png) |
 
-## Installation
+## 설치
 
-Download the latest universal DMG from the [GitHub releases page](https://github.com/kimchanhyung98/egasu/releases/latest), open it, and drag egasu to your Applications folder.
+macOS 15(Sequoia) 이상 필요.
+DMG 하나로 Apple Silicon과 Intel Mac 모두 지원.
 
-The app updates itself in place via signed, notarized [Sparkle](docs/updates.md) updates. Requires macOS 15 (Sequoia) or later.
+1. 정식 버전은 [최신 정식 릴리스](https://github.com/kimchanhyung98/egasu/releases/latest)의 **Latest** 항목에서, 베타 버전은 [전체 릴리스](https://github.com/kimchanhyung98/egasu/releases)의 **Pre-release** 항목에서 DMG 다운로드.
+2. DMG에서 앱을 응용 프로그램 폴더로 드래그.
+3. 응용 프로그램 폴더에서 앱 실행.
 
-## Supported Providers
+설치한 앱에서 베타 업데이트를 받으려면 **설정 → 일반 → 업데이트 → 베타 업데이트** 켜기.
+영어 화면에서는 **Settings → General → Updates → Beta Updates** 선택.
+서명과 Apple 공증을 마친 새 버전은 [Sparkle로 앱 안에서 업데이트](/docs/updates.md) 가능.
 
-- **[Antigravity](docs/providers/antigravity.md)** — 공유 Gemini·Claude의 5시간·주간 한도, 계정별 Argon 주간 한도와 로컬 사용 이력
-- **[Claude](docs/providers/claude.md)** — session, weekly, model-specific limits, extra usage, local daily spend
-- **[Codex](docs/providers/codex.md)** — session, weekly, credits, local daily spend
-- **[Copilot](docs/providers/copilot.md)** — AI credits, extra usage, organization billing, chat and completions
+## 지원 프로바이더
+
+- **[Claude](/docs/providers/claude.md)** — 세션·주간·모델별 한도, 추가 사용량, 로컬 기록의 일별 지출·토큰.
+- **[Codex](/docs/providers/codex.md)** — 기본·Spark 풀의 세션·주간·월간 한도, 추가 사용 및 한도 재설정 크레딧, 로컬 기록의 일별 지출·토큰.
 - **[Cursor](/docs/providers/cursor.md)** — 전체·Auto·API 사용량, 요청·크레딧, 추가 사용량, 서버 보고 기반 일별 추가 과금·토큰.
   이력 조회 실패 시 같은 계정으로 확인한 마지막 정상 이력 유지.
-- **[Devin](docs/providers/devin.md)** — weekly and daily quota, extra usage balance
-- **[Grok](docs/providers/grok.md)** — weekly shared pool, pay-as-you-go, local daily spend
-- **[Kimi](/docs/providers/kimi.md)** — 5시간·주간·월간 총한도, 추가 지출·잔액. 미충전 지갑의 금액도 0으로 표시.
-- **[Kiro](docs/providers/kiro.md)** — coding credits and subscription plan
+- **[Antigravity](/docs/providers/antigravity.md)** — Gemini 풀과 Claude 등 다른 모델 풀의 5시간·주간 한도, 계정별 Argon 주간 한도와 로컬 사용 이력.
+- **[Copilot](/docs/providers/copilot.md)** — AI 크레딧, 추가 사용량, 조직 사용량·청구액, 채팅·코드 완성 할당량.
+- **[Devin](/docs/providers/devin.md)** — 일간·주간 할당량, 추가 사용 잔액.
+- **[Grok](/docs/providers/grok.md)** — 결제 기간별 주간·월간 공유 한도, 종량제 지출 상한, 로컬 기록의 일별 지출·토큰.
+- **[Kimi](/docs/providers/kimi.md)** — 5시간·주간·월간 총한도, 추가 지출·잔액.
+  미충전 지갑의 금액도 0으로 표시.
+- **[Kiro](/docs/providers/kiro.md)** — 코딩 크레딧과 구독 요금제.
 - **[OpenCode](/docs/providers/opencode.md)** — Go의 세션·주간·월간 한도 추정치, Console과 Go의 로컬 지출·토큰.
   과거 Zen 기록도 Console 집계에 포함.
-- **[OpenRouter](docs/providers/openrouter.md)** — credit balance, daily/weekly/monthly spend (API key)
-- **[Z.ai](docs/providers/zai.md)** — session, weekly, web-search quotas (GLM Coding Plan, API key)
+- **[OpenRouter](/docs/providers/openrouter.md)** — 크레딧 잔액과 일간·주간·월간 지출.
+- **[Z.ai](/docs/providers/zai.md)** — GLM Coding Plan의 세션·주간·월간 할당량과 웹 검색 한도.
 
 대부분의 프로바이더는 Mac의 Keychain, 인증 파일 또는 앱에 저장된 로그인 정보 재사용.
 [OpenRouter](/docs/providers/openrouter.md)와 [Z.ai](/docs/providers/zai.md)는 앱에 저장하거나 지원 환경 변수로 제공한 API 키 사용.
+저장한 API 키를 읽지 못하면 프로바이더 카드에 파일 접근 오류 표시.
 인증 정보는 해당 프로바이더 요청에만 사용.
 익명 요약과 공개 가격표 다운로드는 [개인정보 및 사용 데이터](/docs/privacy.md) 참조.
 
-## Features
+## 주요 기능
 
 - **[메뉴 막대](/docs/menu-bar.md).** 소진 임박·Priority·직접 고정한 항목 중 표시 기준 선택.
   텍스트 또는 막대로 최대 5개 표시.
@@ -51,8 +60,6 @@ The app updates itself in place via signed, notarized [Sparkle](docs/updates.md)
 - **[계정 전환](/docs/cli.md#계정).** Claude·Codex의 기본 인증 저장소를 쓰는 새 CLI 세션에 선택한 로그인 적용.
   이전 OpenUsage가 설치한 Claude 셸 함수는 앱 실행 시 [CLI 로그인을 기본 위치로 이전](/docs/accounts.md#이전-claude-셸-함수-정리)한 뒤 자동 제거.
   Claude 첫 등록·외부 로그인과 계정 전환 중 보존할 변경된 인증은 토큰의 계정·조직을 검증한 뒤 저장본에 반영.
-  Accounts에서 이전 OpenUsage의 Claude 셸 함수가 남은 파일과 제거 방법 안내.
-  셸 설정 파일·터미널 환경을 유지하며, Claude 첫 등록·외부 로그인과 전환 중 보존할 변경된 인증은 토큰의 계정·조직을 검증한 뒤 저장본에 반영.
   선택된 Claude 공유 로그인은 사용량 조회에서도 계정·조직 일치 검증.
 - **[구독 타이머](/docs/refreshing.md#구독-타이머-자동-시작).** Codex·Claude·Antigravity·Kimi·Z.ai의 지원 한도를 확인하고 짧은 구독 메시지로 시작 유도.
   Claude·Antigravity·Kimi·Z.ai는 CLI 준비가 끝난 뒤 서버 한도를 다시 조회.
@@ -62,21 +69,26 @@ The app updates itself in place via signed, notarized [Sparkle](docs/updates.md)
   다섯 조건을 개별 선택하며 기본값은 꺼짐.
   기간 종료 전 잔량 알림은 한도별로 한 기간에 한 번 통지.
 - **[전역 단축키](/docs/settings.md#general).** Settings → General에서 지정한 키 조합으로 패널 열기·닫기.
-- **Accounts.** 계정 추가·전환·재로그인·API 키와 계정별 지표 표시·순서 관리.
+- **[계정 관리](/docs/accounts.md).** Accounts에서 계정 추가·전환·재로그인, API 키와 계정별 지표 표시·순서 관리.
   숨긴 계정 복원과 이름 변경·중단된 Claude 전환 복구 지원.
-- **Stale-while-revalidate.** Cached values display instantly at launch; refresh runs every 5 minutes (15 minutes for Claude).
+- **[사용량 자동 갱신](/docs/refreshing.md).** 앱을 열면 저장된 사용량부터 표시.
+  기본 갱신 주기는 Claude 15분, 나머지 프로바이더 5분.
 - **[iCloud 동기화](/docs/icloud-sync.md).** 여러 Mac의 사용 내역을 선택적으로 합산.
   현재·기존 저장 위치를 함께 읽고 기기별 최신 기록 사용.
-- **[One-shot CLI](docs/cli.md).** Agents can read stable limit JSON through the same five-minute cache (15 minutes for Claude) with `egasu`, or bypass freshness with `egasu --force`; the menu-bar app does not need to be running.
+- **[명령줄](/docs/cli.md).** 메뉴 막대 앱이 꺼져 있어도 `egasu`로 한도와 잔액을 JSON으로 조회.
+  앱과 같은 캐시를 사용하며 `egasu --force`로 캐시 유효 기간이 남아 있어도 새 조회 요청.
   CLI가 포함된 앱의 설정·저장 경로 사용.
+  `egasu soft-limit check <card-id>`의 종료 코드로 새 CLI 작업의 시작 여부를 결정할 수 있음.
   새 설치에서 CLI로 먼저 사용량을 조회해도 앱을 처음 열 때 로컬 프로바이더를 탐지.
   첫 조회 전에 기존 API 키와 Claude의 조회 대기·마지막 정상 사용량 이전.
   기존 Claude 조회가 진행 중이면 완료 후 재시도.
-- **[Local HTTP API](docs/local-http-api.md).** Other local apps can read machine-friendly limits from `127.0.0.1:6736/v1/limits`; the legacy `/v1/usage` UI contract remains supported. It is loopback-only, rejects browser-origin requests, and never serves credentials.
-- **[Proxy support](docs/proxy.md).** Route provider requests through SOCKS5 or HTTP(S) via `~/.openusage/config.json`.
+- **[로컬 HTTP API](/docs/local-http-api.md).** 같은 Mac의 다른 앱에서 `127.0.0.1:6736/v1/limits`로 한도 조회.
+  기존 UI 연동용 `/v1/usage`도 지원.
+  브라우저의 `Origin` 헤더가 있는 요청은 거부하고 응답에서 인증 정보 제외.
+- **[프록시](/docs/proxy.md).** `~/.openusage/config.json`에 설정한 SOCKS5·HTTP·HTTPS 프록시로 프로바이더 요청 전달.
 - **[네이티브 설정](/docs/settings.md).** General·Display·Alerts·Advanced에서 로그인 시 실행, 단축키, 표시, 알림과 진단 설정.
   베타 업데이트를 켜면 [실험실(Labs)](/docs/settings.md#labs)에서 주간·월간 구독 한도에 사용률 기준선을 설정하거나 터미널 도우미 설치·제거 가능.
-- **[Automatic updates](docs/updates.md).** Signed, notarized in-app updates via Sparkle, with an optional beta channel.
+- **[자동 업데이트](/docs/updates.md).** Sparkle이 새 버전의 서명을 확인한 뒤 설치하며, 베타 채널은 설정에서 선택.
 
 
 
@@ -84,8 +96,7 @@ The app updates itself in place via signed, notarized [Sparkle](docs/updates.md)
 
 Behavior docs live in [docs/](docs/README.md): the [dashboard](docs/dashboard.md), [menu bar display](/docs/menu-bar.md), [settings](docs/settings.md), [refresh & caching](docs/refreshing.md), the [CLI](docs/cli.md), the [local HTTP API](docs/local-http-api.md), the [proxy](docs/proxy.md), and one page per provider.
 
-For working on the code, see the developer docs: [architecture](docs/architecture.md), [adding a provider](docs/adding-a-provider.md), and [debugging & capturing logs](docs/debugging.md).
-저장한 API 키를 읽지 못하면 프로바이더 카드에 파일 접근 오류 표시.
+개발자는 [아키텍처](/docs/architecture.md), [프로바이더 추가](/docs/adding-a-provider.md), [디버깅](/docs/debugging.md) 참조.
 사용량 조회·계정 전환 오류를 제보할 때는 [로그 수집 방법](/docs/logging.md#오류-제보용-로그-수집)에 따라 발생 시각 주변의 기록 공유.
 
 ## Requirements

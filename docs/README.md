@@ -13,7 +13,7 @@
 - [대시보드](/docs/dashboard.md) — Priority·All Usage 탭, 지표 표시·고정·순서, 키보드 단축키
 - [메뉴 막대](/docs/menu-bar.md) — 표시 기준 선택과 Priority 고정
 - [계정](/docs/accounts.md) — 계정 추가·전환·복구, API 키, 계정 이름·순서와 지표 설정
-- [설정](/docs/settings.md) — General·Display·Alerts·Advanced의 설정과 적용 조건
+- [설정](/docs/settings.md) — General·Display·Alerts·Advanced의 설정과 베타 업데이트를 켜면 열리는 Labs
 - [새로 고침과 캐싱](/docs/refreshing.md) — 데이터가 갱신되는 시점과 가져오기 실패 시 일어나는 일
 - [iCloud 동기화](/docs/icloud-sync.md) — 여러 Mac의 지출 기록을 합치는 방식
 - [구독과 모델 가격](/docs/pricing.md) — 프로바이더별 구독 이름·가격과 토큰 비용 계산 방식
