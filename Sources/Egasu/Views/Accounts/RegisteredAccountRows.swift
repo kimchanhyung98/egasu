@@ -214,19 +214,16 @@ struct RegisteredAccountRows: View {
                 try Task.checkCancellation()
                 let workspace = AccountSignInWorkspace()
                 let signIn = try workspace.prepareReauthentication(family: profile.family, profileID: profile.id)
+                var saved = false
                 defer {
-                    if let attemptID = signIn.attemptID {
-                        do {
+                    let cleanupError = Self.finishSignInAttempt(family: profile.family, saved: saved) {
+                        if let attemptID = signIn.attemptID {
                             try workspace.remove(family: profile.family, profileID: profile.id, attemptID: attemptID)
-                        } catch {
-                            AppDiagnostics.failure(
-                                .accountSignIn, error: error, providerID: profile.family,
-                                localContext: "Sign-in workspace cleanup failed")
-                            actionError = UserFacingErrors.message(error)
                         }
                     }
+                    if actionError == nil { actionError = cleanupError }
                 }
-                AppLog.info(.auth, "account re-sign-in started \(profile.family) profile \(profile.id.prefix(8))")
+                AppLog.info(.auth, "account re-sign-in started \(profile.family)")
                 let code = try await AccountSignInLauncher().runLogin(
                     family: profile.family, home: signIn.directory.path)
                 try Task.checkCancellation()
@@ -244,7 +241,7 @@ struct RegisteredAccountRows: View {
                     isActive: isSelected,
                     signInAttemptID: signIn.attemptID
                 )
-                AppDiagnostics.record(.accountSignIn, result: .success, providerID: profile.family)
+                saved = true
                 catalogDidChange()
             } catch is CancellationError {
                 AppDiagnostics.record(.accountSignIn, result: .cancelled, providerID: profile.family)
@@ -252,6 +249,25 @@ struct RegisteredAccountRows: View {
                 AppDiagnostics.failure(.accountSignIn, error: error, providerID: profile.family)
                 actionError = UserFacingErrors.message(error)
             }
+        }
+    }
+
+    /// 재로그인 결과는 시도 폴더 정리 후 확정. 이미 실패한 로그인의 정리 오류는 복구 작업으로 기록.
+    static func finishSignInAttempt(family: String, saved: Bool, cleanup: () throws -> Void) -> String? {
+        do {
+            try cleanup()
+            if saved { AppDiagnostics.record(.accountSignIn, result: .success, providerID: family) }
+            return nil
+        } catch {
+            if saved {
+                AppDiagnostics.record(
+                    .accountSignIn, result: .degraded, providerID: family, error: error,
+                    localContext: "remove saved sign-in attempt workspace")
+                return L10n.accounts("Sign-in saved. egasu couldn't remove the temporary sign-in folder.")
+            }
+            AppDiagnostics.failure(
+                .accountRollback, error: error, providerID: family, localContext: "remove sign-in attempt workspace")
+            return UserFacingErrors.message(error)
         }
     }
 

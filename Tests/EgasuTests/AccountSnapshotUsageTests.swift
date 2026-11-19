@@ -27,9 +27,16 @@ final class AccountSnapshotUsageTests: XCTestCase {
             ), profile: profile)
             keychain.requiresInteraction = true
             keychain.assertBackgroundReads = true
+            let workspace = AccountSignInWorkspace(baseDirectory: home.appendingPathComponent("SignIn"))
+            let directory = try workspace.directory(family: "claude", profileID: profile.id)
+            let workspaceService = ClaudeAuthStore.scopedKeychainServiceName(
+                forConfigDirLiteral: directory.path, environment: FakeEnvironment())
+            if hasInterruptedReplacement {
+                keychain.currentUserValues[workspaceService] = #"{"mcpOAuth":{"server":"existing"}}"#
+                keychain.protectedNativeServices.insert(workspaceService)
+            }
             let importer = AccountCredentialImporter(
-                keychain: keychain, environment: FakeEnvironment(), homeDirectory: home,
-                workspace: AccountSignInWorkspace(baseDirectory: home.appendingPathComponent("SignIn"))
+                keychain: keychain, environment: FakeEnvironment(), homeDirectory: home, workspace: workspace
             )
             do {
                 _ = try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: store)
@@ -37,19 +44,39 @@ final class AccountSnapshotUsageTests: XCTestCase {
             } catch {
                 XCTAssertEqual(error.localizedDescription, SnapshotUsageKeychain.approvalError.localizedDescription)
             }
+            XCTAssertEqual(keychain.interactionRequests, [false])
+            XCTAssertTrue(keychain.nativeReads.isEmpty)
             XCTAssertEqual(try store.pendingIdentityReplacement() != nil, hasInterruptedReplacement)
             let result = try await ProviderRefreshContext.$isManual.withValue(true) {
                 try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: store)
             }
             XCTAssertEqual(result, .noUsableAuthentication)
-            XCTAssertEqual(keychain.interactionRequests, hasInterruptedReplacement ? [false, true, true] : [false, true])
+            XCTAssertEqual(
+                keychain.interactionRequests, hasInterruptedReplacement ? [false, true, true] : [false, true])
+            let base = ClaudeAuthStore.baseKeychainServiceName(environment: FakeEnvironment())
+            var expectedReads: [SnapshotUsageKeychain.NativeRead] = [
+                .init(service: base, forCurrentUser: true, allowsInteraction: true, isMainThread: false),
+                .init(service: base, forCurrentUser: false, allowsInteraction: true, isMainThread: false)
+            ]
+            if hasInterruptedReplacement {
+                expectedReads.insert(
+                    .init(
+                        service: workspaceService, forCurrentUser: true, allowsInteraction: true, isMainThread: false),
+                    at: 0)
+                let saved = try XCTUnwrap(keychain.currentUserValues[workspaceService])
+                let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(saved.utf8)) as? [String: Any])
+                XCTAssertEqual((fields["mcpOAuth"] as? [String: String])?["server"], "existing")
+            }
+            XCTAssertEqual(keychain.nativeReads, expectedReads)
             XCTAssertNil(try store.pendingIdentityReplacement())
-            XCTAssertEqual(store.profile(id: profile.id)?.identityKey,
-                           hasInterruptedReplacement ? "saved|org" : "previous|org")
+            XCTAssertEqual(
+                store.profile(id: profile.id)?.identityKey,
+                hasInterruptedReplacement ? "saved|org" : "previous|org")
             if hasInterruptedReplacement {
                 keychain.assertBackgroundReads = false
-                try AccountCredentialVault(keychain: keychain).save(.init(
-                    credential: #"{"claudeAiOauth":{"accessToken":"re-signed-token"}}"#,
+                try AccountCredentialVault(keychain: keychain).save(
+                    .init(
+                        credential: #"{"claudeAiOauth":{"accessToken":"re-signed-token"}}"#,
                     claudeOAuthAccount: #"{"accountUuid":"re-signed","organizationUuid":"org"}"#
                 ), profile: profile)
                 _ = try store.beginIdentityReplacement(
@@ -435,6 +462,15 @@ final class AccountSnapshotUsageTests: XCTestCase {
 
 private final class SnapshotUsageKeychain: KeychainAccessing, @unchecked Sendable {
     static let approvalError = KeychainError.readFailed("Saved account requires Keychain access.")
+    struct NativeRead: Equatable {
+        let service: String
+        let forCurrentUser: Bool
+        let allowsInteraction: Bool
+        let isMainThread: Bool
+    }
+
+    var nativeReads: [NativeRead] = []
+    var protectedNativeServices: Set<String> = []
     var values: [String: String] = [:]
     var currentUserValues: [String: String] = [:]
     var readError: KeychainError?
@@ -452,9 +488,27 @@ private final class SnapshotUsageKeychain: KeychainAccessing, @unchecked Sendabl
         if assertBackgroundReads { XCTAssertFalse(Thread.isMainThread, "Credential probe blocked the main thread") }
         interactionRequests.append(allowInteraction)
         if let readError { throw readError }
-        if requiresInteraction && !allowInteraction { throw Self.approvalError }
+        let stored = forCurrentUser ? currentUserValues[service] : values[service]
+        if requiresInteraction, stored != nil, !allowInteraction { throw Self.approvalError }
         if let failAfterRead, interactionRequests.count > failAfterRead { throw Self.approvalError }
-        return forCurrentUser ? currentUserValues[service] : values[service]
+        return stored
+    }
+
+    func readGenericPassword(service: String, allowInteraction: Bool) throws -> String? {
+        nativeReads.append(
+            .init(
+                service: service, forCurrentUser: false, allowsInteraction: allowInteraction,
+                isMainThread: Thread.isMainThread))
+        return values[service]
+    }
+
+    func readGenericPasswordForCurrentUser(service: String, allowInteraction: Bool) throws -> String? {
+        nativeReads.append(
+            .init(
+                service: service, forCurrentUser: true, allowsInteraction: allowInteraction,
+                isMainThread: Thread.isMainThread))
+        if protectedNativeServices.contains(service), !allowInteraction { throw Self.approvalError }
+        return currentUserValues[service]
     }
 
     func readGenericPassword(service: String) throws -> String? { values[service] }

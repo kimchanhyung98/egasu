@@ -45,6 +45,7 @@ final class AppContainer {
     /// 관리형 launch-profile registry. 런치 account 패스와 Settings 계정 UI가 공유하는 단일 인스턴스.
     let accountProfiles: AccountProfilesStore
     let accountSwitch = AccountSwitchCoordinator()
+    let claudeShellMigrationIssue: LocalizedMessage?
     let accountCardPresentation: AccountCardPresentationStore
     /// 카드 id → 관리형 profile id 매핑. label 편집과 무관하게 안정 — dashboard가 Settings와 같은 profile 선택 가능.
     private var accountProfileIDsByCardID: [String: String]
@@ -74,7 +75,8 @@ final class AppContainer {
 
     /// `isFreshInstall`은 `SettingsMigrator.migrate()` 실행 전 호출자 캡처 필수 — migrator의 schema stamp가
     /// defaults 도메인을 non-empty로 변경. `AppDelegate` 참고.
-    init(isFreshInstall: Bool = false) {
+    init(isFreshInstall: Bool = false, claudeShellMigrationIssue: LocalizedMessage? = nil) {
+        self.claudeShellMigrationIssue = claudeShellMigrationIssue
         let workQueue = BackgroundWorkQueue.shared
         self.workQueue = workQueue
         // login-shell 환경 off-main 선캡처 — Finder/Dock 런치에서도 shell profile의 provider key 해석 가능.

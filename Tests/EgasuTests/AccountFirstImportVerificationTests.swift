@@ -109,6 +109,28 @@ final class AccountFirstImportVerificationTests: XCTestCase {
         }
     }
 
+    func testFirstImportRejectsSameTokenMovedToAnotherStoreDuringVerification() async throws {
+        let fixture = try makeFixture()
+        let source = try XCTUnwrap(fixture.keychain.currentUserValues[fixture.baseService])
+        let directory = fixture.root.appendingPathComponent(".claude")
+        let keychain = fixture.keychain
+        let service = fixture.baseService
+        fixture.http.beforeResponse = {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try Data(source.utf8).write(to: directory.appendingPathComponent(".credentials.json"))
+            keychain.currentUserValues.removeValue(forKey: service)
+        }
+        do {
+            _ = try await fixture.importer.importDefaultAccount(family: "claude", into: fixture.store)
+            XCTFail("Expected the source change to stop the import")
+        } catch {
+            XCTAssertEqual(error as? ClaudeAuthError, .credentialsChanged)
+        }
+        XCTAssertTrue(fixture.store.profiles.isEmpty)
+        XCTAssertTrue(keychain.currentUserValues.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.workspace.baseDirectory.path))
+    }
+
     func testRegistryChangesAndCancellationDuringVerificationPreventRegistration() async throws {
         for mutation in ["registry", "revision", "cancellation"] {
             let fixture = try makeFixture()
@@ -177,11 +199,6 @@ final class AccountFirstImportVerificationTests: XCTestCase {
         let http: ClaudeReconciliationHTTPClient
 
         var baseService: String { ClaudeAuthStore.baseKeychainServiceName(environment: FakeEnvironment()) }
-        var scopedService: String {
-            ClaudeAuthStore.scopedKeychainServiceName(
-                forConfigDirLiteral: root.appendingPathComponent(".claude").path, environment: FakeEnvironment()
-            )
-        }
     }
 
     private func makeFixture() throws -> Fixture {
@@ -227,7 +244,7 @@ final class AccountFirstImportVerificationTests: XCTestCase {
     ) throws {
         XCTAssertTrue(fixture.keychain.values.isEmpty, file: file, line: line)
         XCTAssertEqual(
-            Set(fixture.keychain.currentUserValues.keys), Set([fixture.baseService, fixture.scopedService]),
+            Set(fixture.keychain.currentUserValues.keys), Set([fixture.baseService]),
             file: file, line: line
         )
         XCTAssertFalse(

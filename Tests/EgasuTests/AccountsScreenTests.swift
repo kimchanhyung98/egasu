@@ -7,6 +7,31 @@ import XCTest
 final class AccountsScreenTests: XCTestCase {
     // MARK: - Remove Account…
 
+    func testReauthenticationRecordsASingleSavedOutcomeAfterAttemptCleanup() {
+        let recorder = DiagnosticEventRecorder()
+        XCTAssertNil(RegisteredAccountRows.finishSignInAttempt(family: "codex", saved: true) {})
+        let failure = CocoaError(.fileWriteNoPermission)
+        XCTAssertNotNil(RegisteredAccountRows.finishSignInAttempt(family: "codex", saved: true) { throw failure })
+        XCTAssertEqual(
+            recorder.events,
+            [
+                DiagnosticEvent(.accountSignIn, result: .success, providerID: "codex"),
+                DiagnosticEvent(.accountSignIn, result: .degraded, category: .permission, providerID: "codex")
+            ])
+    }
+
+    func testUnsuccessfulSignInAttemptRecordsOnlyTheFailedCleanup() {
+        let recorder = DiagnosticEventRecorder()
+        XCTAssertNil(RegisteredAccountRows.finishSignInAttempt(family: "codex", saved: false) {})
+        XCTAssertNotNil(
+            RegisteredAccountRows.finishSignInAttempt(family: "codex", saved: false) {
+                throw CocoaError(.fileWriteNoPermission)
+            })
+        XCTAssertEqual(
+            recorder.events,
+            [DiagnosticEvent(.accountRollback, result: .failure, category: .permission, providerID: "codex")])
+    }
+
     func testProvidersMoveOnlyWhenBothHaveASingleAccount() {
         let ids = ["claude", "codex", "codex@ab12cd34", "cursor"]
         XCTAssertTrue(AccountListView.allowsProviderMove("cursor", onto: "claude", among: ids))

@@ -38,6 +38,65 @@ final class ClaudeIdentityRecoveryTests: XCTestCase {
         XCTAssertFalse(http.requests.contains { $0.url.path.hasSuffix("/usage") && $0.headers["Authorization"] == "Bearer token" })
     }
 
+    func testInvalidGrantReloadsCredentialsRotatedByCLI() async {
+        let diagnostics = DiagnosticEventRecorder()
+        let files = FakeFiles([path: refreshableCredentials, metadataPath: claudeUsageTestIdentity()])
+        let rotated = credentials(access: "cli-rotated")
+        let http = RoutingHTTPClient { [path] request in
+            if request.url.path.hasSuffix("/token") {
+                files.files[path] = rotated
+                return Self.invalidGrant()
+            }
+            XCTAssertEqual(request.headers["Authorization"], "Bearer cli-rotated")
+            return Self.usage()
+        }
+
+        let result = await provider(files: files, http: http).refresh()
+
+        XCTAssertEqual(result.line(label: "Session"), Self.session)
+        XCTAssertEqual(http.requests.map(\.url.path), ["/v1/oauth/token", "/api/oauth/usage"])
+        XCTAssertEqual(files.files[path], rotated)
+        let refreshEvents = diagnostics.events.filter { $0.operation == .credentialRefresh }
+        XCTAssertEqual(refreshEvents, [.init(.credentialRefresh, result: .bindingChanged, providerID: "claude")])
+    }
+
+    func testInvalidGrantIsSubmittedOnceForIdenticalKeychainAndFileCredentials() async {
+        let files = FakeFiles([path: refreshableCredentials, metadataPath: claudeUsageTestIdentity()])
+        let keychain = ServiceKeychain()
+        let auth = authStore(files: files, keychain: keychain)
+        keychain.currentUserValues[auth.keychainServiceCandidates().first!] = refreshableCredentials
+        let http = RoutingHTTPClient { request in
+            if request.url.path.hasSuffix("/token") { return Self.invalidGrant() }
+            return HTTPResponse(statusCode: 401, headers: [:], body: Data())
+        }
+
+        let result = await provider(files: files, http: http, keychain: keychain).refresh()
+
+        XCTAssertFalse(result.lines.isEmpty)
+        XCTAssertTrue(result.lines.allSatisfy(\.isError))
+        XCTAssertEqual(http.requests.filter { $0.url.path.hasSuffix("/token") }.count, 1)
+        XCTAssertFalse(http.requests.contains { $0.url.path.hasSuffix("/usage") })
+    }
+
+    func testFileAccessTokenStillWorksAfterSharedRefreshGrantIsRejected() async {
+        let fallback =
+            #"{"claudeAiOauth":{"accessToken":"file-token","refreshToken":"refresh","scopes":["user:profile"]}}"#
+        let files = FakeFiles([path: fallback, metadataPath: claudeUsageTestIdentity()])
+        let keychain = ServiceKeychain()
+        let auth = authStore(files: files, keychain: keychain)
+        keychain.currentUserValues[auth.keychainServiceCandidates().first!] = refreshableCredentials
+        let http = RoutingHTTPClient { request in
+            if request.url.path.hasSuffix("/token") { return Self.invalidGrant() }
+            XCTAssertEqual(request.headers["Authorization"], "Bearer file-token")
+            return request.url.path.hasSuffix("/profile") ? Self.profile() : Self.usage()
+        }
+
+        let result = await provider(files: files, http: http, keychain: keychain).refresh()
+
+        XCTAssertEqual(result.line(label: "Session"), Self.session)
+        XCTAssertEqual(http.requests.map(\.url.path), ["/v1/oauth/token", "/api/oauth/profile", "/api/oauth/usage"])
+    }
+
     func testMetadataLossAndTokenReplacementKeepSavedCooldownAndLastGood() async {
         let store = isolatedClaudeUsageStore()
         let start = Date(timeIntervalSince1970: 1_800_000_000)
@@ -217,6 +276,10 @@ final class ClaudeIdentityRecoveryTests: XCTestCase {
         HTTPResponse(statusCode: 200, headers: [:], body: Data(
             #"{"access_token":"fresh","refresh_token":"refresh-2","expires_in":3600}"#.utf8
         ))
+    }
+
+    private nonisolated static func invalidGrant() -> HTTPResponse {
+        HTTPResponse(statusCode: 400, headers: [:], body: Data(#"{"error":"invalid_grant"}"#.utf8))
     }
 
     private actor ProfileGate {

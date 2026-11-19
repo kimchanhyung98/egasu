@@ -127,6 +127,28 @@ final class ProviderAccountAssemblyTests: XCTestCase {
         XCTAssertTrue(assembly.defaultClaudeExtraLogRoots.isEmpty)
     }
 
+    func testWrapperKeepsTheExportedAccountSeparateFromSharedUsage() {
+        let home = URL(fileURLWithPath: "/Users/dev")
+        let other = "/Users/dev/.claude-work"
+        let environment = FakeEnvironment(["SHELL": "/bin/zsh", "CLAUDE_CONFIG_DIR": other])
+        let files = [
+            "/Users/dev/.zshrc": legacyClaudeZshBlock(home: home),
+            "/Users/dev/.claude/.claude.json": claudeUsageTestIdentity("active"),
+            other + "/.claude.json": claudeUsageTestIdentity("other"),
+            other + "/.credentials.json": #"{"claudeAiOauth":{"accessToken":"other"}}"#
+        ]
+        let observer = DefaultAccountObserver(
+            environment: environment, files: FakeFiles(files), keychain: FakeKeychain(), homeDirectory: { home })
+        var discovery = makeDiscovery(files: files, subdirectories: [other])
+        discovery.environment = environment
+        let assembly = ProviderAccountAssembly.make(
+            observer: observer, accountsStore: ProviderAccountsStore(defaults: makeScratchDefaults()),
+            families: ["claude"], claudeDiscovery: discovery)
+        XCTAssertEqual(assembly.identityKeysByCard["claude"], "active|test-org")
+        XCTAssertTrue(assembly.hasUnregisteredClaudeLogins)
+        XCTAssertTrue(assembly.defaultClaudeExtraLogRoots.isEmpty)
+    }
+
     func testASameAccountConfigDirFoldsOntoTheDefaultCardAsALogRoot() throws {
         let defaults = makeScratchDefaults()
         let store = ProviderAccountsStore(defaults: defaults)
@@ -331,6 +353,8 @@ final class ProviderAccountAssemblyTests: XCTestCase {
         )
 
         let card = try XCTUnwrap(assembly.snapshotCards.first)
+        XCTAssertNil(assembly.identityKeysByCard["claude"])
+        XCTAssertTrue(assembly.claudeManagedSwitchActive, "a cold launch still pins the registered Claude login")
         XCTAssertEqual(assembly.snapshotCards.count, 1)
         XCTAssertEqual(card.family, "claude")
         XCTAssertEqual(card.profileID, personal.id)

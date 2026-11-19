@@ -112,6 +112,14 @@ struct ManagedAccountSignInStep: View {
         let profileID = isFirstAccount ? nil : UUID().uuidString
         signInTask = Task {
             var importingDefault = false
+            var pendingWorkspace: String?
+            defer {
+                if let pendingWorkspace {
+                    importer.cleanup(family: family, context: "remove unregistered sign-in workspace") {
+                        try importer.removeSignInWorkspace(family: family, profileID: pendingWorkspace)
+                    }
+                }
+            }
             do {
                 try Task.checkCancellation()
                 if signInAgain {
@@ -129,10 +137,10 @@ struct ManagedAccountSignInStep: View {
                 // 명시적 재로그인 외에는 현재 기본 로그인부터 검증해 가져오기.
                 importingDefault = profileID == nil && !signInAgain
                 if importingDefault,
-                    let profile = try await importer.importDefaultAccount(family: family, into: store)
+                    try await importer.importDefaultAccount(family: family, into: store) != nil
                 {
                     AppLog.info(
-                        .config, "accounts: imported the signed-in default \(family) account (\(profile.id.prefix(8))…)"
+                        .config, "accounts: imported the signed-in default \(family) account"
                     )
                     finish()
                     return
@@ -141,6 +149,7 @@ struct ManagedAccountSignInStep: View {
                 let workspace = AccountSignInWorkspace()
                 let home: String?
                 if let profileID {
+                    pendingWorkspace = profileID
                     home = try workspace.prepare(family: family, profileID: profileID).path
                 } else {
                     home = nil
@@ -151,7 +160,6 @@ struct ManagedAccountSignInStep: View {
                     AppDiagnostics.record(
                         .accountAdd, result: .failure, category: .subprocess, providerID: family,
                         localContext: "Sign-in process exited with status \(code); no account added")
-                    if let profileID { try? importer.removeSignInWorkspace(family: family, profileID: profileID) }
                     phase = .failed(
                         L10n.accounts("The %@ sign-in did not complete. Nothing was added — try again.", familyTitle))
                     return
@@ -160,13 +168,13 @@ struct ManagedAccountSignInStep: View {
                     guard let credential = try importer.readWorkspaceCredential(family: family, profileID: profileID)
                     else {
                         AppDiagnostics.record(.accountAdd, result: .failure, category: .authInvalid, providerID: family)
-                        try? importer.removeSignInWorkspace(family: family, profileID: profileID)
                         phase = .failed(
                             L10n.accounts(
                                 "The %@ sign-in finished without a usable credential. Nothing was added.", familyTitle))
                         return
                     }
-                    // 새 profile은 등록만 하고 선택하지 않음 — add가 새 터미널의 사용 계정을 조용히 바꾸지 않게 보장.
+                    // 등록을 시작하면 작업 공간 정리도 register가 담당.
+                    pendingWorkspace = nil
                     _ = try importer.register(
                         credential,
                         family: family,
@@ -186,13 +194,7 @@ struct ManagedAccountSignInStep: View {
                 finish()
             } catch is CancellationError {
                 AppDiagnostics.record(.accountAdd, result: .cancelled, providerID: family)
-                if let profileID {
-                    try? importer.removeSignInWorkspace(family: family, profileID: profileID)
-                }
             } catch {
-                if let profileID {
-                    try? importer.removeSignInWorkspace(family: family, profileID: profileID)
-                }
                 let allowsSignInAgain =
                     importingDefault && family == "claude"
                     && !store.hasUnreadableRegistry && store.profiles(family: family).isEmpty

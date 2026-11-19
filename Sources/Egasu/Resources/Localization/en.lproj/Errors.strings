@@ -34,6 +34,7 @@
 "Claude account identity could not be verified. Sign in again before refreshing usage." = "Claude account identity could not be verified. Sign in again before refreshing usage.";
 "Claude account state is invalid: %@" = "Claude account state is invalid: %@";
 "Claude account switch recovery is required. Open Accounts, open the Claude account you want to use, then choose Use Claude." = "Claude account switch recovery is required. Open Accounts, open the Claude account you want to use, then choose Use Claude.";
+"Claude is renewing a login. Try again when the refresh finishes." = "Claude is renewing a login. Try again when the refresh finishes.";
 "Claude login changed during refresh. Refresh again." = "Claude login changed during refresh. Refresh again.";
 "Claude sign-in has not finished updating its account state. Finish signing in and try again." = "Claude sign-in has not finished updating its account state. Finish signing in and try again.";
 "Claude sign-ins in different locations conflict. Open Accounts, open the Claude account, then choose Sign In Again." = "Claude sign-ins in different locations conflict. Open Accounts, open the Claude account, then choose Sign In Again.";
@@ -90,7 +91,6 @@
 "Grok billing response changed." = "Grok billing response changed.";
 "Grok not logged in. Run `grok login`." = "Grok not logged in. Run `grok login`.";
 "Grok sign-in changed while refreshing. Refresh again to use the current account." = "Grok sign-in changed while refreshing. Refresh again to use the current account.";
-"Grok sign-in could not be read. Check access to the Grok auth file and refresh again." = "Grok sign-in could not be read. Check access to the Grok auth file and refresh again.";
 "Invalid Claude OAuth URL: %@. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE." = "Invalid Claude OAuth URL: %@. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE.";
 "Invalid HTTP response." = "Invalid HTTP response.";
 "Invalid account name." = "Invalid account name.";
@@ -166,7 +166,8 @@
 "Refreshed Kimi credentials could not be saved." = "Refreshed Kimi credentials could not be saved.";
 "Run devin auth login or sign in to Devin and try again." = "Run devin auth login or sign in to Devin and try again.";
 "Session Expired" = "Session Expired";
-"Session expired. Run `claude` to log in again." = "Session expired. Run `claude` to log in again.";
+"Claude could not renew this login. For a saved account, open Accounts and choose Sign In Again. Otherwise, run `claude auth login`." = "Claude could not renew this login. For a saved account, open Accounts and choose Sign In Again. Otherwise, run `claude auth login`.";
+"egasu could not identify the Claude sign-in location from your shell configuration. Check the old OpenUsage Claude block in your login shell, then try again." = "egasu could not identify the Claude sign-in location from your shell configuration. Check the old OpenUsage Claude block in your login shell, then try again.";
 "Session expired. Run `codex` to log in again." = "Session expired. Run `codex` to log in again.";
 "Session expired. Sign in via Cursor app or run `agent login`." = "Session expired. Sign in via Cursor app or run `agent login`.";
 "Sign in again to restore usage." = "Sign in again to restore usage.";
@@ -311,3 +312,9 @@
 "Usage timer temporary files could not be removed." = "Usage timer temporary files could not be removed.";
 "Usage timer could not load the CLI model list. Check the CLI login and refresh." = "Usage timer could not load the CLI model list. Check the CLI login and refresh.";
 "Usage timer CLI execution failed. Refresh to try again." = "Usage timer CLI execution failed. Refresh to try again.";
+"The old shell and default Claude CLI use different accounts. Sign in to the same account in both, then restart egasu." = "The old shell and default Claude CLI use different accounts. Sign in to the same account in both, then restart egasu.";
+"Claude sign-in is incomplete. Finish signing in to Claude, then restart egasu to finish migrating the old shell setup." = "Claude sign-in is incomplete. Finish signing in to Claude, then restart egasu to finish migrating the old shell setup.";
+"Finish the pending Claude account switch in Accounts, then restart egasu." = "Finish the pending Claude account switch in Accounts, then restart egasu.";
+"Check access to your shell settings and Claude login files, then restart egasu." = "Check access to your shell settings and Claude login files, then restart egasu.";
+"Another egasu process is migrating the Claude login. Restart egasu after it finishes." = "Another egasu process is migrating the Claude login. Restart egasu after it finishes.";
+"Unlock your Keychain and restart egasu. Allow access to the Claude login if macOS asks." = "Unlock your Keychain and restart egasu. Allow access to the Claude login if macOS asks.";

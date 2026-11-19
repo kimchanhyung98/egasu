@@ -45,7 +45,10 @@ struct AccountSignInProbe: Sendable {
         } catch AccountCredentialVaultError.missingEntry {
             return .needsSignIn
         } catch {
-            AppLog.error(.auth, "account snapshot read failed during readiness probe: \(error.localizedDescription)")
+            AppLog.error(
+                .auth,
+                "account snapshot read failed during readiness probe: category=\(ErrorCategory.classify(error).rawValue)"
+            )
             return .readFailed(UserFacingErrors.message(error))
         }
         guard let snapshot,
@@ -59,8 +62,12 @@ struct AccountSignInProbe: Sendable {
             do {
                 shared = try switcher.readSharedClaudeAuthenticationForReadiness(allowInteraction: allowInteraction)
             } catch {
-                AppLog.error(.auth, "shared Claude home read failed during readiness probe: \(error.localizedDescription)")
-                return error is KeychainError ? .readFailed(UserFacingErrors.message(error)) : .needsSignIn
+                AppLog.error(
+                    .auth,
+                    "shared Claude home read failed during readiness probe: category=\(ErrorCategory.classify(error).rawValue)"
+                )
+                if error is AccountCredentialSwitcher.Error { return .needsSignIn }
+                return .readFailed(UserFacingErrors.message(error))
             }
             guard let shared,
                   switcher.identity(of: shared, family: profile.family)?.identityKey == profile.identityKey

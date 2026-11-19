@@ -45,8 +45,8 @@ final class ClaudeScopedAuthStoreTests: XCTestCase {
         XCTAssertNil(pinned.claudeHomeOverride())
         XCTAssertEqual(pinned.keychainServiceCandidates(), [baseService])
         XCTAssertEqual(
-            pinned.loadCredentialSet().candidates.map(\.oauth.accessToken), ["shared-at", "shared-file-at"],
-                       "credentials come from the shared home, not the ambient override directory")
+            pinned.loadCredentialSet().candidates.map(\.oauth.accessToken), ["shared-at"],
+            "the managed card uses the active Keychain item even if a credential file remains")
     }
 
     @MainActor

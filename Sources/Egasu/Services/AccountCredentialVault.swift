@@ -165,32 +165,85 @@ struct AccountCredentialVault {
     }
 }
 
-/// Codex 인증 비교·쓰기와 계정 전환의 프로세스 내부 직렬화 — 중첩 Vault 호출 허용, 비동기 요청 중 획득 금지.
+/// 프로바이더별 인증 비교·쓰기와 계정 전환 직렬화 — 중첩 Vault 호출 허용, 비동기 요청 중 획득 금지.
 enum AccountCredentialMutationLock {
-    private static let lock = NSRecursiveLock()
-    nonisolated(unsafe) private static var generation: UInt64 = 0
+    private static let codexLock = NSRecursiveLock()
+    private static let claudeLock = NSRecursiveLock()
+    nonisolated(unsafe) private static var claudeRotations = 0
+    nonisolated(unsafe) private static var claudeSwitchInProgress = false
+    nonisolated(unsafe) private static var codexGeneration: UInt64 = 0
+    nonisolated(unsafe) private static var claudeGeneration: UInt64 = 0
 
-    static var revision: UInt64 {
-        lock.lock()
-        defer { lock.unlock() }
-        return generation
+    static func revision(for family: String) -> UInt64 {
+        if family == "claude" { return claudeLock.withLock { claudeGeneration } }
+        return codexLock.withLock { codexGeneration }
     }
 
     static func acquire(family: String = "codex") {
-        guard family == "codex" else { return }
-        lock.lock()
-        generation &+= 1
+        switch family {
+        case "claude":
+            claudeLock.lock()
+            claudeGeneration &+= 1
+        case "codex":
+            codexLock.lock()
+            codexGeneration &+= 1
+        default:
+            break
+        }
     }
 
     static func release(family: String = "codex") {
-        if family == "codex" { lock.unlock() }
+        switch family {
+        case "claude": claudeLock.unlock()
+        case "codex": codexLock.unlock()
+        default: break
+        }
     }
 
-    static func withUnchangedRevision(_ expected: UInt64, _ operation: () throws -> Void) rethrows -> Bool {
+    /// 서버가 토큰을 소비할 수 있는 동안 전환을 보류. HTTP 대기 중에는 락을 잡지 않음.
+    static func beginClaudeRotation(validating check: () throws -> Void) throws {
+        try claudeLock.withLock {
+            guard !claudeSwitchInProgress else { throw ClaudeAuthError.credentialsChanged }
+            try check()
+            claudeRotations += 1
+        }
+    }
+
+    static func endClaudeRotation() {
+        claudeLock.withLock { claudeRotations -= 1 }
+    }
+
+    /// 선택 확정까지 새 갱신을 보류. 비동기 최종 검증 중에도 소유한 락은 없음.
+    static func beginClaudeSwitch() throws {
+        try claudeLock.withLock {
+            try requireIdleClaudeRotation()
+            guard !claudeSwitchInProgress else { throw ClaudeAuthError.credentialsChanged }
+            claudeSwitchInProgress = true
+        }
+    }
+
+    static func endClaudeSwitch() {
+        claudeLock.withLock { claudeSwitchInProgress = false }
+    }
+
+    static func requireIdleClaudeRotation() throws {
+        try claudeLock.withLock {
+            guard claudeRotations == 0 else { throw ClaudeAuthError.rotationInProgress }
+        }
+    }
+
+    static func withUnchangedRevision(
+        _ expected: UInt64, family: String = "codex", _ operation: () throws -> Void
+    ) rethrows -> Bool {
+        let lock = family == "claude" ? claudeLock : codexLock
         lock.lock()
         defer { lock.unlock() }
-        guard generation == expected else { return false }
-        generation &+= 1
+        guard revision(for: family) == expected else { return false }
+        if family == "claude" {
+            claudeGeneration &+= 1
+        } else {
+            codexGeneration &+= 1
+        }
         try operation()
         return true
     }

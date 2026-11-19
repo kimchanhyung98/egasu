@@ -77,6 +77,41 @@ struct AccountIdentityReplacement: Codable, Equatable, Sendable {
     var previousIdentityKey: String
     var replacementIdentityKey: String
     var replacesSharedAuthentication: Bool
+    var claudeGeneration: ClaudeGeneration?
+
+    /// 재로그인 복구는 같은 저장소의 변경 전·후 인증만 이어서 적용.
+    struct ClaudeGeneration: Codable, Equatable, Sendable {
+        var sourceID: String
+        var previousStateFingerprint: String
+        var previousCredentialFingerprint: String?
+        var previousSnapshotFingerprint: String?
+        var replacementCredentialFingerprint: String
+
+        init(
+            state: AccountSwitchJournal.SharedState,
+            previousSnapshot: AccountCredentialVault.Entry?,
+            replacement: AccountCredentialVault.Entry
+        ) throws {
+            guard let sourceID = state.sourceID else { throw ClaudeAuthError.credentialsChanged }
+            self.sourceID = sourceID
+            previousStateFingerprint = try state.fingerprint()
+            previousCredentialFingerprint = state.credentials[0].map(AccountSwitchJournal.fingerprint)
+            previousSnapshotFingerprint = try previousSnapshot.map(Self.fingerprint)
+            replacementCredentialFingerprint = try Self.fingerprint(replacement)
+        }
+
+        static func fingerprint(_ entry: AccountCredentialVault.Entry) throws -> String {
+            AccountSwitchJournal.fingerprint(try ClaudeAccountLoginCredentials.loginOnly(entry.credential))
+        }
+
+        func matchesReplacement(_ state: AccountSwitchJournal.SharedState, identity: String) -> Bool {
+            state.sourceID == sourceID
+                && state.matches(
+                    credentialFingerprint: replacementCredentialFingerprint,
+                    identity: identity, requiresAllSources: true
+                )
+        }
+    }
 }
 
 enum AccountIdentityReplacementError: LocalizedError {
@@ -275,7 +310,8 @@ public final class AccountProfilesStore {
     func beginIdentityReplacement(
         profileID: String,
         with identityKey: String,
-        replacesSharedAuthentication: Bool
+        replacesSharedAuthentication: Bool,
+        claudeGeneration: AccountIdentityReplacement.ClaudeGeneration? = nil
     ) throws -> AccountIdentityReplacement {
         try ensureRegistryWritable()
         guard let profile = profile(id: profileID) else {
@@ -294,7 +330,8 @@ public final class AccountProfilesStore {
             profileID: profile.id,
             previousIdentityKey: profile.identityKey,
             replacementIdentityKey: replacementIdentityKey,
-            replacesSharedAuthentication: replacesSharedAuthentication
+            replacesSharedAuthentication: replacesSharedAuthentication,
+            claudeGeneration: claudeGeneration
         )
         defaults.set(try JSONEncoder().encode(transaction), forKey: Self.identityReplacementKey)
         return transaction

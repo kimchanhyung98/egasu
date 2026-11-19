@@ -6,7 +6,7 @@ final class AccountSwitchRecoveryMutationTests: XCTestCase {
     func testExplicitRetryOfCurrentAccountClearsMixedSwitchAndAllowsReSignIn() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         _ = try fixture.stageIntent()
-        fixture.keychain.currentUserValues[fixture.scopedService] = fixture.entryB.credential
+        fixture.keychain.currentUserValues[fixture.baseService] = fixture.entryB.credential
         XCTAssertThrowsError(try fixture.selectionSwitcher.recoverInterruptedSwitch(in: fixture.store))
         XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.a.id)
 
@@ -69,7 +69,7 @@ final class AccountSwitchRecoveryMutationTests: XCTestCase {
     func testRemovingAnAccountDuringPartialSwitchPreservesItsSnapshotAndWorkspace() throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         let record = try fixture.stageIntent()
-        fixture.keychain.currentUserValues[fixture.scopedService] = fixture.entryB.credential
+        fixture.keychain.currentUserValues[fixture.baseService] = fixture.entryB.credential
         let before = try fixture.switcher.readClaudeSwitchState()
         let writesBefore = fixture.keychain.writeCount
 
@@ -122,9 +122,9 @@ final class AccountSwitchRecoveryMutationTests: XCTestCase {
         try fixture.switcher.applySharedAuthentication(fixture.entryB, family: "claude")
         let started = expectation(description: "switch recovery read started")
         let gate = SwitchRecoveryReadGate(started: started)
-        let scoped = fixture.scopedService
+        let base = fixture.baseService
         fixture.keychain.beforeRead = { service in
-            if service == scoped { try gate.pauseOnce() }
+            if service == base { try gate.pauseOnce() }
         }
         defer { gate.release() }
         let writesBefore = fixture.keychain.writeCount
@@ -151,9 +151,9 @@ final class AccountSwitchRecoveryMutationTests: XCTestCase {
         try fixture.switcher.applySharedAuthentication(fixture.entryB, family: "claude")
         let started = expectation(description: "switch recovery read started")
         let gate = SwitchRecoveryReadGate(started: started)
-        let scoped = fixture.scopedService
+        let base = fixture.baseService
         fixture.keychain.beforeRead = { service in
-            if service == scoped { try gate.pauseOnce() }
+            if service == base { try gate.pauseOnce() }
         }
         defer { gate.release() }
         let writesBefore = fixture.keychain.writeCount

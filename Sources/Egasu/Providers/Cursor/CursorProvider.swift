@@ -227,6 +227,7 @@ final class CursorProvider: ProviderRuntime {
         var currentToken = accessToken
         defer { authState = working }
         let response = try await ProviderAuthRetry.fetch(
+            provider: "cursor",
             token: accessToken,
             attempt: { try await self.usageClient.fetchUsage(accessToken: $0) },
             refreshAccessToken: {

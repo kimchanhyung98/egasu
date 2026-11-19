@@ -24,7 +24,7 @@ final class AccountExternalLoginFinalReadTests: XCTestCase {
             rootState, fixture.root.appendingPathComponent(".claude/.claude.json"),
             fixture.root.appendingPathComponent(".claude/.credentials.json")
         ]
-        let beforeFiles = try cliFiles.map { try Data(contentsOf: $0) }
+        let beforeFiles = cliFiles.map { try? Data(contentsOf: $0) }
         let registry = fixture.defaults.data(forKey: AccountProfilesStore.storageKey)
         let writes = keychain.writeCount
         let scoped = keychain.currentUserValues[fixture.scopedService]
@@ -39,7 +39,7 @@ final class AccountExternalLoginFinalReadTests: XCTestCase {
         XCTAssertEqual(keychain.currentUserValues[baseService], external.credential)
         XCTAssertEqual(keychain.currentUserValues[fixture.scopedService], scoped)
         XCTAssertEqual(keychain.writeCount, writes)
-        XCTAssertEqual(try cliFiles.map { try Data(contentsOf: $0) }, beforeFiles)
+        XCTAssertEqual(cliFiles.map { try? Data(contentsOf: $0) }, beforeFiles)
         XCTAssertEqual(fixture.defaults.data(forKey: AccountProfilesStore.storageKey), registry)
         XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.a.id)
         XCTAssertEqual(fixture.store.authenticationRevision, 0)

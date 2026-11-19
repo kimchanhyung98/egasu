@@ -64,18 +64,12 @@ struct ProviderAccountAssembly: Equatable {
         let codexManaged = families.contains("codex")
             && !profileStore.profiles(family: "codex").isEmpty
             && FileManager.default.fileExists(atPath: sharedCodexAuthFile)
-        // managed Claude 전환은 `~/.claude`에 identity read 고정 — ambient CLAUDE_CONFIG_DIR로 관리 계정과 관찰 계정이 갈리는 것 방지.
-        let claudeManaged = families.contains("claude")
-            && !profileStore.profiles(family: "claude").isEmpty
         let managedProfiles = profileStore.profiles
         let snapshotProfileIDs = Set(managedProfiles.compactMap { profile in
             AccountCredentialVault().contains(profile: profile) ? profile.id : nil
         })
         return make(
-            observer: DefaultAccountObserver(
-                pinsClaudeSharedHome: claudeManaged,
-                pinsCodexSharedHome: codexManaged
-            ),
+            observer: DefaultAccountObserver(pinsCodexSharedHome: codexManaged),
             accountsStore: accountsStore ?? ProviderAccountsStore(defaults: defaults),
             families: families,
             claudeDiscovery: ClaudeConfigDirDiscovery(),
@@ -84,8 +78,7 @@ struct ProviderAccountAssembly: Equatable {
             snapshotProfileIDs: snapshotProfileIDs,
             codexSharedAuthHome: codexManaged
                 ? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex").path
-                : nil,
-            claudeManagedSwitchActive: claudeManaged
+                : nil
         )
     }
 
@@ -105,9 +98,12 @@ struct ProviderAccountAssembly: Equatable {
         accountProfiles: AccountProfilesStore? = nil,
         managedProfiles: [AccountProfile] = [],
         snapshotProfileIDs: Set<String> = [],
-        codexSharedAuthHome: String? = nil,
-        claudeManagedSwitchActive: Bool = false
+        codexSharedAuthHome: String? = nil
     ) -> ProviderAccountAssembly {
+        // 셸 환경 수집 전에도 등록된 Claude의 기본 카드는 공유 로그인만 사용.
+        let claudeManagedSwitchActive = managedProfiles.contains { $0.family == "claude" && !$0.isArchived }
+        var observer = observer
+        if claudeManagedSwitchActive { observer.pinsClaudeSharedHome = true }
         var identityKeys: [String: String] = [:]
         var defaultHomePaths: [String: String] = [:]
         var observations: [ProviderAccountsStore.AccountObservation] = []
@@ -148,7 +144,7 @@ struct ProviderAccountAssembly: Equatable {
                 AppLog.info(.config, "discovery: claude default login present but its identity is unreadable → skipping extra-account candidates this launch")
             } else {
                 let defaultKey = identityKeys["claude"]
-                let scan = claudeDiscovery.run()
+                let scan = claudeDiscovery.run(observedDefaultHome: defaultHomePaths["claude"])
                 for note in scan.notes {
                     AppLog.info(.config, "discovery: \(note)")
                 }

@@ -4,6 +4,23 @@ import XCTest
 @testable import Egasu
 
 final class AccountCredentialVaultTests: XCTestCase {
+    func testAccountErrorsRetainTheirFailureCategoryWithoutLabelsOrPaths() {
+        let cases: [(any Error, ErrorCategory)] = [
+            (AccountCredentialSwitcher.Error.missingSnapshot("private-account"), .notLoggedIn),
+            (AccountCredentialSwitcher.Error.snapshotIdentityMismatch("private-account"), .authInvalid),
+            (AccountCredentialSwitcher.Error.invalidClaudeState(URL(fileURLWithPath: "/private/account")), .decoding),
+            (AccountCredentialSwitcher.Error.selectionSaveFailed, .storage),
+            (AccountCredentialImporter.ImportError.verificationFailed(family: "claude"), .authInvalid),
+            (AccountCredentialImporter.RemovalError.snapshot, .credentialAccess),
+            (AccountIdentityReplacementError.invalidTransaction, .storage),
+            (AccountProfileError.registryUnreadable, .storage),
+            (AccountSignInWorkspace.WorkspaceError.symlinkedComponent("/private/account"), .storage)
+        ]
+        for (error, expected) in cases {
+            XCTAssertEqual(ErrorCategory.classify(error), expected)
+        }
+    }
+
     func testTokenRotationsDoNotRequireSecurityToolApproval() throws {
         try withFixture { fixture in
             let runner = RejectingVaultProcessRunner()

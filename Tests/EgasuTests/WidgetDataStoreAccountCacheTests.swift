@@ -333,7 +333,7 @@ final class WidgetDataStoreAccountCacheTests: XCTestCase {
         }
     }
 
-    func testUnresolvedCatalogReplacementDiscardsLiveClaudeSnapshotAfterDefaultIdentityIsRemoved() async {
+    func testUnresolvedCatalogReplacementDiscardsLiveClaudeSnapshotAfterDefaultIdentityIsRemoved() async throws {
         let defaults = makeUserDefaults("unresolved-live-replacement")
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let files = FakeFiles([
@@ -370,8 +370,10 @@ final class WidgetDataStoreAccountCacheTests: XCTestCase {
         XCTAssertNil(initial.identityKeysByCard["claude"])
 
         files.files[home + "/.claude.json"] = "{}"
+        let profiles = AccountProfilesStore(defaults: defaults)
+        _ = try profiles.add(family: "claude", label: "Personal", identityKey: "acct-1")
         let replacement = ProviderAccountAssembly.make(
-            observer: observer, accountsStore: accounts, families: ["claude"], claudeManagedSwitchActive: true
+            observer: observer, accountsStore: accounts, families: ["claude"], managedProfiles: profiles.profiles
         )
         XCTAssertNotEqual(initial, replacement)
         XCTAssertNil(replacement.identityKeysByCard["claude"])

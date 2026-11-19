@@ -60,11 +60,13 @@ final class AccountReconciliationErrorTests: XCTestCase {
     func testAuthenticationConflictsAndSwitchRecoveryFailuresKeepActionableDashboardErrorPresentation() throws {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }
-        for error in [
+        let errors: [any Error] = [
+            ClaudeAuthError.rotationInProgress,
             AccountCredentialSwitcher.Error.switchRecoveryRequired,
             AccountCredentialSwitcher.Error.selectionSaveFailed,
             AccountCredentialSwitcher.Error.conflictingClaudeAuthentication
-        ] {
+        ]
+        for error in errors {
             let raw = AppContainer.externalClaudeReconciliationMessage(for: error)
             AppContainer.applyExternalClaudeReconciliationError(
                 raw, to: fixture.store, accountSwitch: fixture.coordinator,

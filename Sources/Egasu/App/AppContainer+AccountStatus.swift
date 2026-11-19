@@ -38,7 +38,7 @@ extension AppContainer {
     }
 
     static func externalClaudeReconciliationMessage(for error: Error) -> String {
-        if let error = error as? ClaudeAuthError, error == .credentialsChanged {
+        if let error = error as? ClaudeAuthError, error == .credentialsChanged || error == .rotationInProgress {
             return error.localizedDescription
         }
         if let error = error as? AccountCredentialSwitcher.Error,

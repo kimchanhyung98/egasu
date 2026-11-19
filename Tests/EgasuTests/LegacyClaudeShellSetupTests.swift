@@ -2,65 +2,48 @@ import Foundation
 import XCTest
 @testable import Egasu
 
-@MainActor
 final class LegacyClaudeShellSetupTests: XCTestCase {
-    func testFindsPairedClaudeMarkersInBothInstallerLocationsWithoutChangingTheFiles() async throws {
+    private func temporaryHome() throws -> URL {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: home) }
-        let fish = home.appendingPathComponent(".config/fish/config.fish")
-        try FileManager.default.createDirectory(at: fish.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let dotfile = home.appendingPathComponent("dotfile")
-        try FileManager.default.createSymbolicLink(
-            at: home.appendingPathComponent(".zshrc"), withDestinationURL: dotfile)
-        let source = """
-            # >>> OpenUsage claude account switching >>>
-            function claude { command claude "$@" }
-            # <<< OpenUsage claude account switching <<<
-            """
-        try Data(source.utf8).write(to: dotfile)
-        let fishContents = Data(source.replacingOccurrences(of: "\n", with: "\r\n").utf8)
-        try fishContents.write(to: fish)
-
-        let check = await LegacyClaudeShellSetup.check(in: home)
-
-        XCTAssertEqual(check.found, ["~/.zshrc", "~/.config/fish/config.fish"])
-        XCTAssertTrue(check.unreadable.isEmpty)
-        XCTAssertEqual(try Data(contentsOf: dotfile), Data(source.utf8))
-        XCTAssertEqual(try Data(contentsOf: fish), fishContents)
-    }
-
-    func testIgnoresOtherProvidersReferencesAndIncompleteOrReversedMarkers() async throws {
-        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: home) }
+            .resolvingSymlinksInPath()
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
-        let source = """
-            # >>> OpenUsage codex account switching >>>
-            # <<< OpenUsage codex account switching <<<
-            echo '# >>> OpenUsage claude account switching >>>'
-            # <<< OpenUsage claude account switching <<<
-            # >>> OpenUsage claude account switching >>>
-            """
-        try Data(source.utf8).write(to: home.appendingPathComponent(".zshrc"))
-
-        let check = await LegacyClaudeShellSetup.check(in: home)
-
-        XCTAssertTrue(check.found.isEmpty)
-        XCTAssertTrue(check.unreadable.isEmpty)
+        addTeardownBlock { try? FileManager.default.removeItem(at: home) }
+        return home
     }
 
-    func testReportsAnUnreadableProfileAndStillChecksTheOtherProfile() async throws {
-        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: home) }
-        let zsh = home.appendingPathComponent(".zshrc")
-        try FileManager.default.createDirectory(at: zsh, withIntermediateDirectories: true)
-        let fish = home.appendingPathComponent(".config/fish/config.fish")
-        try FileManager.default.createDirectory(at: fish.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try Data("# >>> OpenUsage claude account switching >>>\n# <<< OpenUsage claude account switching <<<".utf8)
-            .write(to: fish)
+    func testRemovesOnlyOriginalBlockPreservingSymlinkModeAndSurroundingBytes() throws {
+        let home = try temporaryHome()
+        let rc = home.appendingPathComponent(".zshrc")
+        let target = home.appendingPathComponent("dotfile")
+        try FileManager.default.createSymbolicLink(at: rc, withDestinationURL: target)
+        let prefix = Data([0x23, 0xff, 0x0d, 0x0a])
+        let suffix = Data("# custom setting without trailing newline".utf8)
+        let block = (legacyClaudeZshBlock(home: home) + "\n").replacingOccurrences(of: "\n", with: "\r\n")
+        try (prefix + Data(block.utf8) + suffix).write(to: target)
+        try FileManager.default.setAttributes([.posixPermissions: 0o640], ofItemAtPath: target.path)
 
-        let check = await LegacyClaudeShellSetup.check(in: home)
+        try XCTUnwrap(ClaudeLegacyShellProfile.find(in: home).first).remove()
 
-        XCTAssertEqual(check.unreadable, ["~/.zshrc"])
-        XCTAssertEqual(check.found, ["~/.config/fish/config.fish"])
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: rc.path), target.path)
+        XCTAssertEqual(try Data(contentsOf: rc), prefix + suffix)
+        let attributes = try FileManager.default.attributesOfItem(atPath: target.path)
+        XCTAssertEqual(attributes[.posixPermissions] as? Int, 0o640)
+    }
+
+    func testConcurrentShellEditsAndMalformedInstallerBlocksArePreserved() throws {
+        let home = try temporaryHome()
+        let rc = home.appendingPathComponent(".zshrc")
+        let block = legacyClaudeZshBlock(home: home)
+        try Data(block.utf8).write(to: rc)
+        let plan = try XCTUnwrap(ClaudeLegacyShellProfile.find(in: home).first)
+        let changed = Data((block + "\n# edited").utf8)
+        try changed.write(to: rc)
+        XCTAssertThrowsError(try plan.remove())
+        XCTAssertEqual(try Data(contentsOf: rc), changed)
+
+        let modifiedFunction = Data(block.replacingOccurrences(of: "command claude", with: "my-claude").utf8)
+        try modifiedFunction.write(to: rc)
+        XCTAssertThrowsError(try ClaudeLegacyShellProfile.find(in: home))
+        XCTAssertEqual(try Data(contentsOf: rc), modifiedFunction)
     }
 }

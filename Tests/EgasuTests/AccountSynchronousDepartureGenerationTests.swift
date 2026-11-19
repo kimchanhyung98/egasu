@@ -23,7 +23,9 @@ final class AccountSynchronousDepartureGenerationTests: XCTestCase {
                     .write(to: fixture.root.appendingPathComponent(".claude.json"))
             default:
                 fixture.keychain.currentUserValues.removeValue(forKey: fixture.baseService)
-                try FileManager.default.removeItem(at: fixture.root.appendingPathComponent(".claude/.credentials.json"))
+                XCTAssertFalse(
+                    FileManager.default.fileExists(
+                        atPath: fixture.root.appendingPathComponent(".claude/.credentials.json").path))
             }
             let state = try fixture.switcher.readClaudeSwitchState()
             let writes = fixture.keychain.writeCount

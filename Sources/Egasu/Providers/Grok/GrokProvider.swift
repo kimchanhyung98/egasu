@@ -139,6 +139,7 @@ final class GrokProvider: ProviderRuntime {
         var working = state
         defer { state = working }
         return try await ProviderAuthRetry.fetch(
+            provider: "grok",
             token: accessToken,
             attempt: { try await self.usageClient.fetchCreditsConfig(accessToken: $0) },
             refreshAccessToken: {

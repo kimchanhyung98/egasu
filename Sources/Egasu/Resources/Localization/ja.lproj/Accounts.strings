@@ -26,6 +26,7 @@
 "Switch Account?" = "アカウントを切り替えますか？";
 "Switching…" = "切り替え中…";
 "The %@ sign-in did not complete. Nothing was added — try again." = "%@ のログインが完了しませんでした。アカウントは追加されていません。もう一度お試しください。";
+"Sign-in saved. egasu couldn't remove the temporary sign-in folder." = "ログイン情報を保存しました。一時ログインフォルダを削除できませんでした。";
 "The %@ sign-in did not complete. The saved account is unchanged." = "%@ のログインが完了しませんでした。保存済みのアカウントは変更されていません。";
 "The %@ sign-in finished without a usable credential. Nothing was added." = "%@ のログイン後、有効な認証情報を取得できませんでした。アカウントは追加されていません。";
 "The official %@ sign-in opens in your browser. Your current account and terminal sessions stay unchanged." = "ブラウザで %@ の公式ログイン画面が開きます。現在のアカウントとターミナルセッションは変更されません。";
@@ -75,5 +76,4 @@
 "Replace API Key…" = "APIキーを置き換え…";
 
 "Moved metric %@ to position %lld of %lld." = "指標「%1$@」を全 %3$lld 件中 %2$lld 番目に移動しました。";
-"An old shell function can make Claude use a different login. In %@, delete the lines from “%@” through “%@”, including both markers. Then open a new terminal window." = "以前のシェル関数により、Claude が別のログイン情報を使う場合があります。%@ で「%@」の行から「%@」の行まで、両端の行を含めて削除してください。その後、新しいターミナルウインドウを開いてください。";
-"Couldn’t check %@ for the old OpenUsage Claude shell function." = "%@ で以前の OpenUsage の Claude シェル関数を確認できませんでした。";
+"Claude login migration paused. %@" = "Claude のログイン情報の移行を一時停止しました。%@";
