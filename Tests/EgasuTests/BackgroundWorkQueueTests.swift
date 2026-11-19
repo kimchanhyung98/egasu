@@ -201,9 +201,10 @@ final class BackgroundWorkQueueTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: stale.path))
 
         queue.finish(ticket)
-        await scanner.waitForPendingWritesForTesting()
-        XCTAssertFalse(FileManager.default.fileExists(atPath: stale.path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: manifest.path))
+        await queue.run("verify-cache-maintenance") {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: stale.path))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: manifest.path))
+        }
         let restored = IncrementalJSONLScanner<Int>(persistence: persistence, workQueue: queue)
         let cached = await restored.items(from: [discovered], since: .distantPast) { _ in
             XCTFail("The queued write must remain reusable after completion")

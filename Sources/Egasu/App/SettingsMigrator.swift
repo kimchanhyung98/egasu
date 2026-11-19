@@ -210,7 +210,7 @@ enum SettingsMigrator {
         return version
     }
 
-    /// 첫 런치 판별: CLI 키 이전 표시만 있는 도메인은 fresh. 빈 `domainName`도 fresh 취급.
+    /// 앱 실행 전 CLI가 이전 표시와 조회 캐시만 저장한 도메인은 신규 설치로 판정.
     /// 저장소 이전과 설정 이전 전에 호출 필수 — 완료 표시와 schema stamp가 도메인을 변경.
     static func isFreshInstall(
         defaults: UserDefaults = .standard,
@@ -218,6 +218,10 @@ enum SettingsMigrator {
     ) -> Bool {
         guard !domainName.isEmpty else { return true }
         let keys = Set((defaults.persistentDomain(forName: domainName) ?? [:]).keys)
-        return keys.subtracting([StorageMigration.configCompletedKey]).isEmpty
+        guard keys.contains(StorageMigration.configCompletedKey) else { return keys.isEmpty }
+        let cliKeys = [
+            StorageMigration.configCompletedKey, ProviderAccountsStore.storageKey, CopilotProvider.billingOrgDefaultsKey
+        ]
+        return keys.allSatisfy { cliKeys.contains($0) || $0.hasPrefix("openusage.providerSnapshots.v") }
     }
 }

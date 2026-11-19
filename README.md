@@ -61,6 +61,7 @@ The app updates itself in place via signed, notarized [Sparkle](docs/updates.md)
   현재·기존 저장 위치를 함께 읽고 기기별 최신 기록 사용.
 - **[One-shot CLI](docs/cli.md).** Agents can read stable limit JSON through the same five-minute cache (15 minutes for Claude) with `egasu`, or bypass freshness with `egasu --force`; the menu-bar app does not need to be running.
   CLI가 포함된 앱의 설정·저장 경로 사용.
+  새 설치에서 CLI로 먼저 사용량을 조회해도 앱을 처음 열 때 로컬 프로바이더를 탐지.
   첫 조회 전에 기존 API 키와 Claude의 조회 대기·마지막 정상 사용량 이전.
   기존 Claude 조회가 진행 중이면 완료 후 재시도.
 - **[Local HTTP API](docs/local-http-api.md).** Other local apps can read machine-friendly limits from `127.0.0.1:6736/v1/limits`; the legacy `/v1/usage` UI contract remains supported. It is loopback-only, rejects browser-origin requests, and never serves credentials.

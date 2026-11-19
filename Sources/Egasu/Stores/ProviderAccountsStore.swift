@@ -126,7 +126,7 @@ struct ProviderAccountRecord: Codable, Equatable, Sendable {
 @MainActor
 @Observable
 final class ProviderAccountsStore {
-    static let storageKey = "openusage.providerAccounts.v1"
+    nonisolated static let storageKey = "openusage.providerAccounts.v1"
 
     private let defaults: UserDefaults
     private(set) var records: [ProviderAccountRecord]

@@ -17,6 +17,7 @@
 ```
 
 `verify`는 현재 checkout의 `dist/egasu.app/Contents/MacOS/egasu`와 실행 파일 경로가 같은 프로세스만 인정.
+심볼릭 링크로 연 checkout은 실제 경로를 기준으로 실행 파일을 확인.
 운영 앱이나 다른 checkout의 같은 이름 프로세스는 성공으로 계산하지 않음.
 
 스크립트는 서명된 앱 번들을 `dist/`에 생성.
