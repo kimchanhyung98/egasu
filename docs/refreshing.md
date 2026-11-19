@@ -129,6 +129,7 @@ Antigravity의 Argon 한도는 자동 메시지 대상에서 제외.
   API 키만 있는 계정은 자동 메시지 대상에서 제외하고, OAuth 조회와 같은 Code 서버 사용.
 - Antigravity: 공식 `agy --print`와 현재 Keychain 로그인 사용.
   LS 응답만으로 인증 주체를 추정하지 않고, 자동 실행 후보는 Keychain 인증의 Cloud Code 응답으로 재확인.
+  화면 한도와 타이머는 각각 해당 응답을 확인한 시각을 사용.
   CLI 모델 목록에서 해당 풀의 사용 가능한 모델 선택.
 - Z.ai: 공식 지원 도구인 Claude Code의 `--bare`와 Coding Plan 전용 엔드포인트 사용.
   일반 API 과금 엔드포인트로 전환하지 않음.

@@ -188,6 +188,7 @@ final class AntigravityProvider: ProviderRuntime {
             incompleteQuotaWindows: quota?.hasIncompleteWeeklyQuota == true ? [.weekly] : nil,
             liveQuotaObservedAt: quotaObservedAt
         )
+        snapshot.usageTimerObservedAt = usageTimerObservations.first?.observedAt
         snapshot.reportedPartialFailure = (quotaError ?? scanError).map(ErrorCategory.classify)
         return snapshot
     }
