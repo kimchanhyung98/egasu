@@ -6,6 +6,7 @@
 .am-dashboard-tabs, .am-settings-tabs { display: flex; padding: 3px; gap: 2px; border-radius: 999px; background: var(--am-quinary); flex-shrink: 0; }
 .am-settings-tabs { margin: 8px 14px; }
 .am-dashboard-tabs button, .am-settings-tabs button { flex: 1; border: 0; border-radius: 999px; padding: 5px 8px; background: none; color: var(--am-secondary); font: 500 11px var(--am-font); cursor: pointer; }
+.am-settings-tabs:has([data-settings-tab="Labs"]:not([hidden])) button { padding-inline: 2px; }
 .am-dashboard-tabs [aria-selected='true'], .am-settings-tabs [aria-selected='true'] { background: var(--am-track); color: var(--am-primary); }
 .am-family-section { margin-bottom: 18px; }
 .am-family-header { display: flex; align-items: center; gap: 6px; min-height: 24px; padding: 0 6px; margin-bottom: 4px; }
@@ -75,10 +76,8 @@ button.am-account-label { cursor: pointer; }
 [data-priority-group='usedUp'] .am-priority-track, [data-priority-group='usedUp'] .am-priority-row .am-priority-status { display: none; }
 [data-priority-group='usedUp'] .am-priority-text { flex-direction: row; gap: 6px; align-items: baseline; }
 [data-priority-group='usedUp'] .am-priority-account > span { display: none; }
-.am-clear-row { display: flex; gap: 10px; align-items: center; min-height: 46px; padding: 0 4px; }
-.am-clear-row > span:last-child { display: flex; flex-direction: column; font-size: 11px; gap: 1px; color: var(--am-secondary); }
-.am-clear-row b { font-size: 13px; color: var(--am-primary); font-weight: 500; }
-.am-clear-icon { display: grid; place-items: center; width: 32px; height: 32px; background: #30d15829; color: #30a14e; border-radius: 50%; }
+.am-clear-row { display: flex; gap: 10px; align-items: center; min-height: 46px; padding: 0 4px; font-size: 13px; color: var(--am-secondary); }
+.am-clear-icon { width: 32px; height: 32px; border: 1.5px dashed currentColor; border-radius: 50%; }
 [data-priority-notices] { order: 4; }
 .am-priority-notice { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
 .am-priority-notice > span { display: flex; flex-direction: column; gap: 3px; flex: 1; }

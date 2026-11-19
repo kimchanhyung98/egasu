@@ -35,6 +35,15 @@ test('native positional arguments preserve values in Korean and Japanese', () =>
   assert.equal(ko('$7.29/MTok'), '$7.29/MTok');
 });
 
+test('Soft Limit translates observed and estimated percentages in Korean and Japanese', () => {
+  const ko = translator('ko');
+  const ja = translator('ja');
+  assert.equal(ko('97.5% used · Soft limit reached'), '97.5% 사용 · 소프트 한도 도달');
+  assert.equal(ja('97.5% used · Soft limit reached'), '97.5% 使用 · ソフト上限に到達');
+  assert.equal(ko('Estimated usage: 40%'), '추정 사용량 40%');
+  assert.equal(ja('Estimated usage: 40%'), '推定使用率 40%');
+});
+
 test('standalone reset countdowns use native compact durations in Korean and Japanese', () => {
   const ko = translator('ko');
   const ja = translator('ja');

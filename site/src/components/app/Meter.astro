@@ -1,16 +1,18 @@
 ---
 import { boundedView, type BoundedRow } from '../../data/demo';
-import { softLimitWindows } from '../../data/metrics';
-import { quotaSeverity } from '../../data/preview-dashboard';
+import { softLimitWindowFor } from '../../data/metrics';
+import { quotaSeverity, reportsLimit } from '../../data/preview-dashboard';
 import { initialPreviewState } from '../../data/preview-state';
 interface Props { r: BoundedRow; metric?: string }
 const { r, metric } = Astro.props;
 const used = boundedView(r, 'used');
 const left = boundedView(r, 'left');
-const severity = quotaSeverity(r, initialPreviewState().preferences);
+const preferences = initialPreviewState().preferences;
+const severity = quotaSeverity(r, preferences);
+const markerOnFill = used.fill >= Number(preferences.softLimitThreshold);
 const absolute = r.resetAbsolute?.replace(/^Resets /, '');
 const relative = r.resetRelative?.replace(/^Resets in /, '');
-const softLimitWindow = metric && !r.noData && r.limit > 0 ? softLimitWindows[metric] : undefined;
+const softLimitWindow = metric && reportsLimit(r) ? softLimitWindowFor(metric, r.periodHours) : undefined;
 ---
 <div class="am-row" data-metric={metric} data-severity={severity} data-soft-limit-window={softLimitWindow} hidden={r.noData} tabindex="0">
   <b class="am-metric-label">{r.label}</b>
@@ -18,7 +20,7 @@ const softLimitWindow = metric && !r.noData && r.limit > 0 ? softLimitWindows[me
     <i class={`u am-w${used.fill}`}></i><i class={`l am-w${left.fill}`}></i>
     {used.tick >= 0 && r.used < r.limit && <b class={`u am-t${used.tick}`}></b>}
     {left.tick >= 0 && r.used < r.limit && <b class={`l am-t${left.tick}`}></b>}
-    {softLimitWindow && <span class="am-soft-marker" aria-hidden="true"></span>}
+    {softLimitWindow && <span class="am-soft-clip" aria-hidden="true" data-soft-fill={used.fill} data-on-fill={markerOnFill || undefined}><span class="am-soft-marker"></span></span>}
   </span>
   <button type="button" class="am-headline" data-toggle-meter><span class="u">{used.fill}%</span><span class="l">{left.fill}%</span></button>
   {r.notStarted ? <span class="am-reset is-flat">Not Started</span> : <button type="button" class="am-reset" data-toggle-reset><span class="abs" data-preview-time={absolute}>{absolute}</span><span class="rel">{relative}</span></button>}

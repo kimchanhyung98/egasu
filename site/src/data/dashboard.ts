@@ -46,13 +46,13 @@ export const cards: Card[] = [
     plan: 'Max 20x',
     always: [
       // 여유 있게 소비 중 — 파랑.
-      { kind: 'bounded', label: 'Session', used: 3, limit: 100, elapsed: 0.0423,
+      { kind: 'bounded', label: 'Session', periodHours: 5, used: 3, limit: 100, elapsed: 0.0423,
         resetAbsolute: 'Resets today at 18:20', resetRelative: 'Resets in 5h 12m' },
       // 76% 사용이지만 소비 속도가 완만해 한도 안 착지 — 절대 구간(80%) 미만이라 파랑.
-      { kind: 'bounded', label: 'Weekly', used: 76, limit: 100, elapsed: 0.987,
+      { kind: 'bounded', label: 'Weekly', periodHours: 168, used: 76, limit: 100, elapsed: 0.987,
         resetAbsolute: 'Resets today at 16:00', resetRelative: 'Resets in 2h 52m' },
       // 남은 양이 표시 정밀도에서 0 — Limit reached.
-      { kind: 'bounded', label: 'Fable', used: 100, limit: 100, elapsed: 0.987,
+      { kind: 'bounded', label: 'Fable', periodHours: 168, used: 100, limit: 100, elapsed: 0.987,
         resetAbsolute: 'Resets today at 16:00', resetRelative: 'Resets in 2h 52m' },
     ],
     onDemand: [
@@ -73,10 +73,10 @@ export const cards: Card[] = [
     title: 'Codex',
     plan: 'Pro',
     always: [
-      { kind: 'bounded', label: 'Session', used: 28, limit: 100, elapsed: 0.31,
+      { kind: 'bounded', label: 'Session', periodHours: 5, used: 28, limit: 100, elapsed: 0.31,
         resetAbsolute: 'Resets today at 21:00', resetRelative: 'Resets in 3h 27m' },
       // 리셋 전에 한도 초과 예상 — 빨강 + 소진 예상 시각.
-      { kind: 'bounded', label: 'Weekly', used: 97, limit: 100, elapsed: 0.9, runOutAt: 'today at 15:07',
+      { kind: 'bounded', label: 'Weekly', periodHours: 168, used: 97, limit: 100, elapsed: 0.9, runOutAt: 'today at 15:07',
         resetAbsolute: 'Resets Oct 30 at 10:23', resetRelative: 'Resets in 4d 17h' },
     ],
     onDemand: [
@@ -101,16 +101,41 @@ export const cards: Card[] = [
     title: 'Antigravity',
     always: [
       // 아직 첫 메시지를 보내지 않은 session 창.
-      { kind: 'bounded', label: 'Session', used: 0, limit: 100, elapsed: 0, notStarted: true },
-      { kind: 'bounded', label: 'Weekly', used: 16, limit: 100, elapsed: 0.889,
+      { kind: 'bounded', label: 'Session', periodHours: 5, used: 0, limit: 100, elapsed: 0, notStarted: true },
+      { kind: 'bounded', label: 'Weekly', periodHours: 168, used: 16, limit: 100, elapsed: 0.889,
         resetAbsolute: 'Resets tomorrow at 09:35', resetRelative: 'Resets in 19h 44m' },
     ],
     onDemand: [
-      { kind: 'bounded', label: 'Claude', used: 41, limit: 100, elapsed: 0.62,
+      { kind: 'bounded', label: 'Claude', periodHours: 5, used: 41, limit: 100, elapsed: 0.62,
         resetAbsolute: 'Resets tomorrow at 09:35', resetRelative: 'Resets in 19h 44m' },
-      { kind: 'bounded', label: 'Claude Weekly', used: 58, limit: 100, elapsed: 0.889,
+      { kind: 'bounded', label: 'Claude Weekly', periodHours: 168, used: 58, limit: 100, elapsed: 0.889,
         resetAbsolute: 'Resets tomorrow at 09:35', resetRelative: 'Resets in 19h 44m' },
     ],
+    links: [],
+  },
+  {
+    id: 'kiro',
+    icon: 'kiro',
+    provider: 'kiro',
+    title: 'Kiro',
+    always: [
+      { kind: 'bounded', label: 'Credits', periodHours: 30 * 24, used: 23, limit: 50, elapsed: 0.5,
+        resetAbsolute: 'Resets Nov 10 at 10:00', resetRelative: 'Resets in 15d' },
+    ],
+    onDemand: [],
+    links: [],
+  },
+  {
+    id: 'opencode',
+    icon: 'opencode',
+    provider: 'opencode',
+    title: 'OpenCode',
+    plan: 'Go',
+    always: [
+      { kind: 'bounded', label: 'Monthly', periodHours: 30 * 24, estimated: true, used: 24, limit: 60, elapsed: 0.5,
+        resetAbsolute: 'Resets Nov 10 at 10:00', resetRelative: 'Resets in 15d' },
+    ],
+    onDemand: [],
     links: [],
   },
 ];

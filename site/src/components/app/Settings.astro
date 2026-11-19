@@ -14,6 +14,7 @@ const groups = settingGroups.map((group) => ({ ...group, rows: group.rows.map((r
 
 {settingsTabs.map((tab) => (
   <div class="am-screen" id={`${uid}-settings-panel-${tab}`} role="tabpanel" aria-labelledby={`${uid}-settings-tab-${tab}`} data-settings-panel={tab} hidden={tab !== 'General'}>
+    {tab === 'Labs' && <p class="am-note">Experimental features may change or be removed.</p>}
     {groups.filter((group) => group.tab === tab).map((g) => (
       <div class="am-group" data-settings-group={g.id}>
         <b>
@@ -41,6 +42,7 @@ const groups = settingGroups.map((group) => ({ ...group, rows: group.rows.map((r
                       <span class:list={['am-toggle', { 'is-on': control.on }]} role="img" aria-label={control.on ? 'On' : 'Off'} />
                     ))}
                   {control.kind === 'action' && <button type="button" class="am-chip" data-native-action={control.message}>{control.label}</button>}
+                  {control.kind === 'terminalHelper' && <button type="button" class="am-chip" data-terminal-helper disabled={!nav}>Install…</button>}
                   {control.kind === 'number' && <span class="am-number-wrap"><input class="am-number" type="number" min={control.min} max={control.max} step="1" value={control.value} aria-label={label} data-number-setting={id} disabled={!nav} /><span>%</span></span>}
                   {control.kind === 'picker' &&
                     (nav ? (
@@ -75,16 +77,17 @@ const groups = settingGroups.map((group) => ({ ...group, rows: group.rows.map((r
             <div class="am-alert-columns"><span>Condition</span><span>Show in Priority</span><span>Receive Alerts</span></div>
             {alertConditions.map((condition) => <div class="am-alert-columns">
               <span>{condition.label}</span>
-              {condition.shown ? <button type="button" class="am-toggle is-on" role="switch" aria-checked="true" data-setting={condition.shown} aria-label={`${condition.label}, Show in Priority`} /> : <span class="am-note">Always Shown</span>}
+              <button type="button" class="am-toggle is-on" role="switch" aria-checked="true" data-setting={condition.shown} aria-label={`${condition.label}, Show in Priority`} />
               <button type="button" class="am-toggle" role="switch" aria-checked="false" data-setting={condition.notify} aria-label={`${condition.label}, Receive Alerts`} />
             </div>)}
           </>}
           {g.id === 'menuBar' && <div class="am-menu-bar-preview" data-menu-bar-preview role="region" aria-label="Menu Bar Preview" />}
-          {g.id === 'softLimit' && <>
-            <details data-requires="softLimitEnabled" hidden><summary>Cancellation Status</summary><p class="am-note">Automatic cancellation is currently unavailable.</p></details>
-            <details><summary>Connect Codex</summary><p class="am-note">Start the local server, then open a Codex terminal connected to it:</p><pre class="am-note"><code>codex app-server daemon start<br />codex --remote unix://</code></pre></details>
-            <p class="am-note">The Codex cancellation connection has been tested, but automatic cancellation is unavailable until account scope is verified. Other Codex sessions and other providers are not protected yet.</p>
-          </>}
+          {g.id === 'softLimit' && <details data-requires="softLimitEnabled" hidden>
+            <summary>Quota Status</summary>
+            <div class="am-soft-statuses" data-soft-statuses></div>
+            <p class="am-note" data-soft-cancellation hidden>Automatic cancellation is unavailable for these accounts.</p>
+            <p class="am-note" data-soft-empty hidden>No enabled accounts support this period.</p>
+          </details>}
           {g.id === 'icloud' && <p class="am-note" data-icloud-preview hidden>iCloud syncing is available in the Mac app. This preview does not share data.</p>}
           {g.id === 'notifications' && <div class="am-item am-action-row" data-notification-permission hidden><button type="button" class="am-chip" data-native-action="Allow notifications in the Mac app to receive usage alerts.">Allow Notifications</button></div>}
         </div>

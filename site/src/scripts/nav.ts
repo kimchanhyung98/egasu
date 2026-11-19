@@ -90,6 +90,7 @@ function pill(mock: HTMLElement, text: string, notice = false): void {
 function sync(mock: HTMLElement): void {
   const focus = document.activeElement;
   applySettingsToMock(mock);
+  if (mock.dataset.settingsTab === 'Labs' && !previewState().preferences.betaUpdates) settingsTab(mock, 'General');
   renderDashboard(mock, previewState());
   localizePreview(mock);
   fitHeight(mock);
@@ -214,7 +215,7 @@ export function initPopoverNav(): void {
         updatePreviewState(setMetric(previewState(), id, accountID, action));
         const focus = mock.contains(trigger) && !trigger.closest('[hidden]')
           ? trigger
-          : mock.querySelector<HTMLElement>('[data-dashboard-tab][aria-selected="true"]');
+          : mock.querySelector<HTMLElement>('.am-dashboard-tabs:not([hidden]) [aria-selected="true"], [data-scr="dashboard"] [data-options]');
         focus?.focus({ preventScroll: true });
       }
       return;
@@ -348,7 +349,7 @@ export function initPopoverNav(): void {
     const active = document.activeElement as HTMLElement | null;
     const tablist = active?.closest('[role="tablist"]:is(.am-dashboard-tabs, .am-settings-tabs)');
     if (tablist && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
-      const tabs = [...tablist.querySelectorAll<HTMLButtonElement>('button[role="tab"]')];
+      const tabs = [...tablist.querySelectorAll<HTMLButtonElement>('button[role="tab"]:not([hidden])')];
       const index = tabs.indexOf(active as HTMLButtonElement);
       if (index < 0) return;
       const offset = event.key === 'ArrowLeft' ? -1 : 1;

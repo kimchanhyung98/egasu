@@ -50,6 +50,13 @@ export async function openSettings(page: Page): Promise<void> {
   await expect(app).toHaveAttribute('data-screen', 'settings');
 }
 
+export async function enableLabs(page: Page): Promise<void> {
+  const app = page.locator('[data-mock]');
+  await app.getByRole('tab', { name: 'General', exact: true }).click();
+  await app.getByRole('switch', { name: 'Beta Updates', exact: true }).click();
+  await app.getByRole('tab', { name: 'Labs', exact: true }).click();
+}
+
 export async function chooseSetting(page: Page, label: string, value: string): Promise<void> {
   const app = page.locator('[data-mock]');
   const group = settingGroups.find((group) => group.rows.some((row) => row.label === label));

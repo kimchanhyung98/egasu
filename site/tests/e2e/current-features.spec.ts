@@ -1,4 +1,4 @@
-import { test, expect, openHome, openSettings, chooseSetting, allUsage, accountDetail } from './fixtures';
+import { test, expect, openHome, openSettings, enableLabs, chooseSetting, allUsage, accountDetail } from './fixtures';
 
 test('Settings information is named and opens while the info button has focus', async ({ page }) => {
   await openHome(page);
@@ -31,7 +31,7 @@ test('settings tooltips stay open while the mouse moves from the info button ont
   const alerts = app.getByRole('tab', { name: 'Alerts', exact: true });
   await alerts.click();
   for (const [name, edge] of [
-    ['When a limit turns into a priority', 'left'],
+    ['When remaining quota becomes low', 'left'],
     ['Alert when Reset Watch expects Codex limits to reset soon', 'right'],
   ]) {
     const button = app.getByRole('button', { name, exact: true });
@@ -61,7 +61,7 @@ test('settings tooltips stay inside the popover near its left and bottom edges',
   const app = page.locator('[data-mock]');
   await app.getByRole('tab', { name: 'Alerts', exact: true }).click();
   const body = app.locator('[data-scr="settings"] .am-body');
-  for (const name of ['When a limit turns into a priority', 'Alert when Reset Watch expects Codex limits to reset soon']) {
+  for (const name of ['When remaining quota becomes low', 'Alert when Reset Watch expects Codex limits to reset soon']) {
     const info = app.getByRole('button', { name, exact: true });
     await info.focus();
     const tooltip = info.locator('[role="tooltip"]');
@@ -111,12 +111,12 @@ test('Soft Limit validates percentages, mirrors its guide, and keeps forecast me
   await openSettings(page);
   const threshold = app.getByRole('spinbutton', { name: 'Threshold' });
   await expect(threshold).toBeHidden();
-  await app.locator('button[data-settings-tab="Advanced"]').click();
+  await enableLabs(page);
   await app.getByRole('switch', { name: 'Enable Soft Limit' }).click();
   await app.locator('[data-soft-confirm]').click();
   await threshold.fill('95');
   await app.locator('[data-settings-group="softLimit"] > b').click();
-  await expect(app).toHaveAttribute('data-soft-limit', 'Weekly');
+  await expect(app).toHaveAttribute('data-soft-limit', 'Weekly and Monthly');
   await threshold.fill('101');
   await app.locator('[data-settings-group="softLimit"] > b').click();
   await expect(threshold).toHaveValue('95');
@@ -126,21 +126,21 @@ test('Soft Limit validates percentages, mirrors its guide, and keeps forecast me
   const markerFraction = () => weekly.evaluate((element) => {
     const track = element.querySelector('.am-meter')!.getBoundingClientRect();
     const marker = element.querySelector('.am-soft-marker')!.getBoundingClientRect();
-    return (marker.left - track.left) / track.width;
+    return (marker.left + marker.width / 2 - track.left) / track.width;
   });
   expect(await markerFraction()).toBeCloseTo(0.95, 2);
   await weekly.locator('[data-toggle-meter]').click();
   expect(await markerFraction()).toBeCloseTo(0.05, 2);
   await openSettings(page);
-  await chooseSetting(page, 'Window', '5 Hours');
+  await chooseSetting(page, 'Window', 'Monthly');
   await app.getByRole('button', { name: 'Back', exact: true }).click();
   await expect(weekly.locator('.am-soft-marker')).toBeHidden();
-  await expect(app.locator('[data-card="claude-account-1"] [data-metric="claude.session"] .am-soft-marker')).toBeVisible();
+  await expect(app.locator('[data-card="claude-account-1"] [data-metric="claude.session"] .am-soft-marker')).toHaveCount(0);
   await expect(app.locator('.am-forecast .am-soft-marker')).toHaveCount(0);
   await page.reload();
-  await expect(app).toHaveAttribute('data-soft-limit', '5 Hours');
+  await expect(app).toHaveAttribute('data-soft-limit', 'Monthly');
   await openSettings(page);
-  await app.locator('button[data-settings-tab="Advanced"]').click();
+  await app.getByRole('tab', { name: 'Labs', exact: true }).click();
   await expect(threshold).toHaveValue('95');
 });
 

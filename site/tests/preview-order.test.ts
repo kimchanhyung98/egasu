@@ -5,8 +5,8 @@ const ids = (state: PreviewState, account: string) => orderedMetrics(state, 'cod
 const a = 'account-1', b = 'account-2';
 test('default order follows the interleaved provider declaration', () => {
   assert.deepEqual(ids(initialPreviewState(), a), [
-    'codex.session', 'codex.weekly', 'codex.trend', 'codex.resetWatch', 'codex.rateLimitResets',
-    'codex.spark', 'codex.sparkWeekly', 'codex.credits', 'codex.today', 'codex.yesterday', 'codex.last30',
+    'codex.session', 'codex.weekly', 'codex.monthly', 'codex.trend', 'codex.resetWatch', 'codex.rateLimitResets',
+    'codex.spark', 'codex.sparkWeekly', 'codex.sparkMonthly', 'codex.credits', 'codex.today', 'codex.yesterday', 'codex.last30',
   ]);
 });
 test('a quota can cross a common row and survive reload without changing the other account', () => {
@@ -35,7 +35,7 @@ test('legacy private-only order keeps the declared common slots', () => {
   const state = initialPreviewState();
   state.metricOrder['codex:' + a] = ['codex.weekly', 'codex.session'];
   const restored = restorePreviewState(JSON.parse(JSON.stringify(state)));
-  assert.deepEqual(ids(restored, a).slice(0, 4), ['codex.weekly', 'codex.session', 'codex.trend', 'codex.resetWatch']);
+  assert.deepEqual(ids(restored, a).slice(0, 5), ['codex.weekly', 'codex.session', 'codex.monthly', 'codex.trend', 'codex.resetWatch']);
 });
 test('restore rejects an unknown account scope and duplicate or foreign metrics', () => {
   const invalid: Array<[string, string[]]> = [['codex:unknown', ['codex.weekly']], ['codex:' + a, ['codex.weekly', 'codex.weekly']], ['codex:' + a, ['claude.session']], ['codex:shared', ['codex.weekly']]];

@@ -20,7 +20,7 @@ export function createTranslator(table: TranslationTable, locale: PreviewLocale)
     }
     pattern += escapePattern(key.slice(start)) + '$';
     const numericArguments = key.match(/%(?:\d+\$)?(?:lld|d)/g)?.length ?? 0;
-    return { pattern: new RegExp(pattern), value,
+    return { pattern: new RegExp(pattern), value, compound: / · | \/ /.test(key),
       weight: (key.startsWith('%') ? 0 : 1000) + key.replace(placeholder, '').length + numericArguments / 10 };
   }).sort((a, b) => b.weight - a.weight);
 
@@ -28,7 +28,6 @@ export function createTranslator(table: TranslationTable, locale: PreviewLocale)
     if (locale === 'en' || depth > 8) return text;
     if (Object.hasOwn(table, text) && !text.includes('%@')) return table[text];
     const parts = text.split(/( · | \/ )/);
-    if (parts.length > 1) return parts.map((part) => translate(part, depth + 1)).join('');
     const date = text.match(/^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{1,2})(?: at (.+))?$/);
     if (date) {
       const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(date[1]) + 1;
@@ -36,6 +35,7 @@ export function createTranslator(table: TranslationTable, locale: PreviewLocale)
       return date[3] ? `${day} ${translate(date[3], depth + 1)}` : day;
     }
     for (const template of templates) {
+      if (parts.length > 1 && !template.compound) continue;
       const match = text.match(template.pattern);
       if (!match) continue;
       let argument = 0;
@@ -45,6 +45,7 @@ export function createTranslator(table: TranslationTable, locale: PreviewLocale)
         return translate(match[index] ?? '', depth + 1);
       });
     }
+    if (parts.length > 1) return parts.map((part) => translate(part, depth + 1)).join('');
     return text;
   };
   return (text) => {

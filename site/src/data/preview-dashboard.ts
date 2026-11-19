@@ -1,6 +1,7 @@
-import { cards, cardRows, accountCardVariants, type Card } from './dashboard.ts';
-import { type Row, type BoundedRow } from './demo.ts';
-import { metricID, metricKey, isSharedMetric, softLimitWindows } from './metrics.ts';
+import { cards, cardRows, accountCardVariants, emptyCard, type Card } from './dashboard.ts';
+import { boundedView, type Row, type BoundedRow } from './demo.ts';
+import { providers } from './providers.ts';
+import { metricID, metricKey, isSharedMetric, providerMetrics, softLimitWindows, softLimitWindowFor, type SoftLimitWindow } from './metrics.ts';
 import { orderedMetrics, type PreviewState } from './preview-state.ts';
 
 export type PriorityGroup = 'runningOut' | 'usedUp' | 'useItOrLoseIt';
@@ -23,16 +24,52 @@ export function quotaSeverity(row: BoundedRow, preferences: PreviewState['prefer
     : left <= parseInt(String(preferences.warning)) ? 'warning' : 'normal';
 }
 
-function reportsLimit(row: Row): row is BoundedRow {
-  return row.kind === 'bounded' && row.limit > 0 && !row.noData;
+export function priorityGauge(row: Row, mode: 'used' | 'left') {
+  if (row.kind !== 'bounded') return { fill: row.kind === 'forecast' ? row.probability : 0, angle: null };
+  const { fill, tick } = boundedView(row, mode);
+  return { fill: Math.min(100, Math.max(0, fill)), angle: row.used < row.limit && tick >= 0 ? tick * 3.6 : null };
+}
+
+export function reportsLimit(row: Row): row is BoundedRow {
+  return row.kind === 'bounded' && !row.noData && Number.isFinite(row.limit) && row.limit > 0 &&
+    row.used >= 0 && Number.isFinite(row.used / row.limit);
+}
+
+function orderedAccountCards(cards: Card[], order?: string[]): Card[] {
+  return order ? cards.sort((a, b) => order.indexOf(a.accountID ?? '') - order.indexOf(b.accountID ?? '')) : cards;
+}
+
+export function softLimitAccountStatuses(state: PreviewState, input: Card[] = cards) {
+  const period = state.preferences.softLimitWindow;
+  const includes = (window: SoftLimitWindow | undefined) => window && (period === 'Weekly and Monthly' || period === window);
+  return state.providerOrder.flatMap((id) => {
+    if (!state.enabledProviders.includes(id) || !providerMetrics[id].rows.some((metric) => softLimitWindows[metric.id]?.some(includes))) return [];
+    const name = providers.find((provider) => provider.id === id)!.name;
+    const sample = input.find((card) => card.provider === id) ?? emptyCard(id, name);
+    return orderedAccountCards(accountCardVariants(sample), state.accountOrder[id]).map((card) => {
+      const matching = cardRows(card).filter((row): row is BoundedRow => {
+        const metric = metricID(id, row.label);
+        return reportsLimit(row) && !!metric && !!includes(softLimitWindowFor(metric, row.periodHours));
+      });
+      const reported = matching.filter((row) => !row.estimated);
+      const readings = reported.length ? reported : matching;
+      let message = 'Quota not verified';
+      if (readings.length) {
+        const fraction = Math.max(...readings.map((row) => row.used / row.limit));
+        const percent = fraction.toLocaleString('en-US', { style: 'percent', maximumFractionDigits: 1, roundingMode: 'floor' });
+        message = !reported.length ? `Estimated usage: ${percent}`
+          : fraction >= Number(state.preferences.softLimitThreshold) / 100 ? `${percent} used · Soft limit reached` : `${percent} used`;
+      }
+      return { provider: id, name, accountID: card.accountID, message };
+    });
+  });
 }
 
 /** 공개 예시만 계산. 프로바이더 API·로컬 인증을 읽지 않음. */
 export function dashboardLines(state: PreviewState, input: Card[] = cards.flatMap(accountCardVariants)): DashboardLine[] {
   return state.providerOrder.flatMap((provider) => {
     if (!state.enabledProviders.includes(provider)) return [];
-    const accounts = input.filter((card) => card.provider === provider).sort((a, b) =>
-      (state.accountOrder[provider]?.indexOf(a.accountID ?? '') ?? 0) - (state.accountOrder[provider]?.indexOf(b.accountID ?? '') ?? 0));
+    const accounts = orderedAccountCards(input.filter((card) => card.provider === provider), state.accountOrder[provider]);
     return accounts.flatMap((card) => {
       const accountID = card.accountID ?? 'default';
       const order = orderedMetrics(state, provider, accountID).map((metric) => metric.id);
@@ -48,11 +85,13 @@ export function dashboardLines(state: PreviewState, input: Card[] = cards.flatMa
         if (reportsLimit(row)) {
           line.severity = quotaSeverity(row, state.preferences);
           const fraction = row.used / row.limit;
-          const period = softLimitWindows[id] === 'Weekly' ? 168 : 5;
+          const period = row.periodHours;
           const runway = fraction >= 0.05 && row.elapsed > 0 ? (1 - fraction) * period * row.elapsed / fraction : undefined;
           const reset = period * (1 - row.elapsed);
+          const showThreshold = (line.severity === 'warning' && state.preferences.showWarning)
+            || (line.severity === 'critical' && state.preferences.showCritical);
           if (fraction >= 1) { line.group = 'usedUp'; line.rank = reset; }
-          else if (line.severity !== 'normal' || (state.preferences.showBurningFast && runway !== undefined && runway < reset && !row.notStarted)) {
+          else if (showThreshold || (state.preferences.showBurningFast && runway !== undefined && runway < reset && !row.notStarted)) {
             line.group = 'runningOut'; line.rank = runway ?? 1_000_000 + 1 - fraction;
           } else if (state.preferences.showUseItOrLoseIt && period > 24 && reset > 0 && reset <= 24 && fraction < 0.5) {
             line.group = 'useItOrLoseIt'; line.rank = reset;

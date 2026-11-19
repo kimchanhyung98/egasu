@@ -26,7 +26,8 @@ interface Props {
 const { parts = ['spend', 'claude', 'codex', 'antigravity'], footer = true, label, start = 'dashboard', nav = false, uid, demonstration = false } = Astro.props;
 const selected = cards.filter((card) => parts.includes(card.id as never));
 const shown = selected.flatMap((card) => demonstration ? accountCardVariants(card).slice(0, 1) : accountCardVariants(card));
-const dormant = nav && !demonstration ? providers.filter((provider) => !cards.some((card) => card.id === provider.id)).map((provider) => emptyCard(provider.id, provider.name)) : [];
+const dormant = nav && !demonstration ? providers.filter((provider) => !selected.some((card) => card.id === provider.id))
+  .map((provider) => cards.find((card) => card.id === provider.id) ?? emptyCard(provider.id, provider.name)) : [];
 const has = (screen: Screen): boolean => nav || start === screen;
 const groups = providers.filter((provider) => [...shown, ...dormant].some((card) => card.provider === provider.id));
 const initialDashboardTab = demonstration ? 'Priority' : 'All Usage';
@@ -47,7 +48,7 @@ const optionItems = [
       <div class="am-dashboard-tabs" role="tablist" aria-label="Dashboard">
         {['Priority', 'All Usage'].map((tab) => <button type="button" role="tab" aria-selected={tab === initialDashboardTab} tabindex={tab === initialDashboardTab ? 0 : -1} aria-controls={`${uid}-${tab === 'Priority' ? 'priority' : 'all-usage'}`} data-dashboard-tab={tab}>{tab}</button>)}
       </div>
-      <div id={`${uid}-priority`} role="tabpanel" aria-label="Priority" data-dashboard-panel="Priority" hidden={initialDashboardTab !== 'Priority'}><Priority providerIDs={selected.map((card) => card.provider)} /></div>
+      <div id={`${uid}-priority`} role="tabpanel" aria-label="Priority" data-dashboard-panel="Priority" hidden={initialDashboardTab !== 'Priority'}><Priority providerIDs={groups.map((provider) => provider.id)} /></div>
       <div id={`${uid}-all-usage`} role="tabpanel" aria-label="All Usage" data-dashboard-panel="All Usage" hidden={initialDashboardTab !== 'All Usage'}>
         <p class="am-note" data-hidden-metrics-notice hidden>No usage to show. Check visible metrics in Accounts.</p>
         {groups.map((provider) => <section class="am-family-section" data-family={provider.id} hidden={!selected.some((card) => card.provider === provider.id)}>
@@ -92,7 +93,7 @@ const optionItems = [
   </div><p class="am-note">Add and sign in to accounts in the Mac app.</p></div></div></div>}
   {has('settings') && <div class="am-scr" data-scr="settings" hidden={start !== 'settings'}>
     <TopBar title="Settings" back={nav ? 'dashboard' : undefined} />
-    <div class="am-settings-tabs" role="tablist" aria-label="Settings">{settingsTabs.map((tab) => <button type="button" role="tab" id={`${uid}-settings-tab-${tab}`} aria-controls={`${uid}-settings-panel-${tab}`} aria-selected={tab === 'General'} tabindex={tab === 'General' ? 0 : -1} data-settings-tab={tab}>{tab}</button>)}</div>
+    <div class="am-settings-tabs" role="tablist" aria-label="Settings">{settingsTabs.map((tab) => <button type="button" role="tab" id={`${uid}-settings-tab-${tab}`} aria-controls={`${uid}-settings-panel-${tab}`} aria-selected={tab === 'General'} tabindex={tab === 'General' ? 0 : -1} data-settings-tab={tab} data-requires={tab === 'Labs' ? 'betaUpdates' : undefined} hidden={tab === 'Labs'}>{tab}</button>)}</div>
     <div class="am-body"><Settings nav={nav} uid={uid} /></div>
   </div>}
   {nav && <>
@@ -107,6 +108,10 @@ const optionItems = [
       <h2 id={`${uid}-switch-title`}>Switch Account?</h2><p id={`${uid}-switch-description`} data-account-confirm-text></p>
       <div class="am-dialog-actions"><button type="button" class="am-chip" data-account-cancel>Cancel</button><button type="button" class="am-chip am-confirm" data-account-confirm>Switch Account</button></div>
     </dialog>
-    <dialog class="am-account-dialog" data-soft-limit-dialog aria-labelledby={`${uid}-soft-title`}><h2 id={`${uid}-soft-title`}>Enable Soft Limit?</h2><p>Shows the limit guide and allows cancellation only for verified client/account connections. The current Codex connection is not account-verified and will not cancel tasks. Unconnected sessions and unsupported providers are not protected.</p><div class="am-dialog-actions"><button type="button" class="am-chip" data-soft-cancel>Cancel</button><button type="button" class="am-chip am-confirm" data-soft-confirm>Enable</button></div></dialog>
+    <dialog class="am-account-dialog" data-soft-limit-dialog aria-labelledby={`${uid}-soft-title`}><h2 id={`${uid}-soft-title`}>Enable Soft Limit?</h2><p>Shows a guide on supported weekly and monthly quota bars. Automatic cancellation requires a verified connection to the same account.</p><div class="am-dialog-actions"><button type="button" class="am-chip" data-soft-cancel>Cancel</button><button type="button" class="am-chip am-confirm" data-soft-confirm>Enable</button></div></dialog>
+    <dialog class="am-account-dialog" data-remove-helper-dialog aria-labelledby={`${uid}-helper-title`} aria-describedby={`${uid}-helper-description`}>
+      <h2 id={`${uid}-helper-title`}>Remove Terminal Helper?</h2><p id={`${uid}-helper-description`}>This removes the sample installation saved in your browser.</p>
+      <form method="dialog" class="am-dialog-actions"><button class="am-chip" data-helper-cancel>Cancel</button><button class="am-chip am-destructive" data-helper-confirm>Remove</button></form>
+    </dialog>
   </>}
 </div>

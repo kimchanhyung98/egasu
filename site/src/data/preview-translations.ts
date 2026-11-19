@@ -21,7 +21,6 @@ export const previewTranslations: Record<string, { ko: string; ja: string }> = {
   'Show account names on the dashboard.': { ko: '대시보드에 계정 이름을 표시합니다.', ja: 'ダッシュボードにアカウント名を表示します。' },
   'Privacy Mode keeps names and email addresses masked.': { ko: 'Privacy Mode에서는 이름과 이메일 주소가 가려집니다.', ja: 'プライバシーモードでは名前とメールアドレスを伏せます。' },
   "egasu is maintained by kimchanhyung98. This website uses sample data.": { ko: "egasu는 kimchanhyung98이 관리합니다. 이 웹사이트는 예시 데이터를 사용합니다.", ja: "egasuはkimchanhyung98が管理しています。このWebサイトはサンプルデータを使用します。" },
-  "Shows the limit guide and allows cancellation only for verified client/account connections. The current Codex connection is not account-verified and will not cancel tasks. Unconnected sessions and unsupported providers are not protected.": { ko: "한도 안내선을 표시합니다. 작업 취소는 클라이언트와 계정 연결을 확인한 경우에만 허용합니다. 현재 Codex 연결은 계정 확인이 되지 않아 작업을 취소하지 않습니다. 연결되지 않은 세션과 지원하지 않는 프로바이더에는 적용되지 않습니다.", ja: "上限の目安線を表示します。タスクのキャンセルはクライアントとアカウントの接続を確認できた場合のみ許可します。現在のCodex接続はアカウント未確認のためタスクをキャンセルしません。未接続のセッションと未対応のプロバイダーには適用されません。" },
   'Reset chance is high': { ko: '초기화 가능성 높음', ja: 'リセットの可能性が高い' },
   'Reset chance is low': { ko: '초기화 가능성 낮음', ja: 'リセットの可能性が低い' },
   '%@ dollars': { ko: '%@ 달러', ja: '%@ドル' },
@@ -43,10 +42,6 @@ export const previewTranslations: Record<string, { ko: string; ja: string }> = {
     ko: '미리보기 설정을 변경했습니다. 실제 설정은 Mac 앱에서 적용하세요.',
     ja: 'プレビューの設定を変更しました。実際の設定はMacアプリで適用してください。',
   },
-  'Preview guide changed. Automatic cancellation is currently unavailable in the Mac app.': {
-    ko: '미리보기 안내선을 변경했습니다. 현재 Mac 앱에서는 작업 자동 취소를 사용할 수 없습니다.',
-    ja: 'プレビューの目安線を変更しました。現在、Macアプリではタスクの自動キャンセルを利用できません。',
-  },
   'Enter a whole percentage from 1 to 100. The previous threshold is unchanged.': {
     ko: '1부터 100까지의 정수를 입력하세요. 기존 기준값을 유지합니다.',
     ja: '1から100までの整数を入力してください。以前のしきい値を維持します。',
@@ -67,9 +62,9 @@ export const previewTranslations: Record<string, { ko: string; ja: string }> = {
     ko: 'Mac 앱에서 Tokscale 프로필에 사용량을 게시하세요. 이 미리보기는 데이터를 업로드하지 않습니다.',
     ja: 'MacアプリからTokscaleのプロフィールに使用量を公開してください。このプレビューはデータをアップロードしません。',
   },
-  'Install the terminal helper from the Mac app.': {
-    ko: 'Mac 앱에서 터미널 도우미를 설치하세요.',
-    ja: 'Macアプリからターミナルヘルパーをインストールしてください。',
+  'This removes the sample installation saved in your browser.': {
+    ko: '브라우저에 저장된 예시 설치 상태를 지웁니다.',
+    ja: 'ブラウザーに保存したサンプルのインストール状態を削除します。',
   },
   'Copy the actual log file path from Settings → Advanced in the Mac app.': {
     ko: 'Mac 앱의 설정 → 고급에서 실제 로그 파일 경로를 복사하세요.',
@@ -111,10 +106,6 @@ export const previewTranslations: Record<string, { ko: string; ja: string }> = {
     ko: 'Mac 앱에서 %@ 사용량을 새로고침하세요. 이 미리보기는 예시 데이터를 사용합니다.',
     ja: 'Macアプリで%@の使用量を更新してください。このプレビューはサンプルデータを使用します。',
   },
-  'Shows a personal limit guide. Automatic cancellation is currently unavailable.': {
-    ko: '직접 설정한 한도 안내선을 표시합니다. 현재 작업 자동 취소는 지원하지 않습니다.',
-    ja: '自分で設定した上限の目安線を表示します。現在、タスクの自動キャンセルは利用できません。',
-  },
   'Notifies you about new public reset forecasts or scheduled resets. Not a guarantee of an account reset.': {
     ko: '새로운 공개 초기화 예측이나 초기화 예정 정보를 알립니다. 계정의 한도 초기화를 보장하지 않습니다.',
     ja: '新しい公開リセット予測やリセット予定を通知します。アカウントの上限リセットを保証するものではありません。',
@@ -125,7 +116,6 @@ export const previewTranslations: Record<string, { ko: string; ja: string }> = {
   },
   'No sample usage for this provider.': { ko: "이 프로바이더의 예시 사용량이 없습니다.", ja: "このプロバイダーのサンプル使用量はありません。" },
   'Copy a usage image from the Mac app.': { ko: "Mac 앱에서 사용량 이미지를 복사하세요.", ja: "Macアプリで使用量の画像をコピーしてください。" },
-  'Nothing is running out.': { ko: "소진이 임박한 한도가 없습니다.", ja: "上限に近づいている項目はありません。" },
   'Pin %@': { ko: "%@ 고정", ja: "%@を固定" },
   'Copy %@': { ko: "%@ 복사", ja: "%@をコピー" },
   'Quit egasu from the Mac app.': { ko: "Mac 앱에서 egasu를 종료하세요.", ja: "Macアプリでegasuを終了してください。" },

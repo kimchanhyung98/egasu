@@ -1,5 +1,6 @@
 import { accountFamilies } from '../data/accounts';
 import { initialPreviewState, changePreference, activateAccount, restorePreviewState, previewTime, accountName, accountEmail, renameAccount, type PreviewState } from '../data/preview-state';
+import { softLimitAccountStatuses } from '../data/preview-dashboard';
 import { languageTags } from '../data/settings';
 import { closeMenu } from './menus';
 import { applyPreviewLanguage, localizePreview, previewAccountDisplayName, setPreviewAccountText } from './localization';
@@ -8,6 +9,7 @@ const STORAGE_KEY = 'openusage.site.preview.v1';
 let state = initialPreviewState();
 let render = (): void => {};
 let notify = (_mock: HTMLElement, _message: string): void => {};
+let verifyingTerminalHelper = false;
 const pending = new WeakMap<HTMLElement, { family: string; id: string; button: HTMLElement }>();
 const appOnlyPreferences = new Set([
   'launchAtLogin', 'warningNotification', 'criticalNotification', 'closeToRunningOut', 'useItOrLoseItNotification',
@@ -58,6 +60,21 @@ function closeAccountDialog(mock: HTMLElement): void {
 }
 
 export function handleSettingsClick(target: Element, mock: HTMLElement): boolean {
+  if (target.closest('[data-terminal-helper]')) {
+    if (!state.preferences.betaUpdates || verifyingTerminalHelper) return true;
+    if (state.terminalHelperInstalled) {
+      mock.querySelector<HTMLDialogElement>('[data-remove-helper-dialog]')!.showModal();
+    } else {
+      verifyingTerminalHelper = true;
+      updatePreviewState({ ...state, terminalHelperInstalled: true });
+      window.setTimeout(() => { verifyingTerminalHelper = false; render(); }, 1000);
+    }
+    return true;
+  }
+  if (target.closest('[data-helper-confirm]')) {
+    if (state.preferences.betaUpdates) updatePreviewState({ ...state, terminalHelperInstalled: false });
+    return true;
+  }
   const native = target.closest<HTMLElement>('[data-native-action]');
   if (native) {
     const menu = native.closest<HTMLElement>('[role="menu"]');
@@ -126,9 +143,46 @@ export function applySettingsToMock(mock: HTMLElement): void {
   mock.dataset.layout = String(preferences.allUsageLayout).toLowerCase();
   mock.dataset.privacy = String(preferences.privacyMode);
   mock.dataset.softLimit = preferences.softLimitEnabled ? String(preferences.softLimitWindow) : 'off';
-  mock.style.setProperty('--soft-limit-used', `${preferences.softLimitThreshold}%`);
-  mock.style.setProperty('--soft-limit-left', `${100 - Number(preferences.softLimitThreshold)}%`);
+  const threshold = Number(preferences.softLimitThreshold);
+  const leftMode = mock.dataset.mode === 'left';
+  mock.style.setProperty('--soft-limit-used', `${threshold}%`);
+  mock.style.setProperty('--soft-limit-left', `${100 - threshold}%`);
+  mock.querySelectorAll<HTMLElement>('[data-soft-fill]').forEach((guide) => {
+    const used = Number(guide.dataset.softFill);
+    const fill = leftMode ? 100 - used : used;
+    guide.toggleAttribute('data-on-fill', fill > 0 && fill >= (leftMode ? 100 - threshold : threshold));
+  });
   mock.querySelectorAll<HTMLElement>('[data-requires]').forEach((element) => { element.hidden = !preferences[element.dataset.requires!]; });
+  const statusList = mock.querySelector<HTMLElement>('[data-soft-statuses]');
+  if (statusList && preferences.softLimitEnabled) {
+    const rows = softLimitAccountStatuses(state).map((status) => {
+      const row = document.createElement('div');
+      const title = document.createElement('strong');
+      title.textContent = status.name;
+      if (status.accountID) {
+        const account = previewAccountDisplayName(state, status.provider, status.accountID);
+        const name = document.createElement('span');
+        setPreviewAccountText(name, (value) => value, account.name, account.literal);
+        title.append(' — ', name);
+      }
+      const detail = document.createElement('span');
+      detail.textContent = status.message;
+      row.append(title, detail);
+      return row;
+    });
+    statusList.replaceChildren(...rows);
+    mock.querySelector<HTMLElement>('[data-soft-empty]')!.hidden = rows.length > 0;
+    mock.querySelector<HTMLElement>('[data-soft-cancellation]')!.hidden = !rows.length;
+  }
+  const helper = mock.querySelector<HTMLButtonElement>('[data-terminal-helper]');
+  if (helper) {
+    helper.textContent = verifyingTerminalHelper ? 'Verifying…' : state.terminalHelperInstalled ? 'Uninstall' : 'Install…';
+    helper.disabled = verifyingTerminalHelper;
+  }
+  if (!preferences.betaUpdates) {
+    mock.querySelectorAll<HTMLDialogElement>('[data-soft-limit-dialog][open], [data-remove-helper-dialog][open]')
+      .forEach((dialog) => dialog.close());
+  }
   mock.querySelectorAll<HTMLInputElement>('[data-number-setting]').forEach((input) => { input.value = String(preferences[input.dataset.numberSetting!]); });
   mock.querySelectorAll<HTMLButtonElement>('[data-setting]').forEach((button) => {
     const on = preferences[button.dataset.setting!] === true;
@@ -181,7 +235,11 @@ export function initPreviewSettings(refresh: () => void, showNotice: typeof noti
   notify = showNotice;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) state = restorePreviewState(JSON.parse(raw));
+    if (raw) {
+      const stored = JSON.parse(raw);
+      state = restorePreviewState(stored);
+      if (stored.preferences?.softLimitWindow === '5 Hours' || (stored.preferences?.softLimitEnabled === true && !state.preferences.softLimitEnabled)) save();
+    }
     else {
       if (localStorage.getItem('openusage.site.meterStyle') === 'left') state = changePreference(state, 'showUsageAs', 'Left');
       if (localStorage.getItem('openusage.site.resetDisplayMode') === 'relative') state = changePreference(state, 'resetTimes', 'Countdown');

@@ -37,6 +37,8 @@ export interface BoundedRow {
   label: string;
   used: number;
   limit: number;
+  periodHours: number;
+  estimated?: boolean;
   /** 리셋 주기 중 지난 비율 0~1. pace 눈금 위치이자 소진 투영의 입력. */
   elapsed: number;
   /** behind일 때 보여 줄 소진 예상 시각. 시각은 파생할 수 없어 입력. */
@@ -101,16 +103,16 @@ export function boundedView(r: BoundedRow, mode: 'used' | 'left') {
   // 값이 없으면 mode와 무관하게 em dash + 빈 트랙. tick -1은 "눈금 없음".
   if (r.noData) return { headline: '—', fill: 0, tick: -1, opposite: '' };
   const shown = mode === 'left' ? Math.max(0, r.limit - r.used) : r.used;
-  const pct = Math.round((shown / r.limit) * 100);
+  const pct = Math.min(100, Math.max(0, Math.round((shown / r.limit) * 100)));
   if (r.notStarted) return { headline: `${pct}% ${mode === 'left' ? 'left' : 'used'}`, fill: pct, tick: -1, opposite: '' };
   return {
-    headline: `${Math.round(shown)}% ${mode === 'left' ? 'left' : 'used'}`,
+    headline: `${pct}% ${mode === 'left' ? 'left' : 'used'}`,
     /** 막대 채움 — mode에 따라 반전됨. 색은 반전되지 않음. */
     fill: pct,
     /** pace 눈금 — mode에 따라 미러링됨. */
     tick: Math.round((mode === 'left' ? 1 - r.elapsed : r.elapsed) * 100),
     /** 반대 mode 문구. 앱은 hover tooltip으로 보여 줌. */
-    opposite: `${Math.round(mode === 'left' ? r.used : r.limit - r.used)}% ${mode === 'left' ? 'used' : 'left'}`,
+    opposite: `${100 - pct}% ${mode === 'left' ? 'used' : 'left'}`,
   };
 }
 

@@ -15,11 +15,13 @@ const declared: Record<string, Array<[string, string]>> = {
   codex: [
     ['codex.session', 'Session'],
     ['codex.weekly', 'Weekly'],
+    ['codex.monthly', 'Monthly'],
     ['codex.trend', 'Usage Trend'],
     ['codex.resetWatch', 'Reset Watch'],
     ['codex.rateLimitResets', 'Rate Limit Resets'],
     ['codex.spark', 'Spark'],
     ['codex.sparkWeekly', 'Spark Weekly'],
+    ['codex.sparkMonthly', 'Spark Monthly'],
     ['codex.credits', 'Extra Usage'],
     ['codex.today', 'Today'],
     ['codex.yesterday', 'Yesterday'],
@@ -59,6 +61,7 @@ const declared: Record<string, Array<[string, string]>> = {
   ],
   grok: [
     ['grok.weekly', 'Weekly'],
+    ['grok.monthly', 'Monthly'],
     ['grok.payAsYouGo', 'Extra Usage'],
     ['grok.trend', 'Usage Trend'],
     ['grok.today', 'Today'],
@@ -94,6 +97,7 @@ const declared: Record<string, Array<[string, string]>> = {
   zai: [
     ['zai.session', 'Session'],
     ['zai.weekly', 'Weekly'],
+    ['zai.monthly', 'Monthly'],
     ['zai.webSearches', 'Web Searches'],
   ],
 };
@@ -104,7 +108,7 @@ const onDemandIDs = new Set([
   'claude.trend', 'claude.extra', 'claude.sonnet',
   'claude.today', 'claude.yesterday', 'claude.last30',
   'codex.trend', 'codex.resetWatch', 'codex.rateLimitResets', 'codex.spark', 'codex.sparkWeekly',
-  'codex.credits', 'codex.today', 'codex.yesterday', 'codex.last30',
+  'codex.sparkMonthly', 'codex.credits', 'codex.today', 'codex.yesterday', 'codex.last30',
   'cursor.onDemand', 'cursor.requests', 'cursor.credits',
   'cursor.today', 'cursor.yesterday', 'cursor.last30',
   'copilot.orgCredits', 'copilot.orgSpend', 'copilot.chat', 'copilot.completions',
@@ -155,29 +159,47 @@ export function metricKey(id: string, account = 'default'): string {
   return isSharedMetric(id) ? id : `${id}@${account}`;
 }
 
-/** 프로바이더가 명시한 Soft Limit 지원 기간. 웹의 고정 예시 지표에 적용. */
-export const softLimitWindows: Partial<Record<string, '5 Hours' | 'Weekly'>> = {
-  'claude.session': '5 Hours',
-  'claude.weekly': 'Weekly',
-  'claude.fable': 'Weekly',
-  'claude.sonnet': 'Weekly',
-  'codex.session': '5 Hours',
-  'codex.weekly': 'Weekly',
-  'codex.spark': '5 Hours',
-  'codex.sparkWeekly': 'Weekly',
-  'antigravity.geminiPro': '5 Hours',
-  'antigravity.geminiWeekly': 'Weekly',
-  'antigravity.claude': '5 Hours',
-  'antigravity.claudeWeekly': 'Weekly',
-  'antigravity.argonWeekly': 'Weekly',
-  'grok.weekly': 'Weekly',
-  'kimi.session': '5 Hours',
-  'kimi.weekly': 'Weekly',
-  'opencode.session': '5 Hours',
-  'opencode.weekly': 'Weekly',
-  'zai.session': '5 Hours',
-  'zai.weekly': 'Weekly',
+export type SoftLimitWindow = 'Weekly' | 'Monthly';
+
+/** 프로바이더가 지원하는 구독 한도 기간. 실제 막대에는 해당 응답의 주기를 대조한 뒤 적용. */
+export const softLimitWindows: Partial<Record<string, readonly SoftLimitWindow[]>> = {
+  'claude.weekly': ['Weekly'],
+  'claude.fable': ['Weekly'],
+  'claude.sonnet': ['Weekly'],
+  'codex.weekly': ['Weekly'],
+  'codex.monthly': ['Monthly'],
+  'codex.sparkWeekly': ['Weekly'],
+  'codex.sparkMonthly': ['Monthly'],
+  'cursor.usage': ['Weekly', 'Monthly'],
+  'cursor.auto': ['Weekly', 'Monthly'],
+  'cursor.api': ['Weekly', 'Monthly'],
+  'cursor.requests': ['Weekly', 'Monthly'],
+  'antigravity.geminiWeekly': ['Weekly'],
+  'antigravity.claudeWeekly': ['Weekly'],
+  'antigravity.argonWeekly': ['Weekly'],
+  'copilot.premium': ['Monthly'],
+  'copilot.chat': ['Monthly'],
+  'copilot.completions': ['Monthly'],
+  'devin.weekly': ['Weekly'],
+  'grok.weekly': ['Weekly'],
+  'grok.monthly': ['Monthly'],
+  'kimi.weekly': ['Weekly'],
+  'kimi.total': ['Monthly'],
+  'kiro.credits': ['Monthly'],
+  'opencode.weekly': ['Weekly'],
+  'opencode.monthly': ['Monthly'],
+  'zai.weekly': ['Weekly'],
+  'zai.monthly': ['Monthly'],
+  'zai.webSearches': ['Weekly', 'Monthly'],
 };
+
+export function softLimitWindowFor(id: string, periodHours?: number): SoftLimitWindow | undefined {
+  if (periodHours === undefined) return id === 'kimi.total' ? 'Monthly' : undefined;
+  return softLimitWindows[id]?.find((window) => {
+    const days = window === 'Weekly' ? [7] : [28, 29, 30, 31];
+    return days.some((day) => Math.abs(periodHours - day * 24) <= 1);
+  });
+}
 
 /** 대시보드 행 라벨 → 지표 id. 라벨이 곧 WidgetDescriptor.title이라 그대로 맞물림. */
 export function metricID(provider: string, title: string): string | undefined {

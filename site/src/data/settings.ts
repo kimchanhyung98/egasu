@@ -1,12 +1,13 @@
 export const languageTags: Record<string, string> = { English: 'en', 한국어: 'ko', 日本語: 'ja' };
-export const settingsTabs = ['General', 'Display', 'Alerts', 'Advanced'] as const;
+export const settingsTabs = ['General', 'Display', 'Alerts', 'Advanced', 'Labs'] as const;
 export type SettingsTab = typeof settingsTabs[number];
 
 export type Control =
   | { kind: 'toggle'; on: boolean }
   | { kind: 'number'; value: string; min: number; max: number }
   | { kind: 'picker'; value: string; options: string[] }
-  | { kind: 'action'; label: string; message: string };
+  | { kind: 'action'; label: string; message: string }
+  | { kind: 'terminalHelper' };
 
 export interface SettingRow {
   id: string;
@@ -25,13 +26,13 @@ export interface SettingGroup {
 }
 
 export const alertConditions = [
-  { label: 'Warning', notify: 'warningNotification' },
-  { label: 'Critical', notify: 'criticalNotification' },
+  { label: 'Warning', shown: 'showWarning', notify: 'warningNotification' },
+  { label: 'Critical', shown: 'showCritical', notify: 'criticalNotification' },
   { label: 'Burning Fast', shown: 'showBurningFast', notify: 'closeToRunningOut' },
   { label: 'Use It or Lose It', shown: 'showUseItOrLoseIt', notify: 'useItOrLoseItNotification' },
 ];
 
-// 현재 앱의 네 탭 구성. 시스템 작업은 Mac 앱에서 수행하도록 안내.
+// 시스템 설정은 미리보기 안에서만 적용.
 export const settingGroups: SettingGroup[] = [
   { id: 'general', title: 'General', tab: 'General', rows: [
     { id: 'launchAtLogin', label: 'Launch at Login', control: { kind: 'toggle', on: false } },
@@ -52,7 +53,7 @@ export const settingGroups: SettingGroup[] = [
   { id: 'updates', title: 'Updates', tab: 'General', rows: [
     { id: 'updateAutomatically', label: 'Check Automatically', control: { kind: 'toggle', on: true } },
     { id: 'betaUpdates', label: 'Beta Updates', control: { kind: 'toggle', on: false },
-      info: 'Receive pre-release builds before they ship to everyone' },
+      info: 'Shows the Labs tab and includes beta versions when checking for updates.' },
     { id: 'checkForUpdates', label: '', control: { kind: 'action', label: 'Check for Updates…', message: 'Check for signed app updates in the Mac app.' } },
   ] },
   { id: 'menuBar', title: 'Menu Bar Icons', tab: 'Display', rows: [
@@ -71,11 +72,11 @@ export const settingGroups: SettingGroup[] = [
     { id: 'showTotalSpend', label: 'Show Total Spend', control: { kind: 'toggle', on: true }, info: 'Combined spend across your providers at the top of the dashboard' },
   ] },
   { id: 'thresholds', title: 'Thresholds', tab: 'Alerts', rows: [
-    { id: 'warning', label: 'Warning', control: { kind: 'picker', value: '30% left', options: Array.from({ length: 11 }, (_, i) => `${70 - i * 5}% left`) }, info: 'When a limit turns into a priority' },
+    { id: 'warning', label: 'Warning', control: { kind: 'picker', value: '30% left', options: Array.from({ length: 11 }, (_, i) => `${70 - i * 5}% left`) }, info: 'When remaining quota becomes low' },
     { id: 'critical', label: 'Critical', control: { kind: 'picker', value: '10% left', options: ['25% left', '20% left', '15% left', '10% left', '5% left'] }, info: 'When a limit turns critically low' },
   ] },
   { id: 'conditions', title: 'Condition', tab: 'Alerts', rows: alertConditions.flatMap((condition): SettingRow[] => [
-    ...(condition.shown ? [{ id: condition.shown, label: `${condition.label}, Show in Priority`, control: { kind: 'toggle' as const, on: true } }] : []),
+    { id: condition.shown, label: `${condition.label}, Show in Priority`, control: { kind: 'toggle', on: true } },
     { id: condition.notify, label: `${condition.label}, Receive Alerts`, control: { kind: 'toggle', on: false } },
   ]) },
   { id: 'notifications', title: 'Other Notifications', tab: 'Alerts', rows: [
@@ -90,10 +91,14 @@ export const settingGroups: SettingGroup[] = [
   { id: 'tokscale', title: 'Tokscale', tab: 'Advanced', rows: [
     { id: 'usageSync', label: 'Usage Sync', control: { kind: 'action', label: 'Sync', message: 'Publish usage to your Tokscale profile from the Mac app. This preview does not upload data.' }, info: 'Sync local usage to your public Tokscale profile.' },
   ] },
-  { id: 'softLimit', title: 'Soft Limit', tab: 'Advanced', rows: [
+  { id: 'softLimit', title: 'Soft Limit', tab: 'Labs', rows: [
     { id: 'softLimitEnabled', label: 'Enabled', control: { kind: 'toggle', on: false } },
-    { id: 'softLimitWindow', label: 'Window', requires: 'softLimitEnabled', control: { kind: 'picker', value: 'Weekly', options: ['5 Hours', 'Weekly'] } },
+    { id: 'softLimitWindow', label: 'Window', requires: 'softLimitEnabled', control: { kind: 'picker', value: 'Weekly and Monthly', options: ['Weekly and Monthly', 'Weekly', 'Monthly'] } },
     { id: 'softLimitThreshold', label: 'Threshold', requires: 'softLimitEnabled', control: { kind: 'number', value: '90', min: 1, max: 100 } },
+  ] },
+  { id: 'commandLine', title: 'Command Line', tab: 'Labs', rows: [
+    { id: 'terminalHelper', label: 'Terminal Helper', control: { kind: 'terminalHelper' },
+      info: 'Adds a global egasu command agents can use to monitor limits.' },
   ] },
   { id: 'debug', title: 'Debug', tab: 'Advanced', rows: [
     { id: 'logLevel', label: 'Log Level', control: { kind: 'picker', value: 'Info', options: ['Error', 'Warning', 'Info', 'Debug'] }, info: 'How much detail egasu writes to its log file. Choose Debug while you reproduce a problem.' },

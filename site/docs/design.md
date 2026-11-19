@@ -57,8 +57,10 @@ provider 마크는 빌드 시 네이티브 앱 리소스에서 조회.
 ## 앱 미리보기
 
 공통 Total Spend 요약 아래 Priority·All Usage 탭 배치.
+Alerts에서 네 조건의 **Show in Priority**를 모두 끄면 대시보드에 탭 선택 없이 All Usage만 표시.
 Accounts는 독립 화면이며 계정별·공통 지표 설정 구분.
-Settings는 General·Display·Alerts·Advanced 네 탭으로 구성.
+Settings는 General·Display·Alerts·Advanced 탭으로 구성.
+General에서 Beta Updates를 켜면 Labs 탭 표시.
 계정 추가 시연은 Options → Accounts → Add Account 순서.
 초기화 예측·한도 안내선 시연은 All Usage에 표시.
 Total Spend의 안쪽 원과 범례 값을 클릭하면 Cost → Cost/MTok → Tokens 순환.
@@ -67,8 +69,8 @@ Total Spend의 안쪽 원과 범례 값을 클릭하면 Cost → Cost/MTok → T
 
 Reset Watch는 사용량과 별도 예측 확률·커뮤니티 투표율·예측 시각 표시.
 알림 설정에도 독립적인 Codex Reset Watch 선택 제공.
-Soft Limit은 기간·임계값 설정과 안내선 제공.
-실제 작업의 자동 취소는 지원하지 않음.
+Soft Limit은 주간·월간 구독 한도에 적용할 사용률을 설정하고 해당 사용량 막대 안에 안내선 표시.
+미리보기는 예시 계정의 사용량으로 도달 여부 표시.
 영어·한국어·일본어 선택은 앱 미리보기와 기능 시연에 즉시 적용.
 언어 적용을 위한 새로고침·재시작 불필요.
 
