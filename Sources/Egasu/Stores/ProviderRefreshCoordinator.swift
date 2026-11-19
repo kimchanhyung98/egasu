@@ -125,11 +125,14 @@ final class ProviderRefreshCoordinator {
             return refreshWork.isWaiting(providerID)
         }
         guard !refreshWork.isPending(provider) else { return false }
+        // 대기 배지는 마지막으로 확인한 계정으로 예상. 실제 캐시 사용 전에는 현재 로그인을 다시 읽음.
+        let lastKnownIdentity =
+            snapshotStore.identityKeys[providerID] ?? localSnapshots[providerID]?.producedByIdentityKey
         return queuedRefreshBatches.values.contains { batch in
             batch.providerIDs.contains(providerID)
                 && refreshCacheHit(
                     providerID: providerID, force: batch.force, trigger: batch.trigger,
-                    currentIdentityKey: snapshotStore.identityKeys[providerID]) == nil
+                    currentIdentityKey: lastKnownIdentity) == nil
                 && !refreshSchedule.isBackedOff(providerID, force: batch.force)
         }
     }

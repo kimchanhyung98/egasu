@@ -159,6 +159,37 @@ final class CursorUsageHistoryRecoveryTests: XCTestCase {
         XCTAssertEqual(fixture.store.snapshots["cursor"]?.producedByIdentityKey, "new-login")
     }
 
+    func testWaitingBatchDoesNotShowAQueuedCursorRefreshForItsFreshAccountCache() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.defaults.removePersistentDomain(forName: fixture.suite) }
+        let first = TestProviderRuntime(
+            provider: MockData.codex, descriptors: [],
+            snapshot: .make(provider: MockData.codex, plan: nil, lines: [], refreshedAt: now))
+        let cursor = CursorProvider(
+            authStore: CursorAuthStore(sqlite: fixture.sqlite, keychain: FakeKeychain()),
+            usageClient: CursorUsageClient(http: fixture.http), now: { [clock = fixture.clock] in clock.now },
+            pricing: { .empty })
+        let queue = BackgroundWorkQueue()
+        let store = WidgetDataStore(
+            registry: .from([first, cursor]), providers: [first, cursor], cache: fixture.cache,
+            defaults: fixture.defaults, now: { fixture.clock.now }, workQueue: queue)
+        _ = await store.refresh(providerID: "cursor", force: true)
+
+        let acquired = await queue.acquire("hold-first-provider")
+        let ticket = try XCTUnwrap(acquired)
+        let batch = Task { await store.refreshAll() }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while queue.pendingCount == 0 && ContinuousClock.now < deadline { await Task.yield() }
+
+        XCTAssertEqual(queue.pendingCount, 1)
+        XCTAssertTrue(store.isRefreshQueued(for: "codex"))
+        XCTAssertFalse(store.isRefreshQueued(for: "cursor"))
+        queue.finish(ticket)
+        await batch.value
+        let quotaRequests = await fixture.http.quotaRequests
+        XCTAssertEqual(quotaRequests, 1)
+    }
+
     func testQuotaFailureDropsMismatchedMemoryOnlySnapshot() throws {
         let fixture = try makeFixture()
         defer { fixture.defaults.removePersistentDomain(forName: fixture.suite) }
