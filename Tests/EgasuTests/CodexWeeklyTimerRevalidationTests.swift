@@ -108,7 +108,7 @@ final class CodexWeeklyTimerRevalidationTests: XCTestCase {
     }
 
     func testObservationInvalidatedBeforeLaunchKeepsReservationWithoutExecution() async throws {
-        enum Invalidation: CaseIterable { case clockChange, newerUsage, providerRecheck, cleanupFailure }
+        enum Invalidation: CaseIterable { case clockChange, newerUsage, bindingChange, providerRecheck, cleanupFailure }
         let cleanupError = "Usage timer temporary files could not be removed."
         for reason in Invalidation.allCases {
             let probe = try WeeklyTimerProbe()
@@ -119,6 +119,8 @@ final class CodexWeeklyTimerRevalidationTests: XCTestCase {
             switch reason {
             case .clockChange:
                 probe.beforeLaunch = { coordinator.invalidateObservations() }
+            case .bindingChange:
+                probe.beforeLaunch = { probe.bindings["codex"] = UUID() }
             case .newerUsage:
                 probe.beforeLaunch = { probe.receive(coordinator, used: 1) }
             case .providerRecheck, .cleanupFailure:
@@ -135,7 +137,7 @@ final class CodexWeeklyTimerRevalidationTests: XCTestCase {
             XCTAssertEqual(probe.prepared.count, 2)
             XCTAssertTrue(probe.verificationTimes.isEmpty)
             XCTAssertEqual(probe.reports, reason == .cleanupFailure ? [cleanupError] : [])
-            if reason == .clockChange || reason == .newerUsage { XCTAssertTrue(probe.executed.isEmpty) }
+            if reason != .providerRecheck && reason != .cleanupFailure { XCTAssertTrue(probe.executed.isEmpty) }
             let restarted = UsageTimerAttemptStore(fileURL: probe.store.fileURL)
             let attempt = try XCTUnwrap(restarted.attempt(for: "a"))
             XCTAssertEqual(attempt.execution, .failed)

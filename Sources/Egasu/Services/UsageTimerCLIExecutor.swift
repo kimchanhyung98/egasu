@@ -29,7 +29,8 @@ extension UsageTimerCLIExecuting {
         observation: UsageTimerObservation, configuration: UsageTimerCLIConfiguration,
         now: @escaping @Sendable () -> Date,
         validateLogin: @escaping @MainActor @Sendable () async throws -> Bool,
-        readQuota: @escaping @MainActor @Sendable () async throws -> UsageTimerObservation?
+        readQuota: @escaping @MainActor @Sendable () async throws -> UsageTimerObservation?,
+        verify: (@MainActor @Sendable () async throws -> UsageTimerObservation?)? = nil
     ) -> UsageTimerSession {
         UsageTimerSession(
             observation: observation,
@@ -65,7 +66,7 @@ extension UsageTimerCLIExecuting {
                 }
                 return result
             },
-            verify: readQuota)
+            verify: verify ?? readQuota)
     }
 }
 

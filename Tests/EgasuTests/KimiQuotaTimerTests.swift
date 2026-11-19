@@ -50,6 +50,7 @@ final class KimiQuotaTimerTests: XCTestCase {
         let prepared = try await provider.prepareUsageTimer(
             expected, executors: .init(codex: UsageTimerRouterTests.Executor(), cli: UnexpectedUsageTimerCLI()))
         let session = try XCTUnwrap(prepared)
+        await http.suspendNextQuotaRead()
         let timerRead = Task { try await session.verify() }
         await fulfillment(of: [suspended], timeout: 3)
 
@@ -106,14 +107,16 @@ private struct KimiQuotaTimerHTTP: HTTPClient {
 
 private actor OverlappingKimiQuotaHTTP: HTTPClient {
     let suspended: XCTestExpectation
-    private var requestCount = 0
+    private var shouldSuspend = false
     private var waiting: CheckedContinuation<HTTPResponse, Never>?
 
     init(suspended: XCTestExpectation) { self.suspended = suspended }
 
+    func suspendNextQuotaRead() { shouldSuspend = true }
+
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        requestCount += 1
-        if requestCount == 3 {
+        if shouldSuspend, request.method == "GET" {
+            shouldSuspend = false
             return await withCheckedContinuation {
                 waiting = $0
                 suspended.fulfill()

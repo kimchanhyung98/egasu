@@ -284,6 +284,49 @@ final class KimiConfiguredProviderTests: XCTestCase {
         XCTAssertEqual(cli.request?.environment["EGASU_KIMI_TOKEN"], rotated)
     }
 
+    func testFinalQuotaReadKeepsPreparedTokenInsideRefreshThreshold() async throws {
+        for accepted in [true, false] {
+            let fixture = try fixture(domain: "ai", token: Self.jwt, expiresAt: 3_801)
+            defer { try? FileManager.default.removeItem(at: fixture.home) }
+            let clock = OSAllocatedUnfairLock(initialState: now)
+            let token = Self.jwt
+            let rotation = Data(Self.credential(token + "-rotated", expiresAt: 5_602).utf8)
+            let http = RoutingHTTPClient { request in
+                if request.method == "POST" {
+                    return .init(statusCode: 200, headers: [:], body: rotation)
+                }
+                if !accepted, clock.withLock({ $0.timeIntervalSince1970 > 2_000 }),
+                    request.headers["Authorization"] == "Bearer \(token)"
+                {
+                    return .init(statusCode: 401, headers: [:], body: Data())
+                }
+                return Self.usageResponse
+            }
+            let provider = KimiProvider(
+                authStore: KimiAuthStore(
+                    files: fixture.files, environment: FakeEnvironment(["KIMI_CODE_HOME": fixture.home.path])),
+                usageClient: KimiUsageClient(http: http, now: { clock.withLock { $0 } }),
+                now: { clock.withLock { $0 } }, pricing: { .empty })
+            _ = await provider.quotaSnapshot()
+            let expected = try XCTUnwrap(provider.usageTimerObservations.first)
+            let cli = ConfigCaptureCLI()
+            let prepared = try await provider.prepareUsageTimer(
+                expected, executors: .init(codex: UsageTimerRouterTests.Executor(), cli: cli))
+            let session = try XCTUnwrap(prepared)
+            clock.withLock { $0.addTimeInterval(2) }
+
+            let result = await session.send { true }
+
+            XCTAssertEqual(
+                result.failureDescription, accepted ? nil : UsageTimerError.usageUnavailable.errorDescription)
+            XCTAssertEqual(cli.request?.environment["EGASU_KIMI_TOKEN"], accepted ? token : nil)
+            XCTAssertFalse(http.requests.contains { $0.method == "POST" })
+            let verified = try await session.verify()
+            XCTAssertNotNil(verified)
+            XCTAssertEqual(http.requests.filter { $0.method == "POST" }.count, 1)
+        }
+    }
+
     func testChangingConfiguredServerAfterPreparationBlocksTimer() async throws {
         let fixture = try fixture(domain: "ai", token: Self.jwt)
         defer { try? FileManager.default.removeItem(at: fixture.home) }

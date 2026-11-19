@@ -124,22 +124,27 @@ final class KimiProvider: ProviderRuntime {
         await readQuota().snapshot
     }
 
-    func readQuota() async -> (
+    func readQuota(using prepared: KimiCredentialDocument? = nil) async -> (
         snapshot: ProviderSnapshot, observation: UsageTimerObservation?, credential: KimiCredentialDocument?
     ) {
         usageTimerObservations = []
         usageTimerCredential = nil
         do {
-            guard var document = try await loadOffMainActor({ [authStore] in
+            var document: KimiCredentialDocument
+            if let prepared {
+                document = prepared
+            } else if let current = try await loadOffMainActor({ [authStore] in
                 try authStore.loadCredentialDocument()
-            }) else {
+            }) {
+                document = current
+            } else {
                 throw KimiAuthError.notLoggedIn
             }
             guard authStore.isUsable(document, now: now()) else {
                 throw KimiAuthError.authExpired
             }
 
-            if authStore.needsRefresh(document, now: now()) {
+            if prepared == nil && authStore.needsRefresh(document, now: now()) {
                 document = try await rotate(document, force: false)
             }
             guard var accessToken = document.credentials.accessToken?.nilIfEmpty else {
@@ -152,7 +157,7 @@ final class KimiProvider: ProviderRuntime {
                 if usesAPIKey {
                     throw KimiAuthError.apiKeyRejected
                 }
-                guard case .current = document.credentials.source,
+                guard prepared == nil, case .current = document.credentials.source,
                       authStore.oauthLockEnabled
                 else {
                     throw KimiAuthError.authExpired

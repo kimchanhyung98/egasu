@@ -305,12 +305,10 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
         var launchObservationIsCurrent: Bool? = true
         executing = candidate
         let result = await execute(candidate.providerID, candidate.bindingID, session) { [weak self] in
-            guard let self else { return false }
-            guard candidate.observationEpoch == self.observationEpoch else {
+            guard let self, self.current(candidate) else {
                 launchObservationIsCurrent = false
                 return false
             }
-            guard self.current(candidate) else { return false }
             do {
                 let isLatest = try self.store.isLatest(launchObservation)
                 launchObservationIsCurrent = isLatest

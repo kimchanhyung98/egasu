@@ -8,6 +8,10 @@ final class UsageTimerRouterRevalidationTests: XCTestCase {
         defer { fixture.remove() }
         let provider = ProviderStub(observedAt: fixture.clock.current())
         let queue = BackgroundWorkQueue()
+        let previousSend = fixture.clock.current().addingTimeInterval(-600)
+        let observation = provider.observation
+        XCTAssertNotNil(
+            try fixture.store.begin(accountKey: observation.storageKey, resetBefore: nil, now: previousSend))
         let blocked = expectation(description: "Execution queue blocked after preparation")
         var ticket: BackgroundWorkQueue.Ticket?
         provider.onPrepare = {
@@ -32,6 +36,12 @@ final class UsageTimerRouterRevalidationTests: XCTestCase {
         await router.waitForPendingWork(providerIDs: [provider.provider.id])
 
         XCTAssertEqual(provider.sendCount, 0)
+        let restarted = UsageTimerAttemptStore(fileURL: fixture.store.fileURL)
+        XCTAssertEqual(
+            try restarted.sendLimitResetsAt(
+                accountKey: observation.storageKey, now: fixture.clock.current(),
+                budgetWindow: observation.budgetWindow),
+            previousSend.addingTimeInterval(observation.budgetWindow))
         XCTAssertFalse(router.hasPendingWork)
         await router.shutdown()
     }

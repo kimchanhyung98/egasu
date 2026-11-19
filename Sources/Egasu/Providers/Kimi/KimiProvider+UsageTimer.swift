@@ -22,13 +22,18 @@ extension KimiProvider: UsageTimerProviding {
                 }
                 return current == document && Self.hasTimerLifetime(current, at: now())
             },
-            readQuota: { [self] in
-                let reading = await readQuota()
-                guard reading.snapshot.liveQuotaObservedAt != nil else { throw UsageTimerError.usageUnavailable }
-                guard let observation = reading.observation else { return nil }
-                guard observation.accountKey == expected.accountKey else { throw UsageTimerError.accountChanged }
-                return observation
-            })
+            readQuota: { [self] in try await timerQuota(expected, using: document) },
+            verify: { [self] in try await timerQuota(expected) })
+    }
+
+    private func timerQuota(
+        _ expected: UsageTimerObservation, using prepared: KimiCredentialDocument? = nil
+    ) async throws -> UsageTimerObservation? {
+        let reading = await readQuota(using: prepared)
+        guard reading.snapshot.liveQuotaObservedAt != nil else { throw UsageTimerError.usageUnavailable }
+        guard let observation = reading.observation else { return nil }
+        guard observation.accountKey == expected.accountKey else { throw UsageTimerError.accountChanged }
+        return observation
     }
 
     private static func hasTimerLifetime(_ document: KimiCredentialDocument, at now: Date) -> Bool {
