@@ -75,5 +75,5 @@
 "Replace API Key…" = "API 키 교체…";
 
 "Moved metric %@ to position %lld of %lld." = "%1$@ 지표를 전체 %3$lld개 중 %2$lld번째로 이동했습니다.";
-"An old OpenUsage shell function can make Claude use a different login. Remove the “OpenUsage claude account switching” block from %@ and open a new terminal window." = "이전 OpenUsage 셸 함수 때문에 Claude가 다른 로그인을 사용할 수 있습니다. %@에서 ‘OpenUsage claude account switching’ 블록을 삭제하고 새 터미널 창을 여세요.";
+"An old shell function can make Claude use a different login. In %@, delete the lines from “%@” through “%@”, including both markers. Then open a new terminal window." = "이전 셸 함수 때문에 Claude가 다른 로그인을 사용할 수 있습니다. %@에서 ‘%@’ 줄부터 ‘%@’ 줄까지 두 줄을 포함해 블록 전체를 삭제하세요. 그런 다음 새 터미널 창을 여세요.";
 "Couldn’t check %@ for the old OpenUsage Claude shell function." = "%@에서 이전 OpenUsage의 Claude 셸 함수를 확인할 수 없습니다.";

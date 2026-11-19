@@ -192,7 +192,8 @@ Claude 재로그인과 계정 제거는 남은 전환 기록을 먼저 복구한
 계정 전환 시 `~/.zshrc`·`~/.config/fish/config.fish` 등 셸 설정 파일은 수정하지 않음.
 Accounts를 열면 `~/.zshrc`와 `~/.config/fish/config.fish`에서 이전 OpenUsage의 Claude 블록 시작·끝 마커를 확인.
 두 마커가 남은 파일은 계정 목록과 Claude 계정 상세에 표시.
-기본 Claude 로그인을 쓰려면 표시된 파일에서 해당 블록을 삭제한 뒤 새 터미널 창 열기.
+기본 Claude 로그인을 쓰려면 표시된 파일에서 `# >>> OpenUsage claude account switching >>>` 줄부터 `# <<< OpenUsage claude account switching <<<` 줄까지 두 마커를 포함한 블록 전체 삭제.
+삭제 후 새 터미널 창 열기.
 
 ![Accounts의 이전 Claude 셸 함수 안내](/docs/assets/claude-legacy-shell-notice.png)
 

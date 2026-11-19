@@ -2,6 +2,9 @@ import Foundation
 
 /// 이전 설치기가 쓴 두 파일에서 짝이 맞는 Claude 블록 마커만 확인.
 struct LegacyClaudeShellSetup: Sendable {
+    static let startMarker = "# >>> OpenUsage claude account switching >>>"
+    static let endMarker = "# <<< OpenUsage claude account switching <<<"
+
     var found: [String] = []
     var unreadable: [String] = []
 
@@ -17,9 +20,9 @@ struct LegacyClaudeShellSetup: Sendable {
                 }
                 var sawStart = false
                 for try await line in file.lines {
-                    if line == "# >>> OpenUsage claude account switching >>>" {
+                    if line == startMarker {
                         sawStart = true
-                    } else if sawStart && line == "# <<< OpenUsage claude account switching <<<" {
+                    } else if sawStart && line == endMarker {
                         result.found.append("~/\(path)")
                         break
                     }

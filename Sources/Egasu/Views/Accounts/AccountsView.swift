@@ -90,8 +90,10 @@ struct LegacyClaudeShellNotices: View {
         if !setup.found.isEmpty {
             ProblemCard(
                 message: L10n.accounts(
-                    "An old OpenUsage shell function can make Claude use a different login. Remove the “OpenUsage claude account switching” block from %@ and open a new terminal window.",
-                    setup.found.joined(separator: ", ")
+                    "An old shell function can make Claude use a different login. In %@, delete the lines from “%@” through “%@”, including both markers. Then open a new terminal window.",
+                    setup.found.joined(separator: ", "),
+                    LegacyClaudeShellSetup.startMarker,
+                    LegacyClaudeShellSetup.endMarker
                 ))
         }
         if !setup.unreadable.isEmpty {

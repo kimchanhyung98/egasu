@@ -127,7 +127,9 @@ final class ProviderRefreshCoordinator {
         guard !refreshWork.isPending(provider) else { return false }
         return queuedRefreshBatches.values.contains { batch in
             batch.providerIDs.contains(providerID)
-                && refreshCacheHit(providerID: providerID, force: batch.force, trigger: batch.trigger) == nil
+                && refreshCacheHit(
+                    providerID: providerID, force: batch.force, trigger: batch.trigger,
+                    currentIdentityKey: snapshotStore.identityKeys[providerID]) == nil
                 && !refreshSchedule.isBackedOff(providerID, force: batch.force)
         }
     }
@@ -220,12 +222,14 @@ final class ProviderRefreshCoordinator {
         refreshResults[providerID] = .failed(ProviderRefreshFailure(message: message, presentation: presentation))
     }
 
-    private func refreshCacheHit(providerID: String, force: Bool, trigger: RefreshTrigger) -> ProviderSnapshot? {
+    private func refreshCacheHit(
+        providerID: String, force: Bool, trigger: RefreshTrigger, currentIdentityKey: String?
+    ) -> ProviderSnapshot? {
         guard !force, !refreshSchedule.requiresScheduledRefresh(providerID, trigger: trigger),
               !invalidatedAuthentication.contains(providerID),
             !providersNeedingCredentialRefresh.contains(providerID)
         else { return nil }
-        return snapshotStore.cachedSnapshot(for: providerID)
+        return snapshotStore.cachedSnapshot(for: providerID, currentIdentityKey: currentIdentityKey)
     }
 
     @discardableResult
@@ -238,7 +242,23 @@ final class ProviderRefreshCoordinator {
     ) async -> RefreshOutcome {
         guard !Task.isCancelled, isProviderEnabled(providerID) else { return .skipped }
         guard isRefreshSuspended?(providerID) != true else { return .skipped }
-        if let cached = refreshCacheHit(providerID: providerID, force: force, trigger: trigger) {
+        var cacheIdentity = snapshotStore.identityKeys[providerID]
+        if !force, let cursor = providersByID[providerID] as? CursorProvider,
+            snapshotStore.localSnapshots[providerID] != nil
+        {
+            let generation = catalogGeneration
+            cacheIdentity = await cursor.currentIdentityKey()
+            guard !Task.isCancelled, generation == catalogGeneration, isProviderEnabled(providerID),
+                isRefreshSuspended?(providerID) != true
+            else { return .skipped }
+            if snapshotStore.discardMismatchedCursorReading(for: providerID, currentIdentityKey: cacheIdentity) {
+                credentialsDidChange(for: providerID)
+                rebuildRenderedSnapshots()
+            }
+        }
+        if let cached = refreshCacheHit(
+            providerID: providerID, force: force, trigger: trigger, currentIdentityKey: cacheIdentity)
+        {
             // 값이 같으면 재할당 생략 — Observable의 불필요한 메뉴 막대 재렌더링 방지.
             AppLog.debug(.refresh, "cache hit \(providerID)")
             if snapshotStore.useCachedSnapshot(cached) { rebuildRenderedSnapshots() }

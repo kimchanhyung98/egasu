@@ -47,10 +47,17 @@ final class ProviderSnapshotStore {
         ProviderAccountID.family(of: providerID) == "claude" && identityKeys[providerID] == nil
     }
 
-    func cachedSnapshot(for providerID: String) -> ProviderSnapshot? {
-        let identity = identityKeys[providerID] ?? localSnapshots[providerID]?.producedByIdentityKey
+    func discardMismatchedCursorReading(for providerID: String, currentIdentityKey: String?) -> Bool {
+        guard let local = localSnapshots[providerID] else { return false }
+        let previousIdentity = local.producedByIdentityKey ?? cache.producedByIdentityKey(providerID: providerID)
+        guard currentIdentityKey == nil || currentIdentityKey != previousIdentity else { return false }
+        localSnapshots[providerID] = nil
+        return true
+    }
+
+    func cachedSnapshot(for providerID: String, currentIdentityKey: String?) -> ProviderSnapshot? {
         guard !unresolvedIdentityCacheRejections.contains(providerID),
-            !cache.hasStaleAccountStamp(providerID: providerID, currentIdentityKey: identity)
+            !cache.hasStaleAccountStamp(providerID: providerID, currentIdentityKey: currentIdentityKey)
         else { return nil }
         return cache.snapshot(providerID: providerID)
     }

@@ -145,9 +145,13 @@ final class CursorUsageEventPagingTests: XCTestCase {
     func testDistinctServerEventsWithIdenticalUsageAreCounted() async throws {
         let http = RoutingHTTPClient { request in
             let body = try JSONSerialization.jsonObject(with: XCTUnwrap(request.body)) as? [String: Any]
-            var event = CursorEventFixture.event()
-            event["requestId"] = body?["page"]
-            let page = try CursorEventFixture.page([event, event], total: 4)
+            let pageNumber = try XCTUnwrap(body?["page"] as? Int)
+            let rows = (0..<2).map { index in
+                var event = CursorEventFixture.event()
+                event["requestId"] = "page-\(pageNumber)-event-\(index)"
+                return event
+            }
+            let page = try CursorEventFixture.page(rows, total: 4)
             return HTTPResponse(statusCode: 200, headers: [:], body: page)
         }
         let events = try await load(http)
