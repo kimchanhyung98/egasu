@@ -30,7 +30,7 @@ struct ClaudeLegacyShellProfile {
             let first = markers[0]
             let last = markers[1]
             // 여러 줄의 인용문·heredoc 안에서는 같은 텍스트가 함수 선언의 증거가 아님.
-            guard lines[..<first].allSatisfy({ Self.isStandaloneLine(content($0)) }) else {
+            guard isAtCommandBoundary(after: lines[..<first].map(content)) else {
                 throw ClaudeSharedLoginRoute.UnrecognizedSetup()
             }
             let quoted = "'" + configDirectory.replacingOccurrences(of: "'", with: "'\\''") + "'"
@@ -46,27 +46,31 @@ struct ClaudeLegacyShellProfile {
             return lines[first].startIndex..<upperBound
         }
 
-        private static func isStandaloneLine(_ line: String) -> Bool {
+        private func isAtCommandBoundary(after lines: [String]) -> Bool {
             var quote: Character?
-            var escaped = false
-            var previous: Character?
-            for character in line {
-                defer { previous = character }
-                if escaped {
-                    escaped = false
-                } else if character == "\\", quote != "'" {
-                    escaped = true
-                } else if let open = quote {
-                    if character == open { quote = nil }
-                } else if character == "#" && (previous == nil || previous?.isWhitespace == true) {
-                    break
-                } else if ["'", "\"", "`"].contains(character) {
-                    quote = character
-                } else if character == "<", previous == "<" {
-                    return false
+            var continued = false
+            for line in lines {
+                var escaped = false
+                var previous: Character?
+                for character in line {
+                    defer { previous = character }
+                    if escaped {
+                        escaped = false
+                    } else if character == "\\", quote != "'" || self == .fish {
+                        escaped = true
+                    } else if let open = quote {
+                        if character == open { quote = nil }
+                    } else if character == "#" && (previous == nil || previous?.isWhitespace == true) {
+                        break
+                    } else if character == "'" || character == "\"" || (self == .zsh && character == "`") {
+                        quote = character
+                    } else if character == "<", previous == "<" {
+                        return false
+                    }
                 }
+                continued = escaped
             }
-            return quote == nil && !escaped
+            return quote == nil && !continued
         }
     }
 
@@ -140,7 +144,7 @@ struct ClaudeLegacyShellProfile {
                 try handle.write(contentsOf: updated)
                 try handle.close()
                 guard path.resolvingSymlinksInPath().path == url.path else { throw POSIXError(.ESTALE) }
-                try Self.exchange(replacement, with: url)
+                try LocalTextFileAccessor.exchangeFiles(replacement, with: url)
                 exchanged = true
                 try Self.verifyDisplacedProfile(at: replacement, target: url, original: original, updated: updated)
             }
@@ -150,23 +154,10 @@ struct ClaudeLegacyShellProfile {
         try result.get()
     }
 
-    private static func exchange(_ first: URL, with second: URL) throws {
-        guard renamex_np(first.path, second.path, UInt32(RENAME_SWAP)) == 0 else {
-            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
-        }
-    }
-
     static func verifyDisplacedProfile(at displaced: URL, target: URL, original: Data, updated: Data) throws {
-        guard (try? LocalTextFileAccessor.readRegularFile(displaced)) == original else {
-            // 교환 시점의 실제 파일을 복구. 두 번째 편집이 끼어들면 그 파일도 같은 디렉터리에 보존.
-            if (try? LocalTextFileAccessor.readRegularFile(target)) == updated {
-                try exchange(displaced, with: target)
-                if (try? LocalTextFileAccessor.readRegularFile(displaced)) == updated {
-                    try FileManager.default.removeItem(at: displaced)
-                }
-            }
-            throw ClaudeShellLoginMigrationError.concurrentProfileEdit
-        }
-        try FileManager.default.removeItem(at: displaced)
+        guard
+            try LocalTextFileAccessor.verifyExchangedFile(
+                at: displaced, target: target, expected: original, updated: updated)
+        else { throw ClaudeShellLoginMigrationError.concurrentProfileEdit }
     }
 }

@@ -346,11 +346,12 @@ extension AccountCredentialImporter {
         }
         if let previousSnapshot {
             do {
-                try switcher.saveSnapshot(previousSnapshot, for: profile)
                 if isolatedCodexAttempt == nil {
                     try switcher.writeWorkspaceAuthentication(
                         previousSnapshot, for: profile, allowInteraction: allowInteraction)
                 }
+                // 복구 기록은 보관함으로 적용 여부를 판단. 작업 공간까지 복구한 뒤 보관함을 되돌림.
+                try switcher.saveSnapshot(previousSnapshot, for: profile)
             } catch {
                 restored = false
                 AppDiagnostics.failure(
@@ -359,10 +360,10 @@ extension AccountCredentialImporter {
             }
         } else {
             do {
-                try AccountCredentialVault(keychain: keychain).delete(profile: profile)
                 if isolatedCodexAttempt == nil {
                     try removeSignInWorkspace(family: profile.family, profileID: profile.id)
                 }
+                try AccountCredentialVault(keychain: keychain).delete(profile: profile)
             } catch {
                 restored = false
                 AppDiagnostics.failure(

@@ -36,6 +36,36 @@ final class AccountExternalLoginCommitTests: XCTestCase {
         }
     }
 
+    func testIncompleteWorkspaceRollbackKeepsVaultGenerationForRecovery() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self, synchronize: { false })
+        let replacement = AccountSwitchRecoveryFixture.entry("a", token: "rotated-access-a")
+        fixture.keychain.currentUserValues[fixture.baseService] = replacement.credential
+        let workspace = try fixture.workspace.directory(family: "claude", profileID: fixture.a.id)
+        let service = ClaudeAuthStore.scopedKeychainServiceName(
+            forConfigDirLiteral: workspace.path, environment: FakeEnvironment())
+        fixture.keychain.beforeWrite = { key, value in
+            if key == service, ClaudeAuthStore.parseCredentials(value)?.claudeAiOauth?.accessToken == "token-a" {
+                throw SwitchRecoveryKeychain.Failure.injected
+            }
+        }
+
+        let result = await claudeReconciliationResult(fixture.importer, in: fixture.store)
+
+        XCTAssertThrowsError(try result.get()) {
+            XCTAssertEqual($0 as? AccountCredentialSwitcher.Error, .selectionSaveFailed)
+        }
+        XCTAssertEqual(try fixture.switcher.loadSnapshot(for: fixture.a), replacement)
+        XCTAssertNotNil(try fixture.store.pendingIdentityReplacement())
+        fixture.keychain.beforeWrite = nil
+        XCTAssertTrue(try fixture.importer.recoverInterruptedIdentityReplacement(in: fixture.store))
+        XCTAssertNil(try fixture.store.pendingIdentityReplacement())
+        XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), replacement)
+        XCTAssertEqual(fixture.keychain.currentUserValues[service], replacement.credential)
+        XCTAssertEqual(
+            try String(contentsOf: workspace.appendingPathComponent(".credentials.json"), encoding: .utf8),
+            replacement.credential)
+    }
+
     func testExternalLoginChangedAtSelectionCommitDoesNotSelectStaleAccount() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         try fixture.switcher.applySharedAuthentication(fixture.entryB, family: "claude")

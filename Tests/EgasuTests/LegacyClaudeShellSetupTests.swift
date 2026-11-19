@@ -38,6 +38,31 @@ final class LegacyClaudeShellSetupTests: XCTestCase {
         XCTAssertEqual(attributes[.posixPermissions] as? Int, 0o640)
     }
 
+    func testCompletedMultilineShellSettingsLeaveTheInstallerBlockActive() throws {
+        let home = try temporaryHome()
+        let zsh = legacyClaudeZshBlock(home: home)
+        let fish = zsh.replacingOccurrences(of: "unalias", with: "functions -e")
+            .replacingOccurrences(of: "claude {", with: "claude")
+            .replacingOccurrences(of: #""$@""#, with: "$argv")
+            .replacingOccurrences(of: "\n}", with: "\nend")
+        for (shell, block, prefix) in [
+            (ClaudeLegacyShellProfile.Shell.zsh, zsh, "PROMPT='first\n# second'\nexport NAME=\\\nvalue\n"),
+            (.fish, fish, "set -g greeting \"first\n# second\"\nset name \\\nvalue\n")
+        ] {
+            let file = home.appendingPathComponent(shell.relativePath)
+            try FileManager.default.createDirectory(
+                at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data((prefix + block).utf8).write(to: file)
+            XCTAssertEqual(
+                try ClaudeSharedLoginRoute.resolve(
+                    homeDirectory: home, files: LocalTextFileAccessor(),
+                    environment: FakeEnvironment(["SHELL": "/bin/" + shell.rawValue])),
+                .legacy(configDir: home.appendingPathComponent(".claude").path))
+            try XCTUnwrap(ClaudeLegacyShellProfile.find(in: home).first).remove()
+            XCTAssertEqual(try Data(contentsOf: file), Data(prefix.utf8))
+        }
+    }
+
     func testQuotedWrapperIsNotAnInstalledFunction() throws {
         let home = try temporaryHome()
         let rc = home.appendingPathComponent(".zshrc")

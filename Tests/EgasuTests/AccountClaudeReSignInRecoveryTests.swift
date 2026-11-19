@@ -47,7 +47,8 @@ final class AccountClaudeReSignInRecoveryTests: XCTestCase {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         let file = fixture.root.appendingPathComponent(".claude.json")
         let preferences = #"{"theme":"dark"}"#
-        let externalCredentials = #"{"mcpOAuth":{"provider":"keep-me"}}"#
+        let externalCredentials =
+            #"{"claudeAiOauth":{"accessToken":" ","refreshToken":"prior-refresh"},"mcpOAuth":{"provider":"keep-me"}}"#
         try Data(preferences.utf8).write(to: file)
         fixture.keychain.currentUserValues[fixture.baseService] = externalCredentials
         try fixture.switcher.writeWorkspaceAuthentication(AccountSwitchRecoveryFixture.entry("c"), for: fixture.a)
@@ -69,6 +70,21 @@ final class AccountClaudeReSignInRecoveryTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), preferences)
         try fixture.assertSavedAccountsUnchanged()
         XCTAssertEqual(fixture.store.profile(id: fixture.a.id)?.identityKey, fixture.a.identityKey)
+    }
+
+    func testGuardedMetadataWritePreservesAnUnrelatedCLIAccount() throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let state = fixture.root.appendingPathComponent(".claude.json")
+        let foreign = AccountSwitchRecoveryFixture.entry("c")
+        let account = try XCTUnwrap(foreign.claudeOAuthAccount)
+        let profile = Data(#"{"oauthAccount":\#(account),"theme":"keep"}"#.utf8)
+        try profile.write(to: state)
+
+        XCTAssertThrowsError(
+            try fixture.switcher.mergeClaudeOAuthAccount(
+                fixture.entryA.claudeOAuthAccount, at: state, expecting: fixture.entryB.claudeOAuthAccount)
+        ) { XCTAssertEqual($0 as? ClaudeAuthError, .credentialsChanged) }
+        XCTAssertEqual(try Data(contentsOf: state), profile)
     }
 
     func testWhitespaceAccessTokenDoesNotBlockApplyingSharedLogin() throws {

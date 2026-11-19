@@ -31,12 +31,20 @@ struct AccountSwitchJournal: Sendable {
 
         /// 공유 계정 정보가 먼저 쓰이는 두 중단 지점의 지문.
         func retryStateFingerprints(staging account: String, identity: String) throws -> [String] {
-            let parsed = try JSONSerialization.jsonObject(with: Data(account.utf8))
-            let canonical = try JSONSerialization.data(withJSONObject: parsed, options: [.sortedKeys])
             let staged = Self(
-                credentials: credentials, accounts: [String(decoding: canonical, as: UTF8.self)],
+                credentials: credentials, accounts: [try Self.canonicalAccount(account)],
                 identities: [credentials[0] == nil ? nil : identity], sourceID: sourceID)
             return try [fingerprint(), staged.fingerprint()]
+        }
+
+        func matchesAccountMetadata(_ account: String) throws -> Bool {
+            try accounts == [Self.canonicalAccount(account)]
+        }
+
+        private static func canonicalAccount(_ account: String) throws -> String {
+            let parsed = try JSONSerialization.jsonObject(with: Data(account.utf8))
+            let canonical = try JSONSerialization.data(withJSONObject: parsed, options: [.sortedKeys])
+            return String(decoding: canonical, as: UTF8.self)
         }
 
         func containsLegacyLogin(_ state: Self) -> Bool {

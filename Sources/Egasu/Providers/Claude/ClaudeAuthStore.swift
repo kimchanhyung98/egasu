@@ -79,7 +79,7 @@ struct ClaudeAuthStore: Sendable {
                 let credential = try route.readCredential(
                     keychain: keychain, files: files, filePath: credentialsPath(),
                     environment: environment, allowInteraction: allowAccountInteraction
-                )
+                ).login
                 let candidates =
                     credential.map {
                         [

@@ -263,15 +263,27 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
         let directory = try workspace.prepare(family: profile.family, profileID: profile.id)
         switch profile.family {
         case "claude":
+            let url = directory.appendingPathComponent(".credentials.json")
+            let existingFile: String?
+            do {
+                let bytes = try LocalTextFileAccessor.readRegularFile(url)
+                guard let text = String(data: bytes, encoding: .utf8) else {
+                    throw CocoaError(.fileReadInapplicableStringEncoding)
+                }
+                existingFile = text
+            } catch let error as POSIXError where error.code == .ENOENT {
+                existingFile = nil
+            } catch let error as POSIXError where error.code == .ELOOP {
+                throw AccountSignInWorkspace.WorkspaceError.symlinkedComponent(url.path)
+            }
+            let fileCredential = try ClaudeAccountLoginCredentials.replacingLogin(
+                in: existingFile, with: entry.credential)
             let service = ClaudeAuthStore.scopedKeychainServiceName(
                 forConfigDirLiteral: directory.path, environment: environment)
             let existing = try keychain.readGenericPasswordForCurrentUser(
                 service: service, allowInteraction: allowInteraction)
             let keychainCredential = try ClaudeAccountLoginCredentials.replacingLogin(
                 in: existing, with: entry.credential)
-            let url = directory.appendingPathComponent(".credentials.json")
-            let fileCredential = try ClaudeAccountLoginCredentials.replacingLogin(
-                in: readTextIfPresent(url), with: entry.credential)
             try keychain.writeCLISharedPassword(
                 service: service,
                 value: keychainCredential,
@@ -359,11 +371,17 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
     }
 
     /// Claude state 파일에 `oauthAccount` 키만 merge, 다른 키 전부 보존 — 파일 부재 시 onboarding-complete 최소 state 생성으로 first-run 재생 방지.
-    func mergeClaudeOAuthAccount(_ account: String?, at url: URL, removeCreatedState: Bool = false) throws {
+    func mergeClaudeOAuthAccount(
+        _ account: String?, at url: URL, removeCreatedState: Bool = false, expecting previousAccount: String? = nil
+    ) throws {
         let oauthAccount = try account.map { try JSONSerialization.jsonObject(with: Data($0.utf8)) }
+        let before =
+            previousAccount == nil
+            ? try readTextIfPresent(url).map { Data($0.utf8) }
+            : try LocalTextFileAccessor.readRegularFile(url)
         var state: [String: Any] = [:]
-        if let text = try readTextIfPresent(url) {
-            guard let parsed = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else {
+        if let before {
+            guard let parsed = try JSONSerialization.jsonObject(with: before) as? [String: Any] else {
                 throw Error.invalidClaudeState(url)
             }
             state = parsed
@@ -371,13 +389,34 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
             guard account != nil else { return }
             state["hasCompletedOnboarding"] = true
         }
+        if let previousAccount {
+            guard let current = state["oauthAccount"] as? [String: Any],
+                try JSONSerialization.data(withJSONObject: current, options: [.sortedKeys])
+                    == Data(previousAccount.utf8)
+            else { throw ClaudeAuthError.credentialsChanged }
+        }
         state["oauthAccount"] = oauthAccount
         if removeCreatedState, account == nil, state.count == 1, state["hasCompletedOnboarding"] as? Bool == true {
             try fileManager.removeItem(at: url)
             return
         }
         let data = try JSONSerialization.data(withJSONObject: state, options: [.sortedKeys])
-        try writePrivateData(data, to: url)
+        if previousAccount != nil, let before {
+            let files = LocalTextFileAccessor()
+            let replacement = url.deletingLastPathComponent()
+                .appendingPathComponent(url.lastPathComponent + "." + UUID().uuidString + ".egasu-recovery")
+            try files.writeText(replacement.path, String(decoding: data, as: UTF8.self))
+            var exchanged = false
+            defer { if !exchanged { try? files.remove(replacement.path) } }
+            try LocalTextFileAccessor.exchangeFiles(replacement, with: url)
+            exchanged = true
+            guard
+                try LocalTextFileAccessor.verifyExchangedFile(
+                    at: replacement, target: url, expected: before, updated: data)
+            else { throw ClaudeAuthError.credentialsChanged }
+        } else {
+            try writePrivateData(data, to: url)
+        }
     }
 
     // MARK: - Files

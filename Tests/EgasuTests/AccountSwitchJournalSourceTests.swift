@@ -199,6 +199,7 @@ final class AccountSwitchJournalSourceTests: XCTestCase {
             fixture.entryB.claudeOAuthAccount, at: fixture.root.appendingPathComponent(".claude.json"))
         let rotated = AccountSwitchRecoveryFixture.entry("c", token: "rotated-c")
         fixture.keychain.currentUserValues[base] = rotated.credential
+        fixture.http.identities["rotated-c"] = "acct-c|org-c"
 
         await assertSwitchFails {
             try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
@@ -307,6 +308,117 @@ final class AccountSwitchJournalSourceTests: XCTestCase {
         XCTAssertEqual(try fixture.journal.load(), record)
         XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.a.id)
         try fixture.assertSavedAccountsUnchanged()
+    }
+
+    func testVerifiedTargetRotationFinishesSelectionWithoutRewritingAuthentication() async throws {
+        for isExplicitRetry in [false, true] {
+            let fixture = try AccountSwitchRecoveryFixture(test: self)
+            _ = try stageModernIntent(in: fixture)
+            try fixture.switcher.applySharedAuthentication(fixture.entryB, family: "claude")
+            let renewed = AccountSwitchRecoveryFixture.entry("b", token: "renewed-target")
+            fixture.http.identities["renewed-target"] = fixture.b.identityKey
+            fixture.keychain.currentUserValues[fixture.baseService] = renewed.credential
+            let writes = fixture.keychain.writeCount
+            let reloaded = try fixture.freshStore()
+
+            if isExplicitRetry {
+                try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: reloaded)
+            } else {
+                let recovered = try await fixture.selectionSwitcher.recoverInterruptedSwitchAfterStartup(
+                    in: reloaded, allowInteraction: false)
+                XCTAssertTrue(recovered)
+            }
+
+            XCTAssertEqual(fixture.http.requests.count, 1)
+            XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), renewed)
+            XCTAssertEqual(fixture.keychain.writeCount, writes)
+            XCTAssertEqual(reloaded.preferredProfileID(family: "claude"), fixture.b.id)
+            XCTAssertNil(try fixture.journal.load())
+            try fixture.assertSavedAccountsUnchanged()
+        }
+    }
+
+    func testSwitchFinishesWhenTheTargetTokenRotatesBeforeVerification() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let renewed = AccountSwitchRecoveryFixture.entry("b", token: "renewed-target")
+        fixture.http.identities["renewed-target"] = fixture.b.identityKey
+        let keychain = fixture.keychain
+        let base = fixture.baseService
+        let target = fixture.entryB.credential
+        keychain.beforeRead = { service in
+            if service == base, keychain.currentUserValues[base] == target {
+                keychain.currentUserValues[base] = renewed.credential
+            }
+        }
+        defer { keychain.beforeRead = nil }
+
+        try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+
+        XCTAssertEqual(fixture.http.requests.count, 1)
+        XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), renewed)
+        XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.b.id)
+        XCTAssertNil(try fixture.journal.load())
+        try fixture.assertSavedAccountsUnchanged()
+    }
+
+    func testVerifiedTargetRotationKeepsJournalIfSharedCredentialChangesDuringProof() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let record = try stageModernIntent(in: fixture)
+        try fixture.switcher.applySharedAuthentication(fixture.entryB, family: "claude")
+        let renewed = AccountSwitchRecoveryFixture.entry("b", token: "renewed-target")
+        let newer = AccountSwitchRecoveryFixture.entry("b", token: "renewed-again")
+        fixture.http.identities["renewed-target"] = fixture.b.identityKey
+        fixture.keychain.currentUserValues[fixture.baseService] = renewed.credential
+        let keychain = fixture.keychain
+        let base = fixture.baseService
+        fixture.http.beforeResponse = { keychain.currentUserValues[base] = newer.credential }
+        let writes = keychain.writeCount
+
+        do {
+            try await fixture.selectionSwitcher.recoverInterruptedSwitchAfterStartup(in: fixture.store)
+            XCTFail("Expected generation change to prevent selection")
+        } catch {
+            XCTAssertEqual(error as? ClaudeAuthError, .credentialsChanged)
+        }
+
+        XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), newer)
+        XCTAssertEqual(keychain.writeCount, writes)
+        XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.a.id)
+        XCTAssertEqual(try fixture.journal.load(), record)
+        try fixture.assertSavedAccountsUnchanged()
+    }
+
+    func testTargetRotationRequiresTheExactSavedAccountMetadata() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let record = try stageModernIntent(in: fixture)
+        var changed = AccountSwitchRecoveryFixture.entry("b", token: "renewed-target")
+        changed.claudeOAuthAccount = #"{"accountUuid":"acct-b","emailAddress":"other","organizationUuid":"org-b"}"#
+        try fixture.switcher.applySharedAuthentication(changed, family: "claude")
+        let before = try fixture.switcher.readClaudeSwitchState()
+        let writes = fixture.keychain.writeCount
+
+        do {
+            try await fixture.selectionSwitcher.recoverInterruptedSwitchAfterStartup(in: fixture.store)
+            XCTFail("Expected changed account metadata to prevent selection")
+        } catch {
+            XCTAssertEqual(error as? AccountCredentialSwitcher.Error, .switchRecoveryRequired)
+        }
+
+        XCTAssertTrue(fixture.http.requests.isEmpty)
+        XCTAssertEqual(try fixture.switcher.readClaudeSwitchState(), before)
+        XCTAssertEqual(fixture.keychain.writeCount, writes)
+        XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.a.id)
+        XCTAssertEqual(try fixture.journal.load(), record)
+    }
+
+    private func stageModernIntent(in fixture: AccountSwitchRecoveryFixture) throws -> AccountSwitchJournal.Record {
+        let original = try fixture.stageIntent()
+        var record = original
+        let before = try fixture.switcher.readClaudeSwitchState()
+        record.retryStateFingerprints = try before.retryStateFingerprints(
+            staging: XCTUnwrap(fixture.entryB.claudeOAuthAccount), identity: fixture.b.identityKey)
+        try fixture.journal.save(record, replacing: original)
+        return record
     }
 
     func testRecoveryUsesTheRefreshInteractionPolicyForBothKeychainReads() async throws {

@@ -88,6 +88,29 @@ struct LocalTextFileAccessor: TextFileAccessing {
         return try handle.readToEnd() ?? Data()
     }
 
+    static func exchangeFiles(_ first: URL, with second: URL) throws {
+        guard renamex_np(first.path, second.path, UInt32(RENAME_SWAP)) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+    }
+
+    /// 실제 교체된 파일을 검사. 다른 편집을 발견하면 복원하고, 추가 경합 시 그 파일도 보존.
+    static func verifyExchangedFile(
+        at displaced: URL, target: URL, expected: Data, updated: Data
+    ) throws -> Bool {
+        guard (try? readRegularFile(displaced)) == expected else {
+            if (try? readRegularFile(target)) == updated {
+                try exchangeFiles(displaced, with: target)
+                if (try? readRegularFile(displaced)) == updated {
+                    try FileManager.default.removeItem(at: displaced)
+                }
+            }
+            return false
+        }
+        try FileManager.default.removeItem(at: displaced)
+        return true
+    }
+
     func readText(_ path: String) throws -> String {
         try String(contentsOfFile: expandHome(path), encoding: .utf8)
     }
