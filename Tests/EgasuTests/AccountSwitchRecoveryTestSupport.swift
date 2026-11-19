@@ -98,15 +98,27 @@ struct AccountSwitchRecoveryFixture {
         return try XCTUnwrap(switcher.readSharedAuthentication(family: "claude"))
     }
 
-    func stageIntent() throws -> AccountSwitchJournal.Record {
+    func seedLegacyMirrors(_ entry: AccountCredentialVault.Entry) throws {
+        let directory = root.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        keychain.currentUserValues[scopedService] = entry.credential
+        try Data(entry.credential.utf8).write(to: directory.appendingPathComponent(".credentials.json"))
+        let account = try XCTUnwrap(entry.claudeOAuthAccount)
+        try Data(#"{"oauthAccount":\#(account)}"#.utf8).write(to: directory.appendingPathComponent(".claude.json"))
+    }
+
+    func stageIntent(legacy: Bool = false) throws -> AccountSwitchJournal.Record {
+        if legacy { try seedLegacyMirrors(entryA) }
+        let state = try switcher.readClaudeSwitchState(legacyRecord: legacy)
         let record = AccountSwitchJournal.Record(
             previousProfileID: a.id,
             previousIdentity: a.identityKey,
             previousCredentialFingerprint: AccountSwitchJournal.fingerprint(entryA.credential),
-            previousStateFingerprint: try switcher.readClaudeSwitchState().fingerprint(),
+            previousStateFingerprint: try state.fingerprint(),
             selectedProfileID: b.id,
             selectedIdentity: b.identityKey,
-            selectedCredentialFingerprint: AccountSwitchJournal.fingerprint(entryB.credential)
+            selectedCredentialFingerprint: AccountSwitchJournal.fingerprint(entryB.credential),
+            sourceID: state.sourceID
         )
         try journal.save(record, replacing: nil)
         return record

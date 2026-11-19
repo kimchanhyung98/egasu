@@ -97,14 +97,13 @@ egasu account current [claude|codex]         # 선택된 계정의 이름(스크
 `egasu` 명령 설치 여부와 무관하게 기본 인증 저장소를 쓰는 새 `claude`·`codex` 세션에 선택한 로그인 적용.
 
 Accounts에서 계정을 전환하면 먼저 확인을 요청.
-승인하면 Claude의 기본·`~/.claude` 범위 Keychain 인증, 인증 파일과 계정 메타데이터를 교체.
+승인하면 Claude CLI가 사용하는 위치의 인증과 계정 정보만 교체.
 Codex는 `~/.codex/auth.json` 교체.
 MCP 설정·메모리·세션 등 다른 공유 홈 데이터 유지.
 전환은 로그인 셸 종류로 제한하지 않음.
-계정 전환 시 `~/.zshrc`·`~/.config/fish/config.fish` 등 셸 설정 파일은 수정하지 않음.
-기존 `>>> OpenUsage` 함수 블록도 자동 제거하지 않음.
-Accounts에서 이전 Claude 블록이 남은 파일 확인 가능.
-이전 Claude 함수를 제거하려면 표시된 파일에서 `# >>> OpenUsage claude account switching >>>` 줄부터 `# <<< OpenUsage claude account switching <<<` 줄까지 두 마커를 포함한 블록 전체 삭제.
+계정 전환은 셸 설정 파일과 터미널 환경 유지.
+이전 OpenUsage가 설치한 Claude 함수는 egasu 앱이 로그인을 기본 위치에서 확인한 뒤 자동 제거.
+이전 결과와 보류 조건은 [이전 Claude 셸 함수 정리](/docs/accounts.md#이전-claude-셸-함수-정리) 참조.
 이전 Codex 함수를 제거하려면 설치에 사용한 셸 설정 파일에서 두 마커의 프로바이더 이름이 모두 `codex`인 블록 전체 삭제.
 삭제 후 새 터미널 창 열기.
 
@@ -112,7 +111,8 @@ Accounts에서 이전 Claude 블록이 남은 파일 확인 가능.
 `CLAUDE_CONFIG_DIR`·`CODEX_HOME`, 별도 API 키·인증 환경 변수·Codex keyring을 쓰는 실행은 CLI 설정에 따라 다른 인증을 선택할 수 있음.
 해당 실행에 계정 전환이 우선 적용된다고 보장하지 않음.
 
-앱의 첫 계정 공식 로그인은 자식 프로세스에서 `CLAUDE_CONFIG_DIR` 또는 `CODEX_HOME`을 제거해 기본 인증 저장소 사용.
+앱의 첫 계정 공식 로그인은 기본 인증 저장소 사용.
+이전 OpenUsage의 기본 Claude 함수를 사용하는 경우에만 Claude 로그인 자식 프로세스에도 공유 `~/.claude` 경로 지정.
 추가 계정·재로그인은 해당 자식 프로세스에만 같은 변수를 로그인 작업 공간으로 설정.
 해당 자식 프로세스에서 인증을 덮어쓰는 환경 변수를 제거하며, Codex 로그인은 파일 인증 저장소 사용.
 터미널의 환경 변수와 Codex 인증 저장소 설정은 그대로 유지.
@@ -120,10 +120,10 @@ Accounts에서 이전 Claude 블록이 남은 파일 확인 가능.
 ### Claude 터미널 로그인 반영
 
 기본 인증 저장소를 사용하는 `claude` 세션의 `/login` 또는 `claude auth login`으로 로그인 가능.
-egasu는 일반 Claude CLI의 기본 Keychain 인증을 우선하고, 해당 항목이 없거나 인증 형식이 잘못됐으면 `~/.claude/.credentials.json` 사용.
-계정 정보는 `~/.claude.json`에서 확인.
+egasu는 사용량 조회·전환에 사용하는 인증과 같은 위치에서 터미널 로그인 감지.
+일반 CLI와 이전 OpenUsage 셸 함수의 인증·계정 정보 위치는 [Claude 터미널 로그인 반영](/docs/accounts.md#claude-터미널-로그인-반영) 참조.
 현재 인증과 계정 정보를 확인할 수 있으면 변경된 토큰의 계정·조직을 검증한 뒤 Keychain 스냅샷과 저장 신원에 반영.
-루트 계정 정보에 조직이 없으면 API로 확인한 전체 신원으로 등록 계정을 찾고 egasu 저장본에만 조직 보완.
+계정 정보에 조직이 없으면 API로 확인한 전체 신원으로 등록 계정을 찾고 egasu 저장본에만 조직 보완.
 별도 인증 경로나 환경 변수를 쓰는 로그인은 이 반영 경로의 대상이라고 보장하지 않음.
 이미 등록된 신원이면 해당 계정의 저장본을 갱신하고 선택 이동.
 같은 신원의 계정이 여럿이면 현재 선택 계정을 우선하며, 해당하지 않으면 먼저 등록된 계정 선택.

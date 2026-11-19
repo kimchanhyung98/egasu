@@ -19,6 +19,7 @@ struct ClaudeUsageStateStore: Sendable {
 
         private let kind: Kind
         private let credentialFingerprint: String
+        private let refreshGrantFingerprint: String?
 
         init?(_ error: Error, credentials: ClaudeOAuth, config: ClaudeOAuthConfig) {
             switch error {
@@ -28,16 +29,36 @@ struct ClaudeUsageStateStore: Sendable {
             default: return nil
             }
             credentialFingerprint = Self.fingerprint(credentials, config: config)
+            refreshGrantFingerprint =
+                kind == .sessionExpired
+                ? credentials.refreshToken.map { Self.grantFingerprint($0, config: config) } : nil
         }
 
         func error(matching credentials: ClaudeOAuth, config: ClaudeOAuthConfig) -> ClaudeAuthError? {
             credentialFingerprint == Self.fingerprint(credentials, config: config) ? kind.error : nil
         }
 
+        /// 다른 액세스 토큰이 같은 거부된 refresh grant를 다시 제출하지 않도록 구분.
+        func rejectsRefreshGrant(for credentials: ClaudeOAuth, config: ClaudeOAuthConfig) -> Bool {
+            guard kind == .sessionExpired, let token = credentials.refreshToken else { return false }
+            if let refreshGrantFingerprint {
+                return refreshGrantFingerprint == Self.grantFingerprint(token, config: config)
+            }
+            return credentialFingerprint == Self.fingerprint(credentials, config: config)
+        }
+
+        private static func grantFingerprint(_ token: String, config: ClaudeOAuthConfig) -> String {
+            digest([config.refreshURL.absoluteString, config.clientID, token])
+        }
+
         // 같은 계정의 다른 로그인·OAuth client까지 만료로 오판하지 않으며 토큰 원문은 저장하지 않음.
         private static func fingerprint(_ credentials: ClaudeOAuth, config: ClaudeOAuthConfig) -> String {
             let values = [config.refreshURL.absoluteString, config.clientID,
                           credentials.accessToken ?? "", credentials.refreshToken ?? ""]
+            return digest(values)
+        }
+
+        private static func digest(_ values: [String]) -> String {
             let input = values.map { "\($0.utf8.count):\($0)" }.joined()
             return SHA256.hash(data: Data(input.utf8)).map { String(format: "%02x", $0) }.joined()
         }

@@ -214,19 +214,18 @@ struct RegisteredAccountRows: View {
                 try Task.checkCancellation()
                 let workspace = AccountSignInWorkspace()
                 let signIn = try workspace.prepareReauthentication(family: profile.family, profileID: profile.id)
+                var saved = false
                 defer {
-                    if let attemptID = signIn.attemptID {
-                        do {
+                    let cleanupError = Self.finishSignInAttempt(family: profile.family, saved: saved) {
+                        if let attemptID = signIn.attemptID {
                             try workspace.remove(family: profile.family, profileID: profile.id, attemptID: attemptID)
-                        } catch {
-                            AppDiagnostics.failure(
-                                .accountSignIn, error: error, providerID: profile.family,
-                                localContext: "Sign-in workspace cleanup failed")
-                            actionError = UserFacingErrors.message(error)
                         }
                     }
+                    if let cleanupError {
+                        actionError = [actionError, cleanupError].compactMap { $0 }.joined(separator: "\n")
+                    }
                 }
-                AppLog.info(.auth, "account re-sign-in started \(profile.family) profile \(profile.id.prefix(8))")
+                AppLog.info(.auth, "account re-sign-in started \(profile.family)")
                 let code = try await AccountSignInLauncher().runLogin(
                     family: profile.family, home: signIn.directory.path)
                 try Task.checkCancellation()
@@ -244,14 +243,33 @@ struct RegisteredAccountRows: View {
                     isActive: isSelected,
                     signInAttemptID: signIn.attemptID
                 )
-                AppDiagnostics.record(.accountSignIn, result: .success, providerID: profile.family)
+                saved = true
                 catalogDidChange()
             } catch is CancellationError {
                 AppDiagnostics.record(.accountSignIn, result: .cancelled, providerID: profile.family)
             } catch {
                 AppDiagnostics.failure(.accountSignIn, error: error, providerID: profile.family)
-                actionError = UserFacingErrors.message(error)
+                actionError = [UserFacingErrors.message(error), actionError].compactMap { $0 }.joined(separator: "\n")
             }
+        }
+    }
+
+    /// 재로그인 결과는 시도 폴더 정리 후 확정. 이미 실패한 로그인의 정리 오류는 복구 작업으로 기록.
+    static func finishSignInAttempt(family: String, saved: Bool, cleanup: () throws -> Void) -> String? {
+        do {
+            try cleanup()
+            if saved { AppDiagnostics.record(.accountSignIn, result: .success, providerID: family) }
+            return nil
+        } catch {
+            if saved {
+                AppDiagnostics.record(
+                    .accountSignIn, result: .degraded, providerID: family, error: error,
+                    localContext: "remove saved sign-in attempt workspace")
+                return L10n.accounts("Sign-in saved. egasu couldn't remove the temporary sign-in folder.")
+            }
+            AppDiagnostics.failure(
+                .accountRollback, error: error, providerID: family, localContext: "remove sign-in attempt workspace")
+            return UserFacingErrors.message(error)
         }
     }
 
@@ -265,13 +283,13 @@ struct RegisteredAccountRows: View {
         isBusy || hasUnreadableRegistry || !status.canSwitch
     }
 
-    /// 이 계정의 새로 고침이 끝났는데 저장 로그인을 아직 확인하지 못했으면 재확인 — Keychain 승인 뒤 화면을 다시 열지 않아도 상태 갱신.
+    /// 이 계정의 새로 고침이 끝나면 확인하지 못한 로그인을 다시 확인.
     static func needsSignInRecheck(
         state: AccountSignInProbe.State?, finishedCardIDs: Set<String>, profileID: String,
         profileIDForCard: (String) -> String?
     ) -> Bool {
         switch state {
-        case nil, .readFailed?: finishedCardIDs.contains { profileIDForCard($0) == profileID }
+        case nil, .readFailed?, .routeUnavailable?: finishedCardIDs.contains { profileIDForCard($0) == profileID }
         case .ready?, .needsSignIn?: false
         }
     }

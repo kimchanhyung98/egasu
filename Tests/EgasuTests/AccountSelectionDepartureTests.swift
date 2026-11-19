@@ -349,7 +349,9 @@ final class AccountSelectionDepartureTests: XCTestCase {
             case "shared":
                 fixture.keychain.currentUserValues[fixture.baseService] = fixture.entryB.credential
             case "state":
-                fixture.keychain.currentUserValues[fixture.scopedService] = fixture.entryB.credential
+                let account = try XCTUnwrap(fixture.entryB.claudeOAuthAccount)
+                try Data(#"{"oauthAccount":\#(account)}"#.utf8).write(
+                    to: fixture.root.appendingPathComponent(".claude.json"))
             default:
                 operation.cancel()
             }

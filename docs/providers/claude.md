@@ -39,12 +39,16 @@ Claude Code 또는 Claude Desktop에 로그인하면 egasu가 기존 로그인 �
 3. 작동하는 Claude Code 로그인이 없을 때 Claude Desktop의 암호화된 로그인 캐시
 4. `CLAUDE_CODE_OAUTH_TOKEN` 환경 변수
 
-선택된 관리형 Claude 계정은 기본 Keychain의 사용 가능한 인증을 우선하고, 없거나 형식이 잘못됐으면 기본 인증 파일 사용.
-이때 계정 신원은 `~/.claude.json` 기준이며 `CLAUDE_CONFIG_DIR`과 오래된 홈별 인증·상태 파일은 제외.
+등록한 계정 중 현재 선택한 계정은 터미널과 같은 위치에서 인증과 계정 정보를 확인.
+일반 Claude CLI는 기본 Keychain과 `~/.claude.json`을 사용하며, 파일에만 로그인이 있으면 `~/.claude/.credentials.json` 사용.
+로그인 셸에 이전 OpenUsage가 설치한 기본 Claude 함수가 남아 있으면 `~/.claude` 경로 전용 Keychain의 현재 macOS 사용자 항목과 `~/.claude/.claude.json` 사용.
+기본 카드는 계정 등록 전에도 이 함수를 따르므로 셸에서 별도로 설정한 `CLAUDE_CONFIG_DIR`과 `CLAUDE_CODE_OAUTH_TOKEN`을 무시.
+이 경우 토큰 갱신과 계정 전환도 같은 항목에 적용.
+경로 전용 항목이 없으면 예전 전환이 남긴 파일 사본의 소유 계정을 확인할 수 없어 자동 사용 중단.
 추가 계정의 로그인 작업 공간은 해당 경로의 홈별 인증 유지.
 
 계정 신원은 Claude가 로컬에 기록한 계정 메타데이터 우선 사용.
-선택된 관리형 공유 로그인은 계정·조직 메타데이터가 있어도 사용량 조회마다 프로필 검증.
+선택된 관리형 계정과 이전 OpenUsage 함수를 쓰는 기본 계정은 사용량 조회마다 프로필로 계정·조직 검증.
 프로필 검증 실패·불일치 시 사용량 조회·캐시 반영 중단, 기존 사용량과 429 대기 기록 유지.
 이 검증은 사용량 API의 429 대기 중에도 필요하며, 프로필 API 실패 시 캐시 결과도 반환하지 않음.
 홈의 계정 신원은 우선 사용되는 Claude Code 인증 정보에만 연결.
@@ -61,6 +65,8 @@ Claude Code 또는 Claude Desktop에 로그인하면 egasu가 기존 로그인 �
 
 Claude Code의 자동 토큰 갱신 유지.
 프로필로 사용 가능함을 확인한 토큰은 사용량 조회 전에 다시 갱신하지 않으며, 사용량 API의 인증 만료 응답 시 갱신.
+서버가 갱신 요청을 `invalid_grant`로 거부하면 egasu가 저장된 인증을 다시 확인.
+요청 중 CLI가 인증을 교체했으면 새 인증으로 한 번 다시 조회.
 공유 키체인 저장은 기존 CLI 접근 승인을 유지하는 방식으로 수행.
 0.12.1의 갱신으로 승인이 사라진 항목은 최초 접근 시 **Always Allow** 재승인이 필요할 수 있음.
 저장 도구의 입력 한도를 초과하면 기존 토큰을 덮어쓰지 않고 저장 오류 처리.
@@ -108,6 +114,7 @@ Claude Desktop 토큰은 egasu에서 갱신하거나 기록하지 않음.
 Today / Yesterday / Last 30 Days는 **로컬에서** 계산: egasu가 `~/.claude/projects/`(또는 `$CLAUDE_CONFIG_DIR`) 아래의 Claude Code 세션 로그를 직접 읽으므로 외부 도구 불필요.
 `CLAUDE_CONFIG_DIR`은 단일 경로로 해석하며 경로에 포함된 쉼표도 그대로 사용.
 기본 계정 식별에도 같은 경로 사용.
+이전 OpenUsage의 기본 Claude 함수가 활성화된 경우 `~/.claude/projects/`에서 CLI 세션 로그 확인.
 심볼릭 링크를 따라가므로 동기화 위치(예: Dropbox 폴더)에 연결된 projects 폴더도 동일하게 읽음.
 [Pi](https://github.com/badlogic/pi-mono)와 [Oh My Pi](https://github.com/can1357/oh-my-pi)의 Claude 사용량도 같은 타일과 추세에 합산.
 기본 저장 위치는 Pi의 `~/.pi/agent/sessions/`와 OMP의 `~/.omp/agent/sessions/`.
@@ -189,11 +196,11 @@ All Usage의 **Minimal**과 **Cards** 모두 표시 가능한 등록 계정을 �
 계정 추가, 이름 변경, 재로그인, 제거 시 대시보드 즉시 갱신.
 등록된 두 계정의 현재 프로바이더 신원이 같아도 계정명과 행은 각각 유지.
 
-전환은 로그인 셸 종류로 제한하지 않으며 셸 설정 파일을 수정하거나 기존 함수 블록을 자동 제거하지 않음.
-기본 인증 저장소를 쓰는 새 Claude CLI 세션에 선택한 로그인 적용.
-기본 인증 저장소를 사용하는 `claude` 세션의 `/login` 또는 `claude auth login`으로 재로그인 가능.
-egasu는 기본 인증 저장소와 `~/.claude.json`의 계정 정보를 확인하고, 해당 토큰의 계정·조직을 검증한 뒤 비공개 Keychain 스냅샷 갱신.
-별도 인증 경로나 환경 변수를 쓰는 로그인은 이 반영 경로의 대상이라고 보장하지 않음.
+계정 전환은 로그인 셸 종류에 관계없이 새 CLI 세션에 적용.
+이전 OpenUsage의 Claude 함수가 남아 있으면 앱 실행 시 [기존 로그인을 기본 위치로 이전한 뒤 함수 정리](/docs/accounts.md#이전-claude-셸-함수-정리).
+같은 셸에서 `/login` 또는 `claude auth login`으로 재로그인 가능.
+egasu는 해당 저장소의 토큰과 계정 정보를 함께 읽고, 프로필 API로 계정·조직을 확인한 뒤 계정별 Keychain 스냅샷 갱신.
+다른 셸 함수나 사용자 지정 인증 경로는 자동 반영 대상에서 제외.
 같은 계정의 토큰 갱신은 선택 유지, 등록된 다른 계정의 로그인은 이전 저장 로그인을 보존하고 선택 이동.
 현재 로그인을 확인할 수 없거나 충돌 안내가 표시되면 **Accounts → Claude 계정 → Sign In Again…** 사용.
 검증·저장 실패 시 CLI 로그인을 그대로 두고 egasu에 오류 표시.
@@ -213,10 +220,13 @@ Claude가 활성화돼 있으면 실행 시, 활성화 시, 5분마다, 대시�
 ## 문제 해결
 
 - **"Not logged in"** — 기본 인증 저장소를 사용하는 `claude` 세션의 `/login` 또는 `claude auth login`으로 재로그인한 뒤 egasu 새로 고침.
-  기본 인증 저장소와 `~/.claude.json`의 계정 정보를 읽고 해당 토큰의 계정·조직을 검증할 수 있을 때 관리형 스냅샷 갱신.
+  CLI가 사용하는 위치의 인증과 계정 정보를 읽고 해당 토큰의 계정·조직을 검증할 수 있을 때 관리형 스냅샷 갱신.
   인증·계정 정보가 없거나 파싱할 수 없거나 검증한 신원과 다르면 기존 스냅샷 보존.
   현재 로그인을 확인할 수 없거나 충돌 안내가 표시되면 **Accounts → Claude 계정 → Sign In Again…** 사용.
 - **"Claude Desktop login found"** — 수동으로 새로 고침하고 macOS에서 `Claude Safe Storage` 접근을 요청할 때 **Always Allow** 선택.
+- **Session Expired** — 서버가 현재 저장된 갱신 토큰을 거부한 상태.
+  등록한 계정이면 **Accounts → 해당 Claude 계정 → Sign In Again…**에서 재로그인.
+  등록한 계정이 없으면 Claude CLI에서 `claude auth login` 실행 후 egasu 새로 고침.
 - **"Claude Desktop login is stale"** — Claude Desktop을 열어 로그인을 갱신한 뒤 egasu 새로 고침.
 - **"Re-login for live usage"**(Claude 헤더의 황색 경고) — 저장된 로그인은 추론 인증이 가능하지만 `user:profile` 접근 권한이 없어 구독 한도 조회 불가(`claude setup-token`에서 발급한 추론 전용 토큰의 동작).
   `claude`를 실행해 Claude 계정으로 재로그인한 뒤 새로 고침; 그동안 지출 타일은 계속 동작.

@@ -19,7 +19,6 @@ final class ClaudeAuthStoreTests: XCTestCase {
         let fresh = ClaudeCredentialState(
             oauth: ClaudeOAuth(accessToken: "ACCESS_SECRET", refreshToken: "REFRESH_SECRET", expiresAt: 2_000_000_000_000),
             source: .keychainCurrentUser(service: "Claude Code-credentials"),
-            fullData: nil,
             inferenceOnly: false
         )
         XCTAssertEqual(fresh.diagnosticsLabel(now: now), "keychainCurrentUser refresh=yes expired=no")
@@ -29,7 +28,6 @@ final class ClaudeAuthStoreTests: XCTestCase {
         let lockedOut = ClaudeCredentialState(
             oauth: ClaudeOAuth(accessToken: "a", refreshToken: nil, expiresAt: 1),
             source: .file,
-            fullData: nil,
             inferenceOnly: false
         )
         XCTAssertEqual(lockedOut.diagnosticsLabel(now: now), "file refresh=no expired=yes")
@@ -38,7 +36,6 @@ final class ClaudeAuthStoreTests: XCTestCase {
         let unknownExpiry = ClaudeCredentialState(
             oauth: ClaudeOAuth(accessToken: "a", refreshToken: "", expiresAt: nil),
             source: .keychainLegacy(service: "svc"),
-            fullData: nil,
             inferenceOnly: false
         )
         XCTAssertEqual(unknownExpiry.diagnosticsLabel(now: now), "keychainLegacy refresh=no expired=unknown")
@@ -166,7 +163,6 @@ final class ClaudeAuthStoreTests: XCTestCase {
             ClaudeCredentialState(
                 oauth: ClaudeOAuth(accessToken: "token", scopes: scopes),
                 source: .keychainCurrentUser(service: "Claude Code-credentials"),
-                fullData: nil,
                 inferenceOnly: inferenceOnly
             )
         }

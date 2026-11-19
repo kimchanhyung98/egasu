@@ -26,6 +26,7 @@
 "Switch Account?" = "Switch Account?";
 "Switching…" = "Switching…";
 "The %@ sign-in did not complete. Nothing was added — try again." = "The %@ sign-in did not complete. Nothing was added — try again.";
+"Sign-in saved. egasu couldn't remove the temporary sign-in folder." = "Sign-in saved. egasu couldn't remove the temporary sign-in folder.";
 "The %@ sign-in did not complete. The saved account is unchanged." = "The %@ sign-in did not complete. The saved account is unchanged.";
 "The %@ sign-in finished without a usable credential. Nothing was added." = "The %@ sign-in finished without a usable credential. Nothing was added.";
 "The official %@ sign-in opens in your browser. Your current account and terminal sessions stay unchanged." = "The official %@ sign-in opens in your browser. Your current account and terminal sessions stay unchanged.";
@@ -75,5 +76,4 @@
 "Replace API Key…" = "Replace API Key…";
 
 "Moved metric %@ to position %lld of %lld." = "Moved metric %@ to position %lld of %lld.";
-"An old shell function can make Claude use a different login. In %@, delete the lines from “%@” through “%@”, including both markers. Then open a new terminal window." = "An old shell function can make Claude use a different login. In %@, delete the lines from “%@” through “%@”, including both markers. Then open a new terminal window.";
-"Couldn’t check %@ for the old OpenUsage Claude shell function." = "Couldn’t check %@ for the old OpenUsage Claude shell function.";
+"Claude login migration paused. %@" = "Claude login migration paused. %@";

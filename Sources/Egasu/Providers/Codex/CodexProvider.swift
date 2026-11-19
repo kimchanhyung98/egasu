@@ -374,6 +374,7 @@ final class CodexProvider: ProviderRuntime {
         var working = authState
         defer { authState = working }
         return try await ProviderAuthRetry.fetch(
+            provider: "codex",
             token: accessToken,
             attempt: { try await self.usageClient.fetchUsage(accessToken: $0, accountID: working.auth.tokens?.accountID) },
             refreshAccessToken: {

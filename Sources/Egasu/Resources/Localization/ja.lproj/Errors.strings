@@ -34,6 +34,7 @@
 "Claude account identity could not be verified. Sign in again before refreshing usage." = "Claude アカウントの識別情報を確認できませんでした。使用量を更新する前に、ログインし直してください。";
 "Claude account state is invalid: %@" = "Claude のアカウント状態が無効です: %@";
 "Claude account switch recovery is required. Open Accounts, open the Claude account you want to use, then choose Use Claude." = "Claudeのアカウント切り替えを復旧する必要があります。アカウントで使用するClaudeアカウントを開き、使用ボタンを選んでください。";
+"Claude is renewing a login. Try again when the refresh finishes." = "Claude のログイン情報を更新中です。更新が完了してからもう一度お試しください。";
 "Claude login changed during refresh. Refresh again." = "更新中に Claude のログイン情報が変更されました。もう一度更新してください。";
 "Claude sign-in has not finished updating its account state. Finish signing in and try again." = "Claude のログインに伴うアカウント状態の更新が完了していません。ログインを完了してから、もう一度お試しください。";
 "Claude sign-ins in different locations conflict. Open Accounts, open the Claude account, then choose Sign In Again." = "異なる場所に保存された Claude のログイン情報が競合しています。アカウントでClaudeアカウントを開き、「再ログイン」を選んでください。";
@@ -91,7 +92,7 @@
 "Grok not logged in. Run `grok login`." = "Grok にログインしていません。`grok login` を実行してください。";
 "Grok sign-in changed while refreshing. Refresh again to use the current account." = "更新中に Grok のログイン情報が変更されました。現在のアカウントを使用するには、もう一度更新してください。";
 "Grok sign-in could not be read. Check access to the Grok auth file and refresh again." = "Grok のログイン情報を読み取れませんでした。Grok 認証ファイルへのアクセス権を確認して、もう一度更新してください。";
-"Invalid Claude OAuth URL: %@. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE." = "Claude OAuth URL が無効です: %@。CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE を確認してください。";
+"Invalid Claude OAuth URL. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE." = "Claude OAuth URL が無効です。CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE を確認してください。";
 "Invalid HTTP response." = "HTTP の応答が無効です。";
 "Invalid account name." = "アカウント名が無効です。";
 "Invalid sign-in workspace component: %@" = "ログイン作業領域の構成要素が無効です: %@";
@@ -166,7 +167,8 @@
 "Refreshed Kimi credentials could not be saved." = "更新された Kimi の認証情報を保存できませんでした。";
 "Run devin auth login or sign in to Devin and try again." = "devin auth login を実行するか、Devin にログインしてから、もう一度お試しください。";
 "Session Expired" = "セッション期限切れ";
-"Session expired. Run `claude` to log in again." = "セッションの有効期限が切れました。`claude` を実行してログインし直してください。";
+"Claude could not renew this login. For a saved account, open Accounts and choose Sign In Again. Otherwise, run `claude auth login`." = "Claude のログイン情報を更新できません。登録済みのアカウントは「アカウント」で「再ログイン」を選んでください。未登録の場合は `claude auth login` を実行してください。";
+"egasu could not identify the Claude sign-in location from your shell configuration. Check the old OpenUsage Claude block in your login shell, then try again." = "シェル設定から Claude のログイン情報の保存先を特定できません。ログインシェルの設定で以前の OpenUsage の Claude ブロックを確認し、もう一度お試しください。";
 "Session expired. Run `codex` to log in again." = "セッションの有効期限が切れました。`codex` を実行してログインし直してください。";
 "Session expired. Sign in via Cursor app or run `agent login`." = "セッションの有効期限が切れました。Cursor アプリでログインするか、`agent login` を実行してください。";
 "Sign in again to restore usage." = "使用量を再取得するには、もう一度ログインしてください。";
@@ -311,3 +313,13 @@
 "Usage timer temporary files could not be removed." = "使用量タイマーの一時ファイルを削除できませんでした。";
 "Usage timer could not load the CLI model list. Check the CLI login and refresh." = "使用量タイマーでCLIのモデル一覧を読み込めませんでした。CLIのログインを確認して更新してください。";
 "Usage timer CLI execution failed. Refresh to try again." = "使用量タイマーのCLI実行に失敗しました。更新して再試行してください。";
+"The old shell and default Claude CLI use different accounts. Sign in to the same account in both, then restart egasu." = "以前のシェル関数とデフォルトの Claude CLI でアカウントが異なります。両方で同じアカウントにログインしてから、egasu を再起動してください。";
+"Claude sign-in is incomplete. Finish signing in to Claude, then restart egasu to finish migrating the old shell setup." = "Claude へのログインが完了していません。ログインを完了してから egasu を再起動すると、以前のシェル設定の移行を再試行します。";
+"Finish the pending Claude account switch in Accounts, then restart egasu." = "アカウント画面で進行中の Claude アカウントの切り替えを完了してから、egasu を再起動してください。";
+"Claude login settings differ between egasu and your current login shell. Check your shell settings, then restart egasu." = "egasu と現在のログインシェルで Claude のログイン設定が異なります。シェル設定を確認してから、egasu を再起動してください。";
+"egasu could not read your login shell environment. Check that your login shell starts, then restart egasu." = "ログインシェルの環境を読み取れませんでした。ログインシェルが起動することを確認してから、egasu を再起動してください。";
+"Your shell sets CLAUDE_CONFIG_DIR outside the old Claude function. Check which login you want to use before removing the function." = "以前の Claude 関数の外で CLAUDE_CONFIG_DIR が設定されています。関数を削除する前に、使用するログインを確認してください。";
+"Your shell settings changed during migration. Check your changes and any .egasu-recovery file next to your shell settings, then restart egasu." = "移行中にシェル設定が変更されました。編集内容と、シェル設定ファイルの隣にある .egasu-recovery ファイルを確認してから、egasu を再起動してください。";
+"Check access to your shell settings and Claude login files, then restart egasu." = "シェル設定と Claude ログインファイルへのアクセス権を確認してから、egasu を再起動してください。";
+"Another egasu process is updating the shared Claude login. Wait for it to finish, then try again." = "別の egasu が共有の Claude ログインを更新しています。完了してから、もう一度お試しください。";
+"Unlock your Keychain and restart egasu. Allow access to the Claude login if macOS asks." = "キーチェーンのロックを解除して egasu を再起動してください。macOS に求められたら、Claude ログインへのアクセスを許可してください。";

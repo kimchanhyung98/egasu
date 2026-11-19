@@ -10,166 +10,6 @@ private struct ClaudeUsageIdentityEnvironment: EnvironmentReading {
     }
 }
 
-struct ClaudeOAuth: Codable, Hashable, Sendable {
-    var accessToken: String?
-    var refreshToken: String?
-    var expiresAt: Double?
-    var subscriptionType: String?
-    var rateLimitTier: String?
-    var scopes: [String]?
-}
-
-struct ClaudeCredentialsFile: Codable, Hashable, Sendable {
-    var claudeAiOauth: ClaudeOAuth?
-}
-
-struct ClaudeCredentialState: Hashable, Sendable {
-    enum Source: Hashable, Sendable {
-        case file
-        case keychainCurrentUser(service: String)
-        case keychainLegacy(service: String)
-        case accountSnapshot(profileID: String)
-        case desktop
-        case environment
-
-        /// 로그 안전 source 종류 — keychain service 이름·토큰 노출 금지.
-        var label: String {
-            switch self {
-            case .file: "file"
-            case .keychainCurrentUser: "keychainCurrentUser"
-            case .keychainLegacy: "keychainLegacy"
-            case .accountSnapshot: "accountSnapshot"
-            case .desktop: "desktop"
-            case .environment: "environment"
-            }
-        }
-    }
-
-    var oauth: ClaudeOAuth
-    var source: Source
-    var fullData: ClaudeCredentialsFile?
-    var inferenceOnly: Bool
-    var accountIdentityKey: String? = nil
-
-    /// 공백 아닌 access token 보유 여부 — `refresh()` 필터와 `hasLocalCredentials()`가 공유하는 단일 "usable" 정의.
-    var hasUsableAccessToken: Bool {
-        oauth.accessToken?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-    }
-
-    /// 기본(info) 로그용 진단 라벨 — source 종류 + refresh token 유무 + 만료 여부만 포함.
-    /// 토큰 값·credential blob 노출 금지; `refresh=no`는 만료 자가 복구 불가의 근거(#738).
-    func diagnosticsLabel(now: Date) -> String {
-        let refresh = (oauth.refreshToken?.isEmpty == false) ? "yes" : "no"
-        let expired: String
-        if let expiresAt = oauth.expiresAt {
-            expired = expiresAt <= now.timeIntervalSince1970 * 1000 ? "yes" : "no"
-        } else {
-            expired = "unknown"
-        }
-        return "\(source.label) refresh=\(refresh) expired=\(expired)"
-    }
-}
-
-/// 유효 probe 순서의 토큰 보유 credential 후보 집합 — inference 전용 environment 토큰은 제외,
-/// 선택에 영향 가능한 저장 후보는 전부 유지.
-struct ClaudeCredentialGeneration: Equatable, Sendable {
-    struct Candidate: Equatable, Sendable {
-        let oauth: ClaudeOAuth
-        let source: ClaudeCredentialState.Source
-        let accountIdentityKey: String?
-
-        init(_ state: ClaudeCredentialState) {
-            oauth = state.oauth
-            source = state.source
-            accountIdentityKey = state.accountIdentityKey
-        }
-    }
-
-    var candidates: [Candidate]
-
-    init(_ states: [ClaudeCredentialState]) {
-        candidates = states
-            .filter { $0.hasUsableAccessToken && !$0.inferenceOnly }
-            .map(Candidate.init)
-    }
-
-    func replacing(_ state: ClaudeCredentialState) -> Self {
-        var updated = self
-        guard let index = updated.candidates.firstIndex(where: { $0.source == state.source }) else {
-            fatalError("live usage source missing from Claude credential generation")
-        }
-        updated.candidates[index] = Candidate(state)
-        return updated
-    }
-}
-
-struct ClaudeCredentialLoad: Sendable {
-    var candidates: [ClaudeCredentialState]
-    var desktopStatus: ClaudeDesktopCredentialStatus
-    var credentialError: Error? = nil
-}
-
-enum ClaudeAuthError: Error, LocalizedError, Equatable {
-    case notLoggedIn
-    case desktopPermissionRequired
-    case desktopTokenExpired
-    case desktopCredentialsUnavailable
-    case sessionExpired
-    case tokenExpired
-    case credentialsChanged
-    case invalidOAuthURL(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .notLoggedIn:
-            return "Not logged in. Run `claude` to authenticate."
-        case .desktopPermissionRequired:
-            return "Claude Desktop login found. Refresh once and choose Always Allow to connect it."
-        case .desktopTokenExpired:
-            return "Claude Desktop login is stale. Open Claude Desktop, then refresh egasu."
-        case .desktopCredentialsUnavailable:
-            return "Claude Desktop login couldn't be read. Open Claude Desktop, then try again."
-        case .sessionExpired:
-            return "Session expired. Run `claude` to log in again."
-        case .tokenExpired:
-            return "Token expired. Run `claude` to log in again."
-        case .credentialsChanged:
-            return "Claude login changed during refresh. Refresh again."
-        case .invalidOAuthURL(let value):
-            return "Invalid Claude OAuth URL: \(value). Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE."
-        }
-    }
-
-    /// source 하나의 실패가 다음 source로 폴백 가능한지 여부 — 토큰 만료/폐기 계열만 허용.
-    /// 외부 `claude` 재로그인이 다른 source에 남긴 새 토큰을 stale 토큰이 가리면 안 됨.
-    var allowsAuthFallback: Bool {
-        switch self {
-        case .sessionExpired, .tokenExpired, .desktopTokenExpired:
-            return true
-        case .notLoggedIn, .desktopPermissionRequired, .desktopCredentialsUnavailable,
-             .credentialsChanged, .invalidOAuthURL:
-            return false
-        }
-    }
-}
-
-struct ClaudeOAuthConfig: Hashable, Sendable {
-    var usageURL: URL
-    var refreshURL: URL
-    var clientID: String
-}
-
-/// `ClaudeAuthStore`가 볼 수 있는 로그인 범위. `.standard`는 기본 카드(기존 동작 그대로);
-/// 나머지는 cross-account·environment 토큰·Desktop 폴백 없이 생성된 로그인 하나만 조회.
-enum ClaudeCredentialScope: Hashable, Sendable {
-    case standard
-    /// 추가 `CLAUDE_CONFIG_DIR` home 하나. `keychainLiteral`은 keychain 항목 이름을 만드는
-    /// 해시 원문 — Claude Code는 env 값을 입력된 표기 그대로 해시(`~/…` vs 절대 경로 상이).
-    case configDir(path: String, keychainLiteral: String)
-    /// 저장된 계정 전환 credential — 토큰 rotation은 공유 Claude home이 아닌 전용 snapshot에 기록.
-    case accountSnapshot(profileID: String)
-}
-
 struct ClaudeAuthStore: Sendable {
     private static let defaultClaudeHome = "~/.claude"
     private static let credentialFileName = ".credentials.json"
@@ -188,9 +28,9 @@ struct ClaudeAuthStore: Sendable {
     /// `.standard` store의 Claude Desktop credential 폴백 허용 여부. 추가 계정 카드가 생기면
     /// catalog가 OFF — Desktop 로그인의 소속 카드를 몰라 다른 계정 카드에 usage가 섞일 수 있음.
     let allowsDesktopFallback: Bool
-    /// 관리 전환이 `~/.claude`를 Shared Runtime Home으로 소유할 때 true — ambient
-    /// `CLAUDE_CONFIG_DIR`를 무시하고 기본 Keychain·파일 순서로 조회 — 홈별 Keychain은 제외.
+    /// 관리형 기본 카드는 CLI가 쓰는 공유 로그인과 그 경로의 계정 정보만 조회.
     let pinsSharedHome: Bool
+    private let sharedLoginHome: URL?
 
     init(
         environment: EnvironmentReading = ProcessEnvironmentReader(),
@@ -200,6 +40,7 @@ struct ClaudeAuthStore: Sendable {
         scope: ClaudeCredentialScope = .standard,
         allowsDesktopFallback: Bool = true,
         pinsSharedHome: Bool = false,
+        sharedLoginHome: URL? = nil,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.environment = environment
@@ -209,6 +50,7 @@ struct ClaudeAuthStore: Sendable {
         self.scope = scope
         self.allowsDesktopFallback = allowsDesktopFallback
         self.pinsSharedHome = pinsSharedHome
+        self.sharedLoginHome = sharedLoginHome
         self.now = now
     }
 
@@ -230,8 +72,34 @@ struct ClaudeAuthStore: Sendable {
                 return ClaudeCredentialLoad(candidates: [], desktopStatus: desktopStatus, credentialError: error)
             }
         }
-        var stored = orderedStoredCandidates()
-        let identity = usageAccountIdentity()
+        let route: ClaudeSharedLoginRoute?
+        do {
+            route = scope == .standard ? try sharedLoginRoute() : nil
+            if let route, pinsSharedHome || route.configDirectory != nil {
+                let credential = try route.readCredential(
+                    keychain: keychain, files: files, filePath: credentialsPath(),
+                    environment: environment, allowInteraction: allowAccountInteraction
+                ).login
+                let candidates =
+                    credential.map {
+                        [
+                            ClaudeCredentialState(
+                                oauth: $0.oauth, source: $0.source, sourceText: $0.text, inferenceOnly: false,
+                                accountIdentityKey: usageAccountIdentity(sharedRoute: route),
+                                sharedLoginRoute: route
+                            )
+                        ]
+                    } ?? []
+                return ClaudeCredentialLoad(
+                    candidates: candidates,
+                    desktopStatus: forceDesktopFallback ? .notFound : .notChecked
+                )
+            }
+        } catch {
+            return ClaudeCredentialLoad(candidates: [], desktopStatus: .notChecked, credentialError: error)
+        }
+        var stored = orderedStoredCandidates(sharedRoute: route)
+        let identity = usageAccountIdentity(sharedRoute: route)
         // 홈 메타데이터는 우선 사용되는 로그인만 식별. 별도 파일의 폴백 토큰까지 같은 계정으로 추정 금지.
         if let index = stored.firstIndex(where: { $0.hasUsableAccessToken && liveUsageAvailability($0) == .available }) {
             stored[index].accountIdentityKey = identity
@@ -253,7 +121,7 @@ struct ClaudeAuthStore: Sendable {
                 stored.insert(ClaudeCredentialState(
                     oauth: oauth,
                     source: .desktop,
-                    fullData: nil,
+                        sourceText: nil,
                     inferenceOnly: false,
                     accountIdentityKey: result.accountIdentityKey
                 ), at: 0)
@@ -304,7 +172,7 @@ struct ClaudeAuthStore: Sendable {
         let envCandidate = ClaudeCredentialState(
             oauth: oauth,
             source: .environment,
-            fullData: base?.fullData,
+            sourceText: nil,
             inferenceOnly: true
         )
         return liveCapable.isEmpty ? [envCandidate] : liveCapable + [envCandidate]
@@ -325,17 +193,75 @@ struct ClaudeAuthStore: Sendable {
         return ClaudeCredentialGeneration(load.candidates)
     }
 
+    final class ManagedRotation: Sendable {
+        private let sharedLock: SingleInstanceLock.Token?
+
+        fileprivate init(sharedLock: SingleInstanceLock.Token?) {
+            self.sharedLock = sharedLock
+        }
+
+        deinit { AccountCredentialMutationLock.endClaudeRotation() }
+    }
+
+    func beginManagedRotation(
+        for state: ClaudeCredentialState, ifUnchanged expected: ClaudeCredentialGeneration,
+        allowAccountInteraction: Bool
+    ) throws -> ManagedRotation? {
+        let home = sharedRotationHome(for: state)
+        switch scope {
+        case .standard where pinsSharedHome || home != nil, .accountSnapshot:
+            let sharedLock = try home.map { try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: $0) }
+            try AccountCredentialMutationLock.beginClaudeRotation {
+                if let home { try ClaudeLegacyShellMigration.checkPendingSharedLoginChanges(home: home) }
+                guard try credentialGeneration(allowAccountInteraction: allowAccountInteraction) == expected
+                else { throw ClaudeAuthError.credentialsChanged }
+            }
+            return ManagedRotation(sharedLock: sharedLock)
+        default:
+            return nil
+        }
+    }
+
+    /// 같은 CLI 인증을 소비하는 갱신은 OAuth 요청부터 저장까지 운영·개발 앱과 직렬화.
+    private func sharedRotationHome(for state: ClaudeCredentialState) -> URL? {
+        guard scope == .standard, let home = sharedLoginHome else { return nil }
+        if state.sharedLoginRoute != nil { return home }
+        switch state.source {
+        case .keychainCurrentUser(let service), .keychainLegacy(let service):
+            return service == Self.baseKeychainServiceName(environment: environment) ? home : nil
+        case .file:
+            guard let override = claudeHomeOverride() else { return home }
+            let resolved = URL(fileURLWithPath: (override as NSString).expandingTildeInPath).resolvingSymlinksInPath()
+            return resolved.path == home.appendingPathComponent(".claude").resolvingSymlinksInPath().path ? home : nil
+        default:
+            return nil
+        }
+    }
+
     /// 유효 후보 집합이 그대로일 때만 OAuth rotation 저장 — generation 전체 비교로 상위 source 추가까지 감지.
     /// 저장소에 원자적 compare-and-swap이 없어 best-effort.
     func save(
         _ state: ClaudeCredentialState, ifUnchanged expected: ClaudeCredentialGeneration,
         allowAccountInteraction: Bool = false
     ) throws -> Bool {
-        guard try credentialGeneration(allowAccountInteraction: allowAccountInteraction) == expected else { return false }
-        var fullData = state.fullData ?? ClaudeCredentialsFile()
-        fullData.claudeAiOauth = state.oauth
-        let data = try JSONEncoder().encode(fullData)
-        guard let text = String(data: data, encoding: .utf8) else { return false }
+        AccountCredentialMutationLock.acquire(family: "claude")
+        defer { AccountCredentialMutationLock.release(family: "claude") }
+        let current = loadCredentialSet(allowAccountInteraction: allowAccountInteraction)
+        if let error = current.credentialError { throw error }
+        guard ClaudeCredentialGeneration(current.candidates) == expected,
+            let saved = current.candidates.first(where: { $0.source == state.source }),
+            let sourceText = saved.sourceText,
+            var document = ProviderParse.jsonObjectWithHexFallback(sourceText),
+            var oauth = document["claudeAiOauth"] as? [String: Any]
+        else { return false }
+
+        // 같은 저장소에서 다시 읽은 원문에 회전한 값만 적용 — MCP 인증과 CLI 확장 필드 보존.
+        if state.oauth.accessToken != saved.oauth.accessToken { oauth["accessToken"] = state.oauth.accessToken }
+        if state.oauth.refreshToken != saved.oauth.refreshToken { oauth["refreshToken"] = state.oauth.refreshToken }
+        if state.oauth.expiresAt != saved.oauth.expiresAt { oauth["expiresAt"] = state.oauth.expiresAt }
+        document["claudeAiOauth"] = oauth
+        let data = try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys])
+        let text = String(decoding: data, as: UTF8.self)
 
         switch state.source {
         case .file:
@@ -453,19 +379,24 @@ struct ClaudeAuthStore: Sendable {
     /// 원격 OAuth는 HTTPS 필수. HTTP는 명시적 loopback 개발 주소만 허용.
     private func validatedOAuthURL(_ value: String) throws -> URL {
         guard let url = URL(string: value) else {
-            throw ClaudeAuthError.invalidOAuthURL(value)
+            throw ClaudeAuthError.invalidOAuthURL
         }
         let scheme = url.scheme?.lowercased()
         let host = url.host?.lowercased() ?? ""
         let isLoopback = ["localhost", "127.0.0.1", "::1"].contains(host)
         guard !host.isEmpty, scheme == "https" || (scheme == "http" && isLoopback) else {
-            // 새로 거부한 주소의 userinfo·경로·query·fragment를 오류에 노출하지 않음.
-            throw ClaudeAuthError.invalidOAuthURL("\(scheme ?? "")://\(host)")
+            throw ClaudeAuthError.invalidOAuthURL
         }
         return url
     }
 
-    func keychainServiceCandidates() -> [String] {
+    private func sharedLoginRoute() throws -> ClaudeSharedLoginRoute {
+        try ClaudeSharedLoginRoute.resolve(
+            homeDirectory: FileManager.default.homeDirectoryForCurrentUser, files: files, environment: environment
+        )
+    }
+
+    func keychainServiceCandidates(sharedRoute: ClaudeSharedLoginRoute? = nil) -> [String] {
         // suffix만 필요(실패 없음) — throwing URL 경로와 분리해 커스텀 OAuth URL 오류에도 credential 로딩 유지.
         let base = "\(Self.keychainServicePrefix)\(resolveOAuthEndpoints().suffix)-credentials"
         switch scope {
@@ -473,11 +404,12 @@ struct ClaudeAuthStore: Sendable {
             // 이 카드의 항목만 — 기본 service는 다른 계정의 로그인.
             return ["\(base)-\(hashSuffix(keychainLiteral))"]
         case .standard:
-            if pinsSharedHome { return [base] }
+            guard let route = try? sharedRoute ?? sharedLoginRoute() else { return [] }
+            if case .legacy = route { return [route.service(environment: environment)] }
             if let configDir = claudeHomeOverride() {
                 return ["\(base)-\(hashSuffix(configDir))", base]
             }
-            return [base]
+            return [route.service(environment: environment)]
         case .accountSnapshot:
             return []
         }
@@ -489,9 +421,9 @@ struct ClaudeAuthStore: Sendable {
 
     /// keychain-우선 고정 순서의 credential 후보. keychain이 macOS의 source of truth — stale 파일이
     /// 늦은 만료 시각만으로 keychain을 앞서면 안 됨(#738); 파일 폴백은 refresh 루프 담당(#687).
-    private func orderedStoredCandidates() -> [ClaudeCredentialState] {
+    private func orderedStoredCandidates(sharedRoute: ClaudeSharedLoginRoute?) -> [ClaudeCredentialState] {
         var candidates: [ClaudeCredentialState] = []
-        if let keychain = loadKeychainCredentials() { candidates.append(keychain) }
+        if let keychain = loadKeychainCredentials(sharedRoute: sharedRoute) { candidates.append(keychain) }
         if let file = loadFileCredentials() { candidates.append(file) }
 
         if candidates.count > 1 {
@@ -513,12 +445,12 @@ struct ClaudeAuthStore: Sendable {
         else {
             return nil
         }
-        return ClaudeCredentialState(oauth: oauth, source: .file, fullData: parsed, inferenceOnly: false)
+        return ClaudeCredentialState(oauth: oauth, source: .file, sourceText: text, inferenceOnly: false)
     }
 
-    private func loadKeychainCredentials() -> ClaudeCredentialState? {
-        // service 이름은 로그 가능; 반환된 credential blob·OAuth 토큰 로깅 금지.
-        for service in keychainServiceCandidates() {
+    private func loadKeychainCredentials(sharedRoute: ClaudeSharedLoginRoute?) -> ClaudeCredentialState? {
+        // Keychain service 이름에는 사용자별 경로 해시가 포함되므로 조회 결과와 출처만 기록.
+        for service in keychainServiceCandidates(sharedRoute: sharedRoute) {
             if scope == .standard, claudeHomeOverride() != nil,
                service == Self.baseKeychainServiceName(environment: environment) {
                 guard let identity = usageAccountIdentity(),
@@ -526,18 +458,18 @@ struct ClaudeAuthStore: Sendable {
             }
             if let state = credentialState(
                 from: try? keychain.readGenericPasswordForCurrentUser(service: service),
-                service: service, source: .keychainCurrentUser(service: service)
+                source: .keychainCurrentUser(service: service)
             ) {
                 return state
             }
             if let state = credentialState(
                 from: try? keychain.readGenericPassword(service: service),
-                service: service, source: .keychainLegacy(service: service)
+                source: .keychainLegacy(service: service)
             ) {
                 return state
             }
-            AppLog.debug(.keychain, "read miss service=\(service)")
         }
+        AppLog.debug(LogTag.auth("claude"), "no usable Keychain credential")
         return nil
     }
 
@@ -556,32 +488,36 @@ struct ClaudeAuthStore: Sendable {
         return ClaudeCredentialState(
             oauth: oauth,
             source: .accountSnapshot(profileID: profileID),
-            fullData: parsed,
+            sourceText: entry.credential,
             inferenceOnly: false,
             accountIdentityKey: AccountCredentialSwitcher().identity(of: entry, family: "claude")?.identityKey
         )
     }
 
-    private func usageAccountIdentity(useDefaultHome: Bool = false) -> String? {
+    private func usageAccountIdentity(useDefaultHome: Bool = false, sharedRoute: ClaudeSharedLoginRoute? = nil)
+        -> String?
+    {
         var observer = DefaultAccountObserver(
             environment: environment, files: files, keychain: keychain, pinsClaudeSharedHome: pinsSharedHome
         )
+        var route = sharedRoute
         if useDefaultHome {
             observer.environment = ClaudeUsageIdentityEnvironment(base: environment, configDir: nil)
             observer.pinsClaudeSharedHome = false
+            route = .plain
         } else if case .configDir(let path, _) = scope {
             observer.environment = ClaudeUsageIdentityEnvironment(base: environment, configDir: path)
             observer.pinsClaudeSharedHome = false
+            route = .plain
         }
-        guard case .resolved(let key, _, _) = observer.observeClaude() else { return nil }
+        guard case .resolved(let key, _, _) = observer.observeClaude(sharedRoute: route)
+        else { return nil }
         return key
     }
 
-    /// keychain 히트 1건을 credential state로 파싱 — 부재/손상/토큰 없음이면 `nil`.
-    /// keychain 읽기 자체는 호출부 유지 — 읽기 순서와 에러 처리 보존.
+    /// 사용할 수 있는 OAuth 토큰이 있는 Keychain 항목만 인증 후보로 채택.
     private func credentialState(
         from value: String?,
-        service: String,
         source: ClaudeCredentialState.Source
     ) -> ClaudeCredentialState? {
         guard let value,
@@ -591,8 +527,8 @@ struct ClaudeAuthStore: Sendable {
         else {
             return nil
         }
-        AppLog.debug(.keychain, "read hit service=\(service)")
-        return ClaudeCredentialState(oauth: oauth, source: source, fullData: parsed, inferenceOnly: false)
+        AppLog.debug(LogTag.auth("claude"), "read Keychain credential source=\(source.label)")
+        return ClaudeCredentialState(oauth: oauth, source: source, sourceText: value, inferenceOnly: false)
     }
 
     private func credentialsPath() -> String {

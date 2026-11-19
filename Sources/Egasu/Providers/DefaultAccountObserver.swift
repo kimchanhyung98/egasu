@@ -71,46 +71,51 @@ struct DefaultAccountObserver: Sendable {
         return email.map { "\($0) (\(org))" } ?? org
     }
 
-    /// 기본 Claude home 관찰 — `ClaudeAuthStore`의 해석과 동일 (`CLAUDE_CONFIG_DIR` export 시 그 경로, 아니면 `~/.claude`).
-    func observeClaude() -> Outcome {
-        var configDir = "~/.claude"
-        var hasConfigDirOverride = false
-        if !pinsClaudeSharedHome,
-           let raw = environment.value(for: "CLAUDE_CONFIG_DIR")?
-            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
-            configDir = raw
-            hasConfigDirOverride = true
+    /// 기본 카드가 읽은 로그인과 같은 경로에서 계정과 조직 확인.
+    func observeClaude(sharedRoute: ClaudeSharedLoginRoute? = nil) -> Outcome {
+        let anchor: String
+        let identityPath: String
+        let home = homeDirectory().resolvingSymlinksInPath().standardizedFileURL
+        let route: ClaudeSharedLoginRoute
+        do {
+            route =
+                try sharedRoute
+                ?? ClaudeSharedLoginRoute.resolve(
+                    homeDirectory: home, files: files, environment: environment)
+        } catch {
+            return .unresolved(
+                reason: "Claude shell configuration unreadable: category=\(ErrorCategory.classify(error).rawValue)")
         }
-        let anchor = expandTilde(configDir)
-        // 기본 상태 파일은 `~/.claude.json`. 명시적 설정 경로는 디렉터리 내부 상태 파일 사용.
-        let identityPaths = [hasConfigDirOverride ? anchor + "/.claude.json" : expandTilde("~/.claude.json")]
-        var namedAccounts: [(key: String, label: String?)] = []
-        var sawStateFile = false
-        for identityPath in identityPaths {
-            let text: String?
-            do {
-                text = try files.readTextIfPresent(identityPath)
-            } catch {
-                return .unresolved(reason: "identity file unreadable: \(error.localizedDescription)")
-            }
-            guard let text else { continue }
-            sawStateFile = true
+        let override = environment.value(for: "CLAUDE_CONFIG_DIR")?
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        if !pinsClaudeSharedHome, route == .plain, let override {
+            anchor = expandTilde(override)
+            identityPath = anchor + "/.claude.json"
+        } else {
+            anchor = home.appendingPathComponent(".claude").path
+            identityPath = route.stateURL(homeDirectory: home).path
+        }
+        let text: String?
+        do {
+            text = try files.readTextIfPresent(identityPath)
+        } catch {
+            return .unresolved(reason: "identity file unreadable: category=\(ErrorCategory.classify(error).rawValue)")
+        }
+        if let text {
             guard let parsed = try? JSONDecoder().decode(ClaudeStateFile.self, from: Data(text.utf8)),
-                  let account = parsed.oauthAccount,
-                  let key = Self.claudeIdentityKey(account)
-            else { continue }
-            namedAccounts.append((key, Self.claudeIdentityLabel(account)))
+                let account = parsed.oauthAccount, let key = Self.claudeIdentityKey(account)
+            else { return .unresolved(reason: "identity file present but names no account") }
+            return .resolved(identityKey: key, label: Self.claudeIdentityLabel(account), anchor: anchor)
         }
-        if let first = namedAccounts.first {
-            guard namedAccounts.allSatisfy({ $0.key == first.key }) else {
-                return .unresolved(reason: "shared home state files name different accounts")
+        if case .legacy = route {
+            do {
+                let modified = try keychain.genericPasswordModificationDateForCurrentUser(
+                    service: route.service(environment: environment))
+                return modified == nil ? .absent : .unresolved(reason: "credentials present but no identity file")
+            } catch {
+                return .unresolved(reason: "scoped credentials unreadable and no identity file")
             }
-            return .resolved(identityKey: first.key, label: first.label, anchor: anchor)
         }
-        if sawStateFile {
-            return .unresolved(reason: "identity file present but names no account")
-        }
-        // state file 없음 — credential file만으로는 귀속 불가, footprint조차 없으면 absent.
         return files.exists(anchor + "/.credentials.json")
             ? .unresolved(reason: "credentials present but no identity file")
             : .absent

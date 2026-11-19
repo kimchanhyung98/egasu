@@ -40,6 +40,7 @@ final class ClaudeConfigDirDiscoveryTests: XCTestCase {
         XCTAssertEqual(finding.identityKey, "acct-2")
         XCTAssertEqual(finding.label, "work@example.com (Company)")
         XCTAssertEqual(finding.anchorPath, "/Users/dev/.claude-work")
+        XCTAssertEqual(result.notes, ["claude config discovery: accepted source=file"])
     }
 
     func testAcceptsAKeychainBackedDirThroughItsScopedServiceName() throws {
@@ -61,6 +62,7 @@ final class ClaudeConfigDirDiscoveryTests: XCTestCase {
         let finding = try XCTUnwrap(result.findings.first)
         XCTAssertEqual(finding.identityKey, "acct-3")
         XCTAssertEqual(finding.keychainLiteral, literal)
+        XCTAssertEqual(result.notes, ["claude config discovery: accepted source=keychain"])
     }
 
     func testRejectsIdentityWithoutCredentialAndCredentialWithoutIdentity() {
@@ -77,7 +79,10 @@ final class ClaudeConfigDirDiscoveryTests: XCTestCase {
         let result = discovery.run()
 
         XCTAssertTrue(result.findings.isEmpty)
-        XCTAssertEqual(result.notes.count, 1, "the near-miss with an identity enters the support trail")
+        XCTAssertEqual(
+            result.notes,
+            ["claude config discovery: skipped candidate without file or Keychain credentials"]
+        )
     }
 
     func testExcludesTheDefaultHomesIncludingTheEnvOverride() {
@@ -119,6 +124,23 @@ final class ClaudeConfigDirDiscoveryTests: XCTestCase {
         let finding = try XCTUnwrap(result.findings.first)
         XCTAssertEqual(finding.identityKey, "acct-5")
         XCTAssertEqual(finding.anchorPath, "/Users/dev/accounts/claude-work")
+        XCTAssertEqual(result.notes, ["claude config discovery: accepted source=file"])
+    }
+
+    func testObservedDefaultHomeDoesNotExcludeAnAdditionalXDGLogin() {
+        let shared = "/Users/dev/.claude"
+        let xdg = "/Users/dev/.config/claude"
+        let discovery = makeDiscovery(
+            files: [
+                shared + "/.claude.json": #"{"oauthAccount":{"accountUuid":"SAME"}}"#,
+                shared + "/.credentials.json": #"{"claudeAiOauth":{"accessToken":"fixture"}}"#,
+                xdg + "/.claude.json": #"{"oauthAccount":{"accountUuid":"SAME"}}"#,
+                xdg + "/.credentials.json": #"{"claudeAiOauth":{"accessToken":"fixture"}}"#
+            ],
+            subdirectories: [shared, xdg]
+        )
+
+        XCTAssertEqual(discovery.run(observedDefaultHome: shared).findings.map(\.anchorPath), [xdg])
     }
 
     func testCommaInConfigDirExcludesOneCompleteDefaultHome() {

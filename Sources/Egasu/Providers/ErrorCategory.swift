@@ -78,6 +78,58 @@ extension AccountCredentialVaultError: CategorizedError {
     var errorCategory: ErrorCategory { .authInvalid }
 }
 
+// MARK: - Account operations
+
+extension AccountCredentialSwitcher.Error: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .unsupportedFamily: .notAvailable
+        case .missingSnapshot: .notLoggedIn
+        case .invalidClaudeState: .decoding
+        case .snapshotIdentityMismatch, .incompleteClaudeAuthentication, .conflictingClaudeAuthentication,
+            .switchVerificationFailed:
+            .authInvalid
+        case .switchRecoveryRequired, .selectionSaveFailed: .storage
+        }
+    }
+}
+
+extension AccountCredentialImporter.ImportError: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .noSignIn: .notLoggedIn
+        case .identityUnreadable, .verificationFailed: .authInvalid
+        }
+    }
+}
+
+extension AccountCredentialImporter.RemovalError: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .workspace: .storage
+        case .snapshot: .credentialAccess
+        }
+    }
+}
+
+extension AccountIdentityReplacementError: CategorizedError {
+    var errorCategory: ErrorCategory { .storage }
+}
+
+extension AccountSignInWorkspace.WorkspaceError: CategorizedError {
+    var errorCategory: ErrorCategory { .storage }
+}
+
+extension AccountProfileError: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .registryUnreadable: .storage
+        case .unknownFamily, .accountLimitReached: .notAvailable
+        case .invalidLabel, .duplicateLabel, .profileNotFound, .ambiguousReference, .removeSelectedProfile: .other
+        }
+    }
+}
+
 // MARK: - Provider conformances
 // retroactive conformance를 한 파일에 모음 — 새 error case가 `.other`로 조용히 떨어지는 대신 여기서 컴파일 오류 발생 (exhaustive switch).
 
@@ -88,7 +140,7 @@ extension ClaudeAuthError: CategorizedError {
         case .sessionExpired, .tokenExpired, .desktopTokenExpired: .authExpired
         case .invalidOAuthURL, .desktopCredentialsUnavailable: .authInvalid
         case .desktopPermissionRequired: .credentialAccess
-        case .credentialsChanged: .other
+        case .credentialsChanged, .rotationInProgress: .other
         }
     }
 }

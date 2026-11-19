@@ -12,13 +12,17 @@ extension ClaudeAuthError: UserPresentableError {
         case .desktopCredentialsUnavailable:
             .init("Claude Desktop login couldn't be read. Open Claude Desktop, then try again.")
         case .sessionExpired:
-            .init("Session expired. Run `claude` to log in again.")
+            .init(
+                "Claude could not renew this login. For a saved account, open Accounts and choose Sign In Again. Otherwise, run `claude auth login`."
+            )
         case .tokenExpired:
             .init("Token expired. Run `claude` to log in again.")
         case .credentialsChanged:
             .init("Claude login changed during refresh. Refresh again.")
-        case .invalidOAuthURL(let value):
-            .init("Invalid Claude OAuth URL: %@. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE.", [String(value)])
+        case .rotationInProgress:
+            .init("Claude is renewing a login. Try again when the refresh finishes.")
+        case .invalidOAuthURL:
+            .init("Invalid Claude OAuth URL. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE.")
         }
     }
 }

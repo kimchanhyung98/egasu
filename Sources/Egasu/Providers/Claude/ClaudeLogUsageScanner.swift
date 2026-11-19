@@ -69,10 +69,13 @@ actor ClaudeLogUsageScanner {
 
     /// 최근 `daysBack`일 로그 스캔. 발견 오류 없이 로그가 없으면 `nil`.
     /// 발견·읽기 실패는 결과에 포함하며 정상 수집에서 사용량이 없으면 빈 이력 반환.
-    func scan(daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing) async -> LogUsageScan? {
+    func scan(
+        daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing, sharedRoute: ClaudeSharedLoginRoute? = nil
+    ) async -> LogUsageScan? {
         let since = JSONLScanning.sinceDate(daysBack: daysBack, now: now)
-        let cacheIdentity = parseCacheIdentity()
-        let roots = claudeRoots()
+        let configuredRoots = configuredRoots(sharedRoute: sharedRoute)
+        let cacheIdentity = parseCacheIdentity(configuredRoots: configuredRoots)
+        let roots = claudeRoots(configuredRoots: configuredRoots)
         let discovery = UsageFileDiscovery.files(under: roots.urls.map { $0.appendingPathComponent("projects") }) {
             $0.pathExtension == "jsonl"
         }
@@ -99,30 +102,30 @@ actor ClaudeLogUsageScanner {
         return scan
     }
 
-    /// 발견된 root 목록이 아닌 안정적 source 구성 identity — Cowork 세션 추가 시 기존 캐시 확장(cold-parse 방지),
-    /// scoped override는 명시 identity로 home 간 분리 유지.
-    private func parseCacheIdentity() -> String {
-        if let cacheIdentityOverride { return cacheIdentityOverride }
-        let home = homeDirectory().resolvingSymlinksInPath().path
-        let configuredRoots: [URL]
+    private func configuredRoots(sharedRoute: ClaudeSharedLoginRoute?) -> [URL] {
+        if let rootsOverride { return rootsOverride }
+        let home = homeDirectory()
+        if case .legacy = sharedRoute { return [home.appendingPathComponent(".claude")] }
         if !pinsSharedHome,
-           let raw = environment.value(for: "CLAUDE_CONFIG_DIR")?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-           !raw.isEmpty
+            let raw = environment.value(for: "CLAUDE_CONFIG_DIR")?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            !raw.isEmpty
         {
             var url = URL(fileURLWithPath: expandHome(raw))
             if url.lastPathComponent == "projects" { url.deleteLastPathComponent() }
-            configuredRoots = [url]
-        } else {
-            let homeURL = homeDirectory()
-            let xdg = environment.value(for: "XDG_CONFIG_HOME")?.nilIfEmpty
-                .map { URL(fileURLWithPath: expandHome($0)) }
-                ?? homeURL.appendingPathComponent(".config")
-            configuredRoots = [
-                xdg.appendingPathComponent("claude"),
-                homeURL.appendingPathComponent(".claude"),
-            ]
+            return [url]
         }
+        let xdg =
+            environment.value(for: "XDG_CONFIG_HOME")?.nilIfEmpty
+            .map { URL(fileURLWithPath: expandHome($0)) }
+            ?? home.appendingPathComponent(".config")
+        return [xdg.appendingPathComponent("claude"), home.appendingPathComponent(".claude")]
+    }
+
+    /// Cowork 세션이 늘어나도 같은 구성의 기존 캐시를 확장.
+    private func parseCacheIdentity(configuredRoots: [URL]) -> String {
+        if let cacheIdentityOverride { return cacheIdentityOverride }
+        let home = homeDirectory().resolvingSymlinksInPath().path
         let roots = Set(configuredRoots.map { $0.resolvingSymlinksInPath().standardizedFileURL.path })
             .sorted()
             .joined(separator: "\n")
@@ -133,7 +136,7 @@ actor ClaudeLogUsageScanner {
 
     /// `rootsOverride`가 있으면 이 목록만 탐색.
     /// 기본 카드 탐색은 기본 설정 경로와 Cowork, 같은 계정의 추가 경로를 포함.
-    private func claudeRoots() -> (urls: [URL], failures: Int) {
+    private func claudeRoots(configuredRoots: [URL]) -> (urls: [URL], failures: Int) {
         var roots: [URL] = []
         var seen: Set<String> = []
 
@@ -143,25 +146,8 @@ actor ClaudeLogUsageScanner {
         }
 
         // scoped 카드는 자기 config dir만 스캔 — env 해석·Cowork walk 없음(sandbox는 기본 로그인 소속).
-        if let rootsOverride {
-            for root in rootsOverride { add(root) }
-            return (roots, 0)
-        }
-
-        if !pinsSharedHome,
-           let raw = environment.value(for: "CLAUDE_CONFIG_DIR")?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !raw.isEmpty {
-            var url = URL(fileURLWithPath: expandHome(raw))
-            // `projects/` dir 자체를 상위 config dir의 alias로 수용.
-            if url.lastPathComponent == "projects" { url.deleteLastPathComponent() }
-            add(url)
-        } else {
-            let home = homeDirectory()
-            let xdg = environment.value(for: "XDG_CONFIG_HOME")?.nilIfEmpty.map { URL(fileURLWithPath: expandHome($0)) }
-                ?? home.appendingPathComponent(".config")
-            add(xdg.appendingPathComponent("claude"))
-            add(home.appendingPathComponent(".claude"))
-        }
+        for root in configuredRoots { add(root) }
+        if rootsOverride != nil { return (roots, 0) }
 
         let cowork = Self.coworkClaudeDirs(home: homeDirectory())
         for sandbox in cowork.urls { add(sandbox) }

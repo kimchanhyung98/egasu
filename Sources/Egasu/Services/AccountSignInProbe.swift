@@ -12,6 +12,8 @@ struct AccountSignInProbe: Sendable {
         case needsSignIn
         /// 승인·잠금 등으로 snapshot 확인 불가 — 전환 시 대화형 조회로 재확인 가능.
         case readFailed(String)
+        /// 셸 설정을 확인할 수 없어 Keychain 승인으로는 해결할 수 없는 상태.
+        case routeUnavailable(String)
 
         var isReady: Bool {
             if case .ready = self { return true }
@@ -45,7 +47,10 @@ struct AccountSignInProbe: Sendable {
         } catch AccountCredentialVaultError.missingEntry {
             return .needsSignIn
         } catch {
-            AppLog.error(.auth, "account snapshot read failed during readiness probe: \(error.localizedDescription)")
+            AppLog.error(
+                .auth,
+                "account snapshot read failed during readiness probe: category=\(ErrorCategory.classify(error).rawValue)"
+            )
             return .readFailed(UserFacingErrors.message(error))
         }
         guard let snapshot,
@@ -59,8 +64,15 @@ struct AccountSignInProbe: Sendable {
             do {
                 shared = try switcher.readSharedClaudeAuthenticationForReadiness(allowInteraction: allowInteraction)
             } catch {
-                AppLog.error(.auth, "shared Claude home read failed during readiness probe: \(error.localizedDescription)")
-                return error is KeychainError ? .readFailed(UserFacingErrors.message(error)) : .needsSignIn
+                AppLog.error(
+                    .auth,
+                    "shared Claude home read failed during readiness probe: category=\(ErrorCategory.classify(error).rawValue)"
+                )
+                if error is AccountCredentialSwitcher.Error { return .needsSignIn }
+                if error is ClaudeSharedLoginRoute.UnrecognizedSetup {
+                    return .routeUnavailable(UserFacingErrors.message(error))
+                }
+                return .readFailed(UserFacingErrors.message(error))
             }
             guard let shared,
                   switcher.identity(of: shared, family: profile.family)?.identityKey == profile.identityKey

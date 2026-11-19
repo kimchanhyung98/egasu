@@ -3,13 +3,14 @@ import Foundation
 extension AccountCredentialSwitcher {
     // MARK: - Switch transaction
 
-    /// Settings 토글 트랜잭션 — target snapshot 검증, 떠나는 계정의 rotated credential 보존, target 인증만 적용, 적용 identity 검증, 실패 시 rollback.
-    /// 선택 상태 갱신은 caller 몫 — 이 함수 반환 후에만.
+    /// 이전 계정의 갱신된 인증을 보존하고 대상 계정의 인증을 적용.
+    /// 선택 계정은 이 함수의 검증이 끝난 뒤 호출자가 저장.
     func switchAuthentication(
         to selected: AccountProfile,
         from current: AccountProfile?,
         verifiedClaudeDeparture: VerifiedClaudeExternalAuthentication? = nil,
-        expectedTarget: AccountCredentialVault.Entry? = nil
+        expectedTarget: AccountCredentialVault.Entry? = nil,
+        expectedClaudeState: AccountSwitchJournal.SharedState? = nil
     ) throws {
         guard AccountProfilesStore.isSupportedFamily(selected.family) else {
             throw Error.unsupportedFamily(selected.family)
@@ -18,6 +19,7 @@ extension AccountCredentialSwitcher {
         guard current?.id != selected.id else { return }
         AccountCredentialMutationLock.acquire(family: selected.family)
         defer { AccountCredentialMutationLock.release(family: selected.family) }
+        if selected.family == "claude" { try AccountCredentialMutationLock.requireIdleClaudeRotation() }
 
         let target: AccountCredentialVault.Entry
         do {
@@ -39,7 +41,19 @@ extension AccountCredentialSwitcher {
             }
         }
         // 활성 credential은 적용 후 rotate됐을 수 있음 — 현재 profile과 일치할 때만 보존.
-        let active = try readSharedAuthentication(family: selected.family)
+        let initialClaudeState = selected.family == "claude" ? try readClaudeSwitchState() : nil
+        if let expectedClaudeState, expectedClaudeState != initialClaudeState {
+            throw ClaudeAuthError.credentialsChanged
+        }
+        if let verifiedClaudeDeparture, verifiedClaudeDeparture.sourceID != initialClaudeState?.sourceID {
+            throw ClaudeAuthError.credentialsChanged
+        }
+        let active: AccountCredentialVault.Entry?
+        if let initialClaudeState {
+            active = sharedClaudeAuthentication(in: initialClaudeState)
+        } else {
+            active = try readSharedAuthentication(family: selected.family)
+        }
         if selected.family == "claude", let verifiedClaudeDeparture, active != verifiedClaudeDeparture.observed {
             throw ClaudeAuthError.credentialsChanged
         }
@@ -70,6 +84,9 @@ extension AccountCredentialSwitcher {
                 }
             }
             if let preserved {
+                if let initialClaudeState, try readClaudeSwitchState() != initialClaudeState {
+                    throw ClaudeAuthError.credentialsChanged
+                }
                 try saveSnapshot(preserved, for: current)
                 try writeWorkspaceAuthentication(preserved, for: current)
             }
@@ -86,7 +103,7 @@ extension AccountCredentialSwitcher {
             }
         }
         do {
-            try applySharedAuthentication(target, family: selected.family)
+            try applySharedAuthentication(target, family: selected.family, expectedClaudeState: initialClaudeState)
             let applied = try readSharedAuthentication(family: selected.family)
             guard let applied,
                   identity(of: applied, family: selected.family)?.identityKey == selected.identityKey else {
@@ -98,11 +115,13 @@ extension AccountCredentialSwitcher {
                 try saveSnapshot(synchronized, for: selected)
             }
         } catch {
-            if let active {
+            if selected.family == "codex", let active {
                 do {
                     try applySharedAuthentication(active, family: selected.family)
                 } catch {
-                    AppLog.error(.auth, "account switch rollback failed: \(error.localizedDescription)")
+                    AppDiagnostics.failure(
+                        .accountRollback, error: error, providerID: selected.family,
+                        localContext: "restore shared login")
                 }
             }
             throw error

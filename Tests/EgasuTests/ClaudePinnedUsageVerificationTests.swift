@@ -6,8 +6,10 @@ final class ClaudePinnedUsageVerificationTests: XCTestCase {
     func testRejectedSharedLoginCannotStoreForeignUsageUnderSelectedAccount() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         fixture.keychain.currentUserValues[fixture.baseService] = fixture.entryB.credential
+        let scopedHome = fixture.root.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: scopedHome, withIntermediateDirectories: true)
         try Data(#"{"oauthAccount":\#(fixture.entryB.claudeOAuthAccount!)}"#.utf8)
-            .write(to: fixture.root.appendingPathComponent(".claude/.claude.json"))
+            .write(to: scopedHome.appendingPathComponent(".claude.json"))
         let reconciliation = await claudeReconciliationResult(fixture.importer, in: fixture.store)
         XCTAssertThrowsError(try reconciliation.get())
         let files = FakeFiles([
@@ -277,8 +279,10 @@ final class ClaudePinnedUsageVerificationTests: XCTestCase {
         let provider = ClaudeProvider(
             authStore: auth, usageClient: ClaudeUsageClient(httpClient: http), usageStateStore: store, now: now
         )
+        var rejectedGrant: ClaudeUsageStateStore.AuthenticationFailure?
         return try await provider.fetchLiveUsage(
-            state: &credential, credentialGeneration: &generation, requestedAt: requestedAt)
+            state: &credential, credentialGeneration: &generation,
+            rejectedGrant: &rejectedGrant, requestedAt: requestedAt)
     }
 
     private func seedCooldown(

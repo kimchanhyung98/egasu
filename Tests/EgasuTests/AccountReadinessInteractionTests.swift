@@ -6,17 +6,19 @@ final class AccountReadinessInteractionTests: XCTestCase {
     func testUserInitiatedSwitchAllowsKeychainApprovalForDepartureVerification() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         let rotated = try fixture.rotateDefaultCredentials()
+        let initialReads = fixture.keychain.noninteractiveReadServices.count
 
         try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
 
-        XCTAssertFalse(fixture.keychain.noninteractiveReadServices.contains(fixture.baseService))
+        XCTAssertFalse(
+            fixture.keychain.noninteractiveReadServices.dropFirst(initialReads).contains(fixture.baseService))
         XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.b.id)
         XCTAssertEqual(try fixture.switcher.loadSnapshot(for: fixture.a), rotated)
         XCTAssertNil(try fixture.journal.load())
     }
 
     @MainActor
-    func testExternalReconciliationKeepsTheRequestedPolicyThroughObservationAndConsistencyChecks() async throws {
+    func testUnchangedExternalLoginIsObservedTwiceWithRequestedPolicyWithoutWriting() async throws {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent("ReconciliationPolicy-\(UUID())")
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: home) }
@@ -41,15 +43,22 @@ final class AccountReadinessInteractionTests: XCTestCase {
                 workspace: AccountSignInWorkspace(baseDirectory: home.appendingPathComponent("workspaces")),
                 httpClient: UnexpectedReadinessNetwork())
 
+            let initialWrites = keychain.writeCount
+            let initialRegistry = defaults.data(forKey: AccountProfilesStore.storageKey)
             let result = try await ProviderRefreshContext.$isManual.withValue(allowInteraction) {
                 try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: profiles)
             }
 
             XCTAssertEqual(result, .unchanged)
-            let sharedReads = keychain.reads.filter { $0.service == service }
-            XCTAssertGreaterThanOrEqual(sharedReads.count, 6, "관찰과 적용 전 일치 검사 모두 실행")
+            let vault = AccountCredentialVault.service(family: "claude", profileID: profile.id)
+            XCTAssertEqual(keychain.reads.map(\.service), [vault, service, service, vault, service, service])
+            XCTAssertEqual(keychain.reads.map(\.forCurrentUser), [true, true, false, true, true, false])
             XCTAssertTrue(keychain.reads.allSatisfy { $0.allowInteraction == allowInteraction })
-            XCTAssertEqual(keychain.legacyReads, allowInteraction ? sharedReads.count : 0)
+            XCTAssertEqual(keychain.legacyReads, 0)
+            XCTAssertEqual(keychain.writeCount, initialWrites)
+            XCTAssertEqual(defaults.data(forKey: AccountProfilesStore.storageKey), initialRegistry)
+            XCTAssertNil(try profiles.pendingIdentityReplacement())
+            XCTAssertFalse(FileManager.default.fileExists(atPath: home.appendingPathComponent("workspaces").path))
         }
     }
 
@@ -101,7 +110,7 @@ final class AccountReadinessInteractionTests: XCTestCase {
             XCTAssertEqual(sharedReads.map(\.forCurrentUser), [true, false], "사용자 범위와 서비스 범위 모두 확인")
             XCTAssertTrue(sharedReads.allSatisfy { $0.allowInteraction == allowInteraction })
             XCTAssertTrue(keychain.reads.allSatisfy { $0.allowInteraction == allowInteraction }, "저장 인증도 같은 정책 사용")
-            XCTAssertEqual(keychain.legacyReads, allowInteraction ? 2 : 0, "자동 확인은 승인 가능한 CLI 읽기 진입 금지")
+            XCTAssertEqual(keychain.legacyReads, 0, "수동 승인과 자동 조회는 같은 앱의 Keychain 접근 사용")
         }
     }
 }
@@ -124,6 +133,7 @@ private final class PolicyRecordingKeychain: KeychainAccessing, @unchecked Senda
     private var saved: [String: String] = [:]
     private(set) var reads: [Read] = []
     private(set) var legacyReads = 0
+    private(set) var writeCount = 0
 
     init(sharedService: String, sharedCredential: String) {
         self.sharedService = sharedService
@@ -157,6 +167,13 @@ private final class PolicyRecordingKeychain: KeychainAccessing, @unchecked Senda
         return nil
     }
 
-    func writeGenericPassword(service: String, value: String) throws { saved[service] = value }
-    func deleteGenericPassword(service: String) throws { saved.removeValue(forKey: service) }
+    func writeGenericPassword(service: String, value: String) throws {
+        writeCount += 1
+        saved[service] = value
+    }
+
+    func deleteGenericPassword(service: String) throws {
+        writeCount += 1
+        saved.removeValue(forKey: service)
+    }
 }

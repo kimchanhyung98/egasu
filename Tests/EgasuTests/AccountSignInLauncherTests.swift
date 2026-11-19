@@ -2,6 +2,35 @@ import XCTest
 @testable import Egasu
 
 final class AccountSignInLauncherTests: XCTestCase {
+    func testFirstClaudeLoginUsesTheSameDirectoryAsTheNextSharedRead() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            .resolvingSymlinksInPath()
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let child = home.appendingPathComponent("claude")
+        let script = """
+            #!/bin/sh
+            test "$1" = auth && test "$2" = login && test "${CLAUDE_CONFIG_DIR-}" = "$EXPECTED_CONFIG"
+            """
+        try Data(script.utf8).write(to: child)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: child.path)
+        let launcher = AccountSignInLauncher(homeDirectory: home)
+        for usesWrapper in [false, true] {
+            if usesWrapper {
+                try Data(legacyClaudeZshBlock(home: home).utf8).write(to: home.appendingPathComponent(".zshrc"))
+            }
+            let code = try await launcher.runLogin(
+                family: "claude", home: nil,
+                baseEnvironment: [
+                    "PATH": home.path, "SHELL": "/bin/zsh", "CLAUDE_CONFIG_DIR": "/other",
+                    "EXPECTED_CONFIG": usesWrapper ? home.appendingPathComponent(".claude").path : ""
+                ],
+                usesLoginShellPATH: false
+            )
+            XCTAssertEqual(code, 0)
+        }
+    }
+
     func testCancellationBeforeLaunchTerminatesTheLoginChild() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

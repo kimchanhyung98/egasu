@@ -46,12 +46,12 @@ final class AccountCredentialImporterTests: XCTestCase {
         )
     }
 
-    func testUnusableBaseKeychainCredentialsDoNotHideUsableLegacyOrFileAuthentication() async throws {
+    func testEmptyClaudeLoginsPermitImportFromTheNextPlainCredentialSource() async throws {
         let service = ClaudeAuthStore.baseKeychainServiceName(environment: FakeEnvironment([:]))
         for (current, legacy, expected) in [
-            ("invalid-json", claudeCredential(token: "legacy"), "legacy"),
-            ("", "{}", "file"),
-            (#"{"claudeAiOauth":{}}"#, "invalid-json", "file")
+            ("{}", claudeCredential(token: "legacy"), "legacy"),
+            (#"{"claudeAiOauth":{}}"#, "{}", "file"),
+            (#"{"mcpOAuth":{"fixture":{}}}"#, #"{"claudeAiOauth":{"accessToken":""}}"#, "file")
         ] {
             let fixture = try makeFixture()
             try seedClaudeDefaultFiles(fixture, token: "file")
@@ -68,6 +68,27 @@ final class AccountCredentialImporterTests: XCTestCase {
                 homeDirectory: { home }
             )
             XCTAssertTrue(probe.state(for: profile, isSelected: true).isReady)
+        }
+    }
+
+    func testMalformedClaudeKeychainStopsImportBeforeAnotherLoginIsUsed() async throws {
+        let service = ClaudeAuthStore.baseKeychainServiceName(environment: FakeEnvironment())
+        for (current, legacy) in [("invalid-json", claudeCredential(token: "legacy")), ("{}", "invalid-json")] {
+            let fixture = try makeFixture()
+            try seedClaudeDefaultFiles(fixture, token: "file")
+            fixture.keychain.currentUserValues[service] = current
+            fixture.keychain.values[service] = legacy
+
+            do {
+                _ = try await fixture.importer.importDefaultAccount(family: "claude", into: fixture.store)
+                XCTFail("Malformed Keychain data must stop the import.")
+            } catch KeychainError.invalidData {
+                XCTAssertTrue(fixture.store.profiles.isEmpty)
+                XCTAssertEqual(fixture.keychain.currentUserValues[service], current)
+                XCTAssertEqual(fixture.keychain.values[service], legacy)
+                let credentialFile = fixture.home.appendingPathComponent(".claude/.credentials.json")
+                XCTAssertEqual(try String(contentsOf: credentialFile, encoding: .utf8), claudeCredential(token: "file"))
+            }
         }
     }
 
@@ -104,6 +125,24 @@ final class AccountCredentialImporterTests: XCTestCase {
                 atPath: fixture.home.appendingPathComponent(".config/codex/auth.json").path
             )
         )
+    }
+
+    func testCodexImportSurfacesKeychainFailureOnlyWhenNoFileIdentifiesTheAccount() throws {
+        let fixture = try makeFixture()
+        let keychain = SwitchRecoveryKeychain()
+        keychain.beforeRead = { _ in throw KeychainError.readFailed("PRIVATE_KEYCHAIN_REASON") }
+        let importer = AccountCredentialImporter(
+            keychain: keychain, environment: FakeEnvironment([:]), homeDirectory: fixture.home,
+            workspace: fixture.workspace
+        )
+
+        XCTAssertThrowsError(try importer.readDefaultCredential(family: "codex")) { error in
+            XCTAssertEqual(ErrorCategory.classify(error), .credentialAccess)
+        }
+        try write(
+            codexAuth(accountID: "file-account", token: "file-token"),
+            to: fixture.home.appendingPathComponent(".codex/auth.json"))
+        XCTAssertEqual(try importer.readDefaultCredential(family: "codex")?.identityKey, "file-account")
     }
 
     func testCodexKeychainOnlyLoginImports() async throws {
@@ -228,6 +267,45 @@ final class AccountCredentialImporterTests: XCTestCase {
 
         XCTAssertEqual(credential.identityKey, "acct-w|org-w")
         XCTAssertEqual(credential.entry.credential, claudeCredential(token: "token-w"))
+    }
+
+    func testStagedClaudeRegistrationAndCleanupAreIsolatedDuringRotation() throws {
+        let fixture = try makeFixture()
+        let existing = try fixture.store.add(family: "claude", label: "Existing", identityKey: "acct-a|org-a")
+        try seedClaudeDefaultFiles(fixture, token: "shared")
+        let credential = AccountCredentialImporter.ImportedCredential(
+            entry: .init(
+                credential: claudeCredential(token: "workspace"),
+                claudeOAuthAccount: #"{"accountUuid":"acct-w","organizationUuid":"org-w"}"#),
+            identityKey: "acct-w|org-w", label: "Workspace")
+        let abandoned = try fixture.workspace.prepare(family: "claude", profileID: "abandoned")
+        let abandonedService = ClaudeAuthStore.scopedKeychainServiceName(
+            forConfigDirLiteral: abandoned.path, environment: FakeEnvironment([:]))
+        fixture.keychain.currentUserValues[abandonedService] = claudeCredential(token: "abandoned")
+
+        try AccountCredentialMutationLock.beginClaudeRotation {}
+        defer { AccountCredentialMutationLock.endClaudeRotation() }
+
+        let profile = try fixture.importer.register(
+            credential, family: "claude", label: "Workspace", id: "profile-w", into: fixture.store)
+        try fixture.importer.discardUnregisteredSignInWorkspace(
+            family: "claude", profileID: profile.id, in: fixture.store)
+        try fixture.importer.discardUnregisteredSignInWorkspace(
+            family: "claude", profileID: "abandoned", in: fixture.store)
+
+        XCTAssertEqual(try fixture.vault.load(profile: profile), credential.entry)
+        XCTAssertNotNil(try fixture.importer.readWorkspaceCredential(family: "claude", profileID: profile.id))
+        XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), existing.id)
+        XCTAssertNil(fixture.keychain.currentUserValues[abandonedService])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: abandoned.path))
+        XCTAssertEqual(
+            try String(contentsOf: fixture.home.appendingPathComponent(".claude/.credentials.json"), encoding: .utf8),
+            claudeCredential(token: "shared"))
+        XCTAssertThrowsError(
+            try fixture.importer.register(credential, family: "claude", label: "Default", into: fixture.store)
+        ) { error in
+            XCTAssertEqual(error as? ClaudeAuthError, .rotationInProgress)
+        }
     }
 
     func testWorkspaceCleanupDeletesScopedKeychainBeforeRejectingASymlinkedDirectory() throws {
