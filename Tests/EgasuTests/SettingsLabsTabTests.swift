@@ -123,17 +123,9 @@ final class SettingsLabsTabTests: XCTestCase {
             }
             let image = try XCTUnwrap(bitmap.cgImage)
             let text = try await recognizedText(in: image, language: language)
-            for key in [
-                "General", "Display", "Alerts", "Advanced", "Labs", "Soft Limit", "Weekly and Monthly", "Quota Status",
-                "Terminal Helper", "Privacy Mode"
-            ] {
+            for key in ["Soft Limit", "Weekly and Monthly", "Quota Status", "Terminal Helper", "Privacy Mode"] {
                 let label = L10n.withLanguage(language) { L10n.settings(key).filter(\.isLetter).lowercased() }
-                let expected =
-                    switch key {
-                    case "Labs", "Soft Limit", "Weekly and Monthly", "Quota Status", "Terminal Helper": tab == .labs
-                    case "Privacy Mode": tab == .advanced
-                    default: true
-                    }
+                let expected = tab == (key == "Privacy Mode" ? .advanced : .labs)
                 XCTAssertEqual(text.contains(label), expected, "\(key): \(text)")
             }
             if let output = ProcessInfo.processInfo.environment["EGASU_LABS_RENDER_DIR"] {

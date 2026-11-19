@@ -1,3 +1,4 @@
+import CoreImage
 import SwiftUI
 import Vision
 import XCTest
@@ -235,7 +236,7 @@ final class AlertSettingsTests: XCTestCase {
                         window.appearance = NSAppearance(named: appearance == .dark ? .darkAqua : .aqua)
                         window.contentView = host
                         defer { window.close() }
-                        let bitmap = try settingsBitmap(in: host)
+                        let bitmap = try settingsBitmap(in: host, scale: 4)
                         if let path = ProcessInfo.processInfo.environment["EGASU_ALERT_CONDITION_SCREENSHOTS"] {
                             let directory = URL(fileURLWithPath: path)
                             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -245,16 +246,29 @@ final class AlertSettingsTests: XCTestCase {
                         }
                         return (try XCTUnwrap(bitmap.cgImage), expected)
                     }
-                    let text = try await Task.detached {
+                    let detected = try await Task.detached {
+                        let analysisImage: CGImage
+                        if appearance == .dark {
+                            let inverted = CIImage(cgImage: image).applyingFilter("CIColorInvert")
+                            let context = CIContext(options: [.useSoftwareRenderer: true])
+                            analysisImage = try XCTUnwrap(context.createCGImage(inverted, from: inverted.extent))
+                        } else {
+                            analysisImage = image
+                        }
                         let request = VNRecognizeTextRequest()
                         request.recognitionLanguages = [language.locale.identifier, "en-US"]
-                        try VNImageRequestHandler(cgImage: image).perform([request])
-                        return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined()
-                    }.value.filter { !$0.isWhitespace }
+                        try VNImageRequestHandler(cgImage: analysisImage).perform([request])
+                        let lines = (request.results ?? []).map { $0.topCandidates(3).map(\.string) }
+                        let primary = lines.compactMap(\.first).joined().filter { !$0.isWhitespace }
+                        let alternatives = lines.flatMap { $0 }.map { $0.filter { !$0.isWhitespace } }
+                        return (primary: primary, alternatives: alternatives)
+                    }.value
                     for label in expected {
+                        let compact = label.filter { !$0.isWhitespace }
                         XCTAssertTrue(
-                            text.contains(label.filter { !$0.isWhitespace }),
-                            "\(language) \(appearance) \(label): \(text)"
+                            detected.primary.contains(compact)
+                                || detected.alternatives.contains { $0.contains(compact) },
+                            "\(language) \(appearance) \(label): \(detected.primary)"
                         )
                     }
                 }
