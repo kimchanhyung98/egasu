@@ -53,6 +53,7 @@
 "No Accounts" = "No Accounts";
 "No sign-in found. Sign in with %@ on this Mac first." = "No sign-in found. Sign in with %@ on this Mac first.";
 "Not Set" = "Not Set";
+"Can't Read Saved Key" = "Can't Read Saved Key";
 "Open %@" = "Open %@";
 "Pin %@" = "Pin %@";
 "Position %lld of %lld" = "Position %lld of %lld";

@@ -238,6 +238,7 @@ struct FakeEnvironment: EnvironmentReading {
 
 final class FakeFiles: TextFileAccessing, @unchecked Sendable {
     var files: [String: String]
+    var unreadablePaths: Set<String> = []
 
     init(_ files: [String: String] = [:]) {
         self.files = files
@@ -248,7 +249,8 @@ final class FakeFiles: TextFileAccessing, @unchecked Sendable {
     }
 
     func readText(_ path: String) throws -> String {
-        files[path] ?? ""
+        if unreadablePaths.contains(path) { throw CocoaError(.fileReadNoPermission) }
+        return files[path] ?? ""
     }
 
     func writeText(_ path: String, _ text: String) throws {

@@ -138,7 +138,10 @@ private struct APIKeyAddStep: View {
                     .padding(.bottom, 20)
             }
         }
-        .onAppear { hasExistingKey = provider.apiKeyStatus != .notSet }
+        .onAppear {
+            let status = provider.apiKeyStatus
+            hasExistingKey = status != .notSet && status != .unreadable
+        }
     }
 
     /// 프로바이더 링크에 API 키 관리 페이지가 있으면 키 발급 링크 제공.

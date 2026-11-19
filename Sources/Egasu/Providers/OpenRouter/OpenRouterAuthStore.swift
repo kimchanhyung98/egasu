@@ -65,6 +65,7 @@ struct OpenRouterAuthStore: Sendable {
         return OpenRouterAuth(apiKey: key)
     }
 
+    /// 자동 등록 후보에는 현재 읽을 수 있는 키만 포함. 실패는 requireAPIKey에서 전달.
     func loadAPIKey() -> OpenRouterAuth? { try? requireAPIKey() }
     func currentAPIKey() -> String? { loadAPIKey()?.apiKey }
     func keyStatus() -> APIKeyStatus { store.keyStatus() }

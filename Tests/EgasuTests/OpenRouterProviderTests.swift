@@ -50,6 +50,38 @@ final class OpenRouterAuthStoreTests: XCTestCase {
         XCTAssertNil(store.loadAPIKey())
     }
 
+    func testUnreadableConfigIsNotMissingAndPreventsDeletingOtherKeys() {
+        let managed = OpenRouterAuthStore.configPaths[0]
+        let alternate = OpenRouterAuthStore.configPaths[1]
+        let files = FakeFiles([managed: "sk-or-managed", alternate: "sk-or-alternate"])
+        let store = OpenRouterAuthStore(files: files, environment: FakeEnvironment())
+        files.unreadablePaths = [managed, alternate]
+
+        XCTAssertEqual(store.keyStatus(), .unreadable)
+        XCTAssertThrowsError(try store.requireAPIKey()) { error in
+            XCTAssertEqual(ErrorCategory.classify(error), .credentialAccess)
+        }
+
+        files.unreadablePaths = [alternate]
+        XCTAssertThrowsError(try store.deleteAPIKey()) { error in
+            XCTAssertEqual(error as? OpenRouterAuthError, .deleteFailed)
+        }
+        XCTAssertEqual(files.files[managed], "sk-or-managed")
+        XCTAssertEqual(files.files[alternate], "sk-or-alternate")
+    }
+
+    func testDeletePreservesReadableConfigWithoutAnAPIKey() throws {
+        let managed = OpenRouterAuthStore.configPaths[0]
+        let alternate = OpenRouterAuthStore.configPaths[1]
+        let unrelated = #"{"theme":"dark"}"#
+        let files = FakeFiles([managed: "sk-or-managed", alternate: unrelated])
+        let store = OpenRouterAuthStore(files: files, environment: FakeEnvironment())
+
+        try store.deleteAPIKey()
+
+        XCTAssertEqual(files.files, [alternate: unrelated])
+    }
+
     func testIgnoresBlankConfigAndUsesEnvironment() {
         let store = OpenRouterAuthStore(
             files: FakeFiles([OpenRouterAuthStore.configPaths[0]: "   "]),

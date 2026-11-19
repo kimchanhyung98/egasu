@@ -34,6 +34,7 @@ The app updates itself in place via signed, notarized [Sparkle](docs/updates.md)
 
 대부분의 프로바이더는 Mac의 Keychain, 인증 파일 또는 앱에 저장된 로그인 정보 재사용.
 [OpenRouter](/docs/providers/openrouter.md)와 [Z.ai](/docs/providers/zai.md)는 앱에 저장하거나 지원 환경 변수로 제공한 API 키 사용.
+쓸 수 있는 키가 없고 저장 파일을 읽지 못하면, 미등록 상태와 구분해 파일 접근 오류 표시.
 인증 정보는 해당 프로바이더 요청에만 사용.
 익명 요약과 공개 가격표 다운로드는 [개인정보 및 사용 데이터](/docs/privacy.md) 참조.
 
@@ -82,7 +83,6 @@ The app updates itself in place via signed, notarized [Sparkle](docs/updates.md)
 Behavior docs live in [docs/](docs/README.md): the [dashboard](docs/dashboard.md), [menu bar display](/docs/menu-bar.md), [settings](docs/settings.md), [refresh & caching](docs/refreshing.md), the [CLI](docs/cli.md), the [local HTTP API](docs/local-http-api.md), the [proxy](docs/proxy.md), and one page per provider.
 
 For working on the code, see the developer docs: [architecture](docs/architecture.md), [adding a provider](docs/adding-a-provider.md), and [debugging & capturing logs](docs/debugging.md).
-저장한 API 키를 읽지 못하면 프로바이더 카드에 파일 접근 오류 표시.
 사용량 조회·계정 전환 오류를 제보할 때는 [로그 수집 방법](/docs/logging.md#오류-제보용-로그-수집)에 따라 발생 시각 주변의 기록 공유.
 
 ## Requirements

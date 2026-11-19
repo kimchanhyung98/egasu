@@ -23,19 +23,25 @@ struct UserAPIKeyStore: Sendable {
     func loadKey() throws -> String? {
         let config = keyFromConfigFile()
         if let key = config.key ?? keyFromEnvironment() { return key }
-        if config.unreadable { throw UnreadableKey() }
+        if let readError = config.readError {
+            AppDiagnostics.record(
+                .credentialRead, result: .failure, category: .credentialAccess, providerID: providerID,
+                error: readError, localContext: "API key config read")
+            throw UnreadableKey()
+        }
         return nil
     }
 
     /// 저장 파일과 환경 변수에 키가 있는지 확인해 편집 화면의 상태 결정.
     func keyStatus() -> APIKeyStatus {
-        let hasConfig = keyFromConfigFile().key != nil
+        let config = keyFromConfigFile()
+        let hasConfig = config.key != nil
         let hasEnv = keyFromEnvironment() != nil
         switch (hasConfig, hasEnv) {
         case (true, true): return .overrideActive
         case (true, false): return .saved
         case (false, true): return .fromEnvironment
-        default: return .notSet
+        case (false, false): return config.readError == nil ? .notSet : .unreadable
         }
     }
 
@@ -53,17 +59,22 @@ struct UserAPIKeyStore: Sendable {
         AppDiagnostics.record(.credentialSave, result: .success, providerID: providerID)
     }
 
-    /// 대체 파일의 키도 모두 지운 뒤 삭제 성공 기록. 환경 변수는 유지.
+    /// 키를 확인한 파일만 삭제. 읽을 수 없는 파일이 있으면 변경 전에 중단.
     func deleteKey() throws {
         do {
-            for path in configPaths {
+            let candidates = try configPaths.filter { path in
+                guard let text = try files.readTextIfPresent(path) else { return false }
+                return Self.keyFromConfigText(text) != nil
+            }
+            guard !candidates.isEmpty else { return }
+            for path in candidates {
                 try files.remove(path)
             }
         } catch {
-            recordFileFailure(.accountRemove, error: error, context: "API key config removal")
+            recordFileFailure(.credentialRemove, error: error, context: "API key config removal")
             throw makeError(.deleteFailed)
         }
-        AppDiagnostics.record(.accountRemove, result: .success, providerID: providerID)
+        AppDiagnostics.record(.credentialRemove, result: .success, providerID: providerID)
     }
 
     private func recordFileFailure(_ operation: DiagnosticOperation, error: Error, context: String) {
@@ -88,18 +99,18 @@ struct UserAPIKeyStore: Sendable {
         return nil
     }
 
-    private func keyFromConfigFile() -> (key: String?, unreadable: Bool) {
-        var unreadable = false
+    private func keyFromConfigFile() -> (key: String?, readError: (any Error)?) {
+        var readError: (any Error)?
         for path in configPaths {
             do {
                 if let text = try files.readTextIfPresent(path), let key = Self.keyFromConfigText(text) {
-                    return (key, false)
+                    return (key, nil)
                 }
             } catch {
-                unreadable = true
+                if readError == nil { readError = error }
             }
         }
-        return (nil, unreadable)
+        return (nil, readError)
     }
 
     /// `apiKey` / `api_key` / `key`를 가진 JSON 객체 또는 key만 담긴 plain-text 파일 허용.

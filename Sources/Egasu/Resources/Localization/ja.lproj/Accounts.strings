@@ -53,6 +53,7 @@
 "No Accounts" = "アカウントなし";
 "No sign-in found. Sign in with %@ on this Mac first." = "ログイン情報が見つかりません。先にこのMacで%@にログインしてください。";
 "Not Set" = "未設定";
+"Can't Read Saved Key" = "保存したキーを読み取れません";
 "Open %@" = "%@を開く";
 "Pin %@" = "%@を固定";
 "Position %lld of %lld" = "全 %2$lld 件中 %1$lld 番目";
