@@ -60,11 +60,15 @@
 "Copilot usage data is unavailable for this account." = "このアカウントの Copilot 使用量データを取得できません。";
 "Copilot usage request failed (HTTP %@). Try again later." = "Copilot の使用量の取得に失敗しました（HTTP %@）。しばらくしてから、もう一度お試しください。";
 "Copilot usage response invalid. Try again later." = "Copilot の使用量の応答が無効です。しばらくしてから、もう一度お試しください。";
+"Some Claude weekly limits are unavailable. Try refreshing again later." = "Claude の週間上限の一部を確認できません。しばらくしてから更新してください。";
+"Copilot organization billing is unavailable. Try refreshing again later." = "Copilot の組織の請求情報を確認できません。しばらくしてから更新してください。";
+"Some Copilot quota data is unavailable. Try refreshing again later." = "Copilot の一部の利用枠を確認できません。しばらくしてからもう一度更新してください。";
 "Could not send input to the process." = "プロセスに入力を送信できませんでした。";
 "Could not read output from the process." = "プロセスの出力を読み取れませんでした。";
 "Couldn't install the terminal helper: %@" = "ターミナルツールをインストールできませんでした：%@";
 "Couldn't reach GitHub. Check your connection." = "GitHub に接続できませんでした。インターネット接続を確認してください。";
 "Couldn't reach OpenRouter. Check your connection." = "OpenRouter に接続できませんでした。インターネット接続を確認してください。";
+"Couldn't read the saved API key. Check the configuration file permissions." = "保存した API キーを読み込めません。設定ファイルのアクセス権を確認してください。";
 "Couldn't read Antigravity credentials from Keychain. Unlock Keychain or sign in to Antigravity again." = "キーチェーンから Antigravity の認証情報を読み取れませんでした。キーチェーンのロックを解除するか、Antigravity にログインし直してください。";
 "Couldn't read Copilot CLI usage history. Update Copilot CLI or check the local database permissions." = "Copilot CLI の使用履歴を読み取れませんでした。Copilot CLI を更新するか、ローカルデータベースの権限を確認してください。";
 "Couldn't read OpenCode's auth.json. Check its file permissions or log into OpenCode Go again." = "OpenCode の auth.json を読み取れませんでした。ファイルのアクセス権を確認するか、OpenCode Go にログインし直してください。";
@@ -91,12 +95,16 @@
 "Grok billing response changed." = "Grok の請求情報の応答が変更されました。";
 "Grok not logged in. Run `grok login`." = "Grok にログインしていません。`grok login` を実行してください。";
 "Grok sign-in changed while refreshing. Refresh again to use the current account." = "更新中に Grok のログイン情報が変更されました。現在のアカウントを使用するには、もう一度更新してください。";
+"Grok sign-in could not be refreshed. Check your connection." = "Grok の認証情報を更新できませんでした。ネットワーク接続を確認してください。";
+"Grok sign-in could not be refreshed (HTTP %@). Try again later." = "Grok の認証情報を更新できませんでした（HTTP %@）。しばらくしてから再試行してください。";
+"Grok returned an invalid token refresh response. Try again later." = "Grok のトークン更新応答が無効です。しばらくしてから再試行してください。";
 "Grok sign-in could not be read. Check access to the Grok auth file and refresh again." = "Grok のログイン情報を読み取れませんでした。Grok 認証ファイルへのアクセス権を確認して、もう一度更新してください。";
 "Invalid Claude OAuth URL. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE." = "Claude OAuth URL が無効です。CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE を確認してください。";
 "Invalid HTTP response." = "HTTP の応答が無効です。";
 "Invalid account name." = "アカウント名が無効です。";
 "Invalid sign-in workspace component: %@" = "ログイン作業領域の構成要素が無効です: %@";
 "Keychain delete failed." = "キーチェーンの項目を削除できませんでした。";
+"Couldn't read the Claude login from Keychain. Refresh Claude manually and allow access if macOS asks." = "キーチェーンから Claude のログイン情報を読み取れませんでした。Claude の使用量を手動で更新し、macOS に求められたらアクセスを許可してください。";
 "Keychain is busy. Respond to the open Keychain dialog, then try again." = "キーチェーンは使用中です。開いているキーチェーンのダイアログに応答してから、もう一度お試しください。";
 "Keychain item names contain unsupported control characters." = "キーチェーンの項目名に、対応していない制御文字が含まれています。";
 "Keychain read failed." = "キーチェーンを読み取れませんでした。";
@@ -269,6 +277,7 @@
 "Weekly timer message could not be started. Retries wait at least five minutes and are limited to 2 attempts per 24 hours." = "週間タイマーのメッセージ送信を開始できませんでした。再試行には最低5分の間隔が必要で、試行回数は24時間に2回までです。";
 "Weekly timer messages paused: this account reached the limit of 2 attempts in 24 hours. Usage checks will continue." = "週間タイマーのメッセージ送信を一時停止しました。このアカウントは24時間に2回の試行上限に達しました。使用量の確認は継続します。";
 "Weekly" = "週間";
+"Z.ai API key changed while refreshing. Refresh again to use the current key." = "更新中に Z.ai の API キーが変更されました。現在のキーを使うには、もう一度更新してください。";
 "Z.ai API key invalid. Check your key at z.ai/manage-apikey/apikey-list." = "Z.ai API キーが無効です。z.ai/manage-apikey/apikey-list でキーを確認してください。";
 "iCloud Drive isn’t available. Check that this Mac is signed into iCloud and iCloud Drive is on." = "iCloud Drive を使用できません。この Mac が iCloud にサインインしていて、iCloud Drive がオンになっていることを確認してください。";
 "macOS couldn't prepare the authorization request." = "macOSで認証リクエストを準備できませんでした。";
@@ -313,6 +322,7 @@
 "Usage timer temporary files could not be removed." = "使用量タイマーの一時ファイルを削除できませんでした。";
 "Usage timer could not load the CLI model list. Check the CLI login and refresh." = "使用量タイマーでCLIのモデル一覧を読み込めませんでした。CLIのログインを確認して更新してください。";
 "Usage timer CLI execution failed. Refresh to try again." = "使用量タイマーのCLI実行に失敗しました。更新して再試行してください。";
+"The terminal helper could not be verified. Check that the shortcut points to the executable bundled with egasu." = "ターミナルヘルパーを確認できません。リンク先が egasu アプリに含まれる実行ファイルか確認してください。";
 "The old shell and default Claude CLI use different accounts. Sign in to the same account in both, then restart egasu." = "以前のシェル関数とデフォルトの Claude CLI でアカウントが異なります。両方で同じアカウントにログインしてから、egasu を再起動してください。";
 "Claude sign-in is incomplete. Finish signing in to Claude, then restart egasu to finish migrating the old shell setup." = "Claude へのログインが完了していません。ログインを完了してから egasu を再起動すると、以前のシェル設定の移行を再試行します。";
 "Finish the pending Claude account switch in Accounts, then restart egasu." = "アカウント画面で進行中の Claude アカウントの切り替えを完了してから、egasu を再起動してください。";
@@ -323,4 +333,3 @@
 "Check access to your shell settings and Claude login files, then restart egasu." = "シェル設定と Claude ログインファイルへのアクセス権を確認してから、egasu を再起動してください。";
 "Another egasu process is updating the shared Claude login. Wait for it to finish, then try again." = "別の egasu が共有の Claude ログインを更新しています。完了してから、もう一度お試しください。";
 "Unlock your Keychain and restart egasu. Allow access to the Claude login if macOS asks." = "キーチェーンのロックを解除して egasu を再起動してください。macOS に求められたら、Claude ログインへのアクセスを許可してください。";
-"Couldn't read the saved API key. Check the configuration file permissions." = "保存した API キーを読み込めません。設定ファイルのアクセス権を確認してください。";

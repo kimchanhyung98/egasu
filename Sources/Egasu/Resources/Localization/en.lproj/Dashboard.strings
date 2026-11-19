@@ -112,11 +112,10 @@
 "%d days, %@ to %@, peak %@." = "%d days, %@ to %@, peak %@.";
 
 "%lld more" = "%lld more";
-"All Clear" = "All Clear";
+"No Matching Limits" = "No Matching Limits";
 "Fix" = "Fix";
 "Needs Attention" = "Needs Attention";
 "No Reported Limits" = "No Reported Limits";
-"Nothing is running out." = "Nothing is running out.";
 "Out in %@" = "Out in %@";
 "Pinned" = "Pinned";
 "Running Out" = "Running Out";

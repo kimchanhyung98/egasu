@@ -69,6 +69,118 @@ final class LayoutBootstrapTests: XCTestCase {
         XCTAssertTrue(state.shouldPersistVisibility)
     }
 
+    func testFreshMonthlyMetricsFollowEachProvidersWeeklyMetric() throws {
+        let (_, defaults) = makePersistence("MonthlyDefaults")
+        let registry = WidgetRegistry.from([CodexProvider(), GrokProvider(), ZAIProvider()])
+        let layout = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
+
+        for (card, weekly, monthly) in [
+            ("codex", "weekly", "monthly"), ("codex", "sparkWeekly", "sparkMonthly"),
+            ("grok", "weekly", "monthly"), ("zai", "weekly", "monthly")
+        ] {
+            let ids = AppContainer.dashboardMetricDescriptors(for: card, in: layout).map(\.id)
+            let index = try XCTUnwrap(ids.firstIndex(of: "\(card).\(weekly)"))
+            XCTAssertEqual(ids.dropFirst(index + 1).first, "\(card).\(monthly)")
+        }
+    }
+
+    func testUpgradeInsertsOnlyMissingMonthlyMetricsAndKeepsLaterEdits() {
+        let (persistence, defaults) = makePersistence("MonthlyExisting")
+        let card = "codex@profile-work"
+        let registry = WidgetRegistry.from([
+            CodexProvider(), CodexProvider(provider: CodexProvider.makeProvider(id: card)),
+            GrokProvider(), ZAIProvider()
+        ])
+        persistence.saveDisabledMetrics(["\(card).session", "grok.payAsYouGo"])
+        persistence.savePriorityPins(["codex.weekly", "\(card).sparkWeekly"])
+        persistence.saveMetricOrder([
+            "codex": ["codex.sparkWeekly", "codex.trend", "codex.weekly", "codex.session"],
+            card: ["\(card).weekly", "\(card).session", "\(card).sparkWeekly", "\(card).credits"],
+            "grok": ["grok.weekly", "grok.today", "grok.payAsYouGo"],
+            "zai": ["zai.weekly", "zai.webSearches", "zai.monthly"]
+        ])
+
+        let layout = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
+        XCTAssertEqual(
+            Array(layout.metricOrder(for: "codex").prefix(6)),
+            [
+                "codex.sparkWeekly", "codex.sparkMonthly", "codex.trend", "codex.weekly", "codex.monthly",
+                "codex.session"
+            ])
+        XCTAssertEqual(
+            Array(layout.metricOrder(for: card).prefix(6)),
+            ["weekly", "monthly", "session", "sparkWeekly", "sparkMonthly", "credits"].map { "\(card).\($0)" })
+        XCTAssertEqual(
+            Array(layout.metricOrder(for: "grok").prefix(4)),
+            ["grok.weekly", "grok.monthly", "grok.today", "grok.payAsYouGo"])
+        XCTAssertEqual(
+            Array(layout.metricOrder(for: "zai").prefix(3)), ["zai.weekly", "zai.webSearches", "zai.monthly"])
+        XCTAssertEqual(
+            AppContainer.dashboardMetricDescriptors(for: card, in: layout).prefix(4).map(\.id),
+            ["weekly", "monthly", "sparkWeekly", "sparkMonthly"].map { "\(card).\($0)" })
+        XCTAssertTrue(layout.reorderMetric(dragged: "\(card).monthly", target: "\(card).credits", in: card))
+        layout.setMetricEnabled("codex.monthly", false)
+
+        let reloaded = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
+        XCTAssertEqual(
+            Array(reloaded.metricOrder(for: card).prefix(6)),
+            ["weekly", "session", "sparkWeekly", "sparkMonthly", "credits", "monthly"].map { "\(card).\($0)" })
+        XCTAssertFalse(reloaded.isMetricEnabled("codex.monthly"))
+        XCTAssertFalse(reloaded.isMetricEnabled("\(card).session"))
+        XCTAssertFalse(reloaded.isMetricEnabled("grok.payAsYouGo"))
+        XCTAssertTrue(reloaded.isMetricEnabled("\(card).monthly"))
+        XCTAssertEqual(reloaded.priorityPinIDs, ["codex.weekly", "\(card).sparkWeekly"])
+    }
+
+    func testLegacyOnDemandWeeklyKeepsItsNewMonthlyMetricOnEveryCard() {
+        let (persistence, defaults) = makePersistence("MonthlyLegacy")
+        let card = "codex@profile-work"
+        let registry = WidgetRegistry.from([
+            CodexProvider(), CodexProvider(provider: CodexProvider.makeProvider(id: card))
+        ])
+        persistence.savePlaced([
+            PlacedWidget(descriptorID: "codex.weekly"), PlacedWidget(descriptorID: "codex.sparkWeekly")
+        ])
+        persistence.saveMetricOrder(["codex": ["codex.weekly", "codex.credits", "codex.sparkWeekly"]])
+        defaults.set(["codex.weekly"], forKey: "layout.expandedMetrics")
+
+        let layout = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
+        for id in ["codex", card] {
+            XCTAssertEqual(
+                AppContainer.dashboardMetricDescriptors(for: id, in: layout).map(\.id),
+                ["sparkWeekly", "sparkMonthly", "weekly", "monthly"].map { "\(id).\($0)" })
+            XCTAssertFalse(layout.isMetricEnabled("\(id).credits"))
+        }
+        XCTAssertFalse(persistence.hasOnDemandState)
+    }
+
+    func testUpgradeAfterAnAccountSwitchInsertsMonthlyBeforeSharedHistory() {
+        let (persistence, defaults) = makePersistence("MonthlyAccountSwitch")
+        let work = AccountUsageCardPlanner.cardID(family: "codex", profileID: "work")
+        let personal = AccountUsageCardPlanner.cardID(family: "codex", profileID: "personal")
+        let old = WidgetRegistry.from([CodexProvider(), CodexProvider(provider: CodexProvider.makeProvider(id: work))])
+        persistence.reconcileAccountProfiles(["codex": "personal", work: "work"], registry: old)
+        persistence.saveDisabledMetrics([])
+        persistence.saveMetricOrder([
+            "codex": ["codex.weekly", "codex.trend", "codex.credits"],
+            work: ["\(work).weekly", "\(work).credits"]
+        ])
+        let current = WidgetRegistry.from([
+            CodexProvider(), CodexProvider(provider: CodexProvider.makeProvider(id: personal))
+        ])
+
+        let layout = LayoutStore(
+            registry: current, defaults: defaults, storageKey: "layout",
+            profileIDsByCardID: ["codex": "work", personal: "personal"])
+
+        XCTAssertEqual(
+            AppContainer.dashboardMetricDescriptors(for: "codex", in: layout).prefix(4).map(\.id),
+            ["codex.weekly", "codex.monthly", "codex.trend", "codex.credits"])
+        XCTAssertEqual(
+            AppContainer.dashboardMetricDescriptors(for: personal, in: layout).prefix(3).map(\.id),
+            ["weekly", "monthly", "credits"].map { "\(personal).\($0)" })
+    }
+
     private func makeDefaultSet() -> LayoutDefaultSet {
         LayoutDefaultSet(
             metricIDs: ["claude.session", "claude.weekly"],

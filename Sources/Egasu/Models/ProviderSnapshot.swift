@@ -28,6 +28,10 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
     var metricPresentations: [String: LocalizedMessage]?
     /// 성공한 응답에 포함된 부분 실패 여부 — 이전 cache의 누락 필드는 nil.
     var isDegraded: Bool?
+    /// 응답에서 일부 구독 한도를 읽지 못한 기간. 독립적인 로컬 사용 이력 오류는 제외.
+    var incompleteQuotaWindows: Set<SoftLimitWindow>?
+    /// 일부 조회만 실패했을 때 원본 오류에서 얻은 분류. 현재 갱신의 진단에만 사용.
+    var reportedPartialFailure: ErrorCategory?
     /// 실제 quota 응답 시각 — 내부 last-good 재사용 시 제거, nil이면 자동 취소 판정 제외.
     var liveQuotaObservedAt: Date?
     /// 마지막 정상 한도 조회 시각 — 캐시 재사용 중에도 보존하며 자동 전환용 관측과 구분.
@@ -37,12 +41,14 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
     var freshnessDate: Date { quotaObservedAt ?? refreshedAt }
     /// 실제 성공 응답의 인증 연결. 디스크 캐시·공유 출력에서 제외하여 재실행 후 fresh 조회 전 소비 금지.
     var codexResetClaimBinding: CodexResetClaimBinding?
+    /// 화면 한도와 별도로 확인한 실행용 관측 시각. 현재 갱신에서만 사용.
+    var usageTimerObservedAt: Date? = nil
     /// 조회에 사용한 계정 식별 키 — 캐시 귀속 정보에만 저장하고 공유 응답에서 제외.
     var producedByIdentityKey: String? = nil
 
     private enum CodingKeys: String, CodingKey {
         case providerID, displayName, plan, lines, totalSpendLines, totalSpendRefreshedAt, refreshedAt, usageHistory, warning
-        case errorCategory, authenticationIssue, isDegraded, liveQuotaObservedAt
+        case errorCategory, authenticationIssue, isDegraded, incompleteQuotaWindows, liveQuotaObservedAt
         case quotaObservedAt, usageRetryAfter, warningPresentation, metricPresentations
     }
 
@@ -61,6 +67,7 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         warningPresentation: [LocalizedMessage]? = nil,
         metricPresentations: [String: LocalizedMessage]? = nil,
         isDegraded: Bool? = nil,
+        incompleteQuotaWindows: Set<SoftLimitWindow>? = nil,
         liveQuotaObservedAt: Date? = nil,
         quotaObservedAt: Date? = nil,
         usageRetryAfter: Date? = nil,
@@ -80,6 +87,7 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         self.warningPresentation = warningPresentation ?? warning.map { [LocalizedMessage($0)] }
         self.metricPresentations = metricPresentations
         self.isDegraded = isDegraded
+        self.incompleteQuotaWindows = incompleteQuotaWindows
         self.liveQuotaObservedAt = liveQuotaObservedAt
         self.quotaObservedAt = quotaObservedAt
         self.usageRetryAfter = usageRetryAfter
@@ -91,7 +99,15 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         return warningPresentation?.map(\.localized).joined(separator: " ") ?? warning
     }
 
-    /// 오류 행만 있는 응답의 실패 정보 — 부분 성공과 구분.
+    /// 부분 조회의 원인은 응답 상태로 판정. 사용자에게 표시하는 경고 문구는 진단 분류에서 제외.
+    var partialRefreshErrorCategory: ErrorCategory? {
+        if let reportedPartialFailure { return reportedPartialFailure }
+        if usageRetryAfter != nil && liveQuotaObservedAt == nil { return .rateLimited }
+        if incompleteQuotaWindows?.isEmpty == false { return .decoding }
+        return nil
+    }
+
+    /// 모든 행이 오류일 때만 전체 조회 실패로 판정.
     var refreshFailure: ProviderRefreshFailure? {
         guard !lines.isEmpty, lines.allSatisfy(\.isError) else { return nil }
         let message: String
@@ -127,6 +143,7 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         metricPresentations: [String: LocalizedMessage]? = nil,
         authenticationIssue: ProviderAuthenticationIssue? = nil,
         isDegraded: Bool? = nil,
+        incompleteQuotaWindows: Set<SoftLimitWindow>? = nil,
         liveQuotaObservedAt: Date? = nil,
         quotaObservedAt: Date? = nil,
         usageRetryAfter: Date? = nil,
@@ -145,6 +162,7 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
             warningPresentation: warningPresentation,
             metricPresentations: metricPresentations,
             isDegraded: isDegraded,
+            incompleteQuotaWindows: incompleteQuotaWindows,
             liveQuotaObservedAt: liveQuotaObservedAt,
             quotaObservedAt: quotaObservedAt,
             usageRetryAfter: usageRetryAfter,
@@ -152,13 +170,12 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         )
     }
 
-    /// 잡은 `Error`에서 오류 snapshot 생성 — badge text는 `localizedDescription`, category는 `CategorizedError`에서 파생(미분류는 `.other`).
-    /// `Error` 보유 시 `error(provider:message:)`보다 우선 사용.
+    /// 사용자 표시 문구와 진단용 오류 분류를 분리해 실패 응답 생성.
     static func error(provider: Provider, error: Error) -> ProviderSnapshot {
         Self.error(
             provider: provider,
             message: error.localizedDescription,
-            category: (error as? CategorizedError)?.errorCategory ?? .other,
+            category: ErrorCategory.classify(error),
             authenticationIssue: ProviderAuthenticationIssue(error: error),
             presentation: UserFacingErrors.presentation(error)
         )

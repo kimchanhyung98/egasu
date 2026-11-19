@@ -155,6 +155,14 @@ final class UsageHistoryAggregatorTests: XCTestCase {
         XCTAssertEqual(breakdown?.totalTokens, 350)
         XCTAssertEqual(breakdown?.models.map(\.model), ["Opus"])
         XCTAssertTrue(rendered.lines.contains { $0.label == "Usage Trend" })
+        let detail = UsageBreakdown(title: "Today", breakdown: try XCTUnwrap(breakdown))
+        L10n.withLanguage(.english) {
+            XCTAssertEqual(detail.displayTitle(at: localDay(2026, 7, 13)), "Today")
+            XCTAssertEqual(
+                detail.displayTitle(at: localDay(2026, 7, 14)), "Jul 13, 2026",
+                "iCloud 재집계 날짜 사용, 오래된 한도 갱신 시각 제외"
+            )
+        }
     }
 
     private func history(

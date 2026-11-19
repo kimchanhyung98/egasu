@@ -78,6 +78,7 @@
 "M" = "30日";
 "MTok" = "MTok";
 "Monthly" = "月次";
+"Monthly limit" = "月間の上限";
 "No data" = "データなし";
 "No usage data" = "使用量データなし";
 "No usage in this period" = "この期間の使用量はありません";
@@ -117,6 +118,7 @@
 "Sessions start after you send your first message." = "最初のメッセージを送信すると、セッションが始まります。";
 "Sonnet" = "Sonnet";
 "Spark" = "Spark";
+"Spark Monthly" = "Spark 月次";
 "Spark Weekly" = "Spark 週間";
 "T" = "今日";
 "This Month" = "今月";

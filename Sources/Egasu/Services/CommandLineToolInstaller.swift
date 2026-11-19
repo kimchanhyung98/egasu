@@ -18,22 +18,27 @@ final class CommandLineToolInstaller {
 
     private(set) var status: Status
     private(set) var errorMessage: String?
+    private(set) var isVerifying = false
+    var isConfirmingRemoval = false
 
     let destinationPath: String
     private let sourcePath: String
     private let fileManager: FileManager
     private let performPrivileged: @MainActor (Operation, String, String) -> OperationResult
+    private let waitForVerification: @MainActor () async -> Void
 
     init(
         sourcePath: String = Bundle.main.bundleURL
             .appendingPathComponent("Contents/Helpers/egasu").path,
         destinationPath: String = "/usr/local/bin/egasu",
         fileManager: FileManager = .default,
+        waitForVerification: @escaping @MainActor () async -> Void = { try? await Task.sleep(for: .seconds(1)) },
         performPrivileged: (@MainActor (Operation, String, String) -> OperationResult)? = nil
     ) {
         self.sourcePath = sourcePath
         self.destinationPath = destinationPath
         self.fileManager = fileManager
+        self.waitForVerification = waitForVerification
         self.performPrivileged = performPrivileged ?? { operation, source, destination in
             CommandLineToolInstaller.runPrivileged(
                 operation: operation,
@@ -56,26 +61,52 @@ final class CommandLineToolInstaller {
         )
     }
 
-    func install() {
+    func install() async {
+        guard !isVerifying else { return }
         refreshStatus()
         guard status != .installed else { return }
         guard status != .conflict else {
             errorMessage = L10n.errors("%@ already exists and wasn't installed by egasu.", destinationPath)
             return
         }
-        guard fileManager.isExecutableFile(atPath: sourcePath) else {
+        guard isExecutableHelper(at: sourcePath) else {
             errorMessage = L10n.errors("The bundled terminal helper couldn't be found. Reinstall egasu and try again.")
             AppDiagnostics.record(.cliInstall, result: .failure, category: .storage,
                                   localContext: "Bundled terminal helper is missing or not executable")
             return
         }
-        handle(performPrivileged(.install, sourcePath, destinationPath), action: "install", operation: .cliInstall)
+        errorMessage = nil
+        let result = performPrivileged(.install, sourcePath, destinationPath)
+        if case .success = result {
+            isVerifying = true
+            defer { isVerifying = false }
+            await waitForVerification()
+            refreshStatus()
+            guard status == .installed, isExecutableHelper(at: destinationPath) else {
+                errorMessage = L10n.errors(
+                    "The terminal helper could not be verified. Check that the shortcut points to the executable bundled with egasu."
+                )
+                AppDiagnostics.record(
+                    .cliInstall, result: .failure, category: .storage,
+                    localContext: "Installed terminal helper link or executable could not be verified")
+                return
+            }
+        }
+        handle(result, action: "install", operation: .cliInstall)
     }
 
     func uninstall() {
+        guard !isVerifying else { return }
         refreshStatus()
         guard status == .installed else { return }
+        errorMessage = nil
         handle(performPrivileged(.uninstall, sourcePath, destinationPath), action: "remove", operation: .cliRemove)
+    }
+
+    private func isExecutableHelper(at path: String) -> Bool {
+        let target = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+        return fileManager.isExecutableFile(atPath: path)
+            && (try? target.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
     }
 
     private func handle(_ result: OperationResult, action: String, operation: DiagnosticOperation) {

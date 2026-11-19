@@ -43,12 +43,12 @@ final class KimiProvider: ProviderRuntime {
     var widgetDescriptors: [WidgetDescriptor] {
         [
             .percent(id: "kimi.session", provider: provider, title: "Session", sessionStartSignal: .zeroUsage)
-                .supportingSoftLimit(.fiveHours)
                 .exportingLimit("session", unit: "percent"),
             .percent(id: "kimi.weekly", provider: provider, title: "Weekly")
                 .supportingSoftLimit(.weekly)
                 .exportingLimit("weekly", unit: "percent"),
             .percent(id: "kimi.total", provider: provider, title: "Total Usage")
+                .supportingSoftLimit(.monthly, acceptsMissingDuration: true)
                 .exportingLimit("totalUsage", unit: "percent"),
             .values(
                 id: "kimi.extra", provider: provider, title: "Extra Usage", selection: .kind(.dollars),
@@ -87,25 +87,32 @@ final class KimiProvider: ProviderRuntime {
                     appendWarning(warning, to: &snapshot)
                 }
                 if !scan.warnings.isEmpty { snapshot.isDegraded = true }
+                // 개별 진단은 모두 기록하고, 대표 원인은 저장소 오류 > 형식 오류 > 가격 미확인 순으로 선택.
                 if scan.hasUnpricedUsage {
-                    AppDiagnostics.record(.historyScan, result: .degraded, category: .other, providerID: provider.id,
-                                          localContext: "local usage contains unpriced models or cache pricing")
+                    snapshot.reportedPartialFailure = .other
+                    AppDiagnostics.record(
+                        .historyScan, result: .degraded, category: .other, providerID: provider.id,
+                        localContext: "local usage contains unpriced models or cache pricing")
                 }
                 if scan.invalidRows > 0 {
+                    snapshot.reportedPartialFailure = .decoding
                     AppDiagnostics.record(
                         .historyScan, result: .degraded, category: .decoding, providerID: provider.id,
                         localContext: "invalid Kimi Code usage records=\(scan.invalidRows)"
                     )
                 }
-                if !scan.fileErrors.isEmpty {
-                    AppDiagnostics.record(.historyScan, result: .degraded,
-                                          category: scan.fileErrors.first?.errorCategory ?? .storage,
-                                          providerID: provider.id, localContext: scan.readWarnings.joined(separator: " "))
+                if let fileError = KimiHistoryError.representative(in: scan.fileErrors) {
+                    snapshot.reportedPartialFailure = fileError.errorCategory
+                    AppDiagnostics.record(
+                        .historyScan, result: .degraded,
+                        category: fileError.errorCategory,
+                        providerID: provider.id, localContext: scan.readWarnings.joined(separator: " "))
                 }
             }
         } catch is CancellationError {
             return ProviderSnapshot.error(provider: provider, error: CancellationError())
         } catch {
+            snapshot.reportedPartialFailure = ErrorCategory.classify(error)
             AppDiagnostics.record(
                 .historyScan, result: .failure, providerID: provider.id, error: error
             )

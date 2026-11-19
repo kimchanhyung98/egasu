@@ -293,6 +293,19 @@ All Usage는 두 순서를 합성해 등록 계정별 행과 현재 계정명 �
 All Usage의 프로바이더 섹션 공유 이미지는 표시 중인 계정·지표 순서와 해당 탭의 레이아웃 사용.
 제품 동작은 [대시보드](/docs/dashboard.md)와 [계정](/docs/accounts.md) 참조.
 
+## 소프트 한도
+
+프로바이더는 `WidgetDescriptor.supportingSoftLimit`에 해당 구독 한도가 가질 수 있는 주간·월간 기간을 선언.
+같은 지표가 요금제에 따라 기간이 달라지면 두 기간을 선언하고 매퍼가 반환한 실제 주기로 판별.
+월간 전용 응답 필드처럼 기간이 보장되는 지표만 길이가 없는 응답 허용.
+
+베타 업데이트와 소프트 한도가 모두 켜지면 대시보드는 설정과 일치하는 진행 막대에 기준선 표시.
+`SoftLimitObservation`은 계정 카드 하나에서 유효한 실측 지표의 최대 사용률로 도달 여부 판정.
+캐시에서 복원한 오래된 값, 추정 한도와 이미 초기화된 기간은 제어 판단에서 제외.
+`SoftLimitCoordinator`는 새 조회 결과를 받고, 조회 실패나 계정·인증 변경 시 해당 관측을 무효화.
+실행 중 작업의 취소에는 계정과 구독 한도 범위가 검증된 별도 제어 연결 필요.
+[사용자 설정](/docs/settings.md#소프트-한도)과 [CLI의 시작 전 검사](/docs/cli.md#소프트-한도-확인) 참조.
+
 ## 프로세스 실행과 Codex 자동화
 
 `SystemProcessRunner`는 셸 환경·프로세스 탐색·SQLite·Keychain의 동기 명령 실행 담당.
@@ -308,7 +321,6 @@ All Usage의 프로바이더 섹션 공유 이미지는 표시 중인 계정·�
 `CodexSoftLimitAdapter`는 설정 홈에 따라 소켓 경로를 정하고, 이 연결로 활성 대화 조회와 turn 취소 수행.
 제목 생성용 임시 작업은 Adapter에서 제외.
 계정·quota pool 범위를 검증하지 못하는 현재 앱에서는 `SoftLimitCoordinator`가 자동 취소 차단.
-사용자 설정과 지원 범위는 [설정](/docs/settings.md) 참조.
 
 `UsageTimerRouter`는 사용 설정된 계정과 조회 결과 연결, `UsageTimerCoordinator`는 계정·한도 풀·기간별 전송·검증 조정.
 Codex·Claude·Kimi·Antigravity·Z.ai의 adapter가 프로바이더별 관측·인증 검증·서버 재확인 연결.

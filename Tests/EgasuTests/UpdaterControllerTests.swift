@@ -4,6 +4,39 @@ import XCTest
 @testable import Egasu
 
 @MainActor
+final class UpdaterLabsTests: XCTestCase {
+    func testBetaChangesSynchronizeLabsWithoutAnUpdateFeed() async throws {
+        let suite = "EgasuTests.UpdaterLabs.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let updater = UpdaterController(defaults: defaults)
+        let settings = SoftLimitSettingsStore(defaults: defaults, labsAvailable: updater.betaChannelEnabled)
+        let revoked = expectation(description: "External beta change revokes consent")
+        updater.onBetaChannelChange = { available in
+            settings.setLabsAvailable(available)
+            if !available { revoked.fulfill() }
+        }
+
+        updater.betaChannelEnabled = true
+        XCTAssertTrue(defaults.bool(forKey: UpdaterController.betaChannelDefaultsKey))
+        settings.enabled = true
+        XCTAssertTrue(settings.isActive)
+        defaults.set(false, forKey: UpdaterController.betaChannelDefaultsKey)
+        await fulfillment(of: [revoked], timeout: 2)
+        XCTAssertFalse(updater.betaChannelEnabled)
+        XCTAssertFalse(settings.enabled)
+        updater.betaChannelEnabled = true
+        XCTAssertFalse(settings.isActive)
+        settings.enabled = true
+        updater.onBetaChannelChange = settings.setLabsAvailable
+        defaults.set(false, forKey: UpdaterController.betaChannelDefaultsKey)
+        defaults.set(true, forKey: UpdaterController.betaChannelDefaultsKey)
+        XCTAssertTrue(updater.betaChannelEnabled)
+        XCTAssertFalse(settings.isActive)
+    }
+}
+
+@MainActor
 final class UpdaterPresentationControllerTests: XCTestCase {
     func testBringToFrontUsesReliableActivationAfterChangingPolicy() {
         var policy = NSApplication.ActivationPolicy.accessory

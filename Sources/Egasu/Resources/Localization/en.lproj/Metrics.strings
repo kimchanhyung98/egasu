@@ -78,6 +78,7 @@
 "M" = "M";
 "MTok" = "MTok";
 "Monthly" = "Monthly";
+"Monthly limit" = "Monthly limit";
 "No data" = "No data";
 "No usage data" = "No usage data";
 "No usage in this period" = "No usage in this period";
@@ -117,6 +118,7 @@
 "Sessions start after you send your first message." = "Sessions start after you send your first message.";
 "Sonnet" = "Sonnet";
 "Spark" = "Spark";
+"Spark Monthly" = "Spark Monthly";
 "Spark Weekly" = "Spark Weekly";
 "T" = "T";
 "This Month" = "This Month";

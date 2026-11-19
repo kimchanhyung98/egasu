@@ -216,6 +216,9 @@ extension GrokAuthError: CategorizedError {
         case .expired: .authExpired
         case .credentialsChanged: .other
         case .credentialReadFailed: .credentialAccess
+        case .refreshConnectionFailed: .network
+        case .refreshRequestFailed(let status): ErrorCategory.http(status)
+        case .refreshResponseInvalid: .decoding
         }
     }
 }
@@ -350,7 +353,7 @@ extension ZAIAuthError: CategorizedError {
         switch self {
         case .missingKey: .notLoggedIn
         case .invalidKey: .authInvalid
-        case .saveFailed, .deleteFailed: .other
+        case .credentialsChanged, .saveFailed, .deleteFailed: .other
         }
     }
 }

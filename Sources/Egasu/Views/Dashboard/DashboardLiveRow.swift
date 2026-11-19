@@ -23,8 +23,8 @@ struct DashboardLiveRow: View {
 
     var body: some View {
         Group {
-            if needsClock {
-                TimelineView(WidgetRowTimelineSchedule(deadline: line.data.forecastDeadline)) { context in
+            if let schedule {
+                TimelineView(schedule) { context in
                     row(now: context.date)
                 }
             } else {
@@ -53,6 +53,14 @@ struct DashboardLiveRow: View {
         // 마지막 초기화권 사용 후에도 같은 뷰에 상세 팝오버 유지.
         line.data.showsResetExpiries || line.data.resetsAt != nil || !line.data.expiriesAt.isEmpty
             || line.data.forecastDeadline != nil
+    }
+
+    var schedule: WidgetRowTimelineSchedule? {
+        let deadline = line.data.forecastDeadline ?? line.data.softLimitReachedUntil
+        guard needsClock || deadline != nil else { return nil }
+        return WidgetRowTimelineSchedule(
+            deadline: deadline, interval: needsClock ? 30 : nil, endsAtDeadline: line.data.forecastDeadline != nil
+        )
     }
 
     private func row(now: Date) -> some View {
@@ -165,39 +173,43 @@ struct DashboardLiveRow: View {
         return codexResetClaim?.claimAction(for: providerID, binding: binding)
     }
 }
-/// 30초 갱신 사이에 예측 만료 시각을 추가하는 행 전용 표시 일정.
+/// 예측·소프트 한도 만료 시각에 한 번 갱신하고, 카운트다운이 있는 행만 주기 갱신.
 struct WidgetRowTimelineSchedule: TimelineSchedule {
     let deadline: Date?
-    var interval: TimeInterval = 30
+    var interval: TimeInterval? = 30
+    var endsAtDeadline = true
 
     func entries(from startDate: Date, mode: Mode) -> Entries {
         Entries(
             nextPeriodic: startDate,
             deadline: deadline.map { max($0, startDate) },
-            interval: interval
+            interval: interval,
+            endsAtDeadline: endsAtDeadline
         )
     }
 
     struct Entries: Sequence, IteratorProtocol {
-        private var nextPeriodic: Date
+        private var nextPeriodic: Date?
         private var deadline: Date?
-        private let interval: TimeInterval
-        private var finished = false
+        private let interval: TimeInterval?
+        private let endsAtDeadline: Bool
 
-        fileprivate init(nextPeriodic: Date, deadline: Date?, interval: TimeInterval) {
+        fileprivate init(nextPeriodic: Date, deadline: Date?, interval: TimeInterval?, endsAtDeadline: Bool) {
             self.nextPeriodic = nextPeriodic
             self.deadline = deadline
             self.interval = interval
+            self.endsAtDeadline = endsAtDeadline
         }
 
         mutating func next() -> Date? {
-            guard !finished else { return nil }
-            let candidate = Swift.min(nextPeriodic, deadline ?? .distantFuture)
-            if nextPeriodic <= candidate {
-                nextPeriodic = nextPeriodic.addingTimeInterval(interval)
+            guard nextPeriodic != nil || deadline != nil else { return nil }
+            let candidate = Swift.min(nextPeriodic ?? .distantFuture, deadline ?? .distantFuture)
+            if nextPeriodic == candidate {
+                nextPeriodic = interval.map { candidate.addingTimeInterval($0) }
             }
-            if let deadline, deadline <= candidate {
-                finished = true
+            if deadline == candidate {
+                deadline = nil
+                if endsAtDeadline { nextPeriodic = nil }
             }
             return candidate
         }

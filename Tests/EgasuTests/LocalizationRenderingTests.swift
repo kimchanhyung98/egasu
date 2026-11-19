@@ -110,9 +110,9 @@ final class LocalizationRenderingTests: XCTestCase {
 
     private func sampleRows() -> [WidgetData] {
         let icon = MockData.codex.icon
-        var session = WidgetData(title: "Session", icon: icon, kind: .percent, used: 42, limit: 100)
-        session.softLimitUsedFraction = 0.8
-        let weekly = WidgetData(title: "Weekly", icon: icon, kind: .percent, used: 100, limit: 100)
+        let session = WidgetData(title: "Session", icon: icon, kind: .percent, used: 42, limit: 100)
+        var weekly = WidgetData(title: "Weekly", icon: icon, kind: .percent, used: 100, limit: 100)
+        weekly.softLimitUsedFraction = 0.8
         var spend = WidgetData(title: "Last 30 Days", icon: icon, kind: .dollars, used: 125.42, limit: nil)
         spend.isUsagePeriod = true
         spend.values = [

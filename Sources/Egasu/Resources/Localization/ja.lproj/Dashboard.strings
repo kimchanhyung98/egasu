@@ -112,11 +112,10 @@
 "%d days, %@ to %@, peak %@." = "%2$@から%3$@までの%1$d日間、最大%4$@。";
 
 "%lld more" = "他%lld件";
-"All Clear" = "問題なし";
+"No Matching Limits" = "表示条件に一致する上限なし";
 "Fix" = "対処";
 "Needs Attention" = "要確認";
 "No Reported Limits" = "報告された上限なし";
-"Nothing is running out." = "残りわずかな上限はありません。";
 "Out in %@" = "%@で上限到達";
 "Pinned" = "ピン留め";
 "Running Out" = "残りわずか";

@@ -31,12 +31,30 @@ final class DashboardLiveRowTests: XCTestCase {
                 var data = sample()
                 data.displayMode = mode
                 data.softLimitUsedFraction = 0.95
+                data.softLimitReadingExpiresAt = now.addingTimeInterval(15)
                 data.used = 94
                 XCTAssertEqual(liveRow(data).paceTooltip(data, now: now), "Soft limit at 95% used")
                 data.used = 95
                 XCTAssertEqual(liveRow(data).paceTooltip(data, now: now), "Soft limit reached at 95% used")
             }
         }
+    }
+
+    func testOnlyReachedRowsScheduleAOneOffUpdateAtTheReadingExpiry() throws {
+        let expiry = now.addingTimeInterval(15)
+        var data = sample()
+        data.softLimitUsedFraction = 0.9
+        data.softLimitReadingExpiresAt = expiry
+        XCTAssertNil(liveRow(data).schedule)
+        data.used = 95
+        let oneOff = try XCTUnwrap(liveRow(data).schedule)
+        XCTAssertEqual(Array(oneOff.entries(from: now, mode: .normal).prefix(4)), [now, expiry])
+        data.resetsAt = now.addingTimeInterval(300)
+        let countdown = try XCTUnwrap(liveRow(data).schedule)
+        XCTAssertEqual(
+            Array(countdown.entries(from: now, mode: .normal).prefix(4)),
+            [now, expiry, now.addingTimeInterval(30), now.addingTimeInterval(60)]
+        )
     }
 
     func testExpiredForecastTooltipDropsTheOldVoteAndDeadline() {

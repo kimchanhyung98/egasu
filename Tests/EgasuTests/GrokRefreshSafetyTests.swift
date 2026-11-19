@@ -8,6 +8,81 @@ final class GrokRefreshSafetyTests: XCTestCase {
     private nonisolated static let original = #"{"https://auth.x.ai::client":{"key":"token-A","refresh_token":"refresh-A","expires_at":"2020-01-01T00:00:00Z","custom":"keep"}}"#
     private nonisolated static let replacement = #"{"https://auth.x.ai::client":{"key":"token-B","refresh_token":"refresh-B","expires_at":"2099-01-01T00:00:00Z"}}"#
 
+    func testInitialCredentialReadSeparatesMissingMalformedAndInaccessibleFiles() async {
+        let cases: [(String?, CocoaError?, ErrorCategory)] = [
+            (nil, nil, .notLoggedIn), ("malformed", nil, .authInvalid),
+            (Self.original, CocoaError(.fileReadNoPermission), .credentialAccess)
+        ]
+        for (contents, error, expected) in cases {
+            let files = GrokReadFailingFiles(contents.map { [GrokAuthStore.authPath: $0] } ?? [:])
+            files.readError = error
+            let http = GrokSafetyHTTP { _ in throw URLError(.badURL) }
+            let provider = makeProvider(files: files, http: http)
+
+            let snapshot = await provider.refresh()
+            let detected = await provider.hasLocalCredentials()
+
+            XCTAssertEqual(snapshot.errorCategory, expected)
+            XCTAssertFalse(detected)
+            XCTAssertTrue(http.requests.isEmpty)
+        }
+    }
+
+    func testTokenEndpointFailureReportsItsCauseForExpiredAndRejectedAccessTokens() async {
+        let cases: [(Int?, String, ErrorCategory)] = [
+            (nil, "", .network), (401, "", .authExpired), (403, "", .authExpired),
+            (400, #"{"error":"invalid_grant"}"#, .authExpired), (400, "unknown", .http4xx),
+            (429, "", .rateLimited), (503, "", .http5xx), (200, "malformed", .decoding),
+            (200, #"{"access_token":" "}"#, .decoding)
+        ]
+        for expiryYear in ["2020", "2099"] {
+            for (status, body, category) in cases {
+                let events = DiagnosticEventRecorder()
+                let original = Self.original.replacingOccurrences(of: "2020", with: expiryYear)
+                let files = FakeFiles([GrokAuthStore.authPath: original])
+                let http = GrokSafetyHTTP { request in
+                    if request.url == GrokUsageClient.refreshURL {
+                        guard let status else { throw URLError(.timedOut) }
+                        return HTTPResponse(statusCode: status, headers: [:], body: Data(body.utf8))
+                    }
+                    return HTTPResponse(statusCode: 401, headers: [:], body: Data())
+                }
+                let snapshot = await makeProvider(files: files, http: http).refresh()
+
+                XCTAssertEqual(snapshot.errorCategory, category)
+                XCTAssertEqual(snapshot.authenticationIssue, category == .authExpired ? .signInNeeded : nil)
+                XCTAssertEqual(files.files[GrokAuthStore.authPath], original)
+                XCTAssertEqual(
+                    events.events.filter { $0.operation == .credentialRefresh },
+                    [DiagnosticEvent(.credentialRefresh, result: .failure, category: category, providerID: "grok")])
+                XCTAssertFalse(events.events.contains { $0.operation == .credentialSave })
+            }
+        }
+    }
+
+    func testUsableTokenStillRetrievesUsageAfterProactiveRefreshFails() async {
+        let soon = EgasuISO8601.string(from: Self.now.addingTimeInterval(120))
+        let original = Self.original.replacingOccurrences(of: "2020-01-01T00:00:00Z", with: soon)
+        let files = FakeFiles([GrokAuthStore.authPath: original])
+        let events = DiagnosticEventRecorder()
+        let http = GrokSafetyHTTP { request in
+            if request.url == GrokUsageClient.refreshURL { throw URLError(.timedOut) }
+            if request.url == GrokUsageClient.creditsConfigURL { return Self.usageResponse }
+            return HTTPResponse(statusCode: 200, headers: [:], body: Data("{}".utf8))
+        }
+
+        let snapshot = await makeProvider(files: files, http: http).refresh()
+
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertNotNil(snapshot.line(label: "Weekly limit"))
+        XCTAssertEqual(
+            http.requests.filter { $0.url == GrokUsageClient.creditsConfigURL }.first?.headers["Authorization"],
+            "Bearer token-A")
+        XCTAssertTrue(
+            events.events.contains(
+                DiagnosticEvent(.credentialRefresh, result: .failure, category: .network, providerID: "grok")))
+    }
+
     func testDelayedRefreshPreservesReloginAndLogout() async {
         for replacement in [Self.replacement, nil, "{}",
                             Self.original.replacingOccurrences(of: "refresh-A", with: "externally-rotated"),
@@ -32,6 +107,7 @@ final class GrokRefreshSafetyTests: XCTestCase {
 
     func testPersistenceFailureKeepsOriginalSignInAndUsesRotatedTokenForUsage() async {
         for expiryYear in ["2020", "2099"] {
+            let events = DiagnosticEventRecorder()
             let original = Self.original.replacingOccurrences(of: "2020", with: expiryYear)
             let files = GrokWriteFailingFiles([GrokAuthStore.authPath: original])
             let http = GrokSafetyHTTP { request in
@@ -46,6 +122,11 @@ final class GrokRefreshSafetyTests: XCTestCase {
             }
 
             let snapshot = await makeProvider(files: files, http: http).refresh()
+            XCTAssertEqual(
+                events.events.filter { $0.operation == .credentialSave },
+                [
+                    DiagnosticEvent(.credentialSave, result: .degraded, category: .permission, providerID: "grok")
+                ])
 
             XCTAssertNil(snapshot.errorCategory, expiryYear)
             XCTAssertNil(snapshot.authenticationIssue, expiryYear)
@@ -97,7 +178,17 @@ final class GrokRefreshSafetyTests: XCTestCase {
         let store = GrokAuthStore(files: files, environment: FakeEnvironment())
         var state = try XCTUnwrap(store.loadAuthCandidates().first)
         state.entry.key = "rotated-A"
-        files.readError = CocoaError(.fileReadNoPermission)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let sink = LogFile(directory: directory, fileName: "grok.log")
+        sink.open()
+        let previousSink = AppLog.sink
+        AppLog.sink = sink
+        defer {
+            AppLog.sink = previousSink
+            try? FileManager.default.removeItem(at: directory)
+        }
+        files.readError = CocoaError(
+            .fileReadNoPermission, userInfo: [NSLocalizedDescriptionKey: "PRIVATE-file-contents"])
 
         XCTAssertThrowsError(try store.save(state)) { error in
             XCTAssertEqual(error as? GrokAuthError, .credentialReadFailed)
@@ -107,9 +198,15 @@ final class GrokRefreshSafetyTests: XCTestCase {
 
         XCTAssertEqual(files.writeAttempts, 0)
         XCTAssertEqual(files.backing.files[GrokAuthStore.authPath], Self.original)
+        let log = try String(contentsOf: directory.appendingPathComponent("grok.log"), encoding: .utf8)
+        XCTAssertTrue(log.contains("[auth:grok] operation=credential_save result=failure category=credential_access"))
+        XCTAssertTrue(log.contains("context=verify source before saving rotated credentials"))
+        XCTAssertTrue(log.contains("error_code=\(CocoaError.Code.fileReadNoPermission.rawValue)"))
+        XCTAssertFalse(log.contains("PRIVATE-file-contents"))
     }
 
     func testConcurrentSiblingChangesAreKeptWhenTheSelectedEntryIsUnchanged() async throws {
+        let events = DiagnosticEventRecorder()
         let files = FakeFiles([GrokAuthStore.authPath: Self.original])
         let http = GrokSafetyHTTP { request in
             if request.url == GrokUsageClient.refreshURL {
@@ -122,6 +219,11 @@ final class GrokRefreshSafetyTests: XCTestCase {
         }
 
         let snapshot = await makeProvider(files: files, http: http).refresh()
+        XCTAssertEqual(
+            events.events.filter { $0.operation == .credentialSave },
+            [
+                DiagnosticEvent(.credentialSave, result: .success, providerID: "grok")
+            ])
 
         XCTAssertNil(snapshot.errorCategory)
         let object = try XCTUnwrap(GrokAuthStore.parseJSONObject(try XCTUnwrap(files.files[GrokAuthStore.authPath])))

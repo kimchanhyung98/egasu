@@ -78,6 +78,7 @@
 "M" = "30일";
 "MTok" = "MTok";
 "Monthly" = "월간";
+"Monthly limit" = "월간 한도";
 "No data" = "데이터 없음";
 "No usage data" = "사용량 데이터 없음";
 "No usage in this period" = "이 기간의 사용량 없음";
@@ -117,6 +118,7 @@
 "Sessions start after you send your first message." = "첫 메시지를 보내면 세션이 시작됩니다.";
 "Sonnet" = "Sonnet";
 "Spark" = "Spark";
+"Spark Monthly" = "Spark 월간";
 "Spark Weekly" = "Spark 주간";
 "T" = "오늘";
 "This Month" = "이번 달";

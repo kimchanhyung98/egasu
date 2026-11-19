@@ -25,6 +25,8 @@ final class DisplaySettingsStore {
     static let legacyMenuBarAlwaysShowsKey = "menuBarAlwaysShows"
     static let priorityWarningKey = "priorityWarning"
     static let priorityCriticalKey = "priorityCritical"
+    static let priorityShowsWarningKey = "priorityShowsWarning"
+    static let priorityShowsCriticalKey = "priorityShowsCritical"
     static let priorityBurningFastKey = "priorityBurningFast"
     static let priorityUseItOrLoseItKey = "priorityUseItOrLoseIt"
     static let paceMarksKey = "paceMarks"
@@ -60,6 +62,25 @@ final class DisplaySettingsStore {
         }
     }
 
+    var showsWarning: Bool {
+        didSet { defaults.set(showsWarning, forKey: Self.priorityShowsWarningKey) }
+    }
+
+    var showsCritical: Bool {
+        didSet { defaults.set(showsCritical, forKey: Self.priorityShowsCriticalKey) }
+    }
+
+    var visiblePriorityLevels: Set<WidgetData.MeterSeverity> {
+        var levels: Set<WidgetData.MeterSeverity> = []
+        if showsWarning { levels.insert(.warning) }
+        if showsCritical { levels.insert(.critical) }
+        return levels
+    }
+
+    var hasVisiblePriorityConditions: Bool {
+        showsWarning || showsCritical || showsBurningFast || showsUseItOrLoseIt
+    }
+
     var showsBurningFast: Bool {
         didSet { defaults.set(showsBurningFast, forKey: Self.priorityBurningFastKey) }
     }
@@ -84,6 +105,8 @@ final class DisplaySettingsStore {
             warning: defaults.object(forKey: Self.priorityWarningKey) as? Int ?? PriorityLimits.standard.warning,
             critical: defaults.object(forKey: Self.priorityCriticalKey) as? Int ?? PriorityLimits.standard.critical
         )
+        showsWarning = defaults.bool(forKey: Self.priorityShowsWarningKey, default: true)
+        showsCritical = defaults.bool(forKey: Self.priorityShowsCriticalKey, default: true)
         showsBurningFast = defaults.bool(forKey: Self.priorityBurningFastKey, default: true)
         showsUseItOrLoseIt = defaults.bool(forKey: Self.priorityUseItOrLoseItKey, default: true)
         showsPaceMarks =

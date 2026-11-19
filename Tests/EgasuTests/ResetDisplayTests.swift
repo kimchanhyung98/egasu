@@ -145,7 +145,7 @@ final class ResetDisplayTests: XCTestCase {
         let payload = try JSONSerialization.data(withJSONObject: ["groups": [["buckets": buckets]]])
         let snapshot = ProviderSnapshot(
             providerID: provider.provider.id, displayName: provider.provider.displayName,
-            lines: try XCTUnwrap(AntigravityUsageMapper.parseQuotaSummary(payload)), refreshedAt: now
+            lines: try XCTUnwrap(AntigravityUsageMapper.parseQuotaSummary(payload)?.lines), refreshedAt: now
         )
         try L10n.withLanguage(.english) {
             for id in ["antigravity.geminiWeekly", "antigravity.claudeWeekly", "antigravity.argonWeekly"] {

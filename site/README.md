@@ -77,19 +77,26 @@ Astro CLI가 에이전트 환경에서 백그라운드 서버를 시작하면 `n
   언어 변경에 새로고침·재시작 불필요.
 - 이름 변경 전과 같은 출처에서 저장한 미리보기 설정을 이어 쓰도록 기존 `openusage.site.*` 저장 키 유지.
   더 이전 미리보기의 사용량·초기화 시간 표시 설정도 계속 읽음.
+- Priority의 한도 링과 페이스 눈금은 **Show Usage As**에서 선택한 사용량 또는 잔량 기준으로 표시.
+  경고 색은 두 모드 모두 잔량 기준.
+- **Alerts → Show in Priority**에서 네 조건의 표시 여부를 각각 설정.
+  모두 끄면 대시보드에 All Usage만 표시.
+  하나라도 다시 켜면 이전에 선택한 탭으로 복귀.
+  각 조건의 알림 수신은 별도 설정.
 - Reset Watch는 사용량과 별도 확률 막대.
   Used/Left 전환에도 예측 확률과 커뮤니티 투표 눈금 유지.
   예측 시각은 다른 초기화 타이머와 함께 Countdown/Exact Time 및 12/24시간 설정 반영.
   공통 사용 이력·예측은 활성 계정에 표시.
-- Soft Limit은 기본 꺼짐.
-  켜면 5 Hours/Weekly 선택과 1–100% 임계값 입력 표시.
+- Soft Limit은 **General → Beta Updates**를 켜면 **Labs** 탭에서 설정 가능.
+  베타 업데이트를 끄면 Soft Limit과 안내선이 꺼지고 기간·임계값은 유지.
+  켜면 주간·월간을 함께 또는 따로 선택하고 1–100% 기준값 입력.
   Enter 또는 입력 종료 시 적용.
   잘못된 입력은 기존 값 유지와 안내, Used/Left 전환은 안내선 위치만 반전.
-  안내선 지원 기간은 표시 이름이 아닌 앱의 지표별 선언 기준.
-  현재 값 있는 5 Hours 예시는 Claude Session, Codex Session, Antigravity Session·Claude.
-  현재 값 있는 Weekly 예시는 Claude Weekly·Fable, Codex Weekly, Antigravity Weekly·Claude Weekly.
-  지원 지표라도 데이터가 없으면 안내선 미표시하며, Reset Watch와 비용·토큰 행은 대상에서 제외.
+  선택한 기간의 구독 한도와 사용량이 있는 막대 안에 안내선 표시.
+  5시간 세션·Reset Watch·최근 30일 비용·토큰 합계는 대상에서 제외.
+  지원 지표는 [앱의 소프트 한도 설정](/docs/settings.md#지원하는-사용량) 참조.
   미리보기에서 설정한 안내선은 로컬 예시 화면에만 적용.
+  Kiro 크레딧은 월간 구독 한도 예시이며, OpenCode Go는 로컬 추정 사용량 예시.
   설정 변경 안내가 떠 있는 동안에도 Options와 다른 컨트롤의 클릭·터치 조작 가능.
 - **Settings → Alerts → Other Notifications**에서 **Codex Reset Watch** 설정.
   **Condition**의 네 **Receive Alerts** 스위치와 독립.
@@ -236,7 +243,10 @@ Updates는 업데이트 피드가 포함된 배포판 기준으로 표시.
   지표 설정을 바꿔도 입력 중인 이름과 중복 오류 안내 유지.
   언어 전환 후 번역된 기본 이름이 저장된 사용자 지정 이름과 같으면 해당 기본 이름을 영어로 표시.
   예시 사용량이 없는 항목은 로그인 안내를 표시하며 미리보기에서 제거 가능.
-- Settings는 General·Display·Alerts·Advanced 네 탭으로 구성.
+- Settings의 기본 탭은 General·Display·Alerts·Advanced.
+  Beta Updates를 켜면 Labs 탭에 Soft Limit과 Terminal Helper 표시.
+  Terminal Helper 설치·제거는 브라우저에 저장한 예시로 동작.
+  Labs를 숨겨도 설치 상태를 유지하고 제거하려면 확인 필요.
   언어는 새로고침 없이 적용.
   이전에 저장한 Hide From Screen Share 설정값은 Privacy Mode로 이어받음.
   Privacy Mode에서는 대시보드의 계정 이름과 이메일을 가림.

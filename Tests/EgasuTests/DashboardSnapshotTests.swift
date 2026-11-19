@@ -122,13 +122,14 @@ final class DashboardSnapshotTests: XCTestCase {
         yesterday.hasData = false
         var watch = WidgetData(title: "Reset Watch", icon: provider.icon, kind: .percent, used: 72, limit: 100)
         watch.forecast = .init(deadline: now.addingTimeInterval(2 * 86_400), communityYesPercent: 61)
-        var session = meter("Session", used: 42, resetIn: 3 * 3_600, period: 5 * 3_600_000)
-        session.softLimitUsedFraction = 0.8
+        let session = meter("Session", used: 42, resetIn: 3 * 3_600, period: 5 * 3_600_000)
+        var weekly = meter("Weekly", used: 91, resetIn: 2 * 86_400)
+        weekly.softLimitUsedFraction = 0.8
         let first = DashboardAccount(
             provider: provider, providerName: "Codex", name: "Account 1", isInUse: true,
             lines: [
                 line("codex.session", session),
-                line("codex.weekly", meter("Weekly", used: 91, resetIn: 2 * 86_400)),
+                line("codex.weekly", weekly),
                 line("codex.trend", trend),
                 line("codex.today", today),
                 line("codex.yesterday", yesterday),

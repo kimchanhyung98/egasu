@@ -88,7 +88,7 @@ final class CodexSoftLimitNativeTests: XCTestCase {
         let suite = "EgasuTests.SoftLimit.Native.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let settings = SoftLimitSettingsStore(defaults: defaults)
+        let settings = SoftLimitSettingsStore(defaults: defaults, labsAvailable: true)
         settings.enabled = true
         settings.thresholdPercent = 90
         let coordinator = SoftLimitCoordinator(settings: settings, adapters: [adapter], isProviderEnabled: { _ in true }, isCancellationScopeVerified: { _ in true })

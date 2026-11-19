@@ -109,60 +109,84 @@ final class ShareCardRendererTests: XCTestCase {
         }
     }
 
-    func testSoftLimitMarkerRendersAsOneThinWarningLine() throws {
-        let suite = "EgasuTests.SoftLimit.YellowMarker.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        for layoutStyle in DashboardLayoutStyle.allCases {
+    func testSoftLimitGuideStaysInsideNativeAndSharedTracks() throws {
+        for style in DashboardLayoutStyle.allCases {
             for mode in [WidgetDisplayMode.used, .remaining] {
                 for appearance in [ColorScheme.light, .dark] {
-                    var row = WidgetData(title: "Weekly", icon: .providerMark("codex"), kind: .percent, used: 40, limit: 100)
-                    row.displayMode = mode
-                    for showsMarker in [false, true] {
-                        row.softLimitUsedFraction = showsMarker ? 0.90 : nil
-                        let view = DashboardMetricRow(model: row.dashboardRow(), layoutStyle: layoutStyle)
-                            .environment(\.drawsLevelsAsShapes, true)
-                            .padding(.horizontal, 14)
-                            .frame(width: 320)
-                            .background(appearance == .light ? Color.white : Color.black)
-                            .environment(\.colorScheme, appearance)
-                            .environment(\.hoverTooltipsDisabled, true)
-                            .defaultAppStorage(defaults)
-                        let image = try XCTUnwrap(ShareCardRenderer.image(for: view))
-                        let png = try XCTUnwrap(ShareCardRenderer.pngData(from: image))
-                        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: png))
-                        let cgImage = try XCTUnwrap(bitmap.cgImage)
-                        let raster = try XCTUnwrap(CGContext(
-                            data: nil, width: cgImage.width, height: cgImage.height,
-                            bitsPerComponent: 8, bytesPerRow: cgImage.width * 4,
-                            space: CGColorSpaceCreateDeviceRGB(),
-                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
-                        ))
-                        raster.draw(cgImage, in: CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
-                        let pixels = try XCTUnwrap(raster.data).assumingMemoryBound(to: UInt8.self)
-                        var yellowColumns: Set<Int> = []
-                        for y in 0..<raster.height {
-                            for x in 0..<raster.width {
-                                let offset = y * raster.bytesPerRow + x * 4
-                                let red = Double(pixels[offset]) / 255
-                                let green = Double(pixels[offset + 1]) / 255
-                                let blue = Double(pixels[offset + 2]) / 255
-                                if red > 0.6, green > 0.4, blue < min(red, green) * 0.6 {
-                                    yellowColumns.insert(x)
-                                }
+                    for asShapes in [false, true] {
+                        for (threshold, used) in [(0.01, 78.0), (0.5, 78), (0.9, 78), (1, 78), (1, 100)] {
+                            var row = WidgetData(
+                                title: "Weekly", icon: .providerMark("codex"), kind: .percent, used: used, limit: 100)
+                            row.displayMode = mode
+                            row.softLimitUsedFraction = threshold
+                            var model = row.dashboardRow()
+                            if threshold == 0.5 { model.paceMark = model.softLimitMark }
+                            let marked = try meterBitmap(
+                                model, style: style, appearance: appearance, asShapes: asShapes)
+                            model.softLimitMark = nil
+                            let plain = try meterBitmap(model, style: style, appearance: appearance, asShapes: asShapes)
+                            let context =
+                                "\(style), \(mode), \(appearance), shapes=\(asShapes), threshold=\(threshold), used=\(used)"
+                            let bounds = try markerBounds(plain: plain, marked: marked, context: context)
+                            let scale = CGFloat(marked.pixelsWide) / marked.size.width
+                            XCTAssertFalse(bounds.isNull, context)
+                            XCTAssertLessThanOrEqual(bounds.width, ceil(scale) + 1, context)
+                            XCTAssertLessThanOrEqual(bounds.height, ceil(scale * 4) + 1, context)
+                            if threshold == 0.9, !asShapes,
+                                let directory = ProcessInfo.processInfo.environment["EGASU_SOFT_LIMIT_RENDER_DIR"]
+                            {
+                                let folder = URL(fileURLWithPath: directory)
+                                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                                let png = try XCTUnwrap(marked.representation(using: .png, properties: [:]))
+                                try png.write(
+                                    to: folder.appendingPathComponent("meter-\(style)-\(mode)-\(appearance).png"))
                             }
-                        }
-                        let context = "\(layoutStyle), \(mode), \(appearance), marker: \(showsMarker)"
-                        if showsMarker {
-                            XCTAssertFalse(yellowColumns.isEmpty, context)
-                            XCTAssertLessThanOrEqual(yellowColumns.count, 2 * bitmap.pixelsWide / 320, context)
-                        } else {
-                            XCTAssertTrue(yellowColumns.isEmpty, context)
                         }
                     }
                 }
             }
         }
+    }
+
+    private func meterBitmap(
+        _ model: DashboardRowModel, style: DashboardLayoutStyle, appearance: ColorScheme, asShapes: Bool
+    ) throws -> NSBitmapImageRep {
+        let view = DashboardMetricRow(model: model, layoutStyle: style)
+            .padding(.horizontal, 12)
+            .frame(width: PanelMetrics.width)
+            .background(Theme.panelBody)
+            .environment(\.colorScheme, appearance)
+            .environment(\.drawsLevelsAsShapes, asShapes)
+            .environment(\.hoverTooltipsDisabled, true)
+        let host = NSHostingView(rootView: view)
+        let window = NSWindow(
+            contentRect: .init(origin: .zero, size: host.fittingSize),
+            styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: appearance == .light ? .aqua : .darkAqua)
+        window.contentView = host
+        defer { window.close() }
+        return try settingsBitmap(in: host)
+    }
+
+    private func markerBounds(plain: NSBitmapImageRep, marked: NSBitmapImageRep, context: String) throws -> CGRect {
+        XCTAssertEqual(plain.pixelsWide, marked.pixelsWide)
+        XCTAssertEqual(plain.pixelsHigh, marked.pixelsHigh)
+        let original = try XCTUnwrap(plain.bitmapData)
+        let current = try XCTUnwrap(marked.bitmapData)
+        var changed = CGRect.null
+        var outsideTrack = 0
+        for y in 0..<plain.pixelsHigh {
+            for x in 0..<plain.pixelsWide {
+                let offset = y * plain.bytesPerRow + x * 4
+                if (0..<3).contains(where: { abs(Int(current[offset + $0]) - Int(original[offset + $0])) > 24 }) {
+                    if plain.colorAt(x: x, y: y) == plain.colorAt(x: 0, y: y) { outsideTrack += 1 }
+                    changed = changed.union(CGRect(x: x, y: y, width: 1, height: 1))
+                }
+            }
+        }
+        XCTAssertEqual(outsideTrack, 0, context)
+        return changed
     }
 
     // MARK: - Clipboard write result

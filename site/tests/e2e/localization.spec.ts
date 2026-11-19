@@ -136,14 +136,20 @@ test('language cycles through Korean, Japanese, and English across interactive a
   const downloads = page.locator('[data-download]');
   await expect(downloads).toHaveText(['Download', 'Download', 'Download v0.99.2']);
   await openSettings(page);
-  for (const [language, locale, title, label, sheetTitle, downloadLabel] of [
-    ['한국어', 'ko', '설정', '언어', 'Claude 계정 추가', '다운로드'],
-    ['日本語', 'ja', '設定', '言語', 'Claude アカウントを追加', 'ダウンロード'],
-    ['English', 'en', 'Settings', 'Language', 'Add Claude Account', 'Download'],
+  await app.getByRole('switch', { name: 'Beta Updates', exact: true }).click();
+  for (const [language, locale, title, label, sheetTitle, downloadLabel, labsLabel] of [
+    ['한국어', 'ko', '설정', '언어', 'Claude 계정 추가', '다운로드', '실험실'],
+    ['日本語', 'ja', '設定', '言語', 'Claude アカウントを追加', 'ダウンロード', 'ラボ'],
+    ['English', 'en', 'Settings', 'Language', 'Add Claude Account', 'Download', 'Labs'],
   ]) {
     await choose(app, 'language', language);
     for (const root of [app, tour, sheet]) await expect(root).toHaveAttribute('lang', locale);
     await expect(app.locator('[data-scr="settings"] .am-topbar > b')).toHaveText(title);
+    await expect(app.getByRole('tab', { name: labsLabel, exact: true })).toBeVisible();
+    const betaInfo = app.getByRole('button', { name: new RegExp(labsLabel) });
+    await betaInfo.focus();
+    await expect(betaInfo.getByRole('tooltip')).toBeVisible();
+    await expect(betaInfo.getByRole('tooltip')).toContainText(labsLabel);
     await expect(app.locator('[data-picker="language"]')).toHaveAttribute('aria-label', label);
     await expect(app.locator('[data-picker="language"] [data-picker-value]')).toHaveText(language);
     await expect(app.locator('[data-picker="language"] [data-picker-value]')).toHaveAttribute('lang', locale);

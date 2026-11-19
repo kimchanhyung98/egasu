@@ -1,5 +1,40 @@
 import { test, expect, openHome, openSettings, chooseSetting, allUsage, accountDetail } from './fixtures';
 
+test('turning off every Priority condition shows only All Usage and preserves alerts and the selected tab', async ({ page }) => {
+  await openHome(page);
+  const app = page.locator('[data-mock]');
+  const tablist = app.getByRole('tablist', { name: 'Dashboard' });
+  await expect(tablist.getByRole('tab', { name: 'Priority', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await openSettings(page);
+  await app.getByRole('tab', { name: 'Alerts' }).click();
+  await app.getByRole('switch', { name: 'Warning, Receive Alerts', exact: true }).click();
+  for (const condition of ['Warning', 'Critical', 'Burning Fast', 'Use It or Lose It']) {
+    const toggle = app.getByRole('switch', { name: `${condition}, Show in Priority`, exact: true });
+    await expect(toggle).toBeChecked();
+    await toggle.click();
+  }
+  await expect(app.getByRole('switch', { name: 'Warning, Receive Alerts', exact: true })).toBeChecked();
+  await app.getByRole('button', { name: 'Back', exact: true }).click();
+  const all = app.getByRole('region', { name: 'All Usage', exact: true });
+  await expect(app).toHaveCSS('width', '340px');
+  await expect(all).toBeVisible();
+  await expect(all.locator('[data-provider-header="claude"]')).toBeVisible();
+  await expect(tablist).toBeHidden();
+  expect(await app.locator('.am-dashboard-tabs').boundingBox()).toBeNull();
+  await expect(app.getByRole('button', { name: 'Copy Priority', exact: true })).toBeHidden();
+  await page.reload();
+  await expect(all).toBeVisible();
+  await expect(tablist).toBeHidden();
+  await openSettings(page);
+  await app.getByRole('tab', { name: 'Alerts' }).click();
+  await app.getByRole('switch', { name: 'Use It or Lose It, Show in Priority', exact: true }).click();
+  await app.getByRole('button', { name: 'Back', exact: true }).click();
+  await expect(tablist.getByRole('tab', { name: 'Priority', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(app.getByRole('tabpanel', { name: 'Priority', exact: true })).toBeVisible();
+  await expect(app.locator('[data-all-clear]')).toBeVisible();
+  await expect(app.locator('[data-all-clear] .am-clear-row')).toHaveText('No Matching Limits');
+});
+
 test('Priority and All Usage tabs switch on click', async ({ page }) => {
   await openHome(page);
   const app = page.locator('[data-mock]');
@@ -99,19 +134,31 @@ test('spend periods switch on click without scrolling the page', async ({ page }
   expect(await page.evaluate(() => scrollY)).toBe(initialY);
 });
 
-test('Priority changes its amount label without reversing the provider ring', async ({ page }) => {
+test('Priority keeps its quota ring and pace mark in sync with Used and Left', async ({ page }) => {
   await openHome(page);
   const app = page.locator('[data-mock]');
   const row = app.locator('[data-priority-key="codex.weekly@account-1"]');
-  const arc = await row.locator('.am-ring-progress').getAttribute('stroke-dasharray');
+  const arc = row.locator('.am-ring-progress');
+  const pace = row.locator('.am-ring-pace');
+  const displayedFraction = () => arc.evaluate((element: SVGCircleElement) => {
+    const fill = parseFloat(element.getAttribute('stroke-dasharray')!);
+    return fill / (element.pathLength.baseVal || element.getTotalLength());
+  });
   await expect(row.locator('.am-priority-provider')).toBeVisible();
   await expect(row.locator('.am-priority-value .u')).toBeVisible();
   await expect(row.locator('.am-priority-value .l')).toBeHidden();
+  expect(await displayedFraction()).toBeCloseTo(0.97);
+  await expect(pace).toHaveAttribute('transform', 'rotate(324 20 20)');
   await row.locator('[data-toggle-meter]').click();
   await expect(row.locator('.am-priority-value .l')).toHaveText('3% left');
   await expect(row.locator('.am-priority-value .l')).toBeVisible();
   await expect(row.locator('.am-priority-value .u')).toBeHidden();
-  await expect(row.locator('.am-ring-progress')).toHaveAttribute('stroke-dasharray', arc!);
+  expect(await displayedFraction()).toBeCloseTo(0.03);
+  await expect(pace).toHaveAttribute('transform', 'rotate(36 20 20)');
+  await expect(row).toHaveAttribute('data-severity', 'critical');
+  await row.locator('[data-toggle-meter]').click();
+  expect(await displayedFraction()).toBeCloseTo(0.97);
+  await expect(pace).toHaveAttribute('transform', 'rotate(324 20 20)');
   await row.locator('[data-toggle-reset]').click();
   await expect(row.locator('.am-priority-note .rel')).toBeVisible();
 });

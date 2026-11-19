@@ -54,6 +54,39 @@ final class WidgetDataStoreHistoryFailureTests: XCTestCase {
         }
     }
 
+    func testQuotaFailureRevokesFreshnessAcrossCacheInstancesWithoutLosingDisplayedUsage() async throws {
+        let fixture = makeFixture(providerID: "codex", currentIdentity: "current", cachedIdentity: "current")
+        let id = fixture.runtime.provider.id
+        let earlierReader = ProviderSnapshotCache(
+            userDefaults: fixture.defaults, storageKey: "snapshots", allowsPersistedFreshness: true,
+            now: { [now] in now }
+        )
+        XCTAssertEqual(earlierReader.snapshot(providerID: id)?.liveQuotaObservedAt, now)
+        fixture.runtime.snapshot = failure(provider: fixture.runtime.provider, history: nil)
+        await fixture.store.refreshAll(force: true)
+
+        var retained = fixture.previous
+        retained.liveQuotaObservedAt = nil
+        XCTAssertEqual(earlierReader.snapshot(providerID: id), retained)
+        XCTAssertEqual(earlierReader.producedByIdentityKey(providerID: id), "current")
+        earlierReader.store(fixture.previous, producedByIdentityKey: "current")
+        let newReader = ProviderSnapshotCache(
+            userDefaults: fixture.defaults, storageKey: "snapshots", allowsPersistedFreshness: true,
+            now: { [now] in now }
+        )
+        XCTAssertEqual(newReader.loadSnapshots(providerIDs: [id])[id], fixture.previous)
+        XCTAssertEqual(newReader.snapshot(providerID: id), retained)
+
+        var fresh = fixture.previous
+        fresh.liveQuotaObservedAt = now.addingTimeInterval(0.25)
+        fixture.runtime.snapshot = fresh
+        await fixture.store.refreshAll(force: true)
+        XCTAssertEqual(fixture.cache.snapshot(providerID: id)?.liveQuotaObservedAt, fresh.liveQuotaObservedAt)
+        let afterRecovery = ProviderSnapshotCache(userDefaults: fixture.defaults, storageKey: "snapshots")
+        XCTAssertEqual(
+            afterRecovery.loadSnapshots(providerIDs: [id])[id]?.liveQuotaObservedAt, fresh.liveQuotaObservedAt)
+    }
+
     func testFailureNoticeUsesCurrentWarningsWithoutRepeatingOrIncludingStaleWarnings() async throws {
         let fixture = makeFixture()
         fixture.runtime.snapshot.warning = "Stale warning"
@@ -74,6 +107,7 @@ final class WidgetDataStoreHistoryFailureTests: XCTestCase {
         let store: WidgetDataStore
         let cache: ProviderSnapshotCache
         let previous: ProviderSnapshot
+        let defaults: UserDefaults
     }
 
     private func makeFixture(
@@ -88,7 +122,7 @@ final class WidgetDataStoreHistoryFailureTests: XCTestCase {
         let previous = ProviderSnapshot.make(
             provider: provider, plan: "Pro",
             lines: [.progress(label: "Credits", used: 25, limit: 100, format: .percent)],
-            refreshedAt: now, usageHistory: history(tokens: 100)
+            refreshedAt: now, usageHistory: history(tokens: 100), liveQuotaObservedAt: now, quotaObservedAt: now
         )
         let runtime = HistoryFailureRuntime(provider: provider, descriptors: [descriptor], snapshot: previous)
         let now = now
@@ -98,7 +132,7 @@ final class WidgetDataStoreHistoryFailureTests: XCTestCase {
             registry: .from([runtime]), providers: [runtime], cache: cache, defaults: defaults, now: { now },
             providerIdentityKeys: currentIdentity.map { [providerID: $0] } ?? [:]
         )
-        return Fixture(runtime: runtime, store: store, cache: cache, previous: previous)
+        return Fixture(runtime: runtime, store: store, cache: cache, previous: previous, defaults: defaults)
     }
 
     private func history(tokens: Int) -> ProviderUsageHistory {

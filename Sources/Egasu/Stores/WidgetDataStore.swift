@@ -56,7 +56,12 @@ final class WidgetDataStore {
     var scheduledRefreshDates: [String: Date] { refreshCoordinator.scheduledRefreshDates }
     var nextGeneralRefreshAt: Date?
     nonisolated static let refreshScheduleDidChange = ProviderRefreshSchedule.didChange
-    var refreshResults: [String: ProviderRefreshResult] { refreshCoordinator.refreshResults }
+    var claudeReconciliationFailure: ProviderRefreshFailure? { refreshCoordinator.claudeReconciliationFailure }
+    var refreshResults: [String: ProviderRefreshResult] {
+        var results = refreshCoordinator.refreshResults
+        if let claudeReconciliationFailure { results["claude"] = .failed(claudeReconciliationFailure) }
+        return results
+    }
     var providerErrors: [String: String] {
         refreshResults.compactMapValues { $0.failure?.message }
     }
@@ -224,6 +229,10 @@ final class WidgetDataStore {
         refreshCoordinator.setExternalProviderError(message, for: providerID, presentation: presentation)
     }
 
+    func setClaudeReconciliationFailure(_ failure: ProviderRefreshFailure?) {
+        refreshCoordinator.setClaudeReconciliationFailure(failure)
+    }
+
     func clearFailureBackoff(for providerID: String) { refreshCoordinator.clearFailureBackoff(for: providerID) }
     func providerEnablementDidChange() { refreshCoordinator.providerEnablementDidChange() }
     func invalidateAuthentication(for providerID: String) {
@@ -356,7 +365,8 @@ final class WidgetDataStore {
     /// Claude·Codex의 Keychain 접근 실패 — 사용자 수동 갱신으로만 승인 요청.
     func needsKeychainApproval(_ providerID: String) -> Bool {
         ProviderAccountID.families.contains(ProviderAccountID.family(of: providerID))
-            && refreshResults[providerID]?.failure?.category == .credentialAccess
+            && (refreshCoordinator.refreshResults[providerID]?.failure?.category == .credentialAccess
+                || (providerID == "claude" && claudeReconciliationFailure?.category == .credentialAccess))
     }
 
     /// 마지막 정상 결과의 경고 — 이후 조회가 실패해도 유지될 수 있음.
@@ -379,8 +389,10 @@ final class WidgetDataStore {
     }
 
     func data(for descriptor: WidgetDescriptor) -> WidgetData {
+        let snapshot = snapshots[descriptor.providerID]
+        let date = now()
         var result = WidgetDataResolver.resolve(
-            descriptor, snapshot: snapshots[descriptor.providerID], codexResetWatch: codexResetWatch
+            descriptor, snapshot: snapshot, codexResetWatch: codexResetWatch
         )
 
         // 대시보드·공유 이미지·메뉴 막대의 공통 표시 설정 적용 지점.
@@ -389,13 +401,21 @@ final class WidgetDataStore {
         result.alwaysShowPacing = displaySettings.showsPaceMarks
         result.priorityLimits = displaySettings.priorityLimits
         result.showsPaceMarks = displaySettings.showsPaceMarks
-        result.softLimitUsedFraction = softLimitSettings?().usedFraction(
-            for: descriptor.softLimitWindow,
-            periodDurationMs: result.periodDurationMs
-        )
+        if result.hasData, result.isQuotaMeter, result.valueTextOverride == nil,
+            let limit = result.limit, limit.isFinite, limit > 0, result.used.isFinite, result.used >= 0,
+            let settings = softLimitSettings?(),
+            let fraction = settings.usedFraction(for: descriptor, periodDurationMs: result.periodDurationMs)
+        {
+            result.softLimitUsedFraction = fraction
+            if refreshResults[descriptor.providerID] == .succeeded, let snapshot {
+                result.softLimitReadingExpiresAt = SoftLimitObservation.project(
+                    snapshot: snapshot, descriptors: [descriptor], window: settings.window, now: date
+                )?.nextExpiry(after: date)
+            }
+        }
         // 행이 속한 카드 ID — 카드별 크레딧 사용 요청의 대상 키.
         result.providerID = descriptor.providerID
-        return result.presented(at: now())
+        return result.presented(at: date)
     }
 
     /// 현재 조회 결과의 플랜 이름 — 결과가 없거나 플랜을 제공하지 않으면 nil.

@@ -152,6 +152,7 @@ final class GrokProviderTests: XCTestCase {
 
         let snapshot = await provider.refresh()
 
+        XCTAssertEqual(snapshot.liveQuotaObservedAt, snapshot.refreshedAt)
         XCTAssertEqual(progress(snapshot.lines, "Weekly limit")?.used, 99)
         XCTAssertEqual(progress(snapshot.lines, "Weekly limit")?.limit, 100)
         XCTAssertEqual(progress(snapshot.lines, "Weekly limit")?.resetsAt?.timeIntervalSince1970 ?? 0,
@@ -173,6 +174,7 @@ final class GrokProviderTests: XCTestCase {
         let snapshot = await provider.refresh()
 
         XCTAssertNotNil(snapshot.errorCategory)
+        XCTAssertNil(snapshot.liveQuotaObservedAt)
         XCTAssertNil(progress(snapshot.lines, "Weekly limit"))
     }
 
@@ -191,12 +193,14 @@ final class GrokProviderTests: XCTestCase {
         XCTAssertNotNil(snapshot.errorCategory)
     }
 
-    func testNonWeeklyPeriodShowsNoWeeklyLineAndNoWarning() async {
-        // monthly-period(미이전) 계정은 정상 상태 — Weekly tile은 경고 없이 "No data", badge는 유지
+    func testMonthlyAccountReportsItsMonthlyMeterAndNoWarning() async {
         let httpClient = RecordingHTTPClient { request in
             if request.url == GrokUsageClient.creditsConfigURL {
                 return HTTPResponse(statusCode: 200, headers: [:],
-                                    body: GrokCreditsFixtures.responseBody(periodType: "USAGE_PERIOD_TYPE_MONTHLY"))
+                    body: GrokCreditsFixtures.responseBody(
+                        periodType: "USAGE_PERIOD_TYPE_MONTHLY",
+                        percent: 37, start: "2026-11-01T00:00:00Z",
+                        end: "2026-12-01T00:00:00Z"))
             }
             return Self.defaultRoutes(request)
         }
@@ -205,6 +209,8 @@ final class GrokProviderTests: XCTestCase {
         let snapshot = await provider.refresh()
 
         XCTAssertNil(progress(snapshot.lines, "Weekly limit"))
+        XCTAssertEqual(progress(snapshot.lines, "Monthly limit")?.used, 37)
+        XCTAssertNotNil(snapshot.liveQuotaObservedAt)
         XCTAssertEqual(badge(snapshot.lines, "Pay as you go")?.text, "Disabled")
         XCTAssertNil(snapshot.warning)
         XCTAssertNil(snapshot.errorCategory)

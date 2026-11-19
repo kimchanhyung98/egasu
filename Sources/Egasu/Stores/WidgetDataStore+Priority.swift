@@ -14,6 +14,7 @@ extension WidgetDataStore {
         PriorityBoard.make(
             accounts: hidingEmails ? accounts.map(\.hidingEmail) : accounts,
             pinned: pinned,
+            visibleLevels: displaySettings.visiblePriorityLevels,
             burningFast: burningFast,
             useItOrLoseIt: displaySettings.showsUseItOrLoseIt,
             now: now

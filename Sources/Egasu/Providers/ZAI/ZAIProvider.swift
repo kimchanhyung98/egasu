@@ -39,15 +39,18 @@ final class ZAIProvider: ProviderRuntime {
         [
             .percent(id: "zai.session", provider: provider, title: "Session",
                      metricLabel: "Session")
-                .supportingSoftLimit(.fiveHours)
                 .exportingLimit("session", unit: "percent"),
             .percent(id: "zai.weekly", provider: provider, title: "Weekly",
                      metricLabel: "Weekly")
                 .supportingSoftLimit(.weekly)
                 .exportingLimit("weekly", unit: "percent"),
+            .percent(id: "zai.monthly", provider: provider, title: "Monthly")
+                .supportingSoftLimit(.monthly)
+                .exportingLimit("monthly", unit: "percent"),
             .boundedCount(id: "zai.webSearches", provider: provider, title: "Web Searches",
                           metricLabel: "Web Searches", limit: 1000, suffix: "searches",
                           periodDurationMs: ZAIUsageMapper.monthlyPeriodMs)
+            .supportingSoftLimit(.weekly, .monthly)
                 .exportingLimit("webSearches", unit: "searches")
         ]
     }
@@ -81,11 +84,11 @@ final class ZAIProvider: ProviderRuntime {
             }
             do {
                 let mapped = try ZAIUsageMapper.map(quotaBody: body, subscriptionBody: subscription)
-                recordUsageTimer(lines: mapped.lines, apiKey: auth.apiKey, observedAt: observedAt)
                 let statistics = await loadStatistics(apiKey: auth.apiKey, at: refreshedAt)
-                if Task.isCancelled {
-                    return ProviderSnapshot.error(provider: provider, error: CancellationError())
-                }
+                let current = try await loadOffMainActor { [authStore] in try authStore.requireAPIKey() }
+                try Task.checkCancellation()
+                guard current == auth else { throw ZAIAuthError.credentialsChanged }
+                recordUsageTimer(lines: mapped.lines, apiKey: auth.apiKey, observedAt: observedAt)
                 return ProviderSnapshot.make(
                     provider: provider, plan: mapped.plan, lines: mapped.lines,
                     totalSpendLines: statistics.lines,

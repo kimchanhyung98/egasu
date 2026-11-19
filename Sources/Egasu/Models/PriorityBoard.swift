@@ -5,7 +5,7 @@ struct PriorityItem: Identifiable {
     enum Reason: Equatable {
         /// 남은 양 기준 — 막대 색과 같은 규칙.
         case low(WidgetData.MeterSeverity, remaining: Double, runway: TimeInterval?)
-        /// 남은 양은 넉넉하지만 현재 속도로 초기화 전 소진.
+        /// 현재 속도로 초기화 전 소진.
         case burningFast(runway: TimeInterval)
         case usedUp(resetsAt: Date?)
         case emptyBalance
@@ -14,9 +14,11 @@ struct PriorityItem: Identifiable {
 
         enum Section { case runningOut, usedUp, useItOrLoseIt }
 
-        /// `burningFast`가 nil이면 빠른 소진 항목 제외, `useItOrLoseIt`이 false면 초기화 전 사용 항목 제외.
-        /// Reset Watch·차트·기간 행처럼 한도가 아닌 행은 nil.
-        init?(_ line: DashboardLine, now: Date, burningFast: BurningFast?, useItOrLoseIt: Bool) {
+        /// 여러 조건이 겹치면 표시할 잔량 구간, 빠른 소진, 초기화 전 사용 순으로 선택.
+        init?(
+            _ line: DashboardLine, now: Date, visibleLevels: Set<WidgetData.MeterSeverity>,
+            burningFast: BurningFast?, useItOrLoseIt: Bool
+        ) {
             let data = line.data.presented(at: now)
             if let balance = line.descriptor.balance(in: data), balance <= 0 {
                 self = .emptyBalance
@@ -27,7 +29,7 @@ struct PriorityItem: Identifiable {
                 self = .usedUp(resetsAt: data.resetsAt)
                 return
             }
-            if data.severity != .normal {
+            if visibleLevels.contains(data.severity) {
                 self = .low(data.severity, remaining: data.remainingFraction, runway: data.runway(now: now))
                 return
             }
@@ -38,14 +40,6 @@ struct PriorityItem: Identifiable {
             guard useItOrLoseIt, PaceNotificationLogic.isUnusedNearReset(data, now: now), let resetsAt = data.resetsAt
             else { return nil }
             self = .useItOrLoseIt(resetsAt: resetsAt)
-        }
-
-        var severity: WidgetData.MeterSeverity {
-            switch self {
-            case .low(let severity, _, _): severity
-            case .burningFast, .useItOrLoseIt: .normal
-            case .usedUp, .emptyBalance: .critical
-            }
         }
 
         fileprivate var section: Section {
@@ -76,6 +70,13 @@ struct PriorityItem: Identifiable {
 
     var id: String { line.id }
     var data: WidgetData { line.data }
+    var severity: WidgetData.MeterSeverity {
+        switch reason {
+        case .usedUp, .emptyBalance: .critical
+        case .low(let severity, _, _): severity
+        case .burningFast, .useItOrLoseIt: data.fillSeverity
+        }
+    }
 
     func runOutText(now: Date) -> String? {
         guard case .burningFast(let runway) = reason, let resetsAt = data.resetsAt,
@@ -157,14 +158,17 @@ struct PriorityBoard {
 
     /// `accounts`는 사용자 저장 순서 — 동률은 이 순서로 결정.
     static func make(
-        accounts: [DashboardAccount], pinned pinnedIDs: Set<String> = [], burningFast: BurningFast? = nil,
+        accounts: [DashboardAccount], pinned pinnedIDs: Set<String> = [],
+        visibleLevels: Set<WidgetData.MeterSeverity> = [.warning, .critical], burningFast: BurningFast? = nil,
         useItOrLoseIt: Bool = false, now: Date,
         status: (DashboardAccount) -> ReadStatus = { $0.waitingMetricIDs.isEmpty ? .current : .waiting }
     ) -> PriorityBoard {
         let lines = accounts.flatMap { account in account.lines.map { (account, $0) } }
         let readings = lines.map { account, line in
             let isPinned = pinnedIDs.contains(line.id)
-            let item = PriorityItem.Reason(line, now: now, burningFast: burningFast, useItOrLoseIt: useItOrLoseIt).map {
+            let item = PriorityItem.Reason(
+                line, now: now, visibleLevels: visibleLevels, burningFast: burningFast, useItOrLoseIt: useItOrLoseIt
+            ).map {
                 PriorityItem(account: account, line: line, reason: $0, isPinned: isPinned)
             }
             return (pin: isPinned ? PinnedMetric(account: account, line: line, item: item) : nil, item: item)
@@ -198,14 +202,17 @@ struct PriorityBoard {
                 .noReportedLimits
             }
         let runningOut = ranked.filter { $0.reason.section == .runningOut }
-        let nextUseItOrLoseItChange: Date? = useItOrLoseIt ? lines.compactMap { _, line in
-            let data = line.data
-            guard !pinnedIDs.contains(line.id), data.isQuotaMeter, data.valueTextOverride == nil,
-                  data.severity == .normal, let reset = data.resetsAt else { return nil }
-            let start = reset.addingTimeInterval(-PaceNotificationLogic.useItOrLoseItLead)
-            guard PaceNotificationLogic.isUnusedNearReset(data, now: max(start, now)) else { return nil }
-            return start > now ? start : reset
-        }.min() : nil
+        let nextUseItOrLoseItChange: Date? =
+            useItOrLoseIt
+            ? lines.compactMap { _, line in
+                let data = line.data
+                guard !pinnedIDs.contains(line.id), data.isQuotaMeter, data.valueTextOverride == nil,
+                    !visibleLevels.contains(data.severity), let reset = data.resetsAt
+                else { return nil }
+                let start = reset.addingTimeInterval(-PaceNotificationLogic.useItOrLoseItLead)
+                guard PaceNotificationLogic.isUnusedNearReset(data, now: max(start, now)) else { return nil }
+                return start > now ? start : reset
+            }.min() : nil
         return PriorityBoard(
             pinned: readings.compactMap(\.pin),
             runningOut: runningOut,

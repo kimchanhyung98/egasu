@@ -21,7 +21,7 @@ final class SharedMetricSettingsRenderingTests: XCTestCase {
         XCTAssertEqual(
             accountMetrics.map(\.id),
             [
-                "session", "weekly", "rateLimitResets", "spark", "sparkWeekly", "credits"
+                "session", "weekly", "monthly", "rateLimitResets", "spark", "sparkWeekly", "sparkMonthly", "credits"
             ].map { "\(accountID).\($0)" })
         XCTAssertEqual(
             sharedMetrics.map(\.id),

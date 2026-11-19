@@ -112,11 +112,10 @@
 "%d days, %@ to %@, peak %@." = "%2$@부터 %3$@까지 %1$d일, 최대 %4$@.";
 
 "%lld more" = "%lld개 더";
-"All Clear" = "이상 없음";
+"No Matching Limits" = "표시 조건에 맞는 한도 없음";
 "Fix" = "해결";
 "Needs Attention" = "확인 필요";
 "No Reported Limits" = "보고된 한도 없음";
-"Nothing is running out." = "소진 임박 한도가 없습니다.";
 "Out in %@" = "%@ 후 소진";
 "Pinned" = "고정됨";
 "Running Out" = "소진 임박";

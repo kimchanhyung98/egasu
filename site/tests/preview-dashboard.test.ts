@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { initialPreviewState, setMetric, activateAccount, changePreference, restorePreviewState, moveMetric, orderedMetrics, setProviderEnabled } from '../src/data/preview-state.ts';
 import { cards } from '../src/data/dashboard.ts';
 import { metricID } from '../src/data/metrics.ts';
-import { priorityBoard, dashboardLines, menuBarItems } from '../src/data/preview-dashboard.ts';
+import { priorityBoard, dashboardLines, menuBarItems, softLimitAccountStatuses } from '../src/data/preview-dashboard.ts';
 
 test('Priority separates low and spent limits and keeps pinned limits in one section', () => {
   let state = initialPreviewState();
@@ -18,7 +18,7 @@ test('Priority separates low and spent limits and keeps pinned limits in one sec
   assert.ok(board.pinned.some((line) => line.key === 'claude.fable@account-1'));
   assert.ok(!board.runningOut.some((line) => line.key === 'codex.weekly@account-1'));
   assert.ok(!board.usedUp.some((line) => line.key === 'claude.fable@account-1'));
-  assert.equal(board.allClear, false, 'Pinned warnings still suppress All Clear');
+  assert.equal(board.allClear, false, 'Pinned warnings still count as matches');
 });
 
 test('Priority distinguishes hidden limits from providers with no reported limits', () => {
@@ -104,6 +104,26 @@ test('thresholds remain ordered and update Priority without changing sample valu
   assert.ok(!priorityBoard(state).runningOut.some((line) => line.key === 'claude.weekly@account-1'));
 });
 
+test('warning and critical visibility follow separate thresholds without changing urgency or alerts', () => {
+  let state = restorePreviewState({ ...initialPreviewState(), preferences: { warningNotification: true, showBurningFast: false } });
+  const shown = (key: string) => priorityBoard(state).runningOut.some((line) => line.key === key);
+  const warning = 'claude.weekly@account-1';
+  const critical = 'codex.weekly@account-1';
+  assert.ok(shown(warning) && shown(critical));
+  state = changePreference(state, 'showWarning', false);
+  assert.ok(!shown(warning) && shown(critical));
+  assert.equal(dashboardLines(state).find((line) => line.key === warning)?.severity, 'warning');
+  state = changePreference(state, 'showCritical', false);
+  assert.ok(!shown(critical));
+  state = changePreference(state, 'showBurningFast', true);
+  assert.ok(shown(critical), 'the critical fixture also qualifies as Burning Fast');
+  state = changePreference(state, 'showWarning', true);
+  assert.ok(shown(warning));
+  assert.equal(state.preferences.warningNotification, true);
+  assert.equal(state.preferences.criticalNotification, false);
+  assert.deepEqual(restorePreviewState(JSON.parse(JSON.stringify(state))), state);
+});
+
 test('metric ordering preserves each account and common slots across scope boundaries', () => {
   let state = moveMetric(initialPreviewState(), 'claude', 'account-1', 'claude.weekly', 'claude.session');
   assert.equal(orderedMetrics(state, 'claude', 'account-1')[0].id, 'claude.weekly');
@@ -131,8 +151,49 @@ test('restored metric order is applied to the saved account and keeps shared slo
   assert.deepEqual(accountOrder(state, 'account-2'), accountOrder(initial, 'account-2'));
 });
 
+test('Soft Limit reports separate account readings and distinguishes estimates from measured quotas', () => {
+  let state = initialPreviewState();
+  state.accountOrder.codex = ['account-2', 'account-1'];
+  for (const id of ['kiro', 'opencode', 'cursor']) state = setProviderEnabled(state, id, true);
+  state = changePreference(state, 'softLimitWindow', 'Weekly');
+  let statuses = softLimitAccountStatuses(state);
+  assert.deepEqual(statuses.filter((row) => row.provider === 'codex').map(({ accountID, message }) => [accountID, message]), [
+    ['account-2', '35% used'], ['account-1', '97% used · Soft limit reached'],
+  ]);
+  assert.ok(!statuses.some((row) => row.provider === 'kiro'));
+  state = changePreference(state, 'softLimitWindow', 'Monthly');
+  state = changePreference(state, 'softLimitThreshold', '35');
+  statuses = softLimitAccountStatuses(state);
+  assert.equal(statuses.find((row) => row.provider === 'kiro')?.message, '46% used · Soft limit reached');
+  assert.equal(statuses.find((row) => row.provider === 'opencode')?.message, 'Estimated usage: 40%');
+  assert.equal(statuses.find((row) => row.provider === 'cursor')?.message, 'Quota not verified');
+  assert.deepEqual(statuses.filter((row) => row.provider === 'codex').map((row) => row.message), [
+    'Quota not verified', 'Quota not verified',
+  ]);
+  assert.ok(!statuses.some((row) => row.provider === 'claude'));
+  assert.deepEqual(softLimitAccountStatuses({ ...state, enabledProviders: [] }), []);
+});
+
+test('Soft Limit compares the unrounded quantity at a threshold boundary', () => {
+  const state = changePreference(initialPreviewState(), 'softLimitThreshold', '98');
+  const codex = cards.find((card) => card.provider === 'codex')!;
+  const weekly = codex.always.find((row) => row.kind === 'bounded' && row.label === 'Weekly');
+  assert.ok(weekly?.kind === 'bounded');
+  for (const [used, limit, expected] of [
+    [97.99, 100, '97.9% used'], [98, 100, '98% used · Soft limit reached'],
+    [-1, 100, 'Quota not verified'], [10, 0, 'Quota not verified'], [NaN, 100, 'Quota not verified'], [10, Infinity, 'Quota not verified'],
+    [Number.MAX_VALUE, Number.MIN_VALUE, 'Quota not verified'],
+  ] as const) {
+    const sample = { ...codex, always: [{ ...weekly, used, limit }], onDemand: [] };
+    const statuses = softLimitAccountStatuses(state, [sample]);
+    assert.equal(statuses.find((row) => row.provider === 'codex' && row.accountID === 'account-1')?.message, expected);
+  }
+});
+
 test('each reported fixture row maps to a descriptor and rendered example', () => {
-  const lines = dashboardLines(initialPreviewState());
+  let state = initialPreviewState();
+  for (const card of cards) state = setProviderEnabled(state, card.provider, true);
+  const lines = dashboardLines(state);
   for (const card of cards) {
     for (const row of [...card.always, ...card.onDemand]) {
       const id = metricID(card.provider, row.label);

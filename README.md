@@ -44,6 +44,8 @@ The app updates itself in place via signed, notarized [Sparkle](docs/updates.md)
 - **[메뉴 막대](/docs/menu-bar.md).** 소진 임박·Priority·직접 고정한 항목 중 표시 기준 선택.
   텍스트 또는 막대로 최대 5개 표시.
 - **[Priority](/docs/dashboard.md#priority).** 고정한 지표, 소진 임박·초기화 전 사용·소진 완료에 해당하는 한도, 확인이 필요한 계정 표시.
+  Claude 로그인 반영 중 키체인 접근에 실패하면 우선순위의 **해결** 버튼으로 재시도.
+  설정 → 알림에서 네 조건의 **우선순위 표시**를 모두 끄면 대시보드에 전체 사용량만 표시.
 - **[All Usage](/docs/dashboard.md#all-usage).** 등록 계정별 사용량·초기화 시각·사용 속도 표시.
   Minimal은 프로바이더별 계정 묶음, Cards는 계정별 독립 카드.
   행 우클릭으로 지표 숨기기·Priority 고정·새로 고침·Accounts 관리 연결.
@@ -75,6 +77,7 @@ The app updates itself in place via signed, notarized [Sparkle](docs/updates.md)
 - **[Local HTTP API](docs/local-http-api.md).** Other local apps can read machine-friendly limits from `127.0.0.1:6736/v1/limits`; the legacy `/v1/usage` UI contract remains supported. It is loopback-only, rejects browser-origin requests, and never serves credentials.
 - **[Proxy support](docs/proxy.md).** Route provider requests through SOCKS5 or HTTP(S) via `~/.openusage/config.json`.
 - **[네이티브 설정](/docs/settings.md).** General·Display·Alerts·Advanced에서 로그인 시 실행, 단축키, 표시, 알림과 진단 설정.
+  베타 업데이트를 켜면 [실험실(Labs)](/docs/settings.md#labs)에서 주간·월간 구독 한도에 사용률 기준선을 설정하거나 터미널 도우미 설치·제거 가능.
 - **[Automatic updates](docs/updates.md).** Signed, notarized in-app updates via Sparkle, with an optional beta channel.
 
 

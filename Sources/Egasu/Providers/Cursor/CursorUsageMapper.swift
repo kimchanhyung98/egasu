@@ -3,6 +3,7 @@ import Foundation
 struct CursorMappedUsage: Equatable, Sendable {
     var plan: String?
     var lines: [MetricLine]
+    var incompleteQuotaWindows: Set<SoftLimitWindow> = []
 }
 
 /// Cursor의 untyped `usage` payload에서 3개 plan-usage 결정(map guard, request-based fallback, generic fallback)이 읽는 사실들.
@@ -13,8 +14,12 @@ struct CursorPlanUsageFacts {
     let hasPlanUsage: Bool
     /// 숫자일 때의 `planUsage.limit`.
     let limit: Double?
-    /// 숫자일 때의 `planUsage.totalPercentUsed`.
+    let usedCents: Double?
+    /// 직접 보고한 사용률 우선. 없으면 같은 응답의 사용량·한도로 산출.
     let totalPercentUsed: Double?
+    let autoPercentUsed: Double?
+    let apiPercentUsed: Double?
+    let incompleteQuotaLabels: Set<String>
     /// 소문자화한 `spendLimitUsage.limitType`.
     let spendLimitType: String?
     /// `spendLimitUsage.pooledLimit` (부재 시 0).
@@ -24,23 +29,56 @@ struct CursorPlanUsageFacts {
         isEnabled = usage["enabled"] as? Bool != false
         let planUsage = usage["planUsage"] as? [String: Any]
         hasPlanUsage = planUsage != nil
-        limit = planUsage.flatMap { ProviderParse.number($0["limit"]) }
-        totalPercentUsed = planUsage.flatMap { ProviderParse.number($0["totalPercentUsed"]) }
+        let reportedLimit = ProviderParse.number(planUsage?["limit"])
+        limit = reportedLimit.flatMap { $0 > 0 ? $0 : nil }
+        if let spent = ProviderParse.number(planUsage?["totalSpend"]), spent >= 0 {
+            usedCents = spent
+        } else if let limit, let remaining = ProviderParse.number(planUsage?["remaining"]), remaining >= 0 {
+            usedCents = max(0, limit - remaining)
+        } else {
+            usedCents = nil
+        }
+        if let percent = Self.percent(planUsage?["totalPercentUsed"]) {
+            totalPercentUsed = percent
+        } else if let usedCents, let limit {
+            let percent = usedCents / limit * 100
+            totalPercentUsed = percent.isFinite ? percent : nil
+        } else {
+            totalPercentUsed = nil
+        }
+        autoPercentUsed = Self.percent(planUsage?["autoPercentUsed"])
+        apiPercentUsed = Self.percent(planUsage?["apiPercentUsed"])
+        incompleteQuotaLabels = Self.incompleteQuotaLabels(in: planUsage, hasTotal: totalPercentUsed != nil)
         let spendLimitUsage = usage["spendLimitUsage"] as? [String: Any]
         spendLimitType = (spendLimitUsage?["limitType"] as? String)?.lowercased()
         pooledLimit = ProviderParse.number(spendLimitUsage?["pooledLimit"]) ?? 0
     }
 
-    var hasLimit: Bool { limit != nil }
-    var hasTotalUsagePercent: Bool { totalPercentUsed != nil }
-    /// `planUsage`는 있으나 쓸 만한 limit 없음 — fallback들이 기준 삼는 "존재하나 무용" 상태.
-    var planUsageLimitMissing: Bool { hasPlanUsage && !hasLimit }
-    var planUsageUnusable: Bool { !hasPlanUsage || planUsageLimitMissing }
+    static func percent(_ value: Any?) -> Double? {
+        guard let percent = ProviderParse.number(value), percent >= 0 else { return nil }
+        return percent
+    }
+
+    static func incompleteQuotaLabels(in plan: [String: Any]?, hasTotal: Bool) -> Set<String> {
+        guard let plan, ProviderParse.bool(plan["enabled"]) != false else { return [] }
+        var labels: Set<String> = []
+        if !hasTotal, (ProviderParse.number(plan["limit"]) ?? 0) > 0 { labels.insert("Total usage") }
+        for (key, label) in [
+            ("totalPercentUsed", "Total usage"), ("autoPercentUsed", "Auto usage"), ("apiPercentUsed", "API usage")
+        ] {
+            guard let value = plan[key], !(value is NSNull), percent(value) == nil else { continue }
+            if label != "Total usage" || !hasTotal { labels.insert(label) }
+        }
+        return labels
+    }
+
+    var hasUsageMeter: Bool {
+        totalPercentUsed != nil || autoPercentUsed != nil || apiPercentUsed != nil
+    }
     /// plan 이름과 무관하게 spend-limit 형태만으로 추론한 team 계정.
     var isTeamByShape: Bool { spendLimitType == "team" || pooledLimit > 0 }
-    /// generic request-based fallback 트리거: limit도 total-percent도 없는 `planUsage`를 가진 enabled 계정.
     var shouldTryGenericRequestFallback: Bool {
-        isEnabled && hasPlanUsage && !hasLimit && !hasTotalUsagePercent
+        isEnabled && hasPlanUsage && !hasUsageMeter
     }
 }
 
@@ -76,6 +114,26 @@ enum CursorUsageError: Error, LocalizedError, Equatable {
 enum CursorUsageMapper {
     static let billingPeriodMs = MetricPeriod.monthMs
 
+    struct BillingCycle {
+        var resetsAt: Date?
+        var periodDurationMs: Int?
+
+        var possibleSoftLimitWindows: Set<SoftLimitWindow> {
+            guard let periodDurationMs else { return Set(SoftLimitWindow.allCases) }
+            return Set(SoftLimitWindow.allCases.filter { $0.matches(periodDurationMs: periodDurationMs) })
+        }
+    }
+
+    /// 이전 요청 기반 요금제는 시작 시각에서 UTC 달력의 한 달 뒤에 갱신.
+    static func requestBillingCycle(_ usage: [String: Any]?) -> BillingCycle {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .gmt
+        guard let start = (usage?["startOfMonth"] as? String).flatMap(EgasuISO8601.date(from:)),
+            let end = calendar.date(byAdding: .month, value: 1, to: start)
+        else { return BillingCycle() }
+        return BillingCycle(resetsAt: end, periodDurationMs: Int((end.timeIntervalSince(start) * 1000).rounded()))
+    }
+
     static func mapUsage(
         usage: [String: Any],
         planName: String?,
@@ -83,37 +141,20 @@ enum CursorUsageMapper {
         stripeBalanceCents: Double
     ) throws -> CursorMappedUsage {
         let facts = CursorPlanUsageFacts(usage: usage)
-        guard facts.isEnabled,
-              let planUsage = usage["planUsage"] as? [String: Any]
-        else {
+        guard facts.isEnabled, facts.hasPlanUsage else {
             throw CursorUsageError.noActiveSubscription
         }
 
         let normalizedPlan = planName?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
 
-        guard facts.hasLimit || facts.hasTotalUsagePercent else {
-            throw CursorUsageError.totalUsageLimitMissing
-        }
-
         var lines: [MetricLine] = []
         appendCredits(creditGrants: creditGrants, stripeBalanceCents: stripeBalanceCents, to: &lines)
-
-        let planUsedCents = ProviderParse.number(planUsage["totalSpend"])
-            ?? ((facts.limit ?? 0) - (ProviderParse.number(planUsage["remaining"]) ?? 0))
-        let computedPercentUsed = facts.limit.flatMap { limit -> Double? in
-            guard limit > 0 else { return nil }
-            return planUsedCents / limit * 100
-        } ?? 0
-        let totalUsagePercent = facts.totalPercentUsed ?? computedPercentUsed
 
         let cycle = billingCycle(from: usage)
         let spendLimitUsage = usage["spendLimitUsage"] as? [String: Any]
         let isTeamAccount = normalizedPlan == "team" || facts.isTeamByShape
 
-        if isTeamAccount {
-            guard let limitCents = facts.limit else {
-                throw CursorUsageError.requestBasedUnavailable("Cursor request-based usage data unavailable. Try again later.")
-            }
+        if isTeamAccount, let limitCents = facts.limit, let planUsedCents = facts.usedCents {
             lines.append(.progress(
                 label: "Total usage",
                 used: ProviderParse.centsToDollars(planUsedCents),
@@ -122,7 +163,7 @@ enum CursorUsageMapper {
                 resetsAt: cycle.resetsAt,
                 periodDurationMs: cycle.periodDurationMs
             ))
-        } else {
+        } else if let totalUsagePercent = facts.totalPercentUsed {
             lines.append(.progress(
                 label: "Total usage",
                 used: totalUsagePercent,
@@ -133,7 +174,7 @@ enum CursorUsageMapper {
             ))
         }
 
-        if let autoPercentUsed = ProviderParse.number(planUsage["autoPercentUsed"]) {
+        if let autoPercentUsed = facts.autoPercentUsed {
             lines.append(.progress(
                 label: "Auto usage",
                 used: autoPercentUsed,
@@ -144,7 +185,7 @@ enum CursorUsageMapper {
             ))
         }
 
-        if let apiPercentUsed = ProviderParse.number(planUsage["apiPercentUsed"]) {
+        if let apiPercentUsed = facts.apiPercentUsed {
             lines.append(.progress(
                 label: "API usage",
                 used: apiPercentUsed,
@@ -157,16 +198,18 @@ enum CursorUsageMapper {
 
         if let spendLimitUsage {
             let limit = ProviderParse.number(spendLimitUsage["individualLimit"]) ?? ProviderParse.number(spendLimitUsage["pooledLimit"]) ?? 0
-            let remaining = ProviderParse.number(spendLimitUsage["individualRemaining"]) ?? ProviderParse.number(spendLimitUsage["pooledRemaining"]) ?? 0
+            let remaining =
+                ProviderParse.number(spendLimitUsage["individualRemaining"])
+                ?? ProviderParse.number(spendLimitUsage["pooledRemaining"])
             let spent = onDemandSpendCents(from: spendLimitUsage, limit: limit, remaining: remaining)
-            if limit > 0 {
+            if let spent, limit > 0 {
                 lines.append(.progress(
                     label: "On-demand",
                     used: ProviderParse.centsToDollars(spent),
                     limit: ProviderParse.centsToDollars(limit),
                     format: .dollars
                 ))
-            } else if spent > 0 {
+            } else if let spent, spent > 0 {
                 lines.append(.values(
                     label: "On-demand",
                     values: [MetricValue(number: ProviderParse.centsToDollars(spent), kind: .dollars)]
@@ -174,10 +217,18 @@ enum CursorUsageMapper {
             }
         }
 
-        return CursorMappedUsage(plan: planLabel(planName), lines: lines)
+        guard !lines.isEmpty else {
+            throw facts.limit == nil ? CursorUsageError.totalUsageLimitMissing : CursorUsageError.invalidResponse
+        }
+        return CursorMappedUsage(
+            plan: planLabel(planName), lines: lines,
+            incompleteQuotaWindows: facts.incompleteQuotaLabels.isEmpty ? [] : cycle.possibleSoftLimitWindows
+        )
     }
 
-    private static func onDemandSpendCents(from spendLimitUsage: [String: Any], limit: Double, remaining: Double) -> Double {
+    private static func onDemandSpendCents(from spendLimitUsage: [String: Any], limit: Double, remaining: Double?)
+        -> Double?
+    {
         let reported = [
             ProviderParse.number(spendLimitUsage["individualUsed"]),
             ProviderParse.number(spendLimitUsage["pooledUsed"]),
@@ -186,8 +237,8 @@ enum CursorUsageMapper {
         if let positive = reported.first(where: { $0 > 0 }) {
             return positive
         }
-        let inferred = max(0, limit - remaining)
-        return inferred > 0 ? inferred : (reported.first ?? 0)
+        if let remaining, remaining >= 0, limit > 0 { return max(0, limit - remaining) }
+        return reported.first { $0 == 0 }
     }
 
     static func mapRequestBasedUsage(
@@ -196,18 +247,15 @@ enum CursorUsageMapper {
         unavailableMessage: String
     ) throws -> CursorMappedUsage {
         var lines: [MetricLine] = []
-        if let gpt4 = usage?["gpt-4"] as? [String: Any],
-           let limit = ProviderParse.number(gpt4["maxRequestUsage"]),
-           limit > 0 {
-            let used = ProviderParse.number(gpt4["numRequests"]) ?? 0
-            let cycleStart = (usage?["startOfMonth"] as? String).flatMap(EgasuISO8601.date(from:))
+        if let (used, limit) = includedRequests(in: usage) {
+            let cycle = requestBillingCycle(usage)
             lines.append(.progress(
                 label: "Requests",
                 used: used,
                 limit: limit,
                 format: .count(suffix: "requests"),
-                resetsAt: cycleStart?.addingTimeInterval(TimeInterval(billingPeriodMs) / 1000),
-                periodDurationMs: billingPeriodMs
+                    resetsAt: cycle.resetsAt,
+                    periodDurationMs: cycle.periodDurationMs
             ))
         }
 
@@ -216,6 +264,36 @@ enum CursorUsageMapper {
         }
 
         return CursorMappedUsage(plan: planLabel(planName), lines: lines)
+    }
+
+    static func includedRequests(in usage: [String: Any]?) -> (used: Double, limit: Double)? {
+        guard let requests = usage?["gpt-4"] as? [String: Any],
+            let limit = ProviderParse.number(requests["maxRequestUsage"]), limit > 0,
+            let used = ProviderParse.number(requests["numRequests"])
+                ?? ProviderParse.number(requests["numRequestsTotal"]),
+            used >= 0
+        else { return nil }
+        return (used, limit)
+    }
+
+    /// 대체 응답에서 같은 기간·지표를 복구한 경우에만 기본 응답의 판정 보류 해제.
+    static func includeUnresolvedPlanQuota(from usage: [String: Any], in fallback: inout CursorMappedUsage) {
+        let labels = CursorPlanUsageFacts(usage: usage).incompleteQuotaLabels
+        guard !labels.isEmpty else { return }
+        let cycle = billingCycle(from: usage)
+        for label in labels {
+            let recovered = fallback.lines.contains { line in
+                guard case let .progress(name, _, _, _, _, duration?, _) = line,
+                    name == label || (name == "Requests" && label == "Total usage")
+                else { return false }
+                guard cycle.periodDurationMs != nil else { return false }
+                return cycle.possibleSoftLimitWindows.contains { $0.matches(periodDurationMs: duration) }
+            }
+            if !recovered {
+                fallback.incompleteQuotaWindows.formUnion(cycle.possibleSoftLimitWindows)
+                return
+            }
+        }
     }
 
     static func shouldUseRequestBasedFallback(
@@ -230,17 +308,18 @@ enum CursorUsageMapper {
 
         let normalizedPlan = planName?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
 
-        if facts.planUsageUnusable && normalizedPlan == "enterprise" {
+        let needsPlanFallback = facts.limit == nil || !facts.hasUsageMeter
+        if needsPlanFallback && normalizedPlan == "enterprise" {
             return (true, "Enterprise usage data unavailable. Try again later.")
         }
-        if facts.planUsageUnusable && normalizedPlan == "team" {
+        if needsPlanFallback && normalizedPlan == "team" {
             return (true, "Team request-based usage data unavailable. Try again later.")
         }
-        if facts.planUsageUnusable && !facts.hasTotalUsagePercent && normalizedPlan.isEmpty && planInfoUnavailable {
+        if !facts.hasUsageMeter && normalizedPlan.isEmpty && planInfoUnavailable {
             return (true, "Cursor request-based usage data unavailable. Try again later.")
         }
 
-        if facts.isTeamByShape && facts.planUsageLimitMissing {
+        if facts.isTeamByShape && facts.hasPlanUsage && needsPlanFallback {
             return (true, "Cursor request-based usage data unavailable. Try again later.")
         }
 
@@ -367,19 +446,17 @@ enum CursorUsageMapper {
         ))
     }
 
-    private static func billingCycle(from usage: [String: Any]) -> (resetsAt: Date?, periodDurationMs: Int) {
+    private static func billingCycle(from usage: [String: Any]) -> BillingCycle {
         let cycleStart = ProviderParse.number(usage["billingCycleStart"])
         let cycleEnd = ProviderParse.number(usage["billingCycleEnd"])
+        let end = cycleEnd.map { Date(timeIntervalSince1970: $0 / 1000) }
         guard let cycleStart,
               let cycleEnd,
-              cycleEnd > cycleStart
+            cycleEnd > cycleStart, cycleEnd - cycleStart < Double(Int.max)
         else {
-            return (cycleEnd.map { Date(timeIntervalSince1970: $0 / 1000) }, billingPeriodMs)
+            return BillingCycle(resetsAt: end)
         }
-        return (
-            Date(timeIntervalSince1970: cycleEnd / 1000),
-            Int(cycleEnd - cycleStart)
-        )
+        return BillingCycle(resetsAt: end, periodDurationMs: Int((cycleEnd - cycleStart).rounded()))
     }
 
     private static func planLabel(_ value: String?) -> String? {

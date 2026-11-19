@@ -106,7 +106,7 @@ struct SettingsUpdatesSection: View {
             Toggle(isOn: $updater.betaChannelEnabled) {
                 SettingsTitle(
                     title: L10n.settings("Beta Updates"),
-                    info: L10n.settings("Receive pre-release builds before they ship to everyone")
+                    info: L10n.settings("Shows the Labs tab and includes beta versions when checking for updates.")
                 )
             }
             HStack {

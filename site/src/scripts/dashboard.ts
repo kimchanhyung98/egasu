@@ -1,7 +1,8 @@
-import { dashboardLines, priorityBoard, menuBarItems } from '../data/preview-dashboard';
+import { dashboardLines, priorityBoard, menuBarItems, priorityGauge } from '../data/preview-dashboard';
 import { metricKey, providerMetrics } from '../data/metrics';
 import { orderedMetrics, accountName, accountEmail, type PreviewState } from '../data/preview-state';
 import { providers } from '../data/providers';
+import { alertConditions } from '../data/settings';
 import { previewAccountDisplayName, setPreviewAccountText } from './localization';
 
 export function renderDashboard(mock: HTMLElement, state: PreviewState): void {
@@ -59,9 +60,9 @@ export function renderDashboard(mock: HTMLElement, state: PreviewState): void {
       row.hidden = false;
       const name = row.querySelector<HTMLElement>('[data-account-name]');
       if (name) name.dataset.accountId = line.accountID;
-      const circle = row.querySelector<SVGCircleElement>('.am-ring-progress');
-      const fraction = line.row.kind === 'bounded' ? line.row.used / line.row.limit : line.row.kind === 'forecast' ? line.row.probability / 100 : 0;
-      circle?.setAttribute('stroke-dasharray', `${Math.max(0, Math.min(fraction, 1)) * 106.81} 106.81`);
+      const gauge = priorityGauge(line.row, state.preferences.showUsageAs === 'Left' ? 'left' : 'used');
+      row.querySelector('.am-ring-progress')!.setAttribute('stroke-dasharray', `${gauge.fill} 100`);
+      if (gauge.angle !== null) row.querySelector('.am-ring-pace')!.setAttribute('transform', `rotate(${gauge.angle} 20 20)`);
       section.querySelector('.am-priority-items')!.append(row);
     });
   }
@@ -73,7 +74,7 @@ export function renderDashboard(mock: HTMLElement, state: PreviewState): void {
   });
   const empty = !state.enabledProviders.length;
   mock.querySelector<HTMLElement>('[data-empty-dashboard]')!.hidden = !empty;
-  mock.querySelector<HTMLElement>('.am-dashboard-tabs')!.hidden = empty;
+  mock.querySelector<HTMLElement>('.am-dashboard-tabs')!.hidden = empty || !alertConditions.some(({ shown }) => state.preferences[shown]);
   mock.dataset.layout = state.preferences.allUsageLayout === 'Cards' ? 'cards' : 'minimal';
   setDashboardTab(mock, mock.dataset.dashboardTab ?? String(state.preferences.defaultTab));
 
@@ -81,10 +82,12 @@ export function renderDashboard(mock: HTMLElement, state: PreviewState): void {
   renderMenuBar(mock, state);
 }
 
-export function setDashboardTab(mock: HTMLElement, tab: string): void {
-  const changed = mock.dataset.dashboardTab !== tab;
-  mock.dataset.dashboardTab = tab;
-  if (changed) mock.querySelector<HTMLElement>('[data-scr="dashboard"] .am-body')!.scrollTop = 0;
+export function setDashboardTab(mock: HTMLElement, selection: string): void {
+  mock.dataset.dashboardTab = selection;
+  const showTabs = !mock.querySelector<HTMLElement>('.am-dashboard-tabs')!.hidden;
+  const tab = showTabs ? selection : 'All Usage';
+  const visible = mock.querySelector<HTMLElement>('[data-dashboard-panel]:not([hidden])');
+  if (visible && visible.dataset.dashboardPanel !== tab) mock.querySelector<HTMLElement>('[data-scr="dashboard"] .am-body')!.scrollTop = 0;
   mock.querySelectorAll<HTMLButtonElement>('button[data-dashboard-tab][role="tab"]').forEach((button) => {
     const selected = button.dataset.dashboardTab === tab;
     button.setAttribute('aria-selected', String(selected));
@@ -93,6 +96,7 @@ export function setDashboardTab(mock: HTMLElement, tab: string): void {
   const hasProviders = mock.querySelector<HTMLElement>('[data-empty-dashboard]')!.hidden;
   mock.querySelectorAll<HTMLElement>('[data-dashboard-panel]').forEach((panel) => {
     panel.hidden = !hasProviders || panel.dataset.dashboardPanel !== tab;
+    panel.setAttribute('role', showTabs ? 'tabpanel' : 'region');
   });
   mock.querySelector<HTMLElement>('[data-priority-copy]')?.toggleAttribute('hidden', !hasProviders || tab !== 'Priority');
 }

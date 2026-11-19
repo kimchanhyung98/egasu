@@ -29,6 +29,7 @@ final class SoftLimitMarkerTests: XCTestCase {
             limit: 100
         )
         data.softLimitUsedFraction = 0.95
+        data.softLimitReadingExpiresAt = .distantFuture
 
         XCTAssertEqual(data.softLimitMarkerFraction ?? -1, 0.95, accuracy: 0.0001)
 
@@ -71,15 +72,27 @@ final class SoftLimitMarkerTests: XCTestCase {
         )
     }
 
-    func testReachedCopyUsesTheSameDisplayPrecisionAsTheHeadline() {
+    func testEstimatedQuotaKeepsItsGuideWithoutReportingThresholdCrossing() {
+        for mode in WidgetDisplayMode.allCases {
+            var quota = data(used: 96, softLimitUsedFraction: 0.95)
+            quota.displayMode = mode
+            let mark = quota.softLimitMarkerFraction
+            XCTAssertEqual(quota.softLimitStatusText, "Soft limit reached at 95% used")
+            quota.softLimitReadingExpiresAt = nil
+            XCTAssertEqual(quota.softLimitMarkerFraction, mark)
+            XCTAssertEqual(quota.meterTooltip(for: quota.meterState()), "Soft limit at 95% used")
+        }
+    }
+
+    func testRoundedHeadlineDoesNotAdvanceThresholdCrossing() {
         let data = data(used: 94.6, softLimitUsedFraction: 0.95)
 
         XCTAssertEqual(data.headline, "95% used")
-        XCTAssertEqual(data.softLimitStatusText, "Soft limit reached at 95% used")
+        XCTAssertEqual(data.softLimitStatusText, "Soft limit at 95% used")
     }
 
     func testPercentBoundaryIsStableAcrossDisplayModes() {
-        for (used, reached) in [(94.49, false), (94.5, true), (94.6, true), (95.0, true)] {
+        for (used, reached) in [(94.49, false), (94.5, false), (94.99, false), (95.0, true), (95.01, true)] {
             var data = data(used: used, softLimitUsedFraction: 0.95)
             let expected = reached ? "Soft limit reached at 95% used" : "Soft limit at 95% used"
             XCTAssertEqual(data.softLimitStatusText, expected, "Used: \(used)")
@@ -88,13 +101,14 @@ final class SoftLimitMarkerTests: XCTestCase {
         }
     }
 
-    func testRoundedPercentBoundaryDoesNotDependOnMetricKind() {
+    func testExactThresholdDoesNotDependOnMetricKind() {
         for kind in [MetricKind.percent, .dollars, .count] {
-            for (used, reached) in [(94.49, false), (94.5, true), (94.6, true), (95.0, true)] {
+            for (used, reached) in [(94.49, false), (94.5, false), (94.99, false), (95.0, true), (95.01, true)] {
                 var data = WidgetData(
-                    title: "Weekly", icon: .providerMark("opencode"), kind: kind, used: used, limit: 100
+                    title: "Monthly", icon: .providerMark("cursor"), kind: kind, used: used, limit: 100
                 )
                 data.softLimitUsedFraction = 0.95
+                data.softLimitReadingExpiresAt = .distantFuture
                 let expected = reached ? "Soft limit reached at 95% used" : "Soft limit at 95% used"
                 XCTAssertEqual(data.softLimitStatusText, expected, "Kind: \(kind), used: \(used)")
                 data.displayMode = .remaining
@@ -103,18 +117,20 @@ final class SoftLimitMarkerTests: XCTestCase {
         }
     }
 
-    func testOpenCodeDollarCapsUseRoundedPercentAcrossCustomThresholds() {
-        for limit in [OpenCodeUsageMapper.sessionCap, OpenCodeUsageMapper.weeklyCap] {
+    func testMeasuredDollarCapsUseExactUsageAcrossCustomThresholds() {
+        for limit in [30.0, 60.0] {
             for threshold in [1, 50, 89, 90, 95, 96, 100] {
-                for (delta, reached) in [(-0.51, false), (-0.49, true), (0.0, true), (0.49, true)] {
+                for (delta, reached) in [(-0.49, false), (-0.01, false), (0.0, true), (0.01, true)] {
                     for mode in [WidgetDisplayMode.used, .remaining] {
                         var data = WidgetData(
-                            title: "Quota", icon: .providerMark("opencode"), kind: .dollars,
+                            title: "Quota", icon: .providerMark("cursor"), kind: .dollars,
                             used: limit * (Double(threshold) + delta) / 100, limit: limit
                         )
                         data.displayMode = mode
                         data.softLimitUsedFraction = Double(threshold) / 100
-                        let expected = reached
+                        data.softLimitReadingExpiresAt = .distantFuture
+                        let expected =
+                            reached
                             ? "Soft limit reached at \(threshold)% used"
                             : "Soft limit at \(threshold)% used"
                         XCTAssertEqual(
@@ -136,6 +152,7 @@ final class SoftLimitMarkerTests: XCTestCase {
             limit: 100
         )
         data.softLimitUsedFraction = softLimitUsedFraction
+        data.softLimitReadingExpiresAt = .distantFuture
         return data
     }
 }

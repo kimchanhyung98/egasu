@@ -231,7 +231,9 @@ final class CopilotUsageIntegrationTests: XCTestCase {
             if providerID == "claude" {
                 XCTAssertNil(store.localSnapshots[providerID])
                 XCTAssertNil(store.snapshots[providerID])
-                XCTAssertEqual(cache.loadSnapshots(providerIDs: [providerID])[providerID], previous)
+                let stored = try XCTUnwrap(cache.loadSnapshots(providerIDs: [providerID])[providerID])
+                XCTAssertEqual(stored, previous)
+                XCTAssertNil(cache.applyingQuotaInvalidation(stored).liveQuotaObservedAt)
             } else {
                 let retained = try XCTUnwrap(store.localSnapshots[providerID])
                 XCTAssertEqual(retained.quotaObservedAt, previous.quotaObservedAt)

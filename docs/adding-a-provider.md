@@ -72,6 +72,8 @@ OpenCode처럼 로컬 기록만 수집하는 프로바이더는 사용량 조회
    JSON·숫자·퍼센트 파싱에는 `ProviderParse`, 시각 처리에는 `EgasuISO8601` 재사용.
 3. **위젯 선언.**
    `WidgetDescriptor+Factories.swift`의 팩토리(`percent`, `boundedDollars`, `spend`, `tokenSpend`, `combined`, `values`, `badge` 등)로 프로바이더의 지표를 `WidgetDescriptor`로 노출.
+   주간·월간 구독 한도는 디스크립터에 지원 기간을 선언하고 매퍼에 실제 기간과 사용량 출처를 반영.
+   실측·추정 한도의 판정 차이는 [소프트 한도](/docs/architecture.md#소프트-한도) 참조.
 4. **기본 배치 확인.**
    모든 지표는 기본 켜짐이며 기존 숨김 설정 우선.
    새 지표의 순서를 소유자와 확인하고 `widgetDescriptors` 선언 순서에 반영.

@@ -159,7 +159,8 @@ final class CodexWeeklyTimerRevalidationTests: XCTestCase {
             probe.verification = [probe.observation(reset: probe.now.addingTimeInterval(604_800))]
             probe.now = probe.now.addingTimeInterval(-7_200)
             do {
-                XCTAssertTrue(try probe.store.discardFutureObservations(now: probe.now))
+                let discarded = try probe.store.discardFutureObservations(now: probe.now)
+                XCTAssertTrue(discarded)
                 coordinator.invalidateObservations()
             } catch { XCTFail("Clock recovery failed: \(error)") }
         }

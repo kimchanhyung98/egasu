@@ -38,6 +38,7 @@ final class KiroProvider: ProviderRuntime {
                 suffix: "credits",
                 periodDurationMs: KiroUsageMapper.billingPeriodMs
             )
+            .supportingSoftLimit(.monthly)
             .exportingLimit("credits", unit: "credits")
         ]
     }
@@ -64,10 +65,12 @@ final class KiroProvider: ProviderRuntime {
                 }
                 for warning in scan.readWarnings { appendWarning(warning, to: &snapshot) }
                 if !scan.warnings.isEmpty {
+                    let category: ErrorCategory =
+                        scan.readFailureCount > 0 ? .storage : (scan.invalidRows > 0 ? .decoding : .other)
                     snapshot.isDegraded = true
+                    snapshot.reportedPartialFailure = category
                     AppDiagnostics.record(
-                        .historyScan, result: .degraded,
-                        category: scan.readFailureCount > 0 ? .storage : (scan.invalidRows > 0 ? .decoding : .other),
+                        .historyScan, result: .degraded, category: category,
                         providerID: provider.id, localContext: scan.warnings.joined(separator: " ")
                     )
                 }
@@ -75,6 +78,7 @@ final class KiroProvider: ProviderRuntime {
         } catch is CancellationError {
             return snapshot
         } catch {
+            snapshot.reportedPartialFailure = ErrorCategory.classify(error)
             AppDiagnostics.record(.historyScan, result: .failure, providerID: provider.id, error: error)
             appendWarning(error.localizedDescription, to: &snapshot)
         }
@@ -117,11 +121,13 @@ final class KiroProvider: ProviderRuntime {
                 requestFailed: KiroUsageError.requestFailed
             )
             let mapped = try KiroUsageMapper.map(response.body)
+            let observedAt = now()
             return ProviderSnapshot.make(
                 provider: provider,
                 plan: mapped.plan,
                 lines: mapped.lines,
-                refreshedAt: now()
+                refreshedAt: observedAt,
+                liveQuotaObservedAt: observedAt
             )
         } catch {
             return ProviderSnapshot.error(provider: provider, error: normalized(error))

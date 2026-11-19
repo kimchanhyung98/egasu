@@ -6,8 +6,7 @@ struct GrokMappedUsage: Equatable, Sendable {
 }
 
 enum GrokUsageMapper {
-    /// 크레딧 청구 응답을 주간 한도와 추가 지출 상태로 변환.
-    /// 현재 기간이 주간이 아니면 Weekly 생략. 월간 한도의 주간 오표기 방지.
+    /// 크레딧 청구 응답의 기간 단위에 맞는 구독 한도와 추가 지출 상태 생성.
     static func mapCreditsConfig(_ response: HTTPResponse) throws -> GrokMappedUsage {
         try ProviderAuthRetry.requireSuccess(
             response,
@@ -17,9 +16,15 @@ enum GrokUsageMapper {
         let config = try GrokCreditsConfigDecoder.decode(responseBody: response.body)
 
         var lines: [MetricLine] = []
-        if config.periodType == GrokCreditsConfigDecoder.weeklyPeriodType {
+        let label: String? =
+            switch config.periodType {
+            case GrokCreditsConfigDecoder.weeklyPeriodType: "Weekly limit"
+            case GrokCreditsConfigDecoder.monthlyPeriodType: "Monthly limit"
+            default: nil
+            }
+        if let label {
             lines.append(.progress(
-                label: "Weekly limit",
+                    label: label,
                 used: ProviderParse.clampPercent(config.usedPercent),
                 limit: 100,
                 format: .percent,
@@ -40,15 +45,25 @@ enum GrokUsageMapper {
         return GrokMappedUsage(lines: lines, metricPresentations: presentations)
     }
 
+    /// 요금제 이름은 선택 항목. 조회·해석 실패는 사용량과 별도로 기록.
     static func planName(from response: HTTPResponse) -> String? {
-        guard (200..<300).contains(response.statusCode),
-              let body = ProviderParse.jsonObject(response.body),
-              let plan = body["subscription_tier_display"] as? String
-        else {
+        guard (200..<300).contains(response.statusCode) else {
+            AppLog.warn(
+                LogTag.plugin("grok"),
+                "optional plan request failed status=\(response.statusCode) category=\(ErrorCategory.http(response.statusCode).rawValue)"
+            )
             return nil
         }
-        let trimmed = plan.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        guard let body = ProviderParse.jsonObject(response.body) else {
+            AppLog.warn(LogTag.plugin("grok"), "optional plan response invalid stage=decode category=decoding")
+            return nil
+        }
+        guard let field = body["subscription_tier_display"], !(field is NSNull) else { return nil }
+        guard let plan = field as? String else {
+            AppLog.warn(LogTag.plugin("grok"), "optional plan response invalid stage=tier_type category=decoding")
+            return nil
+        }
+        return plan.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
     }
 
 }

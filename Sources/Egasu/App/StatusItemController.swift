@@ -249,24 +249,24 @@ final class StatusItemController: NSObject {
     /// 이미 표시 중이면 닫지 않고 전면으로 — 외부 트리거(사용량 알림 클릭)용.
     func showPopover(dashboardTab: DashboardTab) {
         container.popover.screen = .dashboard
+        container.popover.dashboardTab = dashboardTab
         if panel.isVisible {
-            container.popover.dashboardTab = dashboardTab
             panel.makeKeyAndOrderFront(nil)
             statusItem.button?.highlight(true)
             return
         }
-        showPanel(dashboardTab: dashboardTab)
+        showPanel()
     }
 
-    private func showPanel(dashboardTab: DashboardTab? = nil) {
+    private func showPanel() {
         guard let button = statusItem.button, let buttonWindow = button.window else {
             AppLog.error(.statusItem, "Cannot show panel: status item has no button")
             return
         }
         let buttonRectOnScreen = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
         // 표시 신호가 높이 조정을 즉시 요청하므로 먼저 화면·기준 위치 기록.
-        heightController.prepareForOpening(below: buttonRectOnScreen, tab: dashboardTab ?? container.popover.dashboardTab)
-        container.popover.show(dashboardTab: dashboardTab)
+        heightController.prepareForOpening(below: buttonRectOnScreen, tab: container.popover.dashboardTab)
+        container.popover.show()
 
         // 표시 전에 콘텐츠 배치를 완료하여 첫 프레임부터 정확한 크기 적용.
         host.layoutSubtreeIfNeeded()

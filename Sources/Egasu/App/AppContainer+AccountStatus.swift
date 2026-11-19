@@ -37,22 +37,31 @@ extension AppContainer {
         return refreshes
     }
 
-    static func externalClaudeReconciliationMessage(for error: Error) -> String {
+    static func externalClaudeReconciliationFailure(for error: Error) -> ProviderRefreshFailure {
+        let category = ErrorCategory.classify(error)
+        let fallback =
+            "egasu couldn't update the selected Claude sign-in. The saved account was left unchanged. Check the app log and try again."
+        let presentation: LocalizedMessage
         if let error = error as? ClaudeAuthError, error == .credentialsChanged || error == .rotationInProgress {
-            return error.localizedDescription
+            presentation = UserFacingErrors.presentation(error)
+        } else if let error = error as? AccountCredentialSwitcher.Error,
+            [.switchRecoveryRequired, .selectionSaveFailed, .conflictingClaudeAuthentication].contains(error)
+        {
+            presentation = UserFacingErrors.presentation(error)
+        } else if case KeychainError.readFailed = error {
+            presentation = .init(
+                "Couldn't read the Claude login from Keychain. Refresh Claude manually and allow access if macOS asks.")
+        } else {
+            presentation = .init(fallback)
         }
-        if let error = error as? AccountCredentialSwitcher.Error,
-           error == .switchRecoveryRequired || error == .selectionSaveFailed || error == .conflictingClaudeAuthentication {
-            return error.localizedDescription
-        }
-        return "egasu couldn't update the selected Claude sign-in. The saved account was left unchanged. Check the app log and try again."
+        return ProviderRefreshFailure(message: presentation.key, category: category, presentation: presentation)
     }
 
     static func applyExternalClaudeReconciliationError(
-        _ message: String?, to dataStore: WidgetDataStore,
+        _ failure: ProviderRefreshFailure?, to dataStore: WidgetDataStore,
         accountSwitch: AccountSwitchCoordinator, startedAt generation: Int
     ) {
-        guard let message, !accountSwitch.isSwitching, accountSwitch.generation == generation else { return }
-        dataStore.setExternalProviderError(message, for: "claude", presentation: .init(message))
+        guard !accountSwitch.isSwitching, accountSwitch.generation == generation else { return }
+        dataStore.setClaudeReconciliationFailure(failure)
     }
 }

@@ -4,21 +4,27 @@ import Observation
 @MainActor
 @Observable
 final class SoftLimitCoordinator {
+    private struct ObservationBoundary {
+        let revision = UUID()
+        let notBefore: Date
+    }
+
     private(set) var statuses: [String: SoftLimitProviderStatus] = [:]
     @ObservationIgnored private let settings: SoftLimitSettingsStore
     @ObservationIgnored private let adapters: [String: any SoftLimitCancelling]
     @ObservationIgnored private let isProviderEnabled: (String) -> Bool
     @ObservationIgnored private let isCancellationScopeVerified: (String) -> Bool
+    @ObservationIgnored private let isQuotaInvalidated: (String, Date) -> Bool
     @ObservationIgnored private let now: () -> Date
     @ObservationIgnored private let pollingSleep: @MainActor () async throws -> Void
     @ObservationIgnored private let workQueue: BackgroundWorkQueue
-    @ObservationIgnored private var observations: [String: SoftLimitObservation] = [:]
+    private var observations: [String: SoftLimitObservation] = [:]
     @ObservationIgnored private var inFlight: Set<String> = []
     @ObservationIgnored private var finished: Set<SoftLimitTask> = []
     @ObservationIgnored private var retries: [SoftLimitTask: Int] = [:]
     @ObservationIgnored private var retryAfter: [String: Date] = [:]
-    @ObservationIgnored private var revision = 0
-    @ObservationIgnored private var observationNotBefore: Date?
+    @ObservationIgnored private var settingsBoundary = ObservationBoundary(notBefore: .distantPast)
+    @ObservationIgnored private var accountBoundaries: [String: ObservationBoundary] = [:]
     @ObservationIgnored private var pollingTask: Task<Void, Never>?
     @ObservationIgnored private var isStarted = false
     @ObservationIgnored private var pollingGeneration = 0
@@ -28,6 +34,7 @@ final class SoftLimitCoordinator {
         adapters: [any SoftLimitCancelling],
         isProviderEnabled: @escaping (String) -> Bool,
         isCancellationScopeVerified: @escaping (String) -> Bool = { _ in false },
+        isQuotaInvalidated: @escaping (String, Date) -> Bool = { _, _ in false },
         now: @escaping () -> Date = Date.init,
         pollingSleep: @escaping @MainActor () async throws -> Void = { try await Task.sleep(for: .seconds(2)) },
         workQueue: BackgroundWorkQueue = BackgroundWorkQueue()
@@ -36,6 +43,7 @@ final class SoftLimitCoordinator {
         self.adapters = Dictionary(uniqueKeysWithValues: adapters.map { ($0.providerID, $0) })
         self.isProviderEnabled = isProviderEnabled
         self.isCancellationScopeVerified = isCancellationScopeVerified
+        self.isQuotaInvalidated = isQuotaInvalidated
         self.now = now
         self.pollingSleep = pollingSleep
         self.workQueue = workQueue
@@ -47,12 +55,11 @@ final class SoftLimitCoordinator {
     }
 
     private var needsPolling: Bool {
-        guard isStarted, settings.enabled else { return false }
+        guard isStarted, settings.isActive else { return false }
         return observations.contains { providerID, observation in
-            adapters[providerID] != nil && isProviderEnabled(providerID)
-                && isCancellationScopeVerified(providerID)
-                && observation.usedFraction >= Double(settings.thresholdPercent) / 100
-                && now() < observation.expiresAt
+            isProviderEnabled(providerID) && canControl(providerID)
+                && !isQuotaInvalidated(providerID, observation.observedAt)
+                && observation.quotaState(thresholdPercent: settings.thresholdPercent, at: now()) == .reached
         }
     }
 
@@ -90,8 +97,8 @@ final class SoftLimitCoordinator {
     }
 
     func settingsDidChange() {
-        revision += 1
-        observationNotBefore = now()
+        settingsBoundary = ObservationBoundary(notBefore: now())
+        accountBoundaries.removeAll()
         observations.removeAll()
         finished.removeAll()
         retries.removeAll()
@@ -101,40 +108,107 @@ final class SoftLimitCoordinator {
         updatePolling()
     }
 
+    /// ID 집합은 인증·카탈로그 변경, nil은 프로바이더 활성화 설정 변경.
+    func accountsDidChange(_ changedIDs: Set<String>?) {
+        let providerIDs =
+            changedIDs
+            ?? Set(statuses.keys).union(observations.keys).union(adapters.keys)
+            .filter { !isProviderEnabled($0) }
+        guard !providerIDs.isEmpty else { return }
+        let boundary = ObservationBoundary(notBefore: now())
+        for id in providerIDs {
+            accountBoundaries[id] = boundary
+            observations[id] = nil
+            statuses[id] = nil
+            retryAfter[id] = nil
+            adapters[id]?.disconnect()
+        }
+        finished = finished.filter { !providerIDs.contains($0.providerID) }
+        retries = retries.filter { !providerIDs.contains($0.key.providerID) }
+        updatePolling()
+    }
+
+    private func boundary(for providerID: String) -> ObservationBoundary {
+        accountBoundaries[providerID] ?? settingsBoundary
+    }
+
     func receive(_ snapshot: ProviderSnapshot, descriptors: [WidgetDescriptor]) {
         defer { updatePolling() }
-        guard settings.enabled, isProviderEnabled(snapshot.providerID), !snapshot.providerID.contains("@") else { return }
         let providerID = snapshot.providerID
+        guard settings.isActive, isProviderEnabled(providerID) else { return }
+        if let observedAt = snapshot.liveQuotaObservedAt, observedAt < boundary(for: providerID).notBefore { return }
+        let receivedAt = now()
         guard let observation = SoftLimitObservation.project(
-            snapshot: snapshot, descriptors: descriptors, window: settings.window, now: now()
-        ), observationNotBefore.map({ observation.observedAt >= $0 }) ?? true else {
+                snapshot: snapshot, descriptors: descriptors, window: settings.window, now: receivedAt
+            )
+        else {
             observations[providerID] = nil
             statuses[providerID] = .init(phase: .waiting, message: L10n.errors("Waiting for fresh, supported quota data."))
             return
         }
         observations[providerID] = observation
-        if observation.usedFraction < Double(settings.thresholdPercent) / 100 {
+        switch observation.quotaState(thresholdPercent: settings.thresholdPercent, at: receivedAt) {
+        case .belowLimit:
             finished = finished.filter { $0.providerID != providerID }
             retries = retries.filter { $0.key.providerID != providerID }
             retryAfter[providerID] = nil
             statuses[providerID] = .init(phase: .belowLimit, message: L10n.errors("Below the soft limit. No tasks cancelled."))
-        } else if adapters[providerID] == nil {
-            statuses[providerID] = .init(phase: .unsupported, message: L10n.errors("Limit reached. Automatic cancellation is not supported for this provider yet."))
+        case .unknown:
+            statuses[providerID] = .init(
+                phase: .waiting, message: L10n.errors("Waiting for fresh, supported quota data."))
+        case .reached:
+            if adapters[providerID] == nil {
+                statuses[providerID] = .init(
+                    phase: .unsupported,
+                    message: L10n.errors(
+                        "Limit reached. Automatic cancellation is not supported for this provider yet."))
+            }
         }
     }
 
     func invalidate(providerID: String) {
+        guard settings.isActive else { return }
+        accountBoundaries[providerID] = ObservationBoundary(notBefore: now())
         observations[providerID] = nil
         statuses[providerID] = .init(phase: .waiting, message: L10n.errors("Refresh failed. Waiting for fresh quota data before cancelling more tasks."))
         updatePolling()
+    }
+
+    private func currentObservation(for providerID: String) -> SoftLimitObservation? {
+        guard settings.isActive, isProviderEnabled(providerID),
+            let observation = observations[providerID], !isQuotaInvalidated(providerID, observation.observedAt)
+        else { return nil }
+        return observation
+    }
+
+    func quotaReading(for providerID: String) -> (state: SoftLimitQuotaState, usedFraction: Double?, nextExpiry: Date?)
+    {
+        guard let observation = currentObservation(for: providerID) else { return (.unknown, nil, nil) }
+        let instant = now()
+        let state = observation.quotaState(thresholdPercent: settings.thresholdPercent, at: instant)
+        return (state, observation.maximumUsedFraction(at: instant), observation.nextExpiry(after: instant))
+    }
+
+    func quotaState(for providerID: String) -> SoftLimitQuotaState {
+        currentObservation(for: providerID)?.quotaState(thresholdPercent: settings.thresholdPercent, at: now())
+            ?? .unknown
     }
 
     func status(for providerID: String) -> SoftLimitProviderStatus {
         guard adapters[providerID] != nil else {
             return .init(phase: .unsupported, message: L10n.errors("Automatic cancellation is not supported yet."))
         }
-        guard isCancellationScopeVerified(providerID) else {
+        guard canControl(providerID) else {
             return .init(phase: .unsupported, message: L10n.errors("Account scope is not verified. Automatic cancellation is unavailable."))
+        }
+        if observations[providerID] != nil {
+            switch quotaState(for: providerID) {
+            case .unknown:
+                return .init(phase: .waiting, message: L10n.errors("Waiting for fresh, supported quota data."))
+            case .belowLimit:
+                return .init(phase: .belowLimit, message: L10n.errors("Below the soft limit. No tasks cancelled."))
+            case .reached: break
+            }
         }
         return statuses[providerID] ?? .init(phase: .waiting, message: L10n.errors("Waiting for the next successful quota refresh."))
     }
@@ -147,20 +221,13 @@ final class SoftLimitCoordinator {
     }
 
     func check(providerID: String) async {
-        guard let observation = observations[providerID],
-              settings.enabled, isProviderEnabled(providerID), isCancellationScopeVerified(providerID),
-              observation.usedFraction >= Double(settings.thresholdPercent) / 100
-        else { return }
-        guard now() < observation.expiresAt else {
-            statuses[providerID] = .init(phase: .waiting, message: L10n.errors("Quota data is stale. Waiting for a successful refresh before cancelling more tasks."))
-            return
-        }
+        guard canControl(providerID), quotaState(for: providerID) == .reached else { return }
         guard let adapter = adapters[providerID], !inFlight.contains(providerID),
               retryAfter[providerID].map({ now() >= $0 }) ?? true
         else { return }
         inFlight.insert(providerID)
         defer { inFlight.remove(providerID) }
-        let boundRevision = revision
+        let boundRevision = boundary(for: providerID).revision
         guard let ticket = await workQueue.acquire("soft-limit:\(ProviderAccountID.family(of: providerID))") else { return }
         defer { workQueue.finish(ticket) }
         guard canCancel(providerID, revision: boundRevision) else { return }
@@ -178,7 +245,7 @@ final class SoftLimitCoordinator {
             var cancelledCount = statuses[providerID]?.cancelledCount ?? 0
             var failures = 0
             defer {
-                if revision == boundRevision, statuses[providerID]?.phase == .cancelling {
+                if boundary(for: providerID).revision == boundRevision, statuses[providerID]?.phase == .cancelling {
                     statuses[providerID] = .init(
                         phase: .waiting,
                         cancelledCount: cancelledCount,
@@ -229,11 +296,12 @@ final class SoftLimitCoordinator {
         }
     }
 
-    private func canCancel(_ providerID: String, revision expected: Int) -> Bool {
-        guard !Task.isCancelled, revision == expected, settings.enabled, isProviderEnabled(providerID),
-              isCancellationScopeVerified(providerID),
-              let observation = observations[providerID], now() < observation.expiresAt
-        else { return false }
-        return observation.usedFraction >= Double(settings.thresholdPercent) / 100
+    private func canControl(_ providerID: String) -> Bool {
+        !providerID.contains("@") && adapters[providerID] != nil && isCancellationScopeVerified(providerID)
+    }
+
+    private func canCancel(_ providerID: String, revision expected: UUID) -> Bool {
+        !Task.isCancelled && boundary(for: providerID).revision == expected && canControl(providerID)
+            && quotaState(for: providerID) == .reached
     }
 }

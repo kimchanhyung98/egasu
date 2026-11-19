@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { test } from 'node:test';
 import { accountFamilies } from '../src/data/accounts.ts';
 import { settingGroups, settingsTabs, alertConditions } from '../src/data/settings.ts';
-import { providerMetrics, softLimitWindows } from '../src/data/metrics.ts';
+import { providerMetrics, softLimitWindowFor, softLimitWindows } from '../src/data/metrics.ts';
 import { initialPreviewState, changePreference, activateAccount, renameAccount, restorePreviewState, previewTime } from '../src/data/preview-state.ts';
 
 const source = (path: string): string => readFileSync(new URL(`../../Sources/Egasu/${path}`, import.meta.url), 'utf8');
@@ -11,9 +11,9 @@ const englishSource = (path: string): string => source(path)
   .replace(/\bL10n\.\w+\(\s*("(?:\\.|[^"\\])*")\s*\)/g, '$1');
 
 test('Settings follows the native tab order and covers its named sections', () => {
-  const screen = englishSource('Views/Settings/SettingsScreen.swift');
-  const tabs = [...screen.matchAll(/case \.\w+:\s+Settings(\w+)Tab\(/g)].map((match) => match[1]);
-  assert.deepEqual(settingsTabs, tabs);
+  const cases = source('Stores/PopoverState.swift').match(/enum SettingsTab:[^{]+\{\s*case ([^\n]+)/)?.[1];
+  assert.ok(cases);
+  assert.deepEqual(settingsTabs.map((tab) => tab.toLowerCase()), cases.split(',').map((name) => name.trim()));
   for (const tab of settingsTabs) {
     const body = englishSource(`Views/Settings/Settings${tab}Tab.swift`);
     const titles = [...body.matchAll(/Section\(\s*"([^"]+)"\s*\)|}\s*header:\s*\{\s*Text\(\s*"([^"]+)"\s*\)/g)]
@@ -21,7 +21,6 @@ test('Settings follows the native tab order and covers its named sections', () =
     const groups = settingGroups.filter((group) => group.tab === tab);
     if (tab === 'Display') assert.ok(titles.includes('Menu Bar Icons'));
     for (const title of titles) {
-      if (tab === 'Advanced' && title === 'Command Line') continue;
       assert.ok(groups.some((group) => group.title === title), `${tab}: ${title}`);
     }
   }
@@ -37,10 +36,11 @@ test('Settings matches native control names within each tab', () => {
     General: ['LanguageSettingsRow', 'ICloudSyncSettingsSection'],
     Display: [],
     Alerts: [],
-    Advanced: ['SoftLimitSettingsSection', 'SoftLimitThresholdField'],
+    Advanced: [],
+    Labs: ['SoftLimitSettingsSection', 'SoftLimitThresholdField', 'TerminalHelperSettingsSection'],
   };
   const alerts = englishSource('Views/Settings/SettingsAlertsTab.swift');
-  const conditions = [...alerts.matchAll(/\bconditionRow\(\s*"([^"]+)",\s*info:\s*"[^"]+",\s*shown:\s*(nil|\$[\w.]+),/g)];
+  const conditions = [...alerts.matchAll(/\bconditionRow\(\s*"([^"]+)",\s*info:\s*"[^"]+",\s*shown:\s*\$[\w.]+,/g)];
   assert.deepEqual(conditions.map(([, name]) => name), ['Warning', 'Critical', 'Burning Fast', 'Use It or Lose It']);
   assert.deepEqual(conditions.map(([, name]) => name), alertConditions.map((condition) => condition.label));
   const resetWatchLabel = englishSource('Stores/CodexResetWatchNotificationEvaluator.swift')
@@ -53,10 +53,10 @@ test('Settings matches native control names within each tab', () => {
   assert.match(tokscale, /Button\(\s*"Sync"\s*\)\s*\{\s*store\.startSubmit\(\)/);
   for (const tab of settingsTabs) {
     const native = controlsIn(`Settings${tab}Tab`).concat(sectionsByTab[tab].flatMap(controlsIn))
-      .filter((label) => !(tab === 'General' && label === 'iCloud Sync') && !(tab === 'Advanced' && label === 'Terminal Helper'));
+      .filter((label) => !(tab === 'General' && label === 'iCloud Sync'));
     if (tab === 'Alerts') {
-      native.push(resetWatchLabel, ...conditions.flatMap(([, name, shown]) => [
-        ...(shown === 'nil' ? [] : [`${name}, Show in Priority`]), `${name}, Receive Alerts`,
+      native.push(resetWatchLabel, ...conditions.flatMap(([, name]) => [
+        `${name}, Show in Priority`, `${name}, Receive Alerts`,
       ]));
     }
     if (tab === 'Advanced') native.push('Usage Sync');
@@ -66,25 +66,23 @@ test('Settings matches native control names within each tab', () => {
   }
 });
 
-test('native Advanced Settings keeps Terminal Helper install, uninstall and conflict controls', () => {
-  const advanced = englishSource('Views/Settings/SettingsAdvancedTab.swift')
-    .replace(/"(?:\\.|[^"\\])*"|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (token) => token.startsWith('"') ? token : '');
-  const body = advanced.match(/^ {4}var body:\s*some View\s*\{([\s\S]*?)^ {4}\}/m)?.[1];
-  assert.ok(body);
-  assert.match(body, /^[ \t]+commandLineSection[ \t]*$/m);
-  const helper = advanced.match(/private var commandLineSection:[\s\S]*?(?=private var debugSection:)/)?.[0];
-  assert.ok(helper);
-  assert.match(helper, /SettingsTitle\(\s*title:\s*"Terminal Helper"/);
-  assert.match(helper, /case \.notInstalled:\s*Button\("Install…"\) \{ commandLineTool\.install\(\) \}/);
-  assert.match(helper, /case \.installed:\s*Button\("Uninstall"\) \{ commandLineTool\.uninstall\(\) \}/);
-  assert.match(helper, /case \.conflict:\s*Text\("Unavailable"\)/);
+test('Labs contains the same feature groups as the native app', () => {
+  const labs = englishSource('Views/Settings/SettingsLabsTab.swift');
+  const groups = settingGroups.filter((group) => group.tab === 'Labs');
+  assert.deepEqual(groups.map((group) => group.title), ['Soft Limit', 'Command Line']);
+  assert.match(labs, /SoftLimitSettingsSection\(/);
+  assert.match(labs, /TerminalHelperSettingsSection\(/);
+  const helper = englishSource('Views/Settings/TerminalHelperSettingsSection.swift');
+  for (const label of ['Install…', 'Uninstall', 'Unavailable']) assert.ok(helper.includes(`"${label}"`), label);
 });
 
 test('Alerts, Soft Limit, and Tokscale expose their preview controls', () => {
   const expectedRows = {
     thresholds: { tab: 'Alerts', rows: { warning: 'picker', critical: 'picker' } },
     conditions: { tab: 'Alerts', rows: {
+      showWarning: 'toggle',
       warningNotification: 'toggle',
+      showCritical: 'toggle',
       criticalNotification: 'toggle',
       showBurningFast: 'toggle',
       closeToRunningOut: 'toggle',
@@ -92,7 +90,7 @@ test('Alerts, Soft Limit, and Tokscale expose their preview controls', () => {
       useItOrLoseItNotification: 'toggle',
     } },
     notifications: { tab: 'Alerts', rows: { codexResetWatch: 'toggle' } },
-    softLimit: { tab: 'Advanced', rows: { softLimitEnabled: 'toggle', softLimitWindow: 'picker', softLimitThreshold: 'number' } },
+    softLimit: { tab: 'Labs', rows: { softLimitEnabled: 'toggle', softLimitWindow: 'picker', softLimitThreshold: 'number' } },
     tokscale: { tab: 'Advanced', rows: { usageSync: 'action' } },
   };
   for (const [groupId, { tab, rows }] of Object.entries(expectedRows)) {
@@ -112,14 +110,58 @@ test('Alerts, Soft Limit, and Tokscale expose their preview controls', () => {
 test('Soft Limit preserves its threshold, rejects invalid percentages, and defaults to off', () => {
   const initial = initialPreviewState();
   assert.equal(initial.preferences.softLimitEnabled, false);
-  assert.equal(initial.preferences.softLimitWindow, 'Weekly');
+  assert.equal(initial.preferences.softLimitWindow, 'Weekly and Monthly');
   assert.equal(initial.preferences.softLimitThreshold, '90');
+  const window = settingGroups.flatMap((group) => group.rows).find((row) => row.id === 'softLimitWindow')!.control;
+  assert.deepEqual(window.kind === 'picker' && window.options, ['Weekly and Monthly', 'Weekly', 'Monthly']);
+  assert.throws(() => changePreference(initial, 'softLimitWindow', '5 Hours'));
   const changed = changePreference(initial, 'softLimitThreshold', '95');
   assert.equal(restorePreviewState(changed).preferences.softLimitThreshold, '95');
   for (const invalid of ['0', '101', '-1', '90.5', '', 'abc']) {
     assert.throws(() => changePreference(changed, 'softLimitThreshold', invalid));
   }
   assert.equal(initial.preferences.codexResetWatch, false);
+});
+
+test('Soft Limit migrates the retired session window and preserves saved subscription windows', () => {
+  for (const [stored, expected] of [
+    ['5 Hours', 'Weekly and Monthly'], ['Weekly', 'Weekly'], ['Monthly', 'Monthly'],
+    ['Weekly and Monthly', 'Weekly and Monthly'],
+  ]) {
+    for (const enabled of [true, false]) {
+      const state = restorePreviewState({
+        preferences: { softLimitWindow: stored, softLimitEnabled: enabled, softLimitThreshold: '78', betaUpdates: true },
+        activeAccounts: {},
+      });
+      assert.equal(state.preferences.softLimitWindow, expected);
+      assert.equal(state.preferences.softLimitEnabled, enabled);
+      assert.equal(state.preferences.softLimitThreshold, '78');
+      assert.deepEqual(restorePreviewState(state).preferences, state.preferences);
+    }
+  }
+});
+
+test('beta opt-out clears only Soft Limit consent, including previously stored settings', () => {
+  const initial = initialPreviewState();
+  const enabled = changePreference(changePreference(initial, 'betaUpdates', true), 'softLimitEnabled', true);
+  const configured = changePreference(changePreference(enabled, 'softLimitWindow', 'Monthly'), 'softLimitThreshold', '82');
+  const installed = { ...configured, terminalHelperInstalled: true };
+  const disabled = changePreference(installed, 'betaUpdates', false);
+  assert.equal(disabled.preferences.softLimitEnabled, false);
+  assert.equal(disabled.preferences.softLimitWindow, 'Monthly');
+  assert.equal(disabled.preferences.softLimitThreshold, '82');
+  assert.equal(disabled.terminalHelperInstalled, true);
+  assert.equal(changePreference(disabled, 'betaUpdates', true).preferences.softLimitEnabled, false);
+  for (const betaUpdates of [true, false]) {
+    for (const preferences of [{ betaUpdates, softLimitEnabled: true }, { softLimitEnabled: true, betaUpdates }]) {
+      const restored = restorePreviewState({ ...initial, preferences, terminalHelperInstalled: true });
+      assert.equal(restored.preferences.softLimitEnabled, betaUpdates);
+      assert.equal(restored.terminalHelperInstalled, true);
+    }
+  }
+  const legacy = restorePreviewState({ preferences: { softLimitEnabled: true }, activeAccounts: {} });
+  assert.equal(legacy.preferences.softLimitEnabled, false);
+  assert.equal(legacy.terminalHelperInstalled, false);
 });
 
 const antigravityConstants = Object.fromEntries([...source('Providers/Antigravity/AntigravityMetric.swift')
@@ -136,23 +178,50 @@ test('the preview lists every Antigravity and Kimi widget in native declaration 
   }
 });
 
+test('Soft Limit requires a supported subscription meter and the matching reported cycle', () => {
+  const week = 7 * 24;
+  for (const hours of [28 * 24, 29 * 24, 30 * 24 - 1, 31 * 24 + 1]) {
+    assert.equal(softLimitWindowFor('cursor.usage', hours), 'Monthly');
+    assert.equal(softLimitWindowFor('kiro.credits', hours), 'Monthly');
+  }
+  for (const hours of [week - 1, week, week + 1]) {
+    assert.equal(softLimitWindowFor('cursor.usage', hours), 'Weekly');
+  }
+  assert.equal(softLimitWindowFor('kimi.total', undefined), 'Monthly');
+  assert.equal(softLimitWindowFor('kimi.total', 5), undefined);
+  assert.equal(softLimitWindowFor('cursor.usage', undefined), undefined);
+  assert.equal(softLimitWindowFor('kiro.credits', week), undefined);
+  for (const hours of [5, 24, week - 2, week + 2, 28 * 24 - 2, 31 * 24 + 2, 90 * 24]) {
+    assert.equal(softLimitWindowFor('cursor.usage', hours), undefined);
+  }
+  for (const metric of ['codex.session', 'claude.last30', 'openrouter.month', 'codex.resetWatch']) {
+    assert.equal(softLimitWindowFor(metric, 30 * 24), undefined);
+  }
+});
+
 test('Soft Limit windows match every native provider declaration', () => {
-  const native: Record<string, string> = {};
+  const native: Record<string, string[]> = {};
   const files = readdirSync(new URL('../../Sources/Egasu/Providers/', import.meta.url), { recursive: true, encoding: 'utf8' })
     .filter((path) => path.endsWith('Provider.swift'));
   for (const file of files) {
     const family = file.split('/')[0].toLowerCase();
     let metric: string | undefined;
-    for (const match of source(`Providers/${file}`).matchAll(/\bid:\s*("[^"]+"|AntigravityMetric\.\w+)|\.supportingSoftLimit\(\.(fiveHours|weekly)\)/g)) {
+    for (const match of source(`Providers/${file}`).matchAll(/\bid:\s*("[^"]+"|AntigravityMetric\.\w+)|\.supportingSoftLimit\(([^)]+)\)/g)) {
       if (match[1]) {
         metric = match[1].startsWith('"') ? match[1].slice(1, -1).replace('\\(provider.id)', family) : antigravityConstants[match[1]];
       } else {
         assert.ok(metric, `The native metric ID must be resolved in ${file}`);
-        native[metric] = match[2] === 'fiveHours' ? '5 Hours' : 'Weekly';
+        const windows = [...match[2].matchAll(/\.(\w+)/g)].map(([, window]) => {
+          assert.ok(window === 'weekly' || window === 'monthly', `Unexpected quota period in ${file}: ${window}`);
+          return window === 'weekly' ? 'Weekly' : 'Monthly';
+        });
+        assert.ok(windows.length, `Missing quota period in ${file}`);
+        native[metric] = windows;
       }
     }
   }
-  assert.equal(Object.keys(native).length, 20, 'Every native Soft Limit declaration must be checked');
+  assert.ok(Object.values(native).flat().includes('Weekly'));
+  assert.ok(Object.values(native).flat().includes('Monthly'));
   assert.deepEqual(softLimitWindows, native);
 });
 

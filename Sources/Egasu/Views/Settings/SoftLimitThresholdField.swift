@@ -15,15 +15,18 @@ struct SoftLimitThresholdField: View {
         VStack(alignment: .leading, spacing: 4) {
             LabeledContent(L10n.settings("Threshold")) {
                 HStack(spacing: 4) {
-                    TextField("90", text: $text)
-                        .textFieldStyle(.roundedBorder)
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: 60)
-                        .accessibilityLabel(L10n.settings("Soft Limit Threshold Percent"))
-                        .focused($isFocused)
-                        .onSubmit { save() }
+                    TextField(
+                        L10n.settings("Soft Limit Threshold Percent"), text: $text, prompt: Text(verbatim: "1–100")
+                    )
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 50)
+                    .focused($isFocused)
+                    .onSubmit { save() }
                     Text("%")
                         .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                 }
             }
             if let errorMessage {
@@ -42,7 +45,8 @@ struct SoftLimitThresholdField: View {
 
     private func save() {
         guard settings.setThreshold(from: text) else {
-            errorMessage = L10n.settings("Enter a whole number from 1 to 100. %d%% is still applied.", settings.thresholdPercent)
+            errorMessage = L10n.settings(
+                "Enter a whole number from 1 to 100. %d%% is still applied.", settings.thresholdPercent)
             return
         }
         text = String(settings.thresholdPercent)

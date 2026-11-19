@@ -74,6 +74,29 @@ final class UsageTimerRouterRevalidationTests: XCTestCase {
         await router.shutdown()
     }
 
+    func testTimerAcceptsTheVerifiedTimestampFromTheSnapshot() async throws {
+        let fixture = try UsageTimerRouterTests.Fixture()
+        defer { fixture.remove() }
+        let time = fixture.clock.current()
+        let provider = ProviderStub(observedAt: time, providerID: "antigravity")
+        let router = UsageTimerRouter(
+            providers: [provider], isProviderEnabled: { _ in true }, executor: fixture.executor(),
+            store: fixture.store, report: { _, _ in }, refresh: { _, _ in }, now: { fixture.clock.current() })
+        var snapshot = await provider.refresh()
+        snapshot.liveQuotaObservedAt = time.addingTimeInterval(-60)
+        snapshot.usageTimerObservedAt = time.addingTimeInterval(-30)
+
+        router.receive(snapshot, trigger: .manual)
+        await router.waitForPendingWork(providerIDs: [provider.provider.id])
+        XCTAssertEqual(provider.sendCount, 0)
+
+        snapshot.usageTimerObservedAt = time
+        router.receive(snapshot, trigger: .manual)
+        await router.waitForPendingWork(providerIDs: [provider.provider.id])
+        XCTAssertEqual(provider.sendCount, 1)
+        await router.shutdown()
+    }
+
     func testStateReadFailurePreservesExistingTimerWarningAndRecoveryClearsOnlyStateWarning() async throws {
         let fixture = try UsageTimerRouterTests.Fixture()
         defer { fixture.remove() }

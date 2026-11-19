@@ -335,6 +335,9 @@ button.am-chip {
   font: inherit;
   cursor: pointer;
 }
+.am-soft-statuses { display: grid; gap: 8px; }
+.am-soft-statuses > div { display: grid; gap: 2px; overflow-wrap: anywhere; font-size: 11px; }
+.am-soft-statuses > div > span { color: var(--am-secondary); }
 .am-number-wrap { display: flex; align-items: center; gap: 5px; }
 .am-number { width: 60px; padding: 3px 5px; border: 1px solid var(--am-sep); border-radius: 5px; background: var(--am-quinary); color: var(--am-primary); font: inherit; }
 .am-action-row .am-item-ctl {
@@ -371,6 +374,7 @@ button.am-chip {
   gap: 8px;
   margin-top: 20px;
 }
+.am-dialog-actions .am-destructive { color: var(--am-critical); }
 .am-dialog-actions .am-confirm {
   background: var(--am-normal);
   color: #fff;

@@ -1,9 +1,9 @@
 # 대시보드
 
 메뉴 막대 아이콘에서 열리는 패널.
-총 지출 요약 아래 **Priority**와 **All Usage** 탭 배치.
-앱 시작 시 기본 Priority, 저장한 기본 탭이 있으면 해당 값 적용.
-패널만 닫았다 열면 마지막 선택 탭 유지.
+[알림 설정](/docs/settings.md#우선순위)에서 **우선순위 표시**를 하나라도 켜면 총 지출 요약 아래 **Priority(우선순위)**와 **All Usage(전체 사용량)** 탭 표시.
+네 조건을 모두 끄면 탭 선택을 숨기고 전체 사용량만 표시.
+탭을 선택할 수 있을 때는 앱 시작 시 저장한 기본 탭(기본값 Priority)을 열고, 패널만 닫았다 열면 마지막 선택 탭 유지.
 
 표시 언어는 [설정의 Language](/docs/settings.md#general)에서 선택.
 영어·한국어·일본어 지원이며 변경 후 앱 재실행 필요.
@@ -38,16 +38,17 @@ Claude와 Codex로 시작한 뒤 Mac의 로컬 인증 정보·사용 흔적을 �
 | 구역 | 내용 |
 |---|---|
 | Pinned | 고정한 지표. 소진 완료 후에도 저장된 계정·지표 순서 유지 |
-| Running Out | 고정하지 않은 한도 중 남은 양이 Warning 기준 이하이거나 빠르게 소진 중(Burning Fast)인 항목, 급한 순 |
+| Running Out | 고정하지 않은 한도 중 우선순위 표시를 켠 경고·위험·빠른 소진 조건에 해당하는 항목을 급한 순으로 표시 |
 | Use It or Lose It | 고정하지 않은 한도 중 주기가 하루보다 길고, 초기화가 24시간 이내로 남았으며, 잔량을 정수 퍼센트로 반올림한 값이 50%를 넘는 항목.<br>달러 단위 한도 제외. |
-| Needs Attention | 사용량을 가져오지 못한 계정 표시, **Fix**로 계정 상세 열기.<br>VoiceOver에서 조회 실패 사유 안내. Privacy Mode에서는 일반 오류 안내 사용.<br>Claude·Codex 계정의 Keychain 읽기 실패이면 **Fix**가 그 계정만 다시 조회하며 macOS Keychain 승인 창 표시 |
+| Needs Attention | 사용량을 가져오지 못한 계정 표시, **Fix**로 계정 상세 열기.<br>VoiceOver에서 조회 실패 사유 안내. Privacy Mode에서는 일반 오류 안내 사용.<br>Claude·Codex 계정의 Keychain 읽기 실패이면 **Fix**로 해당 계정만 수동 조회.<br>선택한 Claude 계정의 로그인 반영 중 Keychain 읽기에 실패한 경우도 포함.<br>접근 권한이 필요하면 macOS 승인 창 표시 |
 | Used Up | 고정하지 않은 한도 중 다 쓴 항목(흐리게) |
 
-- [Alerts의 우선순위 설정](/docs/settings.md#우선순위)에서 **Use It or Lose It**의 **Show in Priority**로 구역 표시를 설정.
-  **Receive Alerts**는 macOS 알림 전송 여부를 별도로 제어.
-- 한도 데이터를 받았고, 수신 대기·계정 경고·소진 임박이 없으면 **All Clear**("Nothing is running out.") 행 표시.
-  고정한 경고 지표도 소진 임박 판정에 포함.
-  경고 지표가 모두 고정된 경우 Pinned에만 표시하며 Running Out 구역과 All Clear는 숨김.
+- [알림 설정](/docs/settings.md#우선순위)에서 경고·위험·빠른 소진·초기화 전 사용의 **우선순위 표시**를 개별 선택.
+  **알림 받기**에서 각 조건의 macOS 알림을 별도로 선택.
+- 한도 데이터를 받았고 수신 대기나 계정 경고가 없을 때, 켜진 소진 임박 조건에 맞는 한도가 없으면 **No Matching Limits**(표시 조건에 맞는 한도 없음) 표시.
+  고정한 지표도 표시를 켠 소진 임박 조건에 해당하면 판정에 포함.
+  **빠른 소진**에 맞는 지표가 모두 고정된 경우 해당 지표는 Pinned에만 표시.
+  다른 표시 조건에 해당하는 항목이 있는지는 별도로 판정.
 - 첫 조회 전인 계정은 자리 표시(**Waiting for Usage**).
 - 한도를 보고하는 계정이 없으면 **No Reported Limits**와 **View All Usage** 버튼.
 - 링의 채움 비율은 [Show Usage As](/docs/settings.md#사용량)의 Used / Left 설정 적용.
@@ -73,7 +74,7 @@ Claude와 Codex로 시작한 뒤 Mac의 로컬 인증 정보·사용 흔적을 �
 - 데이터 없는 한도·값 행은 고정 여부와 관계없이 숨김.
   고정 설정과 저장 순서는 유지하며, 데이터를 다시 받으면 원래 위치에 표시.
   이전 성공 값을 보존한 조회 실패에서는 해당 값과 고정 행 유지.
-  조회 오류가 있으면 Needs Attention에 계정을 표시하고 All Clear는 숨김.
+  조회 오류가 있으면 Needs Attention에 계정 표시.
 - 메뉴 막대에서 고정한 지표만 보려면 **Menu Bar Items → Pinned Only** 선택([메뉴 막대](/docs/menu-bar.md)).
 
 ## All Usage
@@ -117,7 +118,7 @@ VoiceOver에서 조회 오류·오래됨 상태의 안내 확인.
 
 ![Total Spend의 기간과 Cost/MTok 보기](/docs/assets/total-spend-light.png)
 
-Priority·All Usage 탭 선택 위에 공통으로 표시하는 카드.
+대시보드 위쪽에 표시하는 카드.
 켜진 프로바이더 중 하나라도 기간별 비용·토큰을 추적하면(Claude, Codex, Cursor, Antigravity, Copilot, Devin, Grok, Kimi, Kiro, OpenCode, OpenRouter, Z.ai) 표시.
 도넛 안쪽 원이나 오른쪽 범례 값을 클릭하면 **Cost**(비용) → **Cost/MTok** → **Tokens**(토큰) → **Cost** 순서로 전환.
 중앙 클릭 영역은 글자 주변의 빈 공간을 포함한 원 전체이며, 바깥의 색상 링은 전환 대상에서 제외.
@@ -186,11 +187,15 @@ Kiro는 로컬 CLI V3의 턴별 크레딧 환산 비용과 대화 길이 기반 
 - 막대에 마우스를 올리면 초기화 시점 속도 예측(`~35% left at reset`, `~12% over limit at reset` 등).
 - **Pace Marks**를 켜면([Settings](/docs/settings.md#사용량)) 막대에 균등 속도 눈금 표시.
   유효한 초기화 시각·주기가 필요하며, 기간 시작 직후와 미시작·소진 상태는 제외.
-- **Soft Limit**을 켜면 지원 대상 5시간 또는 주간 막대에 직접 입력한 1%–100% 임계값의 얇은 안내선 표시 — 저장된 임계값이 없으면 기본값 90%.
+- **실험실 → 소프트 한도**(Labs → Soft Limit)를 켜면 해당 주간·월간 구독 한도의 사용량 막대 안에 기준선 표시.
+  미니멀·카드 레이아웃에 같은 기준 적용.
+  저장된 임계값이 없으면 기본값 90%.
   프로바이더의 강제 한도와 별개인 사용자 기준선이며, 채움·사용량·속도 판정·초기화에는 영향 없음.
-  Used와 Left에서 위치만 반전 — 95% used 임계값은 반대 화면의 5% left 위치.
-  도달 여부는 막대 hover 문구에 표시하며 취소 완료 증거는 아님.
-  활성화·연결·취소 상태는 [Soft Limit 설정](/docs/settings.md#소프트-한도) 참조.
+  사용량 95%를 기준으로 설정하면 Used에서는 95%, Left에서는 5% 위치에 표시.
+  막대에 포인터를 올리면 기준 사용률 확인.
+  이 앱 실행 중 정상 조회한 실측값이 유효한 동안에만 도달 문구 표시.
+  조회 실패, 기간 초기화, 관측 만료 또는 로컬 추정 사용량에는 기준선만 표시.
+  지원 지표와 설정 방법은 [소프트 한도](/docs/settings.md#소프트-한도) 참조.
 
 ### Codex Reset Watch
 
@@ -379,6 +384,8 @@ All Usage의 프로바이더 섹션 공유 이미지는 현재 표시 중인 계
 
 프로바이더·계정·지표의 표시와 순서는 [Accounts](/docs/accounts.md#계정-상세)에서 관리.
 새 설치의 지표는 모두 기본 켜짐이며 기존 숨김·순서 유지.
+Codex 기본·Spark, Grok, Z.ai의 월간 지표는 처음 추가될 때 각각의 주간 지표 바로 아래에 배치.
+이후 계정 상세에서 옮기면 새 위치를 저장.
 두 구역을 사용하던 버전은 On Demand 지표를 일반 지표 뒤에 합치고 각 구역의 상대 순서는 유지.
 Priority가 있는 버전에서 이미 저장한 목록 순서는 그대로 유지.
 

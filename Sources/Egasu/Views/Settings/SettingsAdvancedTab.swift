@@ -1,16 +1,24 @@
 import AppKit
 import SwiftUI
 
-/// Advanced 탭 — 개인정보, Tokscale, Soft Limit, 로그.
+/// Advanced 탭 — 개인정보, Tokscale, 로그.
 struct SettingsAdvancedTab: View {
     @Environment(AppContainer.self) private var container
-    @Environment(PopoverState.self) private var popover
+
+    var body: some View {
+        SettingsAdvancedSections(
+            privacy: container.privacy, telemetry: container.telemetry, tokscaleSync: container.tokscaleSync)
+    }
+}
+
+struct SettingsAdvancedSections: View {
+    @Bindable var privacy: MenuBarPrivacyStore
+    let telemetry: TelemetryRecorder
+    let tokscaleSync: TokscaleSyncStore
     @AppStorage(LogLevelSetting.key) private var logLevel = LogLevelSetting.fallback
-    let commandLineTool: CommandLineToolInstaller
     @State private var logActionError: String?
 
     var body: some View {
-        @Bindable var privacy = container.privacy
         Section(L10n.settings("Privacy")) {
             Toggle(isOn: $privacy.hideUsageWhileScreenSharing) {
                 SettingsTitle(
@@ -22,8 +30,8 @@ struct SettingsAdvancedTab: View {
             }
             Toggle(
                 isOn: Binding(
-                    get: { container.telemetry.isEnabled },
-                    set: { container.telemetry.setEnabled($0) }
+                    get: { telemetry.isEnabled },
+                    set: { telemetry.setEnabled($0) }
                 )
             ) {
                 SettingsTitle(
@@ -34,52 +42,8 @@ struct SettingsAdvancedTab: View {
                 )
             }
         }
-        TokscaleSettingsSection(store: container.tokscaleSync)
-        SoftLimitSettingsSection(
-            settings: container.softLimitSettings,
-            coordinator: container.softLimitCoordinator,
-            providers: container.registry.providers.filter {
-                !ProviderAccountID.isAccountCard($0.id) && container.enablement.isEnabled($0.id)
-            }
-        )
-        commandLineSection
+        TokscaleSettingsSection(store: tokscaleSync)
         debugSection
-    }
-
-    private var commandLineSection: some View {
-        Section {
-            LabeledContent {
-                switch commandLineTool.status {
-                case .installed:
-                    Button(L10n.settings("Uninstall")) { commandLineTool.uninstall() }
-                case .notInstalled:
-                    Button(L10n.settings("Install…")) { commandLineTool.install() }
-                case .conflict:
-                    Text(L10n.settings("Unavailable"))
-                        .foregroundStyle(.secondary)
-                }
-            } label: {
-                SettingsTitle(
-                    title: L10n.settings("Terminal Helper"),
-                    info: L10n.settings("Adds a global egasu command agents can use to monitor limits.")
-                )
-            }
-        } header: {
-            Text(L10n.settings("Command Line"))
-        } footer: {
-            if commandLineTool.status == .conflict {
-                SettingsNote(
-                    L10n.settings("%@ already exists and wasn't installed by egasu.", commandLineTool.destinationPath))
-            } else if let errorMessage = commandLineTool.errorMessage {
-                SettingsNote(errorMessage)
-            }
-        }
-        .onChange(of: popover.screen, initial: true) { _, screen in
-            if screen == .settings { commandLineTool.refreshStatus() }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            commandLineTool.refreshStatus()
-        }
     }
 
     /// 로그 수준은 재시작 없이 바로 적용·유지, 로그 파일 경로 복사·Finder에서 보기.

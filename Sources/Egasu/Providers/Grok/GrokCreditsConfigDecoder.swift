@@ -22,6 +22,7 @@ struct GrokCreditsConfig: Equatable, Sendable {
 enum GrokCreditsConfigDecoder {
     /// unified-billing 사용자가 이전된 shared weekly pool의 period type.
     static let weeklyPeriodType = "USAGE_PERIOD_TYPE_WEEKLY"
+    static let monthlyPeriodType = "USAGE_PERIOD_TYPE_MONTHLY"
 
     /// JSON 응답 body를 `GrokCreditsConfig`로 decode.
     /// config/period 누락, 비유한 percent, 잘못된 timestamp, 진행하지 않는 period는 `invalidResponse`.

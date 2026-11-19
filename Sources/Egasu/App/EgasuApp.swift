@@ -116,12 +116,17 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let container = AppContainer(
             isFreshInstall: isFreshInstall,
+            labsAvailable: updater.betaChannelEnabled,
             claudeShellMigrationIssue: migrationError.map(ClaudeLegacyShellMigration.message(for:)))
         if let migrationError {
             let reason = (migrationError as? ClaudeShellLoginMigrationError)?.rawValue ?? "system"
             AppDiagnostics.failure(
                 .storageMigration, error: migrationError, providerID: "claude",
                 localContext: "legacy shell login " + reason)
+        }
+        updater.onBetaChannelChange = { [weak container] enabled in
+            container?.softLimitSettings.setLabsAvailable(enabled)
+            container?.popover.reconcileSettingsTab(betaUpdatesEnabled: enabled)
         }
         self.container = container
         statusItemController = StatusItemController(container: container, updater: updater)

@@ -3,6 +3,7 @@ import Foundation
 struct CodexMappedUsage: Equatable, Sendable {
     var plan: String?
     var lines: [MetricLine]
+    var incompleteQuotaWindows: Set<SoftLimitWindow>
 }
 
 enum CodexUsageMapper {
@@ -63,19 +64,21 @@ enum CodexUsageMapper {
         }
 
         var lines: [MetricLine] = []
-        let rateLimit = body["rate_limit"] as? [String: Any]
-        lines.append(contentsOf: classifiedWindowLines(
-            rateLimit: rateLimit,
-            labels: (session: "Session", weekly: "Weekly"),
-            headerPercents: (
-                primary: ProviderParse.number(response.header("x-codex-primary-used-percent")),
-                secondary: ProviderParse.number(response.header("x-codex-secondary-used-percent"))
-            ),
-            now: now
-        ))
+        var incompleteWindows: Set<SoftLimitWindow> = []
+        let rateLimit = body["rate_limit"]
+        lines.append(
+            contentsOf: classifiedWindowLines(
+                rateLimit: rateLimit,
+                labels: (session: "Session", weekly: "Weekly", monthly: "Monthly"),
+                headerPercents: (
+                    primary: ProviderParse.number(response.header("x-codex-primary-used-percent")),
+                    secondary: ProviderParse.number(response.header("x-codex-secondary-used-percent"))
+                ),
+                now: now, incompleteWindows: &incompleteWindows
+            ))
 
-        // Model별 limit(예: GPT-5.3-Codex-Spark)은 별도 `additional_rate_limits` 배열 — Spark / Spark Weekly meter로 노출 (issue #796).
-        lines.append(contentsOf: sparkLines(body: body, now: now))
+        // Spark는 기본 계정 한도와 별도로 모델별 한도를 제공.
+        lines.append(contentsOf: sparkLines(body: body, now: now, incompleteWindows: &incompleteWindows))
 
         // On-demand reset credit은 Credits 앞에 표시 — count는 raw 전달(menu-bar tile과 동일 숫자), 각 credit의 expiry는 `expiriesAt`로 hover tooltip에 노출.
         if let resets = readResetCredits(body: body, resetCredits: resetCredits) {
@@ -91,7 +94,8 @@ enum CodexUsageMapper {
         }
 
         // "no usage data" badge는 `CodexProvider.probe`가 스캔된 spend line *뒤에* 추가 — 빈 live 응답의 badge가 Today/Yesterday와 공존 불가.
-        return CodexMappedUsage(plan: formatCodexPlan(body["plan_type"]), lines: lines)
+        return CodexMappedUsage(
+            plan: formatCodexPlan(body["plan_type"]), lines: lines, incompleteQuotaWindows: incompleteWindows)
     }
 
     private static func progress(
@@ -99,7 +103,7 @@ enum CodexUsageMapper {
         used: Double,
         resetWindow: [String: Any]?,
         now: Date,
-        periodDurationMs: Int
+        periodDurationMs: Int?
     ) -> MetricLine {
         .progress(
             label: label,
@@ -111,28 +115,10 @@ enum CodexUsageMapper {
         )
     }
 
-    /// Rate-limit window 1개 → percent-used meter, `usedPercent` 없으면 `nil` — Session/Weekly/Spark 경로가 공유하는 단일 구성.
-    private static func windowLine(
-        label: String,
-        usedPercent: Double?,
-        window: [String: Any]?,
-        defaultPeriodMs: Int,
-        now: Date
-    ) -> MetricLine? {
-        guard let usedPercent else { return nil }
-        let periodDurationMs = readPeriodMs(window) ?? defaultPeriodMs
-        return progress(
-            label: label,
-            used: usedPercent,
-            resetWindow: window,
-            now: now,
-            periodDurationMs: periodDurationMs
-        )
-    }
-
     private enum WindowKind {
         case session
         case weekly
+        case monthly
     }
 
     private struct WindowCandidate {
@@ -141,31 +127,48 @@ enum CodexUsageMapper {
         var fallbackKind: WindowKind
     }
 
-    /// Session/Weekly window 분류 — 명시적 duration 우선 (Codex가 단독 weekly limit을 primary slot으로 옮기는 경우 대응).
+    /// 세션·주간·월간 한도를 슬롯 위치와 무관하게 보고된 기간으로 분류.
     /// primary=session / secondary=weekly slot 매핑은 duration을 생략하거나 낯선 값을 쓰는 payload용 호환 fallback.
     private static func classifiedWindowLines(
-        rateLimit: [String: Any]?,
-        labels: (session: String, weekly: String),
+        rateLimit value: Any?,
+        labels: (session: String, weekly: String, monthly: String),
         headerPercents: (primary: Double?, secondary: Double?) = (nil, nil),
-        now: Date
+        now: Date, incompleteWindows: inout Set<SoftLimitWindow>
     ) -> [MetricLine] {
+        let rateLimit = value as? [String: Any]
+        if let value, !(value is NSNull), rateLimit == nil {
+            incompleteWindows.formUnion(SoftLimitWindow.allCases)
+        }
         let candidates = [
-            windowCandidate(rateLimit?["primary_window"], headerPercent: headerPercents.primary, fallbackKind: .session),
-            windowCandidate(rateLimit?["secondary_window"], headerPercent: headerPercents.secondary, fallbackKind: .weekly)
+            windowCandidate(
+                rateLimit?["primary_window"], headerPercent: headerPercents.primary, fallbackKind: .session,
+                incompleteWindows: &incompleteWindows),
+            windowCandidate(
+                rateLimit?["secondary_window"], headerPercent: headerPercents.secondary, fallbackKind: .weekly,
+                incompleteWindows: &incompleteWindows)
         ].compactMap { $0 }
 
-        return [
-            classifiedWindowLine(kind: .session, label: labels.session, candidates: candidates, now: now),
-            classifiedWindowLine(kind: .weekly, label: labels.weekly, candidates: candidates, now: now)
-        ].compactMap { $0 }
+        let rows: [(WindowKind, String)] = [
+            (.session, labels.session), (.weekly, labels.weekly), (.monthly, labels.monthly)
+        ]
+        return rows.compactMap { kind, label in
+            classifiedWindowLine(
+                kind: kind, label: label, candidates: candidates, now: now, incompleteWindows: &incompleteWindows)
+        }
     }
 
     private static func windowCandidate(
         _ value: Any?,
         headerPercent: Double?,
-        fallbackKind: WindowKind
+        fallbackKind: WindowKind,
+        incompleteWindows: inout Set<SoftLimitWindow>
     ) -> WindowCandidate? {
-        guard let window = value as? [String: Any] ?? (headerPercent == nil ? nil : [:]) else { return nil }
+        let reportedWindow = value as? [String: Any]
+        // 손상된 슬롯은 위치만으로 원래의 기간을 특정할 수 없음.
+        if let value, !(value is NSNull), readPeriodMs(reportedWindow) == nil {
+            incompleteWindows.formUnion(SoftLimitWindow.allCases)
+        }
+        guard let window = reportedWindow ?? (headerPercent == nil ? nil : [:]) else { return nil }
         return WindowCandidate(
             window: window,
             usedPercent: ProviderParse.number(window["used_percent"]) ?? headerPercent,
@@ -177,19 +180,25 @@ enum CodexUsageMapper {
         kind: WindowKind,
         label: String,
         candidates: [WindowCandidate],
-        now: Date
+        now: Date,
+        incompleteWindows: inout Set<SoftLimitWindow>
     ) -> MetricLine? {
-        let exact = candidates.first { exactKind(for: $0.window) == kind }
+        let exact = candidates.filter { exactKind(for: $0.window) == kind }
         let fallback = candidates.first { exactKind(for: $0.window) == nil && $0.fallbackKind == kind }
-        guard let candidate = exact ?? fallback else { return nil }
-        let defaultPeriodMs = kind == .session ? sessionPeriodMs : weeklyPeriodMs
-        return windowLine(
-            label: label,
-            usedPercent: candidate.usedPercent,
-            window: candidate.window,
-            defaultPeriodMs: defaultPeriodMs,
-            now: now
-        )
+        guard let candidate = exact.first ?? fallback else { return nil }
+        // 기간 없는 세션은 기존 5시간 표시를 유지. 헤더 대체값이나 중복된 구간으로 한도 상태를 확정하지 않음.
+        var duration = readPeriodMs(candidate.window) ?? (kind == .session ? sessionPeriodMs : nil)
+        if kind != .session, !exact.isEmpty {
+            let hasReportedUsage =
+                ProviderParse.number(candidate.window["used_percent"]).map { (0...100).contains($0) } == true
+            let hasUnusableReset = hasMalformedReset(candidate.window) && resetDate(candidate.window, now: now) == nil
+            if exact.count != 1 || !hasReportedUsage || hasUnusableReset {
+                incompleteWindows.insert(kind == .weekly ? .weekly : .monthly)
+                duration = nil
+            }
+        }
+        guard let used = candidate.usedPercent, used >= 0 else { return nil }
+        return progress(label: label, used: used, resetWindow: candidate.window, now: now, periodDurationMs: duration)
     }
 
     private static func exactKind(for window: [String: Any]) -> WindowKind? {
@@ -197,25 +206,31 @@ enum CodexUsageMapper {
         switch periodMs {
         case sessionPeriodMs: return .session
         case weeklyPeriodMs: return .weekly
-        default: return nil
+        default:
+            return SoftLimitWindow.monthly.matches(periodDurationMs: periodMs, allowsDSTOffset: false) ? .monthly : nil
         }
     }
 
-    /// `additional_rate_limits`의 Spark(및 향후 model별) limit — 각 entry의 `rate_limit`이 primary/secondary window shape를 재사용하므로 core Session/Weekly 경로와 동일하게 파싱.
+    /// Spark 한도의 primary/secondary window도 계정 한도와 같은 기간 규칙 적용.
     /// 비-dictionary·null 요소는 유효한 형제를 버리지 않고 skip; Spark entry 없으면 빈 목록 반환 — 해당 row는 "No data".
-    private static func sparkLines(body: [String: Any], now: Date) -> [MetricLine] {
-        guard let rawEntries = body["additional_rate_limits"] as? [Any] else { return [] }
-        let entries = rawEntries.compactMap { $0 as? [String: Any] }
-        guard let spark = entries.first(where: isSparkEntry),
-              let rateLimit = spark["rate_limit"] as? [String: Any]
-        else {
+    private static func sparkLines(body: [String: Any], now: Date, incompleteWindows: inout Set<SoftLimitWindow>)
+        -> [MetricLine]
+    {
+        guard let raw = body["additional_rate_limits"], !(raw is NSNull) else { return [] }
+        guard let rawEntries = raw as? [Any] else {
+            incompleteWindows.formUnion(SoftLimitWindow.allCases)
             return []
         }
+        if rawEntries.contains(where: { !($0 is NSNull) && !($0 is [String: Any]) }) {
+            incompleteWindows.formUnion(SoftLimitWindow.allCases)
+        }
+        let entries = rawEntries.compactMap { $0 as? [String: Any] }
+        guard let spark = entries.first(where: isSparkEntry) else { return [] }
 
         return classifiedWindowLines(
-            rateLimit: rateLimit,
-            labels: (session: "Spark", weekly: "Spark Weekly"),
-            now: now
+            rateLimit: spark["rate_limit"],
+            labels: (session: "Spark", weekly: "Spark Weekly", monthly: "Spark Monthly"),
+            now: now, incompleteWindows: &incompleteWindows
         )
     }
 
@@ -226,12 +241,20 @@ enum CodexUsageMapper {
             .contains { $0.contains("spark") }
     }
 
+    private static func hasMalformedReset(_ window: [String: Any]) -> Bool {
+        for field in ["reset_at", "reset_after_seconds"] {
+            guard let raw = window[field], !(raw is NSNull) else { continue }
+            guard let seconds = ProviderParse.number(raw), seconds >= 0 else { return true }
+        }
+        return false
+    }
+
     private static func resetDate(_ window: [String: Any]?, now: Date) -> Date? {
         guard let window else { return nil }
-        if let resetAt = ProviderParse.number(window["reset_at"]) {
+        if let resetAt = ProviderParse.number(window["reset_at"]), resetAt >= 0 {
             return Date(timeIntervalSince1970: resetAt)
         }
-        if let resetAfter = ProviderParse.number(window["reset_after_seconds"]) {
+        if let resetAfter = ProviderParse.number(window["reset_after_seconds"]), resetAfter >= 0 {
             return now.addingTimeInterval(resetAfter)
         }
         return nil
@@ -239,7 +262,9 @@ enum CodexUsageMapper {
 
     private static func readPeriodMs(_ window: [String: Any]?) -> Int? {
         guard let window else { return nil }
-        guard let seconds = ProviderParse.number(window["limit_window_seconds"]) else { return nil }
+        guard let seconds = ProviderParse.number(window["limit_window_seconds"]),
+            seconds > 0, seconds * 1000 < Double(Int.max)
+        else { return nil }
         return Int(seconds * 1000)
     }
 

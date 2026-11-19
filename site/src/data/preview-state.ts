@@ -5,6 +5,7 @@ import { metricKey, providerMetrics } from './metrics.ts';
 
 export interface PreviewState {
   preferences: Record<string, string | boolean>;
+  terminalHelperInstalled: boolean;
   activeAccounts: Record<string, string>;
   enabledProviders: string[];
   hiddenMetrics: string[];
@@ -25,6 +26,7 @@ export function initialPreviewState(): PreviewState {
   }
   return {
     preferences,
+    terminalHelperInstalled: false,
     activeAccounts: Object.fromEntries(accountFamilies.map((family) => [family.id, family.activeAccount])),
     enabledProviders: ['claude', 'codex', 'antigravity'],
     hiddenMetrics: [], pinnedMetrics: [], metricOrder: {}, accountNames: {},
@@ -35,7 +37,7 @@ export function initialPreviewState(): PreviewState {
 
 export function changePreference(state: PreviewState, id: string, value: unknown): PreviewState {
   const control = rows.find((row) => row.id === id)?.control;
-  if (!control || control.kind === 'action'
+  if (!control || control.kind === 'action' || control.kind === 'terminalHelper'
     || (control.kind === 'toggle' && typeof value !== 'boolean')
     || (control.kind === 'picker' && (typeof value !== 'string' || !control.options.includes(value)))
     || (control.kind === 'number' && (typeof value !== 'string' || !/^\d+$/.test(value)
@@ -43,6 +45,7 @@ export function changePreference(state: PreviewState, id: string, value: unknown
     throw new Error(`Invalid preview setting: ${id}`);
   }
   const preferences = { ...state.preferences, [id]: value as string | boolean };
+  if (!preferences.betaUpdates) preferences.softLimitEnabled = false;
   if (id === 'warning' && parseInt(String(preferences.critical)) >= parseInt(String(value))) {
     preferences.critical = `${parseInt(String(value)) - 5}% left`;
   }
@@ -174,8 +177,15 @@ export function restorePreviewState(value: unknown): PreviewState {
     healthyToClose: 'warningNotification', underTenPercent: 'criticalNotification',
     useItOrLoseIt: 'useItOrLoseItNotification',
   };
-  for (const [id, preference] of Object.entries(record(stored.preferences))) {
+  const preferences = record(stored.preferences);
+  if (Object.hasOwn(preferences, 'betaUpdates')) state = changePreference(state, 'betaUpdates', preferences.betaUpdates);
+  for (const [id, preference] of Object.entries(preferences)) {
+    if (id === 'betaUpdates' || (id === 'softLimitWindow' && preference === '5 Hours')) continue;
     if (!obsolete.has(id)) state = changePreference(state, Object.hasOwn(renamed, id) ? renamed[id] : id, preference);
+  }
+  if (stored.terminalHelperInstalled !== undefined) {
+    if (typeof stored.terminalHelperInstalled !== 'boolean') throw new Error('Invalid preview Terminal Helper status.');
+    state.terminalHelperInstalled = stored.terminalHelperInstalled;
   }
   for (const [family, id] of Object.entries(record(stored.activeAccounts))) {
     if (typeof id !== 'string') throw new Error('Invalid active preview account.');

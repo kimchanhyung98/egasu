@@ -1,21 +1,73 @@
 import SwiftUI
+import Vision
 import XCTest
 @testable import Egasu
 
 @MainActor
 final class SoftLimitSettingsSectionTests: XCTestCase {
+    func testQuotaStatusSeparatesConfirmedUnknownAndEstimatedReadings() {
+        let cancellation = SoftLimitProviderStatus(phase: .unsupported, message: "")
+        for language in LanguageSetting.allCases {
+            L10n.withLanguage(language) {
+                func label(_ state: SoftLimitQuotaState, used: Double?, estimate: Double? = nil) -> String {
+                    SoftLimitAccountStatus(
+                        id: "fixture", name: "Fixture", quota: state, usedFraction: used,
+                        estimatedFraction: estimate, cancellation: cancellation
+                    ).usageLabel
+                }
+                XCTAssertEqual(label(.belowLimit, used: 0.5), L10n.metrics("%@ used", "50%"))
+                XCTAssertEqual(label(.belowLimit, used: 0.8999), L10n.metrics("%@ used", "89.9%"))
+                XCTAssertEqual(label(.reached, used: 0.9), L10n.settings("%@ used · Soft limit reached", "90%"))
+                XCTAssertEqual(label(.unknown, used: 0.8), L10n.settings("Quota not verified"))
+                XCTAssertEqual(label(.unknown, used: nil, estimate: 0.95), L10n.settings("Estimated usage: %@", "95%"))
+            }
+        }
+    }
+
+    func testGroupedFormShowsThresholdOnlyOnce() async throws {
+        let suite = "EgasuTests.SoftLimit.ThresholdLabel.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SoftLimitSettingsStore(defaults: defaults, labsAvailable: true)
+        settings.enabled = true
+        for language in LanguageSetting.allCases {
+            let image = try L10n.withLanguage(language) {
+                let form = Form { SoftLimitThresholdField(settings: settings) }
+                    .formStyle(.grouped)
+                    .frame(width: PanelMetrics.width, height: 110)
+                    .environment(\.locale, language.locale)
+                    .defaultAppStorage(defaults)
+                let host = NSHostingView(rootView: form)
+                let window = NSWindow(
+                    contentRect: .init(origin: .zero, size: host.fittingSize),
+                    styleMask: .borderless, backing: .buffered, defer: false)
+                window.isReleasedWhenClosed = false
+                window.contentView = host
+                defer { window.close() }
+                return try XCTUnwrap(settingsBitmap(in: host).cgImage)
+            }
+            let numbers = try await Task.detached {
+                let request = VNRecognizeTextRequest()
+                request.recognitionLanguages = [language.locale.identifier, "en-US"]
+                try VNImageRequestHandler(cgImage: image).perform([request])
+                return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                    .joined().precomposedStringWithCompatibilityMapping.filter { "0123456789".contains($0) }
+            }.value
+            XCTAssertEqual(numbers, "90", language.rawValue)
+        }
+    }
+
     func testRendersEnabledAndDisabledSettingsAcrossAppearances() throws {
         let suite = "EgasuTests.SoftLimit.SettingsRendering.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let settings = SoftLimitSettingsStore(defaults: defaults)
-        let coordinator = SoftLimitCoordinator(settings: settings, adapters: [], isProviderEnabled: { _ in true })
+        let settings = SoftLimitSettingsStore(defaults: defaults, labsAvailable: true)
         let export = ProcessInfo.processInfo.environment["EGASU_SOFT_LIMIT_RENDER_DIR"].map { URL(fileURLWithPath: $0) }
         if let export { try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true) }
         func render(enabled: Bool, appearance: ColorScheme) throws -> CGFloat {
             settings.enabled = enabled
             let view = SoftLimitSettingsSection(
-                settings: settings, coordinator: coordinator, providers: [MockData.codex, MockData.claude]
+                settings: settings, accounts: { [] }
             )
             .padding(12)
             .frame(width: 360)

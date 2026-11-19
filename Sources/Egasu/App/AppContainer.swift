@@ -33,7 +33,7 @@ final class AppContainer {
     let softLimitCoordinator: SoftLimitCoordinator
     /// Settings opt-in 토글과 앱 종료 flush가 공유하는 일간 rollup.
     let telemetry: TelemetryRecorder
-    let popover = PopoverState()
+    let popover: PopoverState
     /// 캡처 중 strip을 wordmark로 교체하도록 status item updater가 참조.
     let privacy: MenuBarPrivacyStore
     /// Codex reset credit claim 라우터. 카드별 자체 auth store·usage client 경유 —
@@ -75,7 +75,7 @@ final class AppContainer {
 
     /// `isFreshInstall`은 `SettingsMigrator.migrate()` 실행 전 호출자 캡처 필수 — migrator의 schema stamp가
     /// defaults 도메인을 non-empty로 변경. `AppDelegate` 참고.
-    init(isFreshInstall: Bool = false, claudeShellMigrationIssue: LocalizedMessage? = nil) {
+    init(isFreshInstall: Bool = false, labsAvailable: Bool, claudeShellMigrationIssue: LocalizedMessage? = nil) {
         self.claudeShellMigrationIssue = claudeShellMigrationIssue
         let workQueue = BackgroundWorkQueue.shared
         self.workQueue = workQueue
@@ -115,7 +115,7 @@ final class AppContainer {
         let apiKeyProviders = providers.compactMap { $0 as? any APIKeyManaging }
         let enablement = ProviderEnablementStore()
         let notificationSettings = NotificationSettingsStore()
-        let softLimitSettings = SoftLimitSettingsStore()
+        let softLimitSettings = SoftLimitSettingsStore(labsAvailable: labsAvailable)
         let layout = LayoutStore(
             registry: registry,
             knownCardIDs: enablement.knownIDs.union(enablement.enabledIDs ?? []),
@@ -123,15 +123,18 @@ final class AppContainer {
             isProviderEnabled: { [enablement] in enablement.isEnabled($0) }
         )
         let displaySettings = DisplaySettingsStore()
+        self.popover = PopoverState(displaySettings: displaySettings)
         // 이전 메뉴 막대 별표를 Priority 고정으로 1회 이전 — 메뉴 막대는 Priority 모드로 유지.
         if let migrated = layout.migrateMenuBarStars(isHiddenOnCard: Self.hidesMetric(_:onCard:)) {
             displaySettings.menuBarSelection = .priority
             displaySettings.menuBarLimit = MenuBarLimit(count: min(max(migrated, 3), 5))
             AppLog.info(.config, "menu bar stars migrated to \(migrated) Priority pins")
         }
+        let snapshotCache = ProviderSnapshotCache()
         let dataStore = WidgetDataStore(
             registry: registry,
             providers: providers,
+            cache: snapshotCache,
             isProviderEnabled: { [enablement] in enablement.isEnabled($0) },
             orderedDescriptors: { [layout] in layout.orderedRenderedDescriptors() },
             notificationSettings: { notificationSettings },
@@ -224,6 +227,7 @@ final class AppContainer {
             settings: softLimitSettings,
             adapters: [CodexSoftLimitAdapter()],
             isProviderEnabled: { [enablement] in enablement.isEnabled($0) },
+            isQuotaInvalidated: { snapshotCache.isQuotaInvalidated(providerID: $0, observedAt: $1) },
             workQueue: workQueue
         )
         self.softLimitCoordinator = softLimitCoordinator
@@ -245,7 +249,7 @@ final class AppContainer {
         }
         softLimitSettings.onChange = { [weak softLimitCoordinator] in softLimitCoordinator?.settingsDidChange() }
         dataStore.onQuotaInvalidated = { [weak softLimitCoordinator, weak usageTimer] providerIDs in
-            softLimitCoordinator?.settingsDidChange()
+            softLimitCoordinator?.accountsDidChange(providerIDs)
             usageTimer?.invalidate(providerIDs: providerIDs)
         }
         dataStore.onFreshSnapshot = { [weak softLimitCoordinator, weak usageTimer] snapshot, descriptors, trigger in
@@ -299,7 +303,7 @@ final class AppContainer {
                 dataStore.knownProviderIDs.filter { enablement.isEnabled($0) }
             },
             reconcileAccounts: { [weak self] in
-                _ = await self?.reconcileExternalClaudeAuthenticationAndRefreshCatalog()
+                await self?.reconcileExternalClaudeAuthenticationAndRefreshCatalog()
             }
         )
         self.usageTimerCheckTask.task = UsageTimerCheckSchedule.start(
@@ -458,11 +462,10 @@ final class AppContainer {
     /// 사용자 새로 고침 — shared-home 재인증과 catalog binding을 먼저 반영한 뒤 usage 조회.
     func refreshAll(force: Bool = false) async {
         guard !isRefreshingAll, !accountSwitch.isSwitching else { return }
-        let switchGeneration = accountSwitch.generation
         isRefreshingAll = true
         defer { isRefreshingAll = false }
         let resetWatchTask = force ? Task { await resetWatchCoordinator.refreshNow() } : nil
-        let reconciliationError = await ProviderRefreshContext.$isManual.withValue(true) {
+        await ProviderRefreshContext.$isManual.withValue(true) {
             await reconcileExternalClaudeAuthenticationAndRefreshCatalog()
         }
         guard !accountSwitch.isSwitching else { return }
@@ -472,9 +475,6 @@ final class AppContainer {
             force: force
         )
         await dataStore.refreshAll(force: force, trigger: .manual)
-        Self.applyExternalClaudeReconciliationError(
-            reconciliationError, to: dataStore, accountSwitch: accountSwitch, startedAt: switchGeneration
-        )
         await statusRefresh
         await resetWatchTask?.value
     }
@@ -482,10 +482,8 @@ final class AppContainer {
     /// 단일 카드 사용자 새로 고침 — Claude managed binding을 먼저 반영.
     func refresh(providerID: String, force: Bool = false) async -> WidgetDataStore.RefreshOutcome {
         guard !accountSwitch.blocksRefresh(for: providerID) else { return .skipped }
-        let switchGeneration = accountSwitch.generation
-        var reconciliationError: String?
         if ProviderAccountID.family(of: providerID) == "claude" {
-            reconciliationError = await ProviderRefreshContext.$isManual.withValue(true) {
+            await ProviderRefreshContext.$isManual.withValue(true) {
                 await reconcileExternalClaudeAuthenticationAndRefreshCatalog()
             }
         }
@@ -496,16 +494,16 @@ final class AppContainer {
             force: force
         )
         let outcome = await dataStore.refresh(providerID: providerID, force: force, trigger: .manual)
-        Self.applyExternalClaudeReconciliationError(
-            reconciliationError, to: dataStore, accountSwitch: accountSwitch, startedAt: switchGeneration
-        )
         await statusRefresh
         return outcome
     }
 
-    @discardableResult
-    private func reconcileExternalClaudeAuthentication() async -> Result<Bool, Error> {
-        guard !accountSwitch.isSwitching, !isReconcilingExternalClaudeAuthentication else { return .success(false) }
+    private func reconcileExternalClaudeAuthentication() async -> Result<Bool, Error>? {
+        while ProviderRefreshContext.isManual && isReconcilingExternalClaudeAuthentication && !Task.isCancelled {
+            await withCheckedContinuation { authenticationReconciliationWaiters.append($0) }
+        }
+        guard !Task.isCancelled, !accountSwitch.isSwitching, !isReconcilingExternalClaudeAuthentication
+        else { return nil }
         isReconcilingExternalClaudeAuthentication = true
         defer {
             isReconcilingExternalClaudeAuthentication = false
@@ -513,9 +511,9 @@ final class AppContainer {
             authenticationReconciliationWaiters.removeAll()
             for waiter in waiters { waiter.resume() }
         }
-        guard let ticket = await workQueue.acquire("accounts:reconcile") else { return .success(false) }
+        guard let ticket = await workQueue.acquire("accounts:reconcile") else { return nil }
         defer { workQueue.finish(ticket) }
-        guard !Task.isCancelled, !accountSwitch.isSwitching else { return .success(false) }
+        guard !Task.isCancelled, !accountSwitch.isSwitching else { return nil }
         do {
             switch try await AccountCredentialImporter()
                 .reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: accountProfiles) {
@@ -536,18 +534,20 @@ final class AppContainer {
         }
     }
 
-    /// 외부 Claude 로그인 반영 — 실패 시 log와 함께 수동 refresh가 카드에 표시할 친화적 메시지 반환.
-    @discardableResult
-    func reconcileExternalClaudeAuthenticationAndRefreshCatalog() async -> String? {
-        switch await reconcileExternalClaudeAuthentication() {
-        case .success(true):
-            refreshAccountCatalog()
-            return nil
-        case .success(false):
-            return nil
+    /// 사용량 조회 결과와 별도로 외부 Claude 로그인 반영 상태 게시.
+    func reconcileExternalClaudeAuthenticationAndRefreshCatalog() async {
+        let generation = accountSwitch.generation
+        guard let result = await reconcileExternalClaudeAuthentication(), !Task.isCancelled else { return }
+        let failure: ProviderRefreshFailure?
+        switch result {
+        case .success(let updated):
+            if updated { refreshAccountCatalog() }
+            failure = nil
         case .failure(let error):
-            return Self.externalClaudeReconciliationMessage(for: error)
+            failure = Self.externalClaudeReconciliationFailure(for: error)
         }
+        Self.applyExternalClaudeReconciliationError(
+            failure, to: dataStore, accountSwitch: accountSwitch, startedAt: generation)
     }
 
     /// account runtime은 한 provider의 대체 view — Customize 마스터 토글은 family 전체 카드를 함께 on/off.

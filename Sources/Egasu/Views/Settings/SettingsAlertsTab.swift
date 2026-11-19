@@ -4,7 +4,7 @@ import SwiftUI
 /// Alerts 탭 — 경고 기준·Priority 표시 조건, 사용량 알림 4종, Codex Reset Watch.
 /// 알림을 하나라도 켰는데 macOS 권한이 없으면 마지막 행에 안내와 권한 버튼.
 struct SettingsAlertsTab: View {
-    @Environment(AppContainer.self) private var container
+    @Environment(NotificationSettingsStore.self) private var notificationSettings
     @Environment(WidgetDataStore.self) private var dataStore
     @Environment(PopoverState.self) private var popover
     @State private var authorization: Authorization = .authorized
@@ -13,10 +13,10 @@ struct SettingsAlertsTab: View {
 
     var body: some View {
         @Bindable var display = dataStore.displaySettings
-        @Bindable var notifications = container.notificationSettings
+        @Bindable var notifications = notificationSettings
         Section(L10n.settings("Thresholds")) {
             levelPicker(
-                L10n.settings("Warning"), info: L10n.settings("When a limit turns into a priority"), severity: .warning,
+                L10n.settings("Warning"), info: L10n.settings("When remaining quota becomes low"), severity: .warning,
                 selection: $display.priorityLimits.warning, options: PriorityLimits.warningOptions
             )
             levelPicker(
@@ -123,7 +123,7 @@ struct SettingsAlertsTab: View {
     }
 
     private func refreshAuthorization() async {
-        guard container.notificationSettings.anyEnabled else {
+        guard notificationSettings.anyEnabled else {
             authorization = .authorized
             return
         }
@@ -145,14 +145,14 @@ struct SettingsAlertConditionsSection: View {
     var body: some View {
         Section {
             conditionRow(
-                L10n.settings("Warning"), info: L10n.settings("When a limit turns into a priority"),
-                shown: nil, notify: $notifications.warning
+                L10n.settings("Warning"), info: L10n.settings("When remaining quota becomes low"),
+                shown: $display.showsWarning, notify: $notifications.warning
             ) {
                 Circle().fill(Theme.severityColor(.warning)).frame(width: 8, height: 8)
             }
             conditionRow(
                 L10n.settings("Critical"), info: L10n.settings("When a limit turns critically low"),
-                shown: nil, notify: $notifications.critical
+                shown: $display.showsCritical, notify: $notifications.critical
             ) {
                 Circle().fill(Theme.severityColor(.critical)).frame(width: 8, height: 8)
             }
@@ -192,7 +192,7 @@ struct SettingsAlertConditionsSection: View {
     }
 
     private func conditionRow(
-        _ title: String, info: String, shown: Binding<Bool>?, notify: Binding<Bool>,
+        _ title: String, info: String, shown: Binding<Bool>, notify: Binding<Bool>,
         @ViewBuilder mark: () -> some View
     ) -> some View {
         HStack(spacing: 8) {
@@ -202,19 +202,8 @@ struct SettingsAlertConditionsSection: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Group {
-                if let shown {
-                    conditionToggle(title, column: "Show in Priority", isOn: shown)
-                } else {
-                    Text(L10n.settings("Always Shown"))
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityLabel(Text("\(title), \(L10n.settings("Always Shown"))"))
-                }
-            }
-            .frame(width: columnWidth)
+            conditionToggle(title, column: "Show in Priority", isOn: shown)
+                .frame(width: columnWidth)
             conditionToggle(title, column: "Receive Alerts", isOn: notify)
                 .frame(width: columnWidth)
         }

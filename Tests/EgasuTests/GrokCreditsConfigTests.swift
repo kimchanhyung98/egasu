@@ -120,14 +120,27 @@ final class GrokCreditsConfigMapperTests: XCTestCase {
         }
     }
 
-    func testNonWeeklyPeriodMapsToNoWeeklyLine() throws {
-        // monthly-only 계정은 weekly pool 없음 — monthly percent를 weekly로 오표기하지 않고 "No data"
+    func testMonthlyPoolUsesItsOwnMeterAndReportedCalendarPeriod() throws {
         let mapped = try GrokUsageMapper.mapCreditsConfig(HTTPResponse(
             statusCode: 200, headers: [:],
-            body: GrokCreditsFixtures.responseBody(periodType: "USAGE_PERIOD_TYPE_MONTHLY")
+                body: GrokCreditsFixtures.responseBody(
+                    periodType: "USAGE_PERIOD_TYPE_MONTHLY", percent: 31,
+                    start: "2028-02-01T00:00:00Z", end: "2028-03-01T00:00:00Z")
         ))
         XCTAssertNil(mapped.lines.first(where: { $0.label == "Weekly limit" }))
+        XCTAssertEqual(
+            mapped.lines.first,
+            .progress(
+                label: "Monthly limit", used: 31, limit: 100, format: .percent,
+                resetsAt: EgasuISO8601.date(from: "2028-03-01T00:00:00Z"), periodDurationMs: 29 * MetricPeriod.dayMs))
         XCTAssertNotNil(mapped.lines.first(where: { $0.label == "Pay as you go" }))
+    }
+
+    func testUnknownBillingPeriodHasNoSubscriptionMeter() throws {
+        let mapped = try GrokUsageMapper.mapCreditsConfig(
+            HTTPResponse(
+                statusCode: 200, headers: [:], body: GrokCreditsFixtures.responseBody(periodType: "UNKNOWN")))
+        XCTAssertEqual(mapped.lines.map(\.label), ["Pay as you go"])
     }
 
     func testClampsOutOfRangePercent() throws {

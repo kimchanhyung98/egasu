@@ -33,6 +33,30 @@ final class SoftLimitCoordinatorTests: XCTestCase {
         XCTAssertEqual(adapter.requests.count, 1)
     }
 
+    func testDiskInvalidationStopsCancellationWithoutANewSnapshot() async throws {
+        let suite = "EgasuTests.SoftLimitDiskInvalidation.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let appCache = ProviderSnapshotCache(userDefaults: defaults)
+        let cliDefaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let cliCache = ProviderSnapshotCache(userDefaults: cliDefaults, now: { [instant] in instant })
+        let adapter = RecordingSoftLimitAdapter("codex", operations: ["first"])
+        let coordinator = SoftLimitCoordinator(
+            settings: makeSettings(), adapters: [adapter], isProviderEnabled: { _ in true },
+            isCancellationScopeVerified: { _ in true },
+            isQuotaInvalidated: { appCache.isQuotaInvalidated(providerID: $0, observedAt: $1) },
+            now: { [instant] in instant })
+        observe("codex", used: 100, coordinator: coordinator)
+        XCTAssertEqual(coordinator.quotaState(for: "codex"), .reached)
+
+        cliCache.invalidateLiveQuota(providerID: "codex", identity: nil)
+        await coordinator.check(providerID: "codex")
+
+        XCTAssertEqual(coordinator.quotaState(for: "codex"), .unknown)
+        XCTAssertEqual(adapter.listCalls, 0)
+        XCTAssertTrue(adapter.requests.isEmpty)
+    }
+
     func testCachedFallbackExpiredAndFutureObservationsNeverCancel() async {
         let adapter = RecordingSoftLimitAdapter("codex", operations: ["first"])
         let coordinator = makeCoordinator([adapter])
@@ -64,6 +88,28 @@ final class SoftLimitCoordinatorTests: XCTestCase {
         coordinator.receive(snapshot("codex@12345678", used: 100), descriptors: [descriptor("codex@12345678")])
         await coordinator.check()
         XCTAssertTrue(adapter.requests.isEmpty)
+    }
+
+    func testAccountObservationsUseProviderCadenceWithoutAuthorizingOtherCards() async {
+        let id = "claude@profile-work"
+        let adapter = RecordingSoftLimitAdapter(id, operations: ["inactive"])
+        let coordinator = makeCoordinator([adapter])
+        var reading = snapshot(id, used: 100)
+        let age = (RefreshSetting.interval + RefreshSetting.slowInterval) / 2
+        reading.liveQuotaObservedAt = instant.addingTimeInterval(-age)
+        coordinator.receive(reading, descriptors: [descriptor(id)])
+        XCTAssertEqual(coordinator.quotaState(for: id), .reached)
+        let readingState = coordinator.quotaReading(for: id)
+        XCTAssertEqual(readingState.usedFraction, 1)
+        XCTAssertEqual(readingState.nextExpiry, instant.addingTimeInterval(RefreshSetting.slowInterval - age))
+        XCTAssertEqual(coordinator.quotaState(for: "claude"), .unknown)
+        await coordinator.check()
+        XCTAssertEqual(adapter.listCalls, 0)
+
+        reading.liveQuotaObservedAt = instant.addingTimeInterval(-RefreshSetting.slowInterval)
+        coordinator.receive(reading, descriptors: [descriptor(id)])
+        XCTAssertEqual(coordinator.quotaState(for: id), .unknown)
+        XCTAssertNil(coordinator.quotaReading(for: id).usedFraction)
     }
 
     func testNewTasksAreCancelledWhileBreachIsFreshWithoutRepeatingFinishedTasks() async {
@@ -125,6 +171,25 @@ final class SoftLimitCoordinatorTests: XCTestCase {
         coordinator.invalidate(providerID: "codex")
         await coordinator.check()
         XCTAssertTrue(adapter.requests.isEmpty)
+    }
+
+    func testAccountChangeDuringEnumerationRejectsOldTasksEvenAfterFreshQuotaArrives() async {
+        let adapter = RecordingSoftLimitAdapter("codex", operations: ["old-account"])
+        let coordinator = makeCoordinator([adapter])
+        observe("codex", used: 95, coordinator: coordinator)
+        adapter.onList = {
+            coordinator.accountsDidChange(["codex"])
+            self.observe("codex", used: 95, coordinator: coordinator)
+        }
+
+        await coordinator.check()
+        XCTAssertTrue(adapter.requests.isEmpty)
+
+        adapter.tasks = [.init(providerID: "codex", sessionID: "new", operationID: "new-account")]
+        adapter.onList = { coordinator.accountsDidChange(["claude"]) }
+        await coordinator.check()
+        XCTAssertEqual(adapter.requests.map(\.operationID), ["new-account"])
+        adapter.onList = nil
     }
 
     func testQuotaObservedBeforeASettingChangeCannotAuthorizeLateCancellation() async {
@@ -263,10 +328,12 @@ final class SoftLimitCoordinatorTests: XCTestCase {
                 defaults: defaults
             )
             store.onFreshSnapshot = { snapshot, descriptors, _ in coordinator.receive(snapshot, descriptors: descriptors) }
-            store.onQuotaInvalidated = { _ in coordinator.settingsDidChange() }
+            store.onQuotaInvalidated = { coordinator.accountsDidChange($0) }
             await store.refresh(providerID: "codex", force: true)
+            observe("claude", used: 40, coordinator: coordinator)
 
             change(store)
+            XCTAssertEqual(coordinator.quotaState(for: "claude"), .belowLimit, name)
             await coordinator.check()
             XCTAssertTrue(adapter.requests.isEmpty, name)
             XCTAssertEqual(adapter.listCalls, 0, name)
@@ -275,6 +342,44 @@ final class SoftLimitCoordinatorTests: XCTestCase {
             await coordinator.check()
             XCTAssertEqual(adapter.requests.count, 1, "Fresh success must rearm after \(name)")
         }
+    }
+
+    func testCatalogSwitchAndEnablementKeepAnotherCardsFreshQuota() {
+        let ids = ["codex", "claude"]
+        let providers = ids.map { id in
+            TestProviderRuntime(
+                provider: .init(id: id, displayName: id, icon: .providerMark(id)),
+                descriptors: [descriptor(id)], snapshot: snapshot(id, used: 40)
+            )
+        }
+        let registry = WidgetRegistry.from(providers)
+        var enabledIDs = Set(ids)
+        let suite = "EgasuTests.SoftLimitCatalog.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = WidgetDataStore(
+            registry: registry, providers: providers, cache: ProviderSnapshotCache(userDefaults: defaults),
+            defaults: defaults, isProviderEnabled: { enabledIDs.contains($0) },
+            providerIdentityKeys: ["claude": "first", "codex": "same"]
+        )
+        let coordinator = SoftLimitCoordinator(
+            settings: makeSettings(), adapters: [], isProviderEnabled: { enabledIDs.contains($0) },
+            now: { [instant] in instant }
+        )
+        store.onQuotaInvalidated = { coordinator.accountsDidChange($0) }
+        for id in ids { observe(id, used: 40, coordinator: coordinator) }
+        store.replaceProviderCatalog(
+            registry: registry, providers: providers, identityKeys: ["claude": "second", "codex": "same"])
+        XCTAssertEqual(coordinator.quotaState(for: "claude"), .unknown)
+        XCTAssertEqual(coordinator.quotaState(for: "codex"), .belowLimit)
+
+        observe("claude", used: 95, coordinator: coordinator)
+        enabledIDs.remove("claude")
+        store.providerEnablementDidChange()
+        enabledIDs.insert("claude")
+        store.providerEnablementDidChange()
+        XCTAssertEqual(coordinator.quotaState(for: "claude"), .unknown)
+        XCTAssertEqual(coordinator.quotaState(for: "codex"), .belowLimit)
     }
 
     func testInterruptedCheckDoesNotLeaveCancellingStatus() async {
@@ -348,7 +453,7 @@ final class SoftLimitCoordinatorTests: XCTestCase {
         let suite = "EgasuTests.SoftLimitCoordinator.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
-        let settings = SoftLimitSettingsStore(defaults: defaults)
+        let settings = SoftLimitSettingsStore(defaults: defaults, labsAvailable: true)
         settings.enabled = true
         return settings
     }

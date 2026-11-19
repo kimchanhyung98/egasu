@@ -53,7 +53,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
         let json =
             #"{"groups":[{"displayName":"Gemini 4 Argon","buckets":[\#(extra)]},{"buckets":[{"bucketId":"gemini-weekly","remainingFraction":0.9}]}]}"#
         for body in [json, #"{"response":\#(json)}"#] {
-            let lines = try XCTUnwrap(AntigravityUsageMapper.parseQuotaSummary(Data(body.utf8)))
+            let lines = try XCTUnwrap(AntigravityUsageMapper.parseQuotaSummary(Data(body.utf8))?.lines)
             XCTAssertEqual(lines.map(\.label), ["Weekly", "Argon Weekly"])
             assertUsed(lines, [10, 70])
             XCTAssertEqual(periodMs(lines.last), MetricPeriod.weekMs)
@@ -70,10 +70,10 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
         ]
         for group in bodies {
             let data = Data(#"{"groups":[\#(group)]}"#.utf8)
-            XCTAssertEqual(AntigravityUsageMapper.parseQuotaSummary(data), [], group)
+            XCTAssertEqual(AntigravityUsageMapper.parseQuotaSummary(data)?.lines, [], group)
         }
         XCTAssertTrue(
-            AntigravityUsageMapper.isCompleteSummary(Data("{\(fullGroupsJSON)}".utf8)),
+            AntigravityUsageMapper.parseQuotaSummary(Data("{\(fullGroupsJSON)}".utf8))?.isComplete == true,
             "별도 Argon 한도가 없는 계정도 공유 한도 네 개로 완전한 요약")
     }
 
@@ -92,7 +92,8 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
         XCTAssertFalse(store.data(for: descriptor).hasData, "별도 quota 없는 계정에 0%를 만들지 않음")
         let json =
             #"{"groups":[{"buckets":[{"bucketId":"gemini-argon-wtu-weekly","remainingFraction":0.3,"resetTime":"2026-11-20T09:00:00Z"}]}]}"#
-        store.snapshots["antigravity"]?.lines = try XCTUnwrap(AntigravityUsageMapper.parseQuotaSummary(Data(json.utf8)))
+        store.snapshots["antigravity"]?.lines = try XCTUnwrap(
+            AntigravityUsageMapper.parseQuotaSummary(Data(json.utf8))?.lines)
         let data = store.data(for: descriptor)
         XCTAssertTrue(data.hasData)
         XCTAssertEqual(data.used, 70)
@@ -101,8 +102,8 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
     }
 
     func testWrappedAndBarePayloadsProduceIdenticalFourLines() {
-        let bare = AntigravityUsageMapper.parseQuotaSummary(Data("{\(fullGroupsJSON)}".utf8))
-        let wrapped = AntigravityUsageMapper.parseQuotaSummary(Data("{\"response\":{\(fullGroupsJSON)}}".utf8))
+        let bare = AntigravityUsageMapper.parseQuotaSummary(Data("{\(fullGroupsJSON)}".utf8))?.lines
+        let wrapped = AntigravityUsageMapper.parseQuotaSummary(Data("{\"response\":{\(fullGroupsJSON)}}".utf8))?.lines
         XCTAssertEqual(bare, wrapped)
 
         guard let lines = bare else { return XCTFail("full summary did not parse") }
@@ -123,7 +124,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
           {"bucketId":"gemini-weekly","remainingFraction":0.5,"resetTime":"2026-07-06T07:00:00Z"}
         ]}]}
         """
-        let lines = AntigravityUsageMapper.parseQuotaSummary(Data(json.utf8))
+        let lines = AntigravityUsageMapper.parseQuotaSummary(Data(json.utf8))?.lines
         XCTAssertEqual(lines?.map(\.label), ["Weekly"])
         XCTAssertEqual(used(lines?.first), 50)
     }
@@ -137,14 +138,14 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
           {"bucketId":"gemini-5h","remainingFraction":0.25,"resetTime":"2026-07-02T16:00:00Z"}
         ]}]}
         """
-        let lines = AntigravityUsageMapper.parseQuotaSummary(Data(json.utf8))
+        let lines = AntigravityUsageMapper.parseQuotaSummary(Data(json.utf8))?.lines
         XCTAssertEqual(lines?.map(\.label), ["Session"])
         XCTAssertEqual(used(lines?.first), 75)
     }
 
     func testMissingResetTimeYieldsNilResetsAt() {
         let json = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":0.5}]}]}"#
-        let lines = AntigravityUsageMapper.parseQuotaSummary(Data(json.utf8))
+        let lines = AntigravityUsageMapper.parseQuotaSummary(Data(json.utf8))?.lines
         XCTAssertEqual(lines?.count, 1)
         XCTAssertEqual(used(lines?.first), 50)
         XCTAssertNil(resetsAt(lines?.first))
@@ -159,7 +160,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
           {"bucketId":"gemini-5h","remainingFraction":0.75}
         ]}]}
         """
-        let lines = AntigravityUsageMapper.parseQuotaSummary(Data(json.utf8))
+        let lines = AntigravityUsageMapper.parseQuotaSummary(Data(json.utf8))?.lines
         XCTAssertEqual(lines?.map(\.label), ["Session"])
         XCTAssertEqual(used(lines?.first), 25)
     }
@@ -172,7 +173,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
           {"bucketId":"3p-weekly","remainingFraction":0.6}
         ]}]}}
         """
-        let weeklyLines = AntigravityUsageMapper.parseQuotaSummary(Data(weeklyOnly.utf8))
+        let weeklyLines = AntigravityUsageMapper.parseQuotaSummary(Data(weeklyOnly.utf8))?.lines
         XCTAssertEqual(weeklyLines?.map(\.label), ["Weekly", "Claude Weekly"])
         XCTAssertEqual(weeklyLines?.compactMap { periodMs($0) }, [MetricPeriod.weekMs, MetricPeriod.weekMs])
 
@@ -182,7 +183,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
           {"bucketId":"3p-5h","remainingFraction":0.6}
         ]}]}
         """
-        let sessionLines = AntigravityUsageMapper.parseQuotaSummary(Data(sessionOnly.utf8))
+        let sessionLines = AntigravityUsageMapper.parseQuotaSummary(Data(sessionOnly.utf8))?.lines
         XCTAssertEqual(sessionLines?.map(\.label), ["Session", "Claude"])
         XCTAssertEqual(sessionLines?.compactMap { periodMs($0) }, [MetricPeriod.sessionMs, MetricPeriod.sessionMs])
     }
@@ -195,8 +196,8 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
 
     func testEmptyGroupsParseAsAuthoritativeEmptySummary() {
         // 비nil 빈 배열 = "summary 응답, 사용 가능한 bucket 없음" — 100%-used를 조작하는 legacy 체인 진입 금지
-        XCTAssertEqual(AntigravityUsageMapper.parseQuotaSummary(Data(#"{"groups":[]}"#.utf8)), [])
-        XCTAssertEqual(AntigravityUsageMapper.parseQuotaSummary(Data(#"{"response":{"groups":[]}}"#.utf8)), [])
+        XCTAssertEqual(AntigravityUsageMapper.parseQuotaSummary(Data(#"{"groups":[]}"#.utf8))?.lines, [])
+        XCTAssertEqual(AntigravityUsageMapper.parseQuotaSummary(Data(#"{"response":{"groups":[]}}"#.utf8))?.lines, [])
     }
 
     // MARK: - Label binding (metricLabel == MetricLine.label, exact string)
@@ -206,7 +207,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
         let descriptorLabels = Set(AntigravityProvider().widgetDescriptors.map(\.metricLabel))
         XCTAssertEqual(Set(AntigravityUsageMapper.summaryBuckets.map(\.label)), descriptorLabels)
 
-        let summaryLines = AntigravityUsageMapper.parseQuotaSummary(Data("{\(fullGroupsJSON)}".utf8)) ?? []
+        let summaryLines = AntigravityUsageMapper.parseQuotaSummary(Data("{\(fullGroupsJSON)}".utf8))?.lines ?? []
         XCTAssertEqual(Set(summaryLines.map(\.label)), descriptorLabels.subtracting(["Argon Weekly"]))
 
         // legacy 경로는 5h pool 라벨 2개만 방출 — descriptor의 진부분집합
@@ -231,6 +232,40 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
             usageScan: { _, _ in nil },
             pricing: { .empty }
         )
+    }
+
+    @MainActor
+    func testWeeklySoftLimitUsesEveryReportedEnabledBucket() async throws {
+        let otherBuckets: [(String, Bool)] = [
+            ("", false),
+            (#",{"bucketId":"gemini-argon-wtu-weekly","disabled":true}"#, false),
+            (#",{"bucketId":"unknown-weekly","remainingFraction":"bad"}"#, false),
+            (#",{"bucketId":"gemini-5h","remainingFraction":"bad"}"#, false),
+            (#",{"bucketId":"3p-weekly","disabled":"false","remainingFraction":1}"#, true),
+            (#",{"bucketId":"gemini-argon-wtu-weekly"}"#, true),
+            (#",{"bucketId":"gemini-argon-wtu-weekly","remainingFraction":1.1}"#, true)
+        ]
+        for (other, incomplete) in otherBuckets {
+            let json = #"{"groups":[{"buckets":[{"bucketId":"gemini-weekly","remainingFraction":0.6}\#(other)]}]}"#
+            let routing = RoutingHTTPClient { request in
+                guard request.url.path.hasSuffix("/RetrieveUserQuotaSummary") else {
+                    return HTTPResponse(statusCode: 404, headers: [:], body: Data())
+                }
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(json.utf8))
+            }
+            let provider = makeLSProvider(routing: routing)
+            let snapshot = await provider.refresh()
+            let now = try XCTUnwrap(snapshot.liveQuotaObservedAt)
+            XCTAssertEqual(snapshot.lines.map(\.label), ["Weekly"], other)
+            XCTAssertEqual(snapshot.incompleteQuotaWindows, incomplete ? [.weekly] : nil, other)
+            let observation = try XCTUnwrap(
+                SoftLimitObservation.project(
+                    snapshot: snapshot, descriptors: provider.widgetDescriptors, window: .weekly, now: now
+                ))
+            XCTAssertEqual(
+                observation.quotaState(thresholdPercent: 90, at: now), incomplete ? .unknown : .belowLimit, other)
+            XCTAssertEqual(observation.quotaState(thresholdPercent: 30, at: now), .reached, other)
+        }
     }
 
     @MainActor
@@ -277,6 +312,43 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
     }
 
     // MARK: - Provider integration: language-server transport
+
+    @MainActor
+    func testCloudTimerVerificationDoesNotReplaceTheLanguageServerQuotaTimestamp() async {
+        let lsTime = Date(timeIntervalSince1970: 1_800_000_000)
+        let cloudTime = lsTime.addingTimeInterval(60)
+        let routing = RoutingHTTPClient { request in
+            let fraction: Double
+            if request.url.path.hasSuffix("/RetrieveUserQuotaSummary") {
+                fraction = 1
+            } else if request.url.path == AntigravityUsageClient.quotaSummaryPath {
+                fraction = 0.6
+            } else {
+                return HTTPResponse(statusCode: 404, headers: [:], body: Data())
+            }
+            let json = #"{"groups":[{"buckets":[{"bucketId":"gemini-weekly","remainingFraction":\#(fraction)}]}]}"#
+            return HTTPResponse(statusCode: 200, headers: [:], body: Data(json.utf8))
+        }
+        let tokens = #"{"token":{"access_token":"fixture","refresh_token":"fixture","expiry":"2099-01-01T00:00:00Z"}}"#
+        let provider = AntigravityProvider(
+            authStore: AntigravityAuthStore(
+                keychain: FakeKeychain("go-keyring-base64:" + Data(tokens.utf8).base64EncodedString()),
+                files: FakeFiles()),
+            usageClient: AntigravityUsageClient(lsHTTP: routing, http: routing),
+            discovery: LanguageServerDiscovery(processRunner: FakeLSProcessRunner()),
+            usageScan: { _, _ in nil },
+            now: {
+                routing.requests.contains { $0.url.path == AntigravityUsageClient.quotaSummaryPath }
+                    ? cloudTime : lsTime
+            },
+            pricing: { .empty }
+        )
+        let snapshot = await provider.refresh()
+        XCTAssertEqual(used(snapshot.line(label: "Weekly")), 0)
+        XCTAssertEqual(snapshot.liveQuotaObservedAt, lsTime)
+        XCTAssertEqual(snapshot.usageTimerObservedAt, cloudTime)
+        XCTAssertEqual(provider.usageTimerObservations.first?.observedAt, cloudTime)
+    }
 
     @MainActor
     private func makeLSProvider(

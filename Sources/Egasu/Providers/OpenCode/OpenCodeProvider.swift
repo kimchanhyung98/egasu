@@ -3,8 +3,7 @@ import Foundation
 /// OpenCode provider의 typed failure — telemetry가 안정된 category로 그룹화 (`ErrorCategory.swift` 참고).
 enum OpenCodeUsageError: Error, LocalizedError, Equatable {
     case notLoggedIn
-    /// `auth.json`이 존재하나 읽기·parse 불가 — logout이 아닌 손상 storage.
-    /// `detail`은 로그 파일용 원인, 사용자용 설명은 friendly하게 유지.
+    /// 인증 파일 읽기·해석 실패. detail에는 고정된 단계와 오류 코드만 저장.
     case credentialsUnreadable(detail: String)
     /// 디스크에 database가 있으나 이번 refresh에서 하나도 읽지 못한 상태.
     /// 빈 scan으로 확정값처럼 보이는 $0 meter를 그리는 대신 크게 실패.
@@ -63,12 +62,12 @@ final class OpenCodeProvider: ProviderRuntime {
         // 지출·사용 추이는 OpenCode 로컬 DB와 공유 도구의 기록을 합산.
         [
             .boundedDollars(id: "opencode.session", provider: provider, title: "Session", limit: OpenCodeUsageMapper.sessionCap)
-                .supportingSoftLimit(.fiveHours)
                 .exportingLimit("session", unit: "usd", estimated: true),
             .boundedDollars(id: "opencode.weekly", provider: provider, title: "Weekly", limit: OpenCodeUsageMapper.weeklyCap)
                 .supportingSoftLimit(.weekly)
                 .exportingLimit("weekly", unit: "usd", estimated: true),
             .boundedDollars(id: "opencode.monthly", provider: provider, title: "Monthly", limit: OpenCodeUsageMapper.monthlyCap)
+            .supportingSoftLimit(.monthly)
                 .exportingLimit("monthly", unit: "usd", estimated: true),
             .usageTrend(provider: provider)
                 .exportingHistory(
@@ -94,10 +93,10 @@ final class OpenCodeProvider: ProviderRuntime {
     }
 
     func refresh() async -> ProviderSnapshot {
-        // refresh 전체에 단일 시각 사용 — scan cutoff·tile·trend·snapshot timestamp가 자정 경계에 걸치지 않게 함
+        // 자정에 집계 기간이 달라지지 않도록 조회 시작 시각을 모든 지표에 적용.
         let refreshedAt = now()
 
-        // 읽기 불가 auth.json이 database를 읽을 수 있는 refresh를 막으면 안 됨(Zen 사용자 유지) — 단 아무것도 없을 때 "not logged in"과는 구분 유지
+        // Go 인증 파일을 읽지 못해도 사용 이력은 조회하고, 결과가 비면 인증 오류 표시.
         var hasGoKey = false
         var authReadError: OpenCodeUsageError?
         do {
@@ -110,7 +109,7 @@ final class OpenCodeProvider: ProviderRuntime {
                 AppLog.warn(LogTag.plugin("opencode"), "auth.json unreadable: \(detail)")
             }
         } catch {
-            authReadError = .credentialsUnreadable(detail: error.localizedDescription)
+            authReadError = .credentialsUnreadable(detail: AppLog.errorDetails(error))
         }
 
         let scan: OpenCodeUsageScan?

@@ -45,9 +45,9 @@ final class QuotaPresentationTests: XCTestCase {
             let weekly = try XCTUnwrap(provider.widgetDescriptors.first { $0.id == "\(cardID).weekly" })
             let runtime = Runtime(provider: provider.provider, descriptors: provider.widgetDescriptors)
             let defaults = makeDefaults()
-            let softLimit = SoftLimitSettingsStore(defaults: defaults)
+            let softLimit = SoftLimitSettingsStore(defaults: defaults, labsAvailable: true)
             softLimit.enabled = true
-            softLimit.window = .fiveHours
+            softLimit.window = .all
             softLimit.thresholdPercent = 90
             let store = WidgetDataStore(
                 registry: WidgetRegistry.from([runtime]), providers: [runtime],
@@ -56,7 +56,7 @@ final class QuotaPresentationTests: XCTestCase {
             )
             XCTAssertFalse(store.data(for: session).hasData)
             XCTAssertFalse(store.data(for: session).isFreshSessionWindow(now: now))
-            XCTAssertEqual(session.softLimitWindow, .fiveHours)
+            XCTAssertTrue(session.softLimitWindows.isEmpty)
             XCTAssertNil(weekly.sample.sessionStartSignal)
 
             for reset in [nil, now.addingTimeInterval(9_000)] {
@@ -70,8 +70,8 @@ final class QuotaPresentationTests: XCTestCase {
                     XCTAssertEqual(data.sessionStartSignal, .missingResetDate)
                     XCTAssertEqual(data.isFreshSessionWindow(now: now), reset == nil)
                     XCTAssertEqual(data.hasResetLabel(now: now), reset != nil)
-                    XCTAssertEqual(data.softLimitUsedFraction, 0.9)
-                    XCTAssertEqual(data.softLimitMarkerFraction ?? -1, mode == .used ? 0.9 : 0.1, accuracy: 0.0001)
+                    XCTAssertNil(data.softLimitUsedFraction)
+                    XCTAssertNil(data.softLimitMarkerFraction)
                     XCTAssertEqual(data.meterState(now: now), .level(.normal))
                     XCTAssertNil(data.paceTick(for: data.meterState(now: now), now: now))
                 }
@@ -97,7 +97,7 @@ final class QuotaPresentationTests: XCTestCase {
         let notifications = NotificationSettingsStore(defaults: defaults)
         notifications.warning = true
         notifications.closeToRunningOut = true
-        let softLimit = SoftLimitSettingsStore(defaults: defaults)
+        let softLimit = SoftLimitSettingsStore(defaults: defaults, labsAvailable: true)
         softLimit.enabled = true
         softLimit.window = .weekly
         let recorder = Recorder()

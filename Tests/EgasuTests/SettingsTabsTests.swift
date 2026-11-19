@@ -279,21 +279,6 @@ final class SettingsTabsTests: XCTestCase {
         }.value
     }
 
-    private func settingsBitmap(in host: NSView) throws -> NSBitmapImageRep {
-        host.layoutSubtreeIfNeeded()
-        let bounds = host.bounds
-        let bitmap = try XCTUnwrap(
-            NSBitmapImageRep(
-                bitmapDataPlanes: nil, pixelsWide: Int(ceil(bounds.width * 2)),
-                pixelsHigh: Int(ceil(bounds.height * 2)),
-                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
-            ))
-        bitmap.size = bounds.size
-        host.cacheDisplay(in: bounds, to: bitmap)
-        return bitmap
-    }
-
     private struct SettingsRouteHost: View {
         @Environment(PopoverState.self) private var popover
         let operations: SettingsOperations
@@ -316,4 +301,20 @@ final class SettingsTabsTests: XCTestCase {
         func writeDeviceID(_ deviceID: String) throws { throw ICloudUsageSyncError.unavailable }
     }
 
+}
+
+@MainActor
+func settingsBitmap(in host: NSView, scale: CGFloat = 2) throws -> NSBitmapImageRep {
+    host.layoutSubtreeIfNeeded()
+    let bounds = host.bounds
+    let bitmap = try XCTUnwrap(
+        NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: Int(ceil(bounds.width * scale)),
+            pixelsHigh: Int(ceil(bounds.height * scale)),
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ))
+    bitmap.size = bounds.size
+    host.cacheDisplay(in: bounds, to: bitmap)
+    return bitmap
 }
