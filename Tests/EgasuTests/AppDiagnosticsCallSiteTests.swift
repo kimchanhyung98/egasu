@@ -22,7 +22,7 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
             capture.events,
             [
                 DiagnosticEvent(.credentialSave, result: .failure, category: .permission, providerID: "openrouter"),
-                DiagnosticEvent(.accountRemove, result: .failure, category: .storage, providerID: "zai")
+                DiagnosticEvent(.credentialRemove, result: .failure, category: .permission, providerID: "zai")
             ])
         let lines = try capture.lines()
         XCTAssertEqual(lines.count, 2)
@@ -35,7 +35,7 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
     func testAPIKeyFileSuccessIncludesBothProvidersWithoutRecordingReads() throws {
         let capture = try Capture()
         defer { capture.cleanUp() }
-        let files = FakeFiles()
+        let files = FakeFiles([OpenRouterAuthStore.configPaths[0]: "PRIVATE_API_KEY"])
         let zai = ZAIAuthStore(files: files, environment: FakeEnvironment())
         let openRouter = OpenRouterAuthStore(files: files, environment: FakeEnvironment())
 
@@ -48,12 +48,12 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
             capture.events,
             [
                 DiagnosticEvent(.credentialSave, result: .success, providerID: "zai"),
-                DiagnosticEvent(.accountRemove, result: .success, providerID: "openrouter")
+                DiagnosticEvent(.credentialRemove, result: .success, providerID: "openrouter")
             ])
         XCTAssertTrue(try capture.lines().isEmpty)
     }
 
-    func testPartialAPIKeyRemovalReportsPermissionAndRetriesAllPaths() throws {
+    func testUnreadableAPIKeyPreflightPreservesAllPathsBeforeRetry() throws {
         guard geteuid() != 0 else { throw XCTSkip("root can traverse mode-000 directories") }
         let capture = try Capture()
         defer { capture.cleanUp() }
@@ -71,17 +71,18 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
 
         XCTAssertFalse(files.exists(secondary.path))
         XCTAssertThrowsError(try store.deleteKey()) { XCTAssertEqual($0 as? ZAIAuthError, .deleteFailed) }
-        XCTAssertFalse(files.exists(primary.path))
+        XCTAssertTrue(files.exists(primary.path))
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: restricted.path)
         XCTAssertTrue(files.exists(secondary.path))
         try store.deleteKey()
 
+        XCTAssertFalse(files.exists(primary.path))
         XCTAssertFalse(files.exists(secondary.path))
         XCTAssertEqual(
             capture.events,
             [
-                DiagnosticEvent(.accountRemove, result: .failure, category: .permission, providerID: "zai"),
-                DiagnosticEvent(.accountRemove, result: .success, providerID: "zai")
+                DiagnosticEvent(.credentialRemove, result: .failure, category: .permission, providerID: "zai"),
+                DiagnosticEvent(.credentialRemove, result: .success, providerID: "zai")
             ])
         let lines = try capture.lines()
         XCTAssertEqual(lines.count, 1)
