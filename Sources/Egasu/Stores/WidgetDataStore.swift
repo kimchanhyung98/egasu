@@ -56,7 +56,12 @@ final class WidgetDataStore {
     var scheduledRefreshDates: [String: Date] { refreshCoordinator.scheduledRefreshDates }
     var nextGeneralRefreshAt: Date?
     nonisolated static let refreshScheduleDidChange = ProviderRefreshSchedule.didChange
-    var refreshResults: [String: ProviderRefreshResult] { refreshCoordinator.refreshResults }
+    var claudeReconciliationFailure: ProviderRefreshFailure? { refreshCoordinator.claudeReconciliationFailure }
+    var refreshResults: [String: ProviderRefreshResult] {
+        var results = refreshCoordinator.refreshResults
+        if let claudeReconciliationFailure { results["claude"] = .failed(claudeReconciliationFailure) }
+        return results
+    }
     var providerErrors: [String: String] {
         refreshResults.compactMapValues { $0.failure?.message }
     }
@@ -224,6 +229,10 @@ final class WidgetDataStore {
         refreshCoordinator.setExternalProviderError(message, for: providerID, presentation: presentation)
     }
 
+    func setClaudeReconciliationFailure(_ failure: ProviderRefreshFailure?) {
+        refreshCoordinator.setClaudeReconciliationFailure(failure)
+    }
+
     func clearFailureBackoff(for providerID: String) { refreshCoordinator.clearFailureBackoff(for: providerID) }
     func providerEnablementDidChange() { refreshCoordinator.providerEnablementDidChange() }
     func invalidateAuthentication(for providerID: String) {
@@ -356,7 +365,8 @@ final class WidgetDataStore {
     /// Claude·Codex의 Keychain 접근 실패 — 사용자 수동 갱신으로만 승인 요청.
     func needsKeychainApproval(_ providerID: String) -> Bool {
         ProviderAccountID.families.contains(ProviderAccountID.family(of: providerID))
-            && refreshResults[providerID]?.failure?.category == .credentialAccess
+            && (refreshCoordinator.refreshResults[providerID]?.failure?.category == .credentialAccess
+                || (providerID == "claude" && claudeReconciliationFailure?.category == .credentialAccess))
     }
 
     /// 마지막 정상 결과의 경고 — 이후 조회가 실패해도 유지될 수 있음.

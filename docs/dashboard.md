@@ -40,7 +40,7 @@ Claude와 Codex로 시작한 뒤 Mac의 로컬 인증 정보·사용 흔적을 �
 | Pinned | 고정한 지표. 소진 완료 후에도 저장된 계정·지표 순서 유지 |
 | Running Out | 고정하지 않은 한도 중 우선순위 표시를 켠 경고·위험·빠른 소진 조건에 해당하는 항목을 급한 순으로 표시 |
 | Use It or Lose It | 고정하지 않은 한도 중 주기가 하루보다 길고, 초기화가 24시간 이내로 남았으며, 잔량을 정수 퍼센트로 반올림한 값이 50%를 넘는 항목.<br>달러 단위 한도 제외. |
-| Needs Attention | 사용량을 가져오지 못한 계정 표시, **Fix**로 계정 상세 열기.<br>VoiceOver에서 조회 실패 사유 안내. Privacy Mode에서는 일반 오류 안내 사용.<br>Claude·Codex 계정의 Keychain 읽기 실패이면 **Fix**가 그 계정만 다시 조회하며 macOS Keychain 승인 창 표시 |
+| Needs Attention | 사용량을 가져오지 못한 계정 표시, **Fix**로 계정 상세 열기.<br>VoiceOver에서 조회 실패 사유 안내. Privacy Mode에서는 일반 오류 안내 사용.<br>Claude·Codex 계정의 Keychain 읽기 실패이면 **Fix**로 해당 계정만 수동 조회.<br>선택한 Claude 계정의 로그인 반영 중 Keychain 읽기에 실패한 경우도 포함.<br>접근 권한이 필요하면 macOS 승인 창 표시 |
 | Used Up | 고정하지 않은 한도 중 다 쓴 항목(흐리게) |
 
 - [알림 설정](/docs/settings.md#우선순위)에서 경고·위험·빠른 소진·초기화 전 사용의 **우선순위 표시**를 개별 선택.

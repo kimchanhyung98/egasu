@@ -104,6 +104,7 @@
 "Invalid account name." = "Invalid account name.";
 "Invalid sign-in workspace component: %@" = "Invalid sign-in workspace component: %@";
 "Keychain delete failed." = "Keychain delete failed.";
+"Couldn't read the Claude login from Keychain. Refresh Claude manually and allow access if macOS asks." = "Couldn't read the Claude login from Keychain. Refresh Claude manually and allow access if macOS asks.";
 "Keychain is busy. Respond to the open Keychain dialog, then try again." = "Keychain is busy. Respond to the open Keychain dialog, then try again.";
 "Keychain item names contain unsupported control characters." = "Keychain item names contain unsupported control characters.";
 "Keychain read failed." = "Keychain read failed.";

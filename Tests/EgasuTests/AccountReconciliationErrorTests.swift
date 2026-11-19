@@ -3,20 +3,47 @@ import XCTest
 
 @MainActor
 final class AccountReconciliationErrorTests: XCTestCase {
-    func testCurrentReconciliationErrorIsPublishedAndNilLeavesItUnchanged() throws {
+    func testClaudeKeychainReconciliationFailureOffersPriorityRetryAfterUsageRefresh() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+        let error = KeychainError.readFailed("Fixture Keychain rejection")
+        AppContainer.applyExternalClaudeReconciliationError(
+            AppContainer.externalClaudeReconciliationFailure(for: error),
+            to: fixture.store, accountSwitch: fixture.coordinator,
+            startedAt: fixture.coordinator.generation
+        )
+        var observedQuota = false
+        fixture.store.onFreshSnapshot = { _, _, _ in observedQuota = true }
+        _ = await fixture.store.refresh(providerID: "claude", force: true)
+
+        XCTAssertTrue(fixture.store.needsKeychainApproval("claude"))
+        XCTAssertNotNil(fixture.store.localSnapshots["claude"])
+        XCTAssertFalse(observedQuota)
+        let provider = Runtime().provider
+        let account = DashboardAccount(provider: provider, providerName: "Claude", name: nil, lines: [])
+        L10n.withLanguage(.korean) {
+            let board = fixture.store.priorityBoard(accounts: [account], pinned: [], now: Date())
+            XCTAssertEqual(board.notices.map(\.account.id), ["claude"])
+            XCTAssertTrue(board.notices.first?.message.contains("키체인") == true)
+        }
+    }
+
+    func testCurrentReconciliationErrorIsPublishedAndSuccessfulReconciliationClearsIt() throws {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }
         var invalidations: [Set<String>] = []
         fixture.store.onQuotaInvalidated = { invalidations.append($0 ?? []) }
 
         AppContainer.applyExternalClaudeReconciliationError(
-            "Sign-in update failed.", to: fixture.store, accountSwitch: fixture.coordinator,
+            ProviderRefreshFailure(message: "Sign-in update failed."), to: fixture.store,
+            accountSwitch: fixture.coordinator,
             startedAt: fixture.coordinator.generation
         )
 
         XCTAssertEqual(fixture.store.errorMessage(for: "claude"), "Sign-in update failed.")
-        XCTAssertEqual(fixture.store.refreshResults["claude"],
-                       .failed(ProviderRefreshFailure(message: "Sign-in update failed.", presentation: .init("Sign-in update failed."))))
+        XCTAssertEqual(
+            fixture.store.refreshResults["claude"],
+            .failed(ProviderRefreshFailure(message: "Sign-in update failed.")))
         XCTAssertEqual(invalidations, [Set(["claude"])])
 
         AppContainer.applyExternalClaudeReconciliationError(
@@ -24,35 +51,36 @@ final class AccountReconciliationErrorTests: XCTestCase {
             startedAt: fixture.coordinator.generation
         )
 
-        XCTAssertEqual(fixture.store.errorMessage(for: "claude"), "Sign-in update failed.")
+        XCTAssertNil(fixture.store.errorMessage(for: "claude"))
         XCTAssertEqual(invalidations.count, 1)
     }
 
     func testReconciliationFailureTranslatesOnlyItsDisplayedMessage() throws {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }
-        let raw = "egasu couldn't update the selected Claude sign-in. The saved account was left unchanged. Check the app log and try again."
-        XCTAssertEqual(
-            AppContainer.externalClaudeReconciliationMessage(for: AccountIdentityReplacementError.invalidTransaction),
-            raw
-        )
+        let raw =
+            "egasu couldn't update the selected Claude sign-in. The saved account was left unchanged. Check the app log and try again."
+        let failure = AppContainer.externalClaudeReconciliationFailure(
+            for: AccountIdentityReplacementError.invalidTransaction)
+        XCTAssertEqual(failure.message, raw)
         AppContainer.applyExternalClaudeReconciliationError(
-            raw, to: fixture.store, accountSwitch: fixture.coordinator,
+            failure, to: fixture.store, accountSwitch: fixture.coordinator,
             startedAt: fixture.coordinator.generation
         )
 
         XCTAssertEqual(fixture.store.refreshResults["claude"]?.failure?.message, raw)
-        XCTAssertEqual(L10n.withLanguage(.korean) { fixture.store.headerNotice(for: "claude") },
-                       "선택한 Claude 계정의 로그인을 업데이트하지 못했습니다. 저장된 계정은 변경하지 않았습니다. 앱 로그를 확인한 후 다시 시도하세요.")
+        XCTAssertEqual(
+            L10n.withLanguage(.korean) { fixture.store.headerNotice(for: "claude") },
+            "선택한 Claude 계정의 로그인을 업데이트하지 못했습니다. 저장된 계정은 변경하지 않았습니다. 앱 로그를 확인한 후 다시 시도하세요.")
     }
 
     func testConcurrentCLILoginChangeAsksForRefreshInsteadOfSigningInAgain() {
-        let message = AppContainer.externalClaudeReconciliationMessage(for: ClaudeAuthError.credentialsChanged)
-        XCTAssertEqual(message, "Claude login changed during refresh. Refresh again.")
+        let failure = AppContainer.externalClaudeReconciliationFailure(for: ClaudeAuthError.credentialsChanged)
+        XCTAssertEqual(failure.message, "Claude login changed during refresh. Refresh again.")
         for language in [LanguageSetting.english, .korean, .japanese] {
             L10n.withLanguage(language) {
                 XCTAssertEqual(
-                    LocalizedMessage(message).localized, UserFacingErrors.message(ClaudeAuthError.credentialsChanged))
+                    failure.localizedMessage, UserFacingErrors.message(ClaudeAuthError.credentialsChanged))
             }
         }
     }
@@ -67,9 +95,9 @@ final class AccountReconciliationErrorTests: XCTestCase {
             AccountCredentialSwitcher.Error.conflictingClaudeAuthentication
         ]
         for error in errors {
-            let raw = AppContainer.externalClaudeReconciliationMessage(for: error)
+            let failure = AppContainer.externalClaudeReconciliationFailure(for: error)
             AppContainer.applyExternalClaudeReconciliationError(
-                raw, to: fixture.store, accountSwitch: fixture.coordinator,
+                failure, to: fixture.store, accountSwitch: fixture.coordinator,
                 startedAt: fixture.coordinator.generation
             )
 
@@ -89,15 +117,17 @@ final class AccountReconciliationErrorTests: XCTestCase {
         var invalidations: [Set<String>] = []
         fixture.store.onQuotaInvalidated = { invalidations.append($0 ?? []) }
         let previousGeneration = fixture.coordinator.generation
-        let task = try XCTUnwrap(fixture.coordinator.start(
-            profileID: "target", waitForRefreshes: {}, operation: {},
-            onFailure: { XCTFail("Unexpected switch failure: \($0)") }
-        ))
+        let task = try XCTUnwrap(
+            fixture.coordinator.start(
+                profileID: "target", waitForRefreshes: {}, operation: {},
+                onFailure: { XCTFail("Unexpected switch failure: \($0)") }
+            ))
         XCTAssertTrue(fixture.coordinator.isSwitching)
 
         for generation in [previousGeneration, fixture.coordinator.generation] {
             AppContainer.applyExternalClaudeReconciliationError(
-                "Pre-switch failure.", to: fixture.store, accountSwitch: fixture.coordinator,
+                ProviderRefreshFailure(message: "Pre-switch failure."), to: fixture.store,
+                accountSwitch: fixture.coordinator,
                 startedAt: generation
             )
         }
@@ -111,11 +141,12 @@ final class AccountReconciliationErrorTests: XCTestCase {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }
         let previousGeneration = fixture.coordinator.generation
-        let task = try XCTUnwrap(fixture.coordinator.start(
-            profileID: "target", waitForRefreshes: {},
-            operation: { _ = await fixture.store.refresh(providerID: "claude", force: true) },
-            onFailure: { XCTFail("Unexpected switch failure: \($0)") }
-        ))
+        let task = try XCTUnwrap(
+            fixture.coordinator.start(
+                profileID: "target", waitForRefreshes: {},
+                operation: { _ = await fixture.store.refresh(providerID: "claude", force: true) },
+                onFailure: { XCTFail("Unexpected switch failure: \($0)") }
+            ))
         await task.value
         XCTAssertFalse(fixture.coordinator.isSwitching)
         XCTAssertEqual(fixture.store.refreshResults["claude"], .succeeded)
@@ -124,7 +155,8 @@ final class AccountReconciliationErrorTests: XCTestCase {
         fixture.store.onQuotaInvalidated = { invalidations.append($0 ?? []) }
 
         AppContainer.applyExternalClaudeReconciliationError(
-            "Pre-switch failure.", to: fixture.store, accountSwitch: fixture.coordinator,
+            ProviderRefreshFailure(message: "Pre-switch failure."), to: fixture.store,
+            accountSwitch: fixture.coordinator,
             startedAt: previousGeneration
         )
 
@@ -134,7 +166,8 @@ final class AccountReconciliationErrorTests: XCTestCase {
         XCTAssertTrue(invalidations.isEmpty)
 
         AppContainer.applyExternalClaudeReconciliationError(
-            "New sign-in failure.", to: fixture.store, accountSwitch: fixture.coordinator,
+            ProviderRefreshFailure(message: "New sign-in failure."), to: fixture.store,
+            accountSwitch: fixture.coordinator,
             startedAt: fixture.coordinator.generation
         )
 

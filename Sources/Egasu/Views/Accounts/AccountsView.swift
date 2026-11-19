@@ -9,7 +9,6 @@ struct AccountsView: View {
     @Binding var reorderLift: ReorderLift?
 
     @State private var rowFrames: [String: CGRect] = [:]
-    @State private var reconciliationError: String?
 
     private var showsClaudeShellNotice: Bool {
         guard let id = popover.accountDetailID else { return true }
@@ -24,7 +23,9 @@ struct AccountsView: View {
     var body: some View {
         PopoverScrollView {
             VStack(alignment: .leading, spacing: PanelMetrics.sectionSpacing) {
-                if let reconciliationError { ProblemCard(message: reconciliationError) }
+                if popover.accountDetailID == nil, let failure = container.dataStore.claudeReconciliationFailure {
+                    ProblemCard(message: failure.localizedMessage)
+                }
                 if showsClaudeShellNotice, let issue = container.claudeShellMigrationIssue {
                     ProblemCard(message: L10n.accounts("Claude login migration paused. %@", issue.localized))
                 }
@@ -51,9 +52,7 @@ struct AccountsView: View {
             )
         ) {
             guard !container.accountSwitch.isSwitching else { return }
-            let message = await container.reconcileExternalClaudeAuthenticationAndRefreshCatalog()
-            guard !Task.isCancelled else { return }
-            reconciliationError = message
+            await container.reconcileExternalClaudeAuthenticationAndRefreshCatalog()
         }
     }
 

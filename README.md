@@ -42,6 +42,7 @@ The app updates itself in place via signed, notarized [Sparkle](docs/updates.md)
 - **[메뉴 막대](/docs/menu-bar.md).** 소진 임박·Priority·직접 고정한 항목 중 표시 기준 선택.
   텍스트 또는 막대로 최대 5개 표시.
 - **[Priority](/docs/dashboard.md#priority).** 고정한 지표, 소진 임박·초기화 전 사용·소진 완료에 해당하는 한도, 확인이 필요한 계정 표시.
+  Claude 로그인 반영 중 키체인 접근에 실패하면 우선순위의 **해결** 버튼으로 재시도.
   설정 → 알림에서 네 조건의 **우선순위 표시**를 모두 끄면 대시보드에 전체 사용량만 표시.
 - **[All Usage](/docs/dashboard.md#all-usage).** 등록 계정별 사용량·초기화 시각·사용 속도 표시.
   Minimal은 프로바이더별 계정 묶음, Cards는 계정별 독립 카드.
