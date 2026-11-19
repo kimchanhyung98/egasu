@@ -61,6 +61,12 @@ final class CursorProvider: ProviderRuntime {
         await loadOffMainActor { [authStore] in authStore.loadAuthState() } != nil
     }
 
+    func currentIdentityKey() async -> String? {
+        guard let state = await loadOffMainActor({ [authStore] in authStore.loadAuthState() }) else { return nil }
+        let token = refreshedKeychainToken?.source == state ? refreshedKeychainToken?.accessToken : state.accessToken
+        return token.flatMap { CursorUsageClient.session(from: $0)?.userID }
+    }
+
     private var refreshIsDegraded = false
     private var historyRetryAfter: Date?
     private var historySessionID: String?
@@ -79,7 +85,9 @@ final class CursorProvider: ProviderRuntime {
             return try await probe(authState: state)
         } catch {
             if error is CursorAuthError { refreshedKeychainToken = nil }
-            return ProviderSnapshot.error(provider: provider, error: error)
+            var failure = ProviderSnapshot.error(provider: provider, error: error)
+            failure.producedByIdentityKey = await currentIdentityKey()
+            return failure
         }
     }
 

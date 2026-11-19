@@ -139,6 +139,8 @@ final class ClaudePinnedUsageVerificationTests: XCTestCase {
         let auth = try auth()
         let started = expectation(description: "First identity verification started")
         let contended = expectation(description: "Second identity verification waits")
+        // 신원 확인과 사용량 조회 모두 잠금 경쟁이 가능하며 첫 경합이 관측되면 진행.
+        contended.assertForOverFulfill = false
         let store = isolatedClaudeUsageStore(onContention: { contended.fulfill() })
         let gate = PinnedUsageGate()
         let http = PinnedUsageHTTP { request in

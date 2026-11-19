@@ -111,6 +111,7 @@ struct CursorUsageClient: Sendable {
         let deadline = ContinuousClock.now.advanced(by: .seconds(30))
         var events: [CursorUsageEvent] = []
         var expectedCount: Int?
+        var seenPages: Set<Data> = []
         var totalTokens = 0
         var totalCost = 0.0
         var page = 1
@@ -133,6 +134,9 @@ struct CursorUsageClient: Sendable {
                 parsed.events.count <= parsed.totalCount - events.count,
                 !parsed.events.isEmpty || parsed.totalCount == events.count
             else { throw CursorUsageError.invalidResponse }
+            if let fingerprint = parsed.pageFingerprint, !seenPages.insert(fingerprint).inserted {
+                throw CursorUsageError.invalidResponse
+            }
             for event in parsed.events {
                 guard event.date >= start, event.date <= end else { throw CursorUsageError.invalidResponse }
                 let sum = totalTokens.addingReportingOverflow(event.tokens.totalTokens)

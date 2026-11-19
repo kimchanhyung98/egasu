@@ -1,4 +1,5 @@
 import CoreFoundation
+import CryptoKit
 import Foundation
 
 struct CursorUsageEvent: Sendable, Equatable {
@@ -11,6 +12,7 @@ struct CursorUsageEvent: Sendable, Equatable {
 struct CursorUsageEventsPage: Sendable, Equatable {
     var totalCount: Int
     var events: [CursorUsageEvent]
+    var pageFingerprint: Data?
 }
 
 enum CursorUsageEvents {
@@ -64,7 +66,15 @@ enum CursorUsageEvents {
                 tokens: tokens, costUSD: dollars
             )
         }
-        return CursorUsageEventsPage(totalCount: total, events: events)
+        // 다중 페이지에서만 원본 필드 전체를 비교. 사용량이 같은 개별 이벤트는 그대로 합산.
+        let fingerprint: Data?
+        if rawEvents.count < total {
+            let bytes = try JSONSerialization.data(withJSONObject: rawEvents, options: [.sortedKeys])
+            fingerprint = Data(SHA256.hash(data: bytes))
+        } else {
+            fingerprint = nil
+        }
+        return CursorUsageEventsPage(totalCount: total, events: events, pageFingerprint: fingerprint)
     }
 
     private static func integer(_ value: Any?) -> Int? {

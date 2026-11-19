@@ -102,16 +102,16 @@ final class WidgetDataStoreAccountCacheTests: XCTestCase {
     func testNonAccountProviderLoadsRegardlessOfStamp() {
         let defaults = makeUserDefaults("non-account")
         let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", ttl: 600, now: { Date() })
-        cache.store(snapshot("cursor", used: 40))
+        cache.store(snapshot("kimi", used: 40))
         cache.store(snapshot("grok", used: 50), producedByIdentityKey: "stray-stamp")
 
         let store = makeStore(
-            providers: [provider("cursor"), provider("grok")],
+            providers: [provider("kimi"), provider("grok")],
             cache: cache,
             defaults: defaults,
             identityKeys: [:]
         )
-        XCTAssertNotNil(store.snapshots["cursor"])
+        XCTAssertNotNil(store.snapshots["kimi"])
         XCTAssertNotNil(store.snapshots["grok"])
     }
 
@@ -306,10 +306,15 @@ final class WidgetDataStoreAccountCacheTests: XCTestCase {
     func testKnownClaudeAndOtherProvidersPreserveLastGoodAfterFailure() async {
         for providerID in ["claude", "claude@work", "codex", "cursor"] {
             let defaults = makeUserDefaults("last-good-\(providerID)")
-            let original = snapshot(providerID, used: 40)
+            var original = snapshot(providerID, used: 40)
+            var failure = ProviderSnapshot.error(
+                provider: provider(providerID), message: "Service unavailable", category: .network)
+            if providerID == "cursor" {
+                original.producedByIdentityKey = "account-a"
+                failure.producedByIdentityKey = "account-a"
+            }
             let runtime = TogglingProviderRuntime(
-                provider: provider(providerID), descriptors: [], first: original,
-                second: .error(provider: provider(providerID), message: "Service unavailable", category: .network)
+                provider: provider(providerID), descriptors: [], first: original, second: failure
             )
             let identities = ProviderAccountID.family(of: providerID) == "claude" ? [providerID: "account-a"] : [:]
             let store = WidgetDataStore(

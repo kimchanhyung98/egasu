@@ -75,3 +75,5 @@
 "Replace API Key…" = "Replace API Key…";
 
 "Moved metric %@ to position %lld of %lld." = "Moved metric %@ to position %lld of %lld.";
+"An old shell function can make Claude use a different login. In %@, delete the lines from “%@” through “%@”, including both markers. Then open a new terminal window." = "An old shell function can make Claude use a different login. In %@, delete the lines from “%@” through “%@”, including both markers. Then open a new terminal window.";
+"Couldn’t check %@ for the old OpenUsage Claude shell function." = "Couldn’t check %@ for the old OpenUsage Claude shell function.";

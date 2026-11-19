@@ -131,13 +131,46 @@ final class CursorUsageEventPagingTests: XCTestCase {
         }
     }
 
+    func testRepeatedPageFailsEvenWhenCountsMatch() async throws {
+        let rows = [CursorEventFixture.event(), CursorEventFixture.event(tokens: 0)]
+        let data = try CursorEventFixture.page(rows, total: 4)
+        let http = RoutingHTTPClient { _ in HTTPResponse(statusCode: 200, headers: [:], body: data) }
+        do {
+            _ = try await load(http)
+            XCTFail("repeated page must fail")
+        } catch { XCTAssertEqual(error as? CursorUsageError, .invalidResponse) }
+        XCTAssertEqual(http.requests.count, 2)
+    }
+
+    func testDistinctServerEventsWithIdenticalUsageAreCounted() async throws {
+        let http = RoutingHTTPClient { request in
+            let body = try JSONSerialization.jsonObject(with: XCTUnwrap(request.body)) as? [String: Any]
+            let pageNumber = try XCTUnwrap(body?["page"] as? Int)
+            let rows = (0..<2).map { index in
+                var event = CursorEventFixture.event()
+                event["requestId"] = "page-\(pageNumber)-event-\(index)"
+                return event
+            }
+            let page = try CursorEventFixture.page(rows, total: 4)
+            return HTTPResponse(statusCode: 200, headers: [:], body: page)
+        }
+        let events = try await load(http)
+        XCTAssertEqual(events.count, 4)
+    }
+
     func testNumericOverflowAcrossPagesIsRejected() async throws {
         for event in [
             CursorEventFixture.event(tokens: 5_000_000_000_000_000_000),
             CursorEventFixture.event(cents: Double.greatestFiniteMagnitude)
         ] {
-            let body = try CursorEventFixture.page([event], total: 2)
-            let http = RoutingHTTPClient { _ in HTTPResponse(statusCode: 200, headers: [:], body: body) }
+            let first = try CursorEventFixture.page([event], total: 2)
+            var other = event
+            other["model"] = "different-model"
+            let second = try CursorEventFixture.page([other], total: 2)
+            let http = RoutingHTTPClient { request in
+                let body = try JSONSerialization.jsonObject(with: XCTUnwrap(request.body)) as? [String: Any]
+                return HTTPResponse(statusCode: 200, headers: [:], body: body?["page"] as? Int == 1 ? first : second)
+            }
             do {
                 _ = try await load(http)
                 XCTFail("overflow must fail")

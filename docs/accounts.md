@@ -190,7 +190,13 @@ Claude 재로그인과 계정 제거는 남은 전환 기록을 먼저 복구한
 전환은 로그인 셸 종류로 제한하지 않음.
 기본 인증 저장소를 쓰는 새 Claude·Codex 세션에 선택한 로그인 적용.
 계정 전환 시 `~/.zshrc`·`~/.config/fish/config.fish` 등 셸 설정 파일은 수정하지 않음.
-기존 `>>> OpenUsage` 함수 블록도 자동 제거하지 않음.
+Accounts를 열면 `~/.zshrc`와 `~/.config/fish/config.fish`에서 이전 OpenUsage의 Claude 블록 시작·끝 마커를 확인.
+두 마커가 남은 파일은 계정 목록과 Claude 계정 상세에 표시.
+기본 Claude 로그인을 쓰려면 표시된 파일에서 `# >>> OpenUsage claude account switching >>>` 줄부터 `# <<< OpenUsage claude account switching <<<` 줄까지 두 마커를 포함한 블록 전체 삭제.
+삭제 후 새 터미널 창 열기.
+
+![Accounts의 이전 Claude 셸 함수 안내](/docs/assets/claude-legacy-shell-notice.png)
+
 별도 인증 환경 변수·사용자 지정 인증 경로·API 키·Codex keyring을 쓰는 실행에는 선택 계정 적용을 보장하지 않음.
 자세한 내용은 [CLI](/docs/cli.md) 문서 참조 — `egasu` 명령줄 도구는 필요 없음.
 

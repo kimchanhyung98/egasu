@@ -57,7 +57,30 @@ final class KimiExtraUsageTests: XCTestCase {
     func testMissingNullAndOtherBalanceTypesDoNotInventAnExtraWallet() throws {
         XCTAssertEqual(try KimiUsageMapper.map(quotaPayload()).lines.map(\.label), ["Session"])
         XCTAssertEqual(try mapWallet(NSNull()).map(\.label), ["Session"])
+        XCTAssertEqual(try mapWallet(["balance": NSNull()]).map(\.label), ["Session"])
         XCTAssertEqual(try mapWallet(["balance": ["type": "SUBSCRIPTION"]]).map(\.label), ["Session"])
+    }
+
+    func testNullWalletFieldsKeepTheQuotaAndUseTheSameDefaultsAsOmittedFields() throws {
+        let minimalWallet = ["balance": ["type": "BOOSTER"]]
+        let expected = try mapWallet(minimalWallet)
+        for money in [NSNull() as Any, ["currency": NSNull(), "priceInCents": NSNull()] as Any] {
+            let wallet: [String: Any] = [
+                "balance": ["type": "BOOSTER", "amountLeft": NSNull()],
+                "monthlyUsed": money,
+                "monthlyChargeLimit": money,
+                "monthlyChargeLimitEnabled": NSNull()
+            ]
+            XCTAssertEqual(try mapWallet(wallet), expected)
+        }
+    }
+
+    func testNullCurrencyKeepsTheCurrencyOfTheOtherAmount() throws {
+        var wallet = fundedWallet(currency: "CNY")
+        wallet["monthlyChargeLimitEnabled"] = true
+        let expected = try mapWallet(wallet)
+        wallet["monthlyUsed"] = ["currency": NSNull(), "priceInCents": "1234"]
+        XCTAssertEqual(try mapWallet(wallet), expected)
     }
 
     func testExplicitZeroSpendingCapIsNotUnlimited() throws {

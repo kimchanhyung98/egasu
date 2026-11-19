@@ -111,7 +111,7 @@ enum KimiUsageMapper {
         }
         let currency = cap.currency ?? used.currency ?? "USD"
         let capped: Bool
-        if let value = wallet["monthlyChargeLimitEnabled"] {
+        if let value = wallet["monthlyChargeLimitEnabled"], !(value is NSNull) {
             guard let flag = value as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID() else {
                 throw KimiUsageError.invalidResponse
             }
@@ -140,7 +140,7 @@ enum KimiUsageMapper {
     }
 
     private static func walletInteger(_ value: Any?, allowsNegative: Bool = false) throws -> Double {
-        guard let value else { return 0 }
+        guard let value, !(value is NSNull) else { return 0 }
         guard let number = ProviderParse.number(value), number.rounded(.towardZero) == number,
             allowsNegative || number >= 0
         else { throw KimiUsageError.invalidResponse }
@@ -148,11 +148,11 @@ enum KimiUsageMapper {
     }
 
     private static func walletMoney(_ value: Any?) throws -> (amount: Double, currency: String?) {
-        guard let value else { return (0, nil) }
+        guard let value, !(value is NSNull) else { return (0, nil) }
         guard let money = value as? [String: Any] else { throw KimiUsageError.invalidResponse }
         let amount = try walletInteger(money["priceInCents"]) / 100
         var currency: String?
-        if let value = money["currency"] {
+        if let value = money["currency"], !(value is NSNull) {
             guard let code = value as? String else { throw KimiUsageError.invalidResponse }
             let normalized = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
             if !normalized.isEmpty {

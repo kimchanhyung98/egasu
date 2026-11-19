@@ -44,7 +44,10 @@ final class CursorSpendRangeTests: XCTestCase {
 
     func testZeroActivityLeavesTilesUnbacked() {
         var lines: [MetricLine] = []
-        _ = CursorUsageMapper.appendSpendLines(rows: [], now: Date(), pricing: TestPricing.bundled, to: &lines)
+        let history = CursorUsageMapper.appendSpendLines(
+            rows: [makeRow(date: Date(), cost: 0, tokens: 0)], now: Date(), pricing: TestPricing.bundled, to: &lines)
+        XCTAssertTrue(history.series.daily.isEmpty)
+        XCTAssertTrue(history.modelUsage?.daily.isEmpty == true)
 
         // fetch 성공 + 행 없음: 모든 기간 idle → spend 타일 미추가, "No data"로 fallback
         XCTAssertNil(values(lines, "Today"))

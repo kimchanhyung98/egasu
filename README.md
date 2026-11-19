@@ -25,7 +25,7 @@ The app updates itself in place via signed, notarized [Sparkle](docs/updates.md)
   이력 조회 실패 시 같은 계정으로 확인한 마지막 정상 이력 유지.
 - **[Devin](docs/providers/devin.md)** — weekly and daily quota, extra usage balance
 - **[Grok](docs/providers/grok.md)** — weekly shared pool, pay-as-you-go, local daily spend
-- **[Kimi](/docs/providers/kimi.md)** — 5시간·주간·월간 총한도, 추가 지출·잔액.
+- **[Kimi](/docs/providers/kimi.md)** — 5시간·주간·월간 총한도, 추가 지출·잔액. 미충전 지갑의 금액도 0으로 표시.
 - **[Kiro](docs/providers/kiro.md)** — coding credits and subscription plan
 - **[OpenCode](/docs/providers/opencode.md)** — Go의 세션·주간·월간 한도 추정치, Console과 Go의 로컬 지출·토큰.
   과거 Zen 기록도 Console 집계에 포함.
@@ -47,6 +47,7 @@ The app updates itself in place via signed, notarized [Sparkle](docs/updates.md)
   행 우클릭으로 지표 숨기기·Priority 고정·새로 고침·Accounts 관리 연결.
   [프로바이더 섹션 공유 이미지](/docs/dashboard.md#공유)는 표시 중인 모든 계정과 지표 순서를 반영.
 - **[계정 전환](/docs/cli.md#계정).** Claude·Codex의 기본 인증 저장소를 쓰는 새 CLI 세션에 선택한 로그인 적용.
+  Accounts에서 이전 OpenUsage의 Claude 셸 함수가 남은 파일과 제거 방법 안내.
   셸 설정 파일·터미널 환경을 유지하며, Claude 첫 등록·외부 로그인과 전환 중 보존할 변경된 인증은 토큰의 계정·조직을 검증한 뒤 저장본에 반영.
   선택된 Claude 공유 로그인은 사용량 조회에서도 계정·조직 일치 검증.
 - **[구독 타이머](/docs/refreshing.md#구독-타이머-자동-시작).** Codex·Claude·Antigravity·Kimi·Z.ai의 지원 한도를 확인하고 짧은 구독 메시지로 시작 유도.
@@ -88,6 +89,7 @@ For working on the code, see the developer docs: [architecture](docs/architectur
 비용·토큰의 기간별 집계는 프로바이더마다 로컬 기록 또는 서버 사용량을 사용.
 [집계 범위](/docs/dashboard.md#총-지출) 참조.
 Cursor 비용은 서버가 보고한 추가 과금액 사용.
+egasu CLI는 현재 Cursor 로그인과 일치하는 캐시만 사용.
 로컬 토큰 기반 비용은 [동적으로 갱신되는 모델 가격](/docs/pricing.md)으로 추정.
 
 
