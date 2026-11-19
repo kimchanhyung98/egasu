@@ -75,6 +75,10 @@ OpenCode 데이터베이스 읽기 오류에는 조회 목록의 순번을 기�
 오류 도메인은 알려진 시스템·Sparkle 도메인, 앱 오류 타입, `other` 중 하나로 표시.
 원문 오류 설명은 이 진단 기록에서 제외.
 
+저장한 API 키 파일을 읽을 수 없고 대체 키가 없으면 `credential_read` 및 `credential_access`를 Error로 기록.
+키 삭제 실패는 `credential_remove`를 Error로 기록하고 계정 추적 유지.
+키 값과 파일 경로는 두 기록 모두에서 제외.
+
 주요 오류 범주:
 
 - 터미널 보조 도구의 셸 실패: `subprocess`.

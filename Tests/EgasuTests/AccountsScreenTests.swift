@@ -7,6 +7,14 @@ import XCTest
 final class AccountsScreenTests: XCTestCase {
     // MARK: - Remove Account…
 
+    func testProvidersMoveOnlyWhenBothHaveASingleAccount() {
+        let ids = ["claude", "codex", "codex@ab12cd34", "cursor"]
+        XCTAssertTrue(AccountListView.allowsProviderMove("cursor", onto: "claude", among: ids))
+        XCTAssertFalse(
+            AccountListView.allowsProviderMove("cursor", onto: "codex", among: ids), "계정이 여럿인 묶음은 다른 프로바이더와 섞이지 않음")
+        XCTAssertFalse(AccountListView.allowsProviderMove("codex@ab12cd34", onto: "claude", among: ids))
+    }
+
     func testReauthenticationRecordsASingleSavedOutcomeAfterAttemptCleanup() {
         let recorder = DiagnosticEventRecorder()
         XCTAssertNil(RegisteredAccountRows.finishSignInAttempt(family: "codex", saved: true) {})
@@ -32,14 +40,6 @@ final class AccountsScreenTests: XCTestCase {
             [DiagnosticEvent(.accountRollback, result: .failure, category: .permission, providerID: "codex")])
     }
 
-    func testProvidersMoveOnlyWhenBothHaveASingleAccount() {
-        let ids = ["claude", "codex", "codex@ab12cd34", "cursor"]
-        XCTAssertTrue(AccountListView.allowsProviderMove("cursor", onto: "claude", among: ids))
-        XCTAssertFalse(
-            AccountListView.allowsProviderMove("cursor", onto: "codex", among: ids), "계정이 여럿인 묶음은 다른 프로바이더와 섞이지 않음")
-        XCTAssertFalse(AccountListView.allowsProviderMove("codex@ab12cd34", onto: "claude", among: ids))
-    }
-
     func testRemovingADetectedProviderOnlyTurnsItOff() throws {
         var disabled: [String] = []
         try ProviderAccountRows.remove(providerID: "cursor", keyProvider: nil) { enabled, id in
@@ -50,19 +50,17 @@ final class AccountsScreenTests: XCTestCase {
     }
 
     func testRemovingAnAPIKeyProviderDeletesOnlyTheSavedKey() throws {
-        for (status, deletes) in [
-            (APIKeyStatus.saved, true), (.overrideActive, true), (.fromEnvironment, false), (.notSet, false)
-        ] {
+        for status: APIKeyStatus in [.saved, .overrideActive, .fromEnvironment, .notSet] {
             let keys = FakeAPIKeyProvider(status: status)
             var disabled: [String] = []
             try ProviderAccountRows.remove(providerID: "openrouter", keyProvider: keys) { _, id in disabled.append(id) }
-            XCTAssertEqual(keys.deleteCount, deletes ? 1 : 0, "\(status): 환경 변수 키는 그대로")
+            XCTAssertEqual(keys.deleteCount, 1, "\(status): 저장 파일 삭제 시도")
             XCTAssertEqual(disabled, ["openrouter"])
         }
     }
 
     func testAFailedKeyDeleteKeepsTheProviderOn() {
-        let keys = FakeAPIKeyProvider(status: .saved, failsDelete: true)
+        let keys = FakeAPIKeyProvider(status: .notSet, failsDelete: true)
         var disabled: [String] = []
         XCTAssertThrowsError(
             try ProviderAccountRows.remove(providerID: "zai", keyProvider: keys) { _, id in disabled.append(id) })

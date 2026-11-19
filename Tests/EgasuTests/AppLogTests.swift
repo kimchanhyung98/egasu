@@ -28,6 +28,24 @@ final class AppLogTests: XCTestCase {
         try String(contentsOf: tempDir.appendingPathComponent("egasu.log"), encoding: .utf8)
     }
 
+    func testUnreadableAPIKeyLogsTheFailureWithoutTheKeyOrPath() throws {
+        AppLog.reloadLevel(.info)
+        let path = OpenRouterAuthStore.configPaths[0]
+        let privateKey = "private-key-for-log-fixture"
+        let files = FakeFiles([path: privateKey])
+        files.unreadablePaths = [path]
+        let store = OpenRouterAuthStore(files: files, environment: FakeEnvironment())
+
+        XCTAssertThrowsError(try store.requireAPIKey())
+        XCTAssertThrowsError(try store.deleteAPIKey())
+
+        let log = try fileContents()
+        XCTAssertTrue(log.contains("operation=credential_read result=failure category=credential_access"))
+        XCTAssertTrue(log.contains("operation=credential_remove result=failure category=permission"))
+        XCTAssertFalse(log.contains(privateKey))
+        XCTAssertFalse(log.contains(path))
+    }
+
     func testCLIUsesTheContainingAppsLogLevel() throws {
         let suite = "EgasuTests.AppLog.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

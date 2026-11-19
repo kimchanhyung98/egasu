@@ -323,3 +323,4 @@
 "Check access to your shell settings and Claude login files, then restart egasu." = "셸 설정과 Claude 로그인 파일의 접근 권한을 확인한 뒤 egasu를 다시 여세요.";
 "Another egasu process is updating the shared Claude login. Wait for it to finish, then try again." = "다른 egasu 앱에서 공유 Claude 로그인을 변경하고 있습니다. 작업이 끝나면 다시 시도하세요.";
 "Unlock your Keychain and restart egasu. Allow access to the Claude login if macOS asks." = "키체인의 잠금을 해제한 뒤 egasu를 다시 여세요. macOS에서 요청하면 Claude 로그인 접근을 허용하세요.";
+"Couldn't read the saved API key. Check the configuration file permissions." = "저장된 API 키를 읽을 수 없습니다. 설정 파일의 권한을 확인하세요.";

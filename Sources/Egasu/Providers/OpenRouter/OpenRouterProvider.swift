@@ -58,8 +58,11 @@ final class OpenRouterProvider: ProviderRuntime {
     func refresh() async -> ProviderSnapshot {
         let refreshedAt = now()
         let calendar = self.calendar ?? .current
-        guard let auth = await loadOffMainActor({ [authStore] in authStore.loadAPIKey() }) else {
-            return ProviderSnapshot.error(provider: provider, error: OpenRouterAuthError.missingKey)
+        let auth: OpenRouterAuth
+        do {
+            auth = try await loadOffMainActor { [authStore] in try authStore.requireAPIKey() }
+        } catch {
+            return ProviderSnapshot.error(provider: provider, error: error)
         }
 
         // 두 endpoint를 독립 fetch해 성공한 쪽만 매핑 — `/credits`는 balance, `/key`는 tier + period spend

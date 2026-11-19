@@ -7,7 +7,9 @@ enum DiagnosticOperation: String, Codable, CaseIterable, Sendable {
     case providerRefresh = "provider_refresh"
     case historyScan = "history_scan"
     case credentialRefresh = "credential_refresh"
+    case credentialRead = "credential_read"
     case credentialSave = "credential_save"
+    case credentialRemove = "credential_remove"
     case accountAdd = "account_add"
     case accountSwitch = "account_switch"
     case accountRollback = "account_rollback"
@@ -52,7 +54,7 @@ enum DiagnosticOperation: String, Codable, CaseIterable, Sendable {
     /// 계정별 성공을 다른 계정의 복구로 오인하지 않도록, 계정 비종속 작업만 복구 추적.
     var tracksRecovery: Bool {
         switch self {
-        case .providerRefresh, .historyScan, .credentialRefresh, .credentialSave,
+        case .providerRefresh, .historyScan, .credentialRefresh, .credentialRead, .credentialSave, .credentialRemove,
             .accountAdd, .accountSwitch, .accountRollback, .accountSignIn, .accountRemove, .accountReconcile,
             .accountBinding,
             .resetClaim, .postClaimRefresh, .weeklyTimer, .resetCreditFetch,
@@ -73,7 +75,7 @@ enum DiagnosticOperation: String, Codable, CaseIterable, Sendable {
         switch self {
         case .appRestart, .storageMigration: "lifecycle"
         case .providerRefresh, .historyScan, .resetCreditFetch, .cursorPlan, .cursorCredits, .cursorBalance, .cursorSummary, .cursorFallback: "usage"
-        case .credentialRefresh, .credentialSave: "authentication"
+        case .credentialRefresh, .credentialRead, .credentialSave, .credentialRemove: "authentication"
         case .accountAdd, .accountSwitch, .accountRollback, .accountSignIn, .accountRemove, .accountReconcile,
             .accountBinding:
             "accounts"

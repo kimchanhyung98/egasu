@@ -60,8 +60,11 @@ final class ZAIProvider: ProviderRuntime {
     func refresh() async -> ProviderSnapshot {
         usageTimerObservations = []
         let refreshedAt = now()
-        guard let auth = await loadOffMainActor({ [authStore] in authStore.loadAPIKey() }) else {
-            return ProviderSnapshot.error(provider: provider, error: ZAIAuthError.missingKey)
+        let auth: ZAIAuth
+        do {
+            auth = try await loadOffMainActor { [authStore] in try authStore.requireAPIKey() }
+        } catch {
+            return ProviderSnapshot.error(provider: provider, error: error)
         }
 
         // quota endpoint는 필수, subscription endpoint는 plan 이름용 best-effort — subscription 실패가 meter를 지우면 안 됨

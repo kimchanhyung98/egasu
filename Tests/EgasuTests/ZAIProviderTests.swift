@@ -145,6 +145,22 @@ final class ZAIAuthStoreTests: XCTestCase {
         XCTAssertNil(store.loadAPIKey())
     }
 
+    func testUnreadableConfigAllowsUsableEnvironmentFallback() throws {
+        let path = ZAIAuthStore.configPaths[0]
+        let files = FakeFiles([path: "zai-config"])
+        files.unreadablePaths = [path]
+        let noFallback = ZAIAuthStore(files: files, environment: FakeEnvironment())
+        let withFallback = ZAIAuthStore(files: files, environment: FakeEnvironment(["ZAI_API_KEY": "zai-env"]))
+
+        XCTAssertEqual(noFallback.keyStatus(), .unreadable)
+        XCTAssertNil(noFallback.loadAPIKey())
+        XCTAssertThrowsError(try noFallback.requireAPIKey()) { error in
+            XCTAssertEqual(ErrorCategory.classify(error), .credentialAccess)
+        }
+        XCTAssertEqual(withFallback.keyStatus(), .fromEnvironment)
+        XCTAssertEqual(try withFallback.requireAPIKey().apiKey, "zai-env")
+    }
+
     // MARK: - In-app save / delete / status (Customize → Z.ai → API Key)
 
     func testSaveAPIKeyWritesTrimmedJSONConfigFile() throws {

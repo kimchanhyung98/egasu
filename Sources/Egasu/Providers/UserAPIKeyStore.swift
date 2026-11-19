@@ -1,60 +1,116 @@
 import Foundation
 
-/// 기기에 이미 있는 user-supplied API key(환경 변수 또는 작은 JSON/plain-text config file) — credential을 남기는 동반 CLI/앱이 없는 provider(OpenRouter, Z.ai)용.
-/// read/status/save/delete 전부가 여기 있어 각 provider는 config 경로·env-var 이름·오류 메시지만 갖는 얇은 wrapper.
-/// Finder/Dock에서 실행된 GUI 앱은 interactive shell 환경을 상속하지 않음 — `ProcessEnvironmentReader`가 launch 시 login shell 환경을 capture(`LoginShellEnvironment`)해 shell profile의 export도 패키지 빌드에서 유효.
+/// OpenRouter와 Z.ai에서 설정 파일과 환경 변수의 API 키를 읽고 관리하는 공통 저장소.
 struct UserAPIKeyStore: Sendable {
-    /// wrapper가 자기 provider 오류로 매핑하는 save/delete 실패 — user-facing 메시지 보존.
+    /// 각 프로바이더의 사용자 안내에 필요한 저장·삭제 실패 유형.
     enum Failure { case missingKey, saveFailed, deleteFailed }
 
+    static let unreadableKeyMessage = LocalizedMessage(
+        "Couldn't read the saved API key. Check the configuration file permissions.")
+    private static let keyFields = ["apiKey", "api_key", "key"]
+
+    private struct UnreadableKey: LocalizedError, UserPresentableError, CategorizedError {
+        let presentationMessage = UserAPIKeyStore.unreadableKeyMessage
+        let errorCategory = ErrorCategory.credentialAccess
+        var errorDescription: String? { presentationMessage.key }
+    }
+
+    let providerID: String
     let configPaths: [String]
     let environmentNames: [String]
     var files: TextFileAccessing
     var environment: EnvironmentReading
     let makeError: @Sendable (Failure) -> Error
 
-    /// config file 우선, 환경 변수 차선 — config file이 키 교체 시 사용자가 편집하는 경로라 낡은 `launchctl setenv` 잔여값보다 우선.
-    func loadKey() -> String? {
-        keyFromConfigFile() ?? keyFromEnvironment()
+    /// 설정 파일을 먼저 확인하고, 읽기 실패는 대체할 환경 변수 키도 없을 때 전달.
+    func loadKey() throws -> String? {
+        let config = keyFromConfigFile()
+        if let key = config.key ?? keyFromEnvironment() { return key }
+        if let readError = config.readError {
+            AppDiagnostics.record(
+                .credentialRead, result: .failure, category: .credentialAccess, providerID: providerID,
+                error: readError, localContext: "API key config read")
+            throw UnreadableKey()
+        }
+        return nil
     }
 
-    /// 현재 key를 쥔 source 조합 — 4-state per-provider API-key 편집기 구동. 저장 key + env key는 config 우선이라 `overrideActive`.
+    /// 저장 파일과 환경 변수에 키가 있는지 확인해 편집 화면의 상태 결정.
     func keyStatus() -> APIKeyStatus {
-        let hasConfig = keyFromConfigFile() != nil
+        let config = keyFromConfigFile()
+        let hasConfig = config.key != nil
         let hasEnv = keyFromEnvironment() != nil
         switch (hasConfig, hasEnv) {
         case (true, true): return .overrideActive
         case (true, false): return .saved
         case (false, true): return .fromEnvironment
-        default: return .notSet
+        case (false, false): return config.readError == nil ? .notSet : .unreadable
         }
     }
 
-    /// primary config file에 JSON `{"apiKey":"…"}`로 저장 — 낡은 env var보다 우선하므로 "override" 경로이기도 함. 빈 입력은 `.missingKey`.
+    /// 저장된 키가 환경 변수보다 우선하므로 첫 설정 파일에만 기록.
     func saveKey(_ key: String) throws {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw makeError(.missingKey) }
-        let data = try JSONSerialization.data(withJSONObject: ["apiKey": trimmed], options: [.sortedKeys])
-        guard let text = String(data: data, encoding: .utf8) else { throw makeError(.saveFailed) }
         do {
-            try files.writeText(configPaths[0], text)
+            let path = configPaths[0]
+            var fields = try readConfigText(path).flatMap { Self.configValue($0) as? [String: Any] } ?? [:]
+            for field in Self.keyFields where fields[field] is String {
+                fields.removeValue(forKey: field)
+            }
+            fields["apiKey"] = trimmed
+            let data = try JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys])
+            try files.writeText(path, String(decoding: data, as: UTF8.self))
         } catch {
-            AppLog.error(.auth, "save API key to \(configPaths[0]) failed: \(error.localizedDescription)")
+            recordFileFailure(.credentialSave, error: error, context: "API key config write")
             throw makeError(.saveFailed)
         }
+        AppDiagnostics.record(.credentialSave, result: .success, providerID: providerID)
     }
 
-    /// primary만이 아닌 모든 config 경로에서 저장 key 제거 — 대체 경로의 key가 되살아나지 않도록. 없는 파일은 no-op.
+    /// 모든 경로를 확인한 뒤 대체 키부터 제거. JSON에서 인증 외 필드 보존.
     func deleteKey() throws {
-        for path in configPaths {
-            guard files.exists(path) else { continue }
-            do {
-                try files.remove(path)
-            } catch {
-                AppLog.error(.auth, "delete API key at \(path) failed: \(error.localizedDescription)")
-                throw makeError(.deleteFailed)
+        do {
+            let candidates = try configPaths.reversed().compactMap {
+                path -> (path: String, before: String, after: String?)? in
+                guard let text = try readConfigText(path), Self.keyFromConfigText(text) != nil else { return nil }
+                var remaining = Self.configValue(text) as? [String: Any] ?? [:]
+                for field in Self.keyFields where remaining[field] is String {
+                    remaining.removeValue(forKey: field)
+                }
+                let replacement =
+                    remaining.isEmpty
+                    ? nil : try JSONSerialization.data(withJSONObject: remaining, options: [.sortedKeys])
+                return (path, text, replacement.map { String(decoding: $0, as: UTF8.self) })
             }
+            guard !candidates.isEmpty else { return }
+            for candidate in candidates {
+                guard try readConfigText(candidate.path) == candidate.before else {
+                    throw CocoaError(.fileWriteUnknown)
+                }
+                if let text = candidate.after {
+                    try files.writeText(candidate.path, text)
+                } else {
+                    try files.remove(candidate.path)
+                }
+            }
+        } catch {
+            recordFileFailure(.credentialRemove, error: error, context: "API key config removal")
+            throw makeError(.deleteFailed)
         }
+        AppDiagnostics.record(.credentialRemove, result: .success, providerID: providerID)
+    }
+
+    private func recordFileFailure(_ operation: DiagnosticOperation, error: Error, context: String) {
+        let category: ErrorCategory
+        if let posix = error as? POSIXError {
+            category = [.EACCES, .EPERM].contains(posix.code) ? .permission : .storage
+        } else {
+            category = ErrorCategory.classify(error)
+        }
+        AppDiagnostics.record(
+            operation, result: .failure, category: category, providerID: providerID, error: error, localContext: context
+        )
     }
 
     private func keyFromEnvironment() -> String? {
@@ -67,31 +123,50 @@ struct UserAPIKeyStore: Sendable {
         return nil
     }
 
-    private func keyFromConfigFile() -> String? {
+    private func keyFromConfigFile() -> (key: String?, readError: (any Error)?) {
+        var readError: (any Error)?
         for path in configPaths {
-            guard files.exists(path), let text = try? files.readText(path) else { continue }
-            if let key = Self.keyFromConfigText(text) {
-                return key
+            do {
+                if let text = try readConfigText(path), let key = Self.keyFromConfigText(text) {
+                    return (key, nil)
+                }
+            } catch {
+                if readError == nil { readError = error }
             }
         }
-        return nil
+        return (nil, readError)
     }
 
-    /// `apiKey` / `api_key` / `key`를 가진 JSON 객체 또는 key만 담긴 plain-text 파일 허용.
+    private func readConfigText(_ path: String) throws -> String? {
+        guard let data = try files.readDataIfPresent(path) else { return nil }
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw CocoaError(.fileReadInapplicableStringEncoding)
+        }
+        return text
+    }
+
+    private static func configValue(_ text: String) -> Any? {
+        try? JSONSerialization.jsonObject(with: Data(text.utf8), options: [.fragmentsAllowed])
+    }
+
+    /// JSON 객체 또는 공백 없는 한 개의 plain-text 키 지원.
     static func keyFromConfigText(_ text: String) -> String? {
-        if let data = text.data(using: .utf8),
-           let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
-            for field in ["apiKey", "api_key", "key"] {
+        if let value = configValue(text) {
+            guard let object = value as? [String: Any] else { return nil }
+            for field in keyFields {
                 if let value = (object[field] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                   !value.isEmpty {
+                    !value.isEmpty
+                {
                     return value
                 }
             }
             return nil
         }
 
-        // 앞뒤 공백을 제거한 텍스트를 키 원문으로 해석. 빈 문자열이나 여는 중괄호가 있으면 거부.
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty || trimmed.contains("{") ? nil : trimmed
+        guard !trimmed.isEmpty, !trimmed.hasPrefix("["), !trimmed.contains("{"),
+            trimmed.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
+        else { return nil }
+        return trimmed
     }
 }
