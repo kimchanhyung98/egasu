@@ -181,9 +181,7 @@ extension LayoutStore {
 
 
 
-    /// 한 provider 내 metric reorder(둘 다 그 provider의 descriptor id) — 전체 metric 순서에서 동작해
-    /// disabled metric도 자리 유지. 다른 section의 행에 drop하면 dragged의 On Demand membership이 target을
-    /// 따라감; Accounts는 기존 소속을 유지하고 순서만 변경. 반환값은 실제 변경 여부(haptics 키).
+    /// 숨긴 지표를 포함해 카드의 지표를 재정렬하고 실제 변경 여부 반환.
     @discardableResult
     func reorderMetric(dragged: String, target: String, in providerID: String) -> Bool {
         recordingUndoStep { reorderMetricImpl(dragged: dragged, target: target, in: providerID) }
