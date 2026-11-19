@@ -6,10 +6,7 @@ enum ClaudeAccountLoginCredentials {
         try replacingLogin(in: nil, with: credential)
     }
 
-    static func replacingLogin(in destination: String?, with credential: String) throws -> String {
-        guard let login = ProviderParse.jsonObjectWithHexFallback(credential)?["claudeAiOauth"] as? [String: Any] else {
-            throw AccountCredentialSwitcher.Error.incompleteClaudeAuthentication
-        }
+    static func replacingLogin(in destination: String?, with credential: String?) throws -> String {
         var document: [String: Any] = [:]
         if let destination {
             guard let existing = ProviderParse.jsonObjectWithHexFallback(destination) else {
@@ -17,7 +14,13 @@ enum ClaudeAccountLoginCredentials {
             }
             document = existing
         }
-        document["claudeAiOauth"] = login
+        if let credential {
+            guard let login = ProviderParse.jsonObjectWithHexFallback(credential)?["claudeAiOauth"] as? [String: Any]
+            else { throw AccountCredentialSwitcher.Error.incompleteClaudeAuthentication }
+            document["claudeAiOauth"] = login
+        } else {
+            document.removeValue(forKey: "claudeAiOauth")
+        }
         return String(
             decoding: try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys]), as: UTF8.self)
     }
@@ -117,8 +120,8 @@ extension AccountCredentialSwitcher {
         // CLI가 변경한 출처·계정·세대에는 이전 인증이나 계정 정보를 되쓰지 않음.
         guard current.state.sourceID == before.state.sourceID, current.state.accounts == [account] else { return }
         if current.state.credentials != before.state.credentials {
-            guard current.state.credentials == [target], let previous = before.state.credentials[0] else { return }
-            try writeClaudeLogin(previous, to: current)
+            guard current.state.credentials == [target] else { return }
+            try writeClaudeLogin(before.state.credentials[0], to: current)
         }
         guard before.state.accounts != [account] else { return }
         let restored = try sharedClaudeLogin(route: route, allowInteraction: before.allowInteraction)
@@ -128,7 +131,7 @@ extension AccountCredentialSwitcher {
         try mergeClaudeOAuthAccount(before.state.accounts[0], at: before.stateURL, removeCreatedState: createdState)
     }
 
-    private func writeClaudeLogin(_ credential: String, to destination: SharedClaudeLogin) throws {
+    private func writeClaudeLogin(_ credential: String?, to destination: SharedClaudeLogin) throws {
         let existing: String?
         if let raw = destination.rawCredential {
             existing = raw

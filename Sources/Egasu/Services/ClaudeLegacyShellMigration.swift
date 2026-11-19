@@ -17,7 +17,7 @@ enum ClaudeShellLoginMigrationError: String, Error, UserPresentableError {
         case .pendingSwitch:
             .init("Finish the pending Claude account switch in Accounts, then restart egasu.")
         case .busy:
-            .init("Another egasu process is migrating the Claude login. Restart egasu after it finishes.")
+            .init("Another egasu process is updating the shared Claude login. Wait for it to finish, then try again.")
         }
     }
 }
@@ -25,6 +25,16 @@ enum ClaudeShellLoginMigrationError: String, Error, UserPresentableError {
 /// 기본 CLI 로그인 검증 뒤에만 설치기가 작성한 셸 블록 제거. 부분 완료는 다음 실행에서 이어서 처리.
 enum ClaudeLegacyShellMigration {
     static let completedKey = "egasu.claudeShellMigration.v1"
+
+    /// 개발·운영 앱의 로그인 전환과 셸 이전을 같은 파일 잠금으로 직렬화.
+    static func acquireSharedLoginLock(home: URL) throws -> SingleInstanceLock.Token {
+        let lockURL = home.appendingPathComponent("Library/Application Support/OpenUsage/claude-shell-migration.lock")
+        switch SingleInstanceLock.acquire(at: lockURL) {
+        case .alreadyRunning: throw ClaudeShellLoginMigrationError.busy
+        case .failed: throw CocoaError(.fileWriteUnknown)
+        case .acquired(let token): return token
+        }
+    }
 
     static func message(for error: Error) -> LocalizedMessage {
         if case KeychainError.readFailed = error {
@@ -42,31 +52,24 @@ enum ClaudeLegacyShellMigration {
             defaults.set(true, forKey: completedKey)
             return
         }
-        // 개발·운영 앱은 같은 터미널 인증과 셸 설정을 사용.
-        let lockURL = home.appendingPathComponent("Library/Application Support/OpenUsage/claude-shell-migration.lock")
-        switch SingleInstanceLock.acquire(at: lockURL) {
-        case .alreadyRunning: throw ClaudeShellLoginMigrationError.busy
-        case .failed: throw CocoaError(.fileWriteUnknown)
-        case .acquired(let token):
-            try withExtendedLifetime(token) {
-                let profiles = try ClaudeLegacyShellProfile.find(in: home)
-                if let profile = profiles.first {
-                    try checkPendingSwitch(defaults: defaults, switcher: switcher)
-                    let route = ClaudeSharedLoginRoute.legacy(configDir: profile.configDirectory)
-                    let source = try switcher.sharedClaudeLogin(route: route, allowInteraction: true).state
-                    try switcher.preparePlainClaudeLogin(from: source)
-                    for profile in profiles {
-                        try checkPendingSwitch(defaults: defaults, switcher: switcher)
-                        guard try switcher.sharedClaudeLogin(route: route, allowInteraction: true).state == source
-                        else { throw ClaudeAuthError.credentialsChanged }
-                        try switcher.verifyPlainClaudeLogin(from: source)
-                        try profile.remove()
-                    }
-                    AppLog.info(.config, "migrated legacy Claude shell setup")
-                }
-                defaults.set(true, forKey: completedKey)
+        let token = try acquireSharedLoginLock(home: home)
+        defer { withExtendedLifetime(token) {} }
+        let profiles = try ClaudeLegacyShellProfile.find(in: home)
+        if let profile = profiles.first {
+            try checkPendingSwitch(defaults: defaults, switcher: switcher)
+            let route = ClaudeSharedLoginRoute.legacy(configDir: profile.configDirectory)
+            let source = try switcher.sharedClaudeLogin(route: route, allowInteraction: true).state
+            try switcher.preparePlainClaudeLogin(from: source)
+            for profile in profiles {
+                try checkPendingSwitch(defaults: defaults, switcher: switcher)
+                guard try switcher.sharedClaudeLogin(route: route, allowInteraction: true).state == source
+                else { throw ClaudeAuthError.credentialsChanged }
+                try switcher.verifyPlainClaudeLogin(from: source)
+                try profile.remove()
             }
+            AppLog.info(.config, "migrated legacy Claude shell setup")
         }
+        defaults.set(true, forKey: completedKey)
     }
 
     @MainActor

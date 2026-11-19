@@ -111,6 +111,7 @@ final class AccountsScreenTests: XCTestCase {
 
     func testKeychainApprovalReplacesSignInOnlyWhenTheSavedSignInCouldNotBeRead() {
         XCTAssertTrue(RegisteredAccountRows.offersKeychainApproval(.readFailed("Keychain locked")))
+        XCTAssertFalse(RegisteredAccountRows.offersKeychainApproval(.routeUnavailable("Invalid shell setup")))
         XCTAssertFalse(RegisteredAccountRows.offersKeychainApproval(.needsSignIn), "저장 로그인이 없으면 다시 로그인")
         XCTAssertFalse(RegisteredAccountRows.offersKeychainApproval(.ready(identityKey: "id", label: nil)))
         XCTAssertFalse(RegisteredAccountRows.offersKeychainApproval(nil), "확인 전")

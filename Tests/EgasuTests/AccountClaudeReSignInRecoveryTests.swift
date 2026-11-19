@@ -66,6 +66,7 @@ final class AccountClaudeReSignInRecoveryTests: XCTestCase {
         XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), rotated)
         XCTAssertEqual(keychain.currentUserValues[fixture.scopedService], alternate.credential)
         XCTAssertEqual(fixture.store.profile(id: fixture.a.id)?.identityKey, fixture.a.identityKey)
+        XCTAssertEqual(try fixture.switcher.loadSnapshot(for: fixture.a), replacement)
         XCTAssertNotNil(try fixture.store.pendingIdentityReplacement())
     }
 

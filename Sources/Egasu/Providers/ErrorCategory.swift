@@ -310,7 +310,8 @@ extension OpenCodeUsageError: CategorizedError {
     var errorCategory: ErrorCategory {
         switch self {
         case .notLoggedIn: .notLoggedIn
-        case .credentialsUnreadable, .databaseUnreadable: .credentialAccess
+        case .credentialsUnreadable: .credentialAccess
+        case .databaseUnreadable: .storage
         }
     }
 }

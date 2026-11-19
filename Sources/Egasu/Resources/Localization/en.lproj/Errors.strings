@@ -91,7 +91,8 @@
 "Grok billing response changed." = "Grok billing response changed.";
 "Grok not logged in. Run `grok login`." = "Grok not logged in. Run `grok login`.";
 "Grok sign-in changed while refreshing. Refresh again to use the current account." = "Grok sign-in changed while refreshing. Refresh again to use the current account.";
-"Invalid Claude OAuth URL: %@. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE." = "Invalid Claude OAuth URL: %@. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE.";
+"Grok sign-in could not be read. Check access to the Grok auth file and refresh again." = "Grok sign-in could not be read. Check access to the Grok auth file and refresh again.";
+"Invalid Claude OAuth URL. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE." = "Invalid Claude OAuth URL. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE.";
 "Invalid HTTP response." = "Invalid HTTP response.";
 "Invalid account name." = "Invalid account name.";
 "Invalid sign-in workspace component: %@" = "Invalid sign-in workspace component: %@";
@@ -316,5 +317,5 @@
 "Claude sign-in is incomplete. Finish signing in to Claude, then restart egasu to finish migrating the old shell setup." = "Claude sign-in is incomplete. Finish signing in to Claude, then restart egasu to finish migrating the old shell setup.";
 "Finish the pending Claude account switch in Accounts, then restart egasu." = "Finish the pending Claude account switch in Accounts, then restart egasu.";
 "Check access to your shell settings and Claude login files, then restart egasu." = "Check access to your shell settings and Claude login files, then restart egasu.";
-"Another egasu process is migrating the Claude login. Restart egasu after it finishes." = "Another egasu process is migrating the Claude login. Restart egasu after it finishes.";
+"Another egasu process is updating the shared Claude login. Wait for it to finish, then try again." = "Another egasu process is updating the shared Claude login. Wait for it to finish, then try again.";
 "Unlock your Keychain and restart egasu. Allow access to the Claude login if macOS asks." = "Unlock your Keychain and restart egasu. Allow access to the Claude login if macOS asks.";

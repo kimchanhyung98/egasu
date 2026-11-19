@@ -17,6 +17,10 @@ extension AccountCredentialImporter {
         guard let profile = store.profile(id: profileID) else {
             throw AccountProfileError.profileNotFound(profileID)
         }
+        let loginLock =
+            isActive && profile.family == "claude"
+            ? try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: switcher.homeDirectory) : nil
+        defer { withExtendedLifetime(loginLock) {} }
         AccountCredentialMutationLock.acquire(family: profile.family)
         defer { AccountCredentialMutationLock.release(family: profile.family) }
         if profile.family == "claude" { try AccountCredentialMutationLock.requireIdleClaudeRotation() }
@@ -29,6 +33,13 @@ extension AccountCredentialImporter {
         }
 
         let previousSnapshot = try switcher.loadSnapshot(for: profile, allowInteraction: true)
+        let isolatedCodexAttempt: (id: String, previousWorkspaceAuth: String?)?
+        if profile.family == "codex", let signInAttemptID {
+            let path = try codexWorkspaceAuthPath(profileID: profile.id)
+            isolatedCodexAttempt = (signInAttemptID, try LocalTextFileAccessor().readTextIfPresent(path))
+        } else {
+            isolatedCodexAttempt = nil
+        }
         let claudeState = isActive && profile.family == "claude" ? try switcher.readClaudeSwitchState() : nil
         let previousShared: AccountCredentialVault.Entry?
         if let claudeState {
@@ -70,6 +81,7 @@ extension AccountCredentialImporter {
                 previousSnapshot: previousSnapshot,
                 previousShared: previousShared,
                 transaction: transaction,
+                isolatedCodexAttempt: isolatedCodexAttempt,
                 context: "account re-sign-in"
             )
             if restored {
@@ -264,6 +276,7 @@ extension AccountCredentialImporter {
         previousSnapshot: AccountCredentialVault.Entry?,
         previousShared: AccountCredentialVault.Entry? = nil,
         transaction: AccountIdentityReplacement? = nil, allowInteraction: Bool = true,
+        isolatedCodexAttempt: (id: String, previousWorkspaceAuth: String?)? = nil,
         context: String
     ) -> Bool {
         var restored = true
@@ -297,8 +310,10 @@ extension AccountCredentialImporter {
         if let previousSnapshot {
             do {
                 try switcher.saveSnapshot(previousSnapshot, for: profile)
-                try switcher.writeWorkspaceAuthentication(
-                    previousSnapshot, for: profile, allowInteraction: allowInteraction)
+                if isolatedCodexAttempt == nil {
+                    try switcher.writeWorkspaceAuthentication(
+                        previousSnapshot, for: profile, allowInteraction: allowInteraction)
+                }
             } catch {
                 restored = false
                 AppDiagnostics.failure(
@@ -308,12 +323,26 @@ extension AccountCredentialImporter {
         } else {
             do {
                 try AccountCredentialVault(keychain: keychain).delete(profile: profile)
-                try removeSignInWorkspace(family: profile.family, profileID: profile.id)
+                if isolatedCodexAttempt == nil {
+                    try removeSignInWorkspace(family: profile.family, profileID: profile.id)
+                }
             } catch {
                 restored = false
                 AppDiagnostics.failure(
                     .accountRollback, error: error, providerID: profile.family,
                     localContext: "\(context): remove staged login")
+            }
+        }
+        if let isolatedCodexAttempt {
+            do {
+                try restoreCodexWorkspace(
+                    profileID: profile.id, attemptID: isolatedCodexAttempt.id,
+                    previousAuthentication: isolatedCodexAttempt.previousWorkspaceAuth)
+            } catch {
+                restored = false
+                AppDiagnostics.failure(
+                    .accountRollback, error: error, providerID: profile.family,
+                    localContext: "\(context): restore Codex sign-in workspace")
             }
         }
         return restored

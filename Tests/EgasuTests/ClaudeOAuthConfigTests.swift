@@ -55,6 +55,7 @@ final class ClaudeOAuthConfigTests: XCTestCase {
             "http://localhost@remote.example", "http://[::ffff:192.168.1.20]",
             "http://localhost.", "http://127.1", "http://2130706433",
             "http://fixture-secret:fixture-secret@remote.example/fixture-secret?fixture-secret#fixture-secret",
+            "http://fixture-secret:fixture-secret@exa mple.test?fixture-secret",
             "ftp://localhost", "file:///tmp/oauth", "/relative/oauth", "https:///missing-host"
         ]
         for base in bases {
@@ -65,6 +66,7 @@ final class ClaudeOAuthConfigTests: XCTestCase {
                         return XCTFail("Unexpected error: \(error)")
                     }
                     XCTAssertFalse(error.localizedDescription.contains("fixture-secret"))
+                    XCTAssertFalse(UserFacingErrors.message(error).contains("fixture-secret"))
                 }
                 XCTAssertEqual(auth.keychainServiceCandidates().count, 1)
             }

@@ -221,7 +221,9 @@ struct RegisteredAccountRows: View {
                             try workspace.remove(family: profile.family, profileID: profile.id, attemptID: attemptID)
                         }
                     }
-                    if actionError == nil { actionError = cleanupError }
+                    if let cleanupError {
+                        actionError = [actionError, cleanupError].compactMap { $0 }.joined(separator: "\n")
+                    }
                 }
                 AppLog.info(.auth, "account re-sign-in started \(profile.family)")
                 let code = try await AccountSignInLauncher().runLogin(
@@ -247,7 +249,7 @@ struct RegisteredAccountRows: View {
                 AppDiagnostics.record(.accountSignIn, result: .cancelled, providerID: profile.family)
             } catch {
                 AppDiagnostics.failure(.accountSignIn, error: error, providerID: profile.family)
-                actionError = UserFacingErrors.message(error)
+                actionError = [UserFacingErrors.message(error), actionError].compactMap { $0 }.joined(separator: "\n")
             }
         }
     }
@@ -288,7 +290,7 @@ struct RegisteredAccountRows: View {
     ) -> Bool {
         switch state {
         case nil, .readFailed?: finishedCardIDs.contains { profileIDForCard($0) == profileID }
-        case .ready?, .needsSignIn?: false
+        case .ready?, .needsSignIn?, .routeUnavailable?: false
         }
     }
 

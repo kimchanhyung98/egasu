@@ -269,6 +269,45 @@ final class AccountCredentialImporterTests: XCTestCase {
         XCTAssertEqual(credential.entry.credential, claudeCredential(token: "token-w"))
     }
 
+    func testStagedClaudeRegistrationAndCleanupAreIsolatedDuringRotation() throws {
+        let fixture = try makeFixture()
+        let existing = try fixture.store.add(family: "claude", label: "Existing", identityKey: "acct-a|org-a")
+        try seedClaudeDefaultFiles(fixture, token: "shared")
+        let credential = AccountCredentialImporter.ImportedCredential(
+            entry: .init(
+                credential: claudeCredential(token: "workspace"),
+                claudeOAuthAccount: #"{"accountUuid":"acct-w","organizationUuid":"org-w"}"#),
+            identityKey: "acct-w|org-w", label: "Workspace")
+        let abandoned = try fixture.workspace.prepare(family: "claude", profileID: "abandoned")
+        let abandonedService = ClaudeAuthStore.scopedKeychainServiceName(
+            forConfigDirLiteral: abandoned.path, environment: FakeEnvironment([:]))
+        fixture.keychain.currentUserValues[abandonedService] = claudeCredential(token: "abandoned")
+
+        try AccountCredentialMutationLock.beginClaudeRotation {}
+        defer { AccountCredentialMutationLock.endClaudeRotation() }
+
+        let profile = try fixture.importer.register(
+            credential, family: "claude", label: "Workspace", id: "profile-w", into: fixture.store)
+        try fixture.importer.discardUnregisteredSignInWorkspace(
+            family: "claude", profileID: profile.id, in: fixture.store)
+        try fixture.importer.discardUnregisteredSignInWorkspace(
+            family: "claude", profileID: "abandoned", in: fixture.store)
+
+        XCTAssertEqual(try fixture.vault.load(profile: profile), credential.entry)
+        XCTAssertNotNil(try fixture.importer.readWorkspaceCredential(family: "claude", profileID: profile.id))
+        XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), existing.id)
+        XCTAssertNil(fixture.keychain.currentUserValues[abandonedService])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: abandoned.path))
+        XCTAssertEqual(
+            try String(contentsOf: fixture.home.appendingPathComponent(".claude/.credentials.json"), encoding: .utf8),
+            claudeCredential(token: "shared"))
+        XCTAssertThrowsError(
+            try fixture.importer.register(credential, family: "claude", label: "Default", into: fixture.store)
+        ) { error in
+            XCTAssertEqual(error as? ClaudeAuthError, .rotationInProgress)
+        }
+    }
+
     func testWorkspaceCleanupDeletesScopedKeychainBeforeRejectingASymlinkedDirectory() throws {
         let fixture = try makeFixture()
         let workspaceHome = try fixture.workspace.prepare(family: "claude", profileID: "profile-w")

@@ -161,6 +161,24 @@ extension AccountCredentialSwitcherTests {
     }
 
     @MainActor
+    func testShellMigrationDefersWhileAnotherProcessOwnsTheSharedLoginLock() throws {
+        let fixture = try makeFixture()
+        let defaults = try shellMigrationDefaults()
+        let rc = try installOldClaudeFunction(fixture)
+        let lock = try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: fixture.home)
+        defer { withExtendedLifetime(lock) {} }
+
+        XCTAssertThrowsError(
+            try ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: fixture.switcher)
+        ) {
+            XCTAssertEqual($0 as? ClaudeShellLoginMigrationError, .busy)
+        }
+        XCTAssertEqual(try text(rc), legacyClaudeZshBlock(home: fixture.home))
+        XCTAssertFalse(defaults.bool(forKey: ClaudeLegacyShellMigration.completedKey))
+        XCTAssertEqual(fixture.keychain.writeCount, 0)
+    }
+
+    @MainActor
     func testShellMigrationPendingSwitchRetriesEvenWhenBothStoresAreLoggedOut() throws {
         let f = try makeFixture()
         let defaults = try shellMigrationDefaults()

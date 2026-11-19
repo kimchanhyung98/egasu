@@ -121,18 +121,13 @@ struct AccountCredentialImporter {
     ) throws -> AccountProfile {
         AccountCredentialMutationLock.acquire(family: family)
         defer { AccountCredentialMutationLock.release(family: family) }
-        if family == "claude" {
-            do {
-                try AccountCredentialMutationLock.requireIdleClaudeRotation()
-            } catch {
-                // 인증 회전 중에는 추가 계정의 로그인 작업 공간 보존.
-                if id != nil {
-                    AppDiagnostics.record(
-                        .accountRollback, result: .degraded, providerID: family, error: error,
-                        localContext: "staged workspace cleanup deferred during credential rotation")
-                }
-                throw error
+        // 새 작업 공간은 등록 계정의 회전 대상과 분리. 기존 ID의 인증에는 접근하지 않음.
+        if let id {
+            guard !store.profiles.contains(where: { $0.id == id }) else {
+                throw AccountProfileError.profileNotFound(id)
             }
+        } else if family == "claude" {
+            try AccountCredentialMutationLock.requireIdleClaudeRotation()
         }
         let staged = AccountProfile(
             id: id ?? UUID().uuidString,
@@ -184,8 +179,39 @@ struct AccountCredentialImporter {
         AccountCredentialMutationLock.acquire(family: family)
         defer { AccountCredentialMutationLock.release(family: family) }
         if family == "claude" { try AccountCredentialMutationLock.requireIdleClaudeRotation() }
+        try removeSignInWorkspaceContents(family: family, profileID: profileID)
+    }
+
+    /// 등록된 계정의 갱신과 무관한 임시 로그인만 정리.
+    func discardUnregisteredSignInWorkspace(family: String, profileID: String, in store: AccountProfilesStore) throws {
+        AccountCredentialMutationLock.acquire(family: family)
+        defer { AccountCredentialMutationLock.release(family: family) }
+        guard !store.profiles.contains(where: { $0.id == profileID }) else { return }
+        try removeSignInWorkspaceContents(family: family, profileID: profileID)
+    }
+
+    private nonisolated func removeSignInWorkspaceContents(family: String, profileID: String) throws {
         try switcher.removeWorkspaceCredentialArtifacts(family: family, profileID: profileID)
         try workspace.remove(family: family, profileID: profileID)
+    }
+
+    nonisolated func codexWorkspaceAuthPath(profileID: String) throws -> String {
+        try workspace.assertNoSymlinkComponents(family: "codex", profileID: profileID)
+        return try workspace.directory(family: "codex", profileID: profileID).appendingPathComponent("auth.json").path
+    }
+
+    /// 현재 시도만 제거. 같은 프로필의 다른 로그인 시도와 이전 인증 파일은 보존.
+    nonisolated func restoreCodexWorkspace(
+        profileID: String, attemptID: String, previousAuthentication: String?
+    ) throws {
+        let path = try codexWorkspaceAuthPath(profileID: profileID)
+        let files = LocalTextFileAccessor()
+        if let previousAuthentication {
+            try files.writeText(path, previousAuthentication)
+        } else {
+            try files.remove(path)
+        }
+        try workspace.remove(family: "codex", profileID: profileID, attemptID: attemptID)
     }
 
     /// managed 계정 제거 — switchable snapshot을 잃은 등록 profile 잔존 금지.

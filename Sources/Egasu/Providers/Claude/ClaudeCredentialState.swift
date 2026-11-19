@@ -112,7 +112,7 @@ enum ClaudeAuthError: Error, LocalizedError, Equatable {
     case tokenExpired
     case credentialsChanged
     case rotationInProgress
-    case invalidOAuthURL(String)
+    case invalidOAuthURL
 
     var errorDescription: String? {
         switch self {
@@ -133,9 +133,8 @@ enum ClaudeAuthError: Error, LocalizedError, Equatable {
             return "Claude login changed during refresh. Refresh again."
         case .rotationInProgress:
             return "Claude is renewing a login. Try again when the refresh finishes."
-        case .invalidOAuthURL(let value):
-            return
-                "Invalid Claude OAuth URL: \(value). Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE."
+        case .invalidOAuthURL:
+            return "Invalid Claude OAuth URL. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE."
         }
     }
 

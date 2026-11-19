@@ -346,14 +346,13 @@ struct ClaudeAuthStore: Sendable {
     /// 원격 OAuth는 HTTPS 필수. HTTP는 명시적 loopback 개발 주소만 허용.
     private func validatedOAuthURL(_ value: String) throws -> URL {
         guard let url = URL(string: value) else {
-            throw ClaudeAuthError.invalidOAuthURL(value)
+            throw ClaudeAuthError.invalidOAuthURL
         }
         let scheme = url.scheme?.lowercased()
         let host = url.host?.lowercased() ?? ""
         let isLoopback = ["localhost", "127.0.0.1", "::1"].contains(host)
         guard !host.isEmpty, scheme == "https" || (scheme == "http" && isLoopback) else {
-            // 새로 거부한 주소의 userinfo·경로·query·fragment를 오류에 노출하지 않음.
-            throw ClaudeAuthError.invalidOAuthURL("\(scheme ?? "")://\(host)")
+            throw ClaudeAuthError.invalidOAuthURL
         }
         return url
     }

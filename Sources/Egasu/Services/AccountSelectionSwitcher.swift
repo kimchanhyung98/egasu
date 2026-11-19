@@ -112,6 +112,8 @@ struct AccountSelectionSwitcher {
             sourceID: sourceID
         )
 
+        let loginLock = try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: switcher.homeDirectory)
+        defer { withExtendedLifetime(loginLock) {} }
         try AccountCredentialMutationLock.beginClaudeSwitch()
         defer { AccountCredentialMutationLock.endClaudeSwitch() }
         do {

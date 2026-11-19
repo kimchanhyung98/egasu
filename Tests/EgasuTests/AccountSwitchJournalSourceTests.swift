@@ -48,7 +48,9 @@ final class AccountSwitchJournalSourceTests: XCTestCase {
         }
         defer { keychain.beforeRead = nil }
 
-        XCTAssertThrowsError(try fixture.selectionSwitcher.recoverInterruptedSwitch(in: fixture.store))
+        XCTAssertThrowsError(try fixture.selectionSwitcher.recoverInterruptedSwitch(in: fixture.store)) {
+            XCTAssertEqual($0 as? ClaudeAuthError, .credentialsChanged)
+        }
 
         XCTAssertEqual(keychain.currentUserValues[base], rotated.credential)
         XCTAssertEqual(try fixture.journal.load(), record)
