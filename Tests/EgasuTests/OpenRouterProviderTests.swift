@@ -1,3 +1,4 @@
+import Darwin
 import XCTest
 @testable import Egasu
 
@@ -80,6 +81,70 @@ final class OpenRouterAuthStoreTests: XCTestCase {
         try store.deleteAPIKey()
 
         XCTAssertEqual(files.files, [alternate: unrelated])
+    }
+
+    func testUnremovableAlternatePreservesActivePrimaryKey() throws {
+        let primary = OpenRouterAuthStore.configPaths[0]
+        let alternate = OpenRouterAuthStore.configPaths[1]
+        let files = FakeFiles([primary: "sk-or-primary", alternate: "sk-or-alternate"])
+        files.unremovablePaths = [alternate]
+        let store = OpenRouterAuthStore(files: files, environment: FakeEnvironment())
+
+        XCTAssertThrowsError(try store.deleteAPIKey()) {
+            XCTAssertEqual($0 as? OpenRouterAuthError, .deleteFailed)
+        }
+        XCTAssertEqual(try store.requireAPIKey().apiKey, "sk-or-primary")
+        XCTAssertEqual(files.files, [primary: "sk-or-primary", alternate: "sk-or-alternate"])
+    }
+
+    func testDeletingAndReplacingAPIKeysPreservesOtherJSONFields() throws {
+        let primary = OpenRouterAuthStore.configPaths[0]
+        let alternate = OpenRouterAuthStore.configPaths[1]
+        let files = FakeFiles([
+            primary: #"{"api_key":"sk-or-old","theme":"dark"}"#,
+            alternate: #"{"key":"sk-or-legacy","tool":{"active":true}}"#
+        ])
+        let store = OpenRouterAuthStore(files: files, environment: FakeEnvironment())
+
+        try store.saveAPIKey("sk-or-new")
+        XCTAssertEqual(files.files[primary], #"{"apiKey":"sk-or-new","theme":"dark"}"#)
+        try store.deleteAPIKey()
+        XCTAssertEqual(files.files, [primary: #"{"theme":"dark"}"#, alternate: #"{"tool":{"active":true}}"#])
+        XCTAssertEqual(store.keyStatus(), .notSet)
+    }
+
+    func testKeylessJSONAndMultilineSettingsArePreserved() throws {
+        let primary = OpenRouterAuthStore.configPaths[0]
+        let alternate = OpenRouterAuthStore.configPaths[1]
+        for unrelated in [#"["other-setting"]"#, "42", "theme=dark\ncompact=true"] {
+            let files = FakeFiles([primary: "sk-or-primary", alternate: unrelated])
+            let store = OpenRouterAuthStore(files: files, environment: FakeEnvironment())
+
+            XCTAssertEqual(try store.requireAPIKey().apiKey, "sk-or-primary")
+            try store.deleteAPIKey()
+            XCTAssertEqual(files.files, [alternate: unrelated])
+            XCTAssertEqual(store.keyStatus(), .notSet)
+        }
+    }
+
+    func testNonRegularAlternateCannotBlockDeletionOrRemovePrimary() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let primary = root.appendingPathComponent("primary.json").path
+        let alternate = root.appendingPathComponent("alternate.json").path
+        let files = LocalTextFileAccessor()
+        try files.writeText(primary, "sk-or-primary")
+        XCTAssertEqual(mkfifo(alternate, S_IRUSR | S_IWUSR), 0)
+        let store = UserAPIKeyStore(
+            providerID: "openrouter", configPaths: [primary, alternate], environmentNames: [],
+            files: files, environment: FakeEnvironment(), makeError: { OpenRouterAuthError($0) })
+
+        XCTAssertThrowsError(try store.deleteKey()) {
+            XCTAssertEqual($0 as? OpenRouterAuthError, .deleteFailed)
+        }
+        XCTAssertEqual(try store.loadKey(), "sk-or-primary")
+        XCTAssertEqual(try files.readTextIfPresent(primary), "sk-or-primary")
     }
 
     func testIgnoresBlankConfigAndUsesEnvironment() {

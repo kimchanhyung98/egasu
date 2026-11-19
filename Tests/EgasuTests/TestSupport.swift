@@ -239,6 +239,7 @@ struct FakeEnvironment: EnvironmentReading {
 final class FakeFiles: TextFileAccessing, @unchecked Sendable {
     var files: [String: String]
     var unreadablePaths: Set<String> = []
+    var unremovablePaths: Set<String> = []
 
     init(_ files: [String: String] = [:]) {
         self.files = files
@@ -258,6 +259,7 @@ final class FakeFiles: TextFileAccessing, @unchecked Sendable {
     }
 
     func remove(_ path: String) throws {
+        if unremovablePaths.contains(path) { throw CocoaError(.fileWriteNoPermission) }
         files.removeValue(forKey: path)
     }
 }

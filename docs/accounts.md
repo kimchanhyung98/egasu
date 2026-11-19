@@ -66,11 +66,16 @@ Claude·Codex 계정의 추가·전환·재로그인 동작은 [Claude와 Codex 
   이 경우 **Use This Account**는 비활성, **Remove Account…**는 [계정 제거 조건](/docs/accounts.md#계정-제거) 적용.
   재로그인 중 브라우저 로그인 창으로 이동해도 Accounts 패널 유지.
   계정 상세에서 뒤로 가거나 패널을 직접 닫으면 진행 중인 재로그인 취소.
-- OpenRouter·Z.ai: API 키 상태(Not Set, From Your Environment, Saved in App, Custom Key)와 **Add API Key…**·**Replace API Key…**.
+- OpenRouter·Z.ai: API 키 상태(Not Set, Can't Read Saved Key, From Your Environment, Saved in App, Custom Key)와 **Add API Key…**·**Replace API Key…**.
   저장한 키는 환경 변수보다 우선하며 저장 직후 새로 고침.
+  저장 파일을 읽지 못하고 대체 키도 없으면 오류 표시.
+  계정 추가 시에는 새 키 입력 필요.
 - 그 밖의 계정의 **Remove Account…**: 감지형 프로바이더는 추적만 끄고 로그인은 그대로.
-  API 키형은 앱이 저장한 키만 지우고 끔 — 환경 변수 키는 그대로.
-- 계정 제거 시 로컬 인증 파일·공유 홈(`~/.claude`, `~/.codex`)·다른 도구의 설정 유지.
+  API 키형은 앱 설정 파일과 대체 설정 파일에서 확인한 키를 제거하고 추적 해제.
+  환경 변수 키는 유지하며 계정을 다시 추가할 때 사용 가능.
+  JSON의 다른 설정은 유지하고 키만 담긴 파일은 삭제.
+  설정 파일을 읽거나 변경하지 못하면 오류를 표시하고 추적 유지.
+- Claude·Codex 계정 제거 시 공유 홈(`~/.claude`, `~/.codex`)과 다른 도구의 설정 유지.
 
 새 설치·새 계정의 지표는 모두 켜짐으로 시작하며, 기존 공통 설정은 그대로 유지.
 계정 전환 뒤에도 계정별 설정은 같은 프로필을 따라가며, 공통 설정은 프로바이더 단위로 유지.

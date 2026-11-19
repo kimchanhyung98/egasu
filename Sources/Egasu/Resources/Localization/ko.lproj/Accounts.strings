@@ -66,7 +66,7 @@
 "Turn On" = "켜기";
 "Unpin %@" = "%@ 고정 해제";
 "Use This Account" = "이 계정 사용";
-"egasu deletes the API key it saved and stops tracking this account. Keys in your environment stay as they are." = "egasu가 저장한 API 키를 삭제하고 이 계정 추적을 멈춥니다. 환경 변수의 키는 그대로 유지됩니다.";
+"egasu removes API keys from local configuration files and stops tracking this account. Environment keys remain available when you add the account again." = "egasu가 로컬 설정 파일에서 API 키를 제거하고 이 계정 추적을 멈춥니다. 환경 변수의 키는 계정을 다시 추가할 때 사용할 수 있습니다.";
 "egasu reads the %@ sign-in already on this Mac." = "egasu는 이 Mac에 이미 있는 %@ 로그인 정보를 읽습니다.";
 "egasu stops tracking this account. Your %@ sign-in stays as it is." = "egasu가 이 계정 추적을 멈춥니다. %@ 로그인은 그대로 유지됩니다.";
 

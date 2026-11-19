@@ -141,6 +141,7 @@ private struct APIKeyAddStep: View {
         .onAppear {
             let status = provider.apiKeyStatus
             hasExistingKey = status != .notSet && status != .unreadable
+            if status == .unreadable { error = UserAPIKeyStore.unreadableKeyMessage.localized }
         }
     }
 
