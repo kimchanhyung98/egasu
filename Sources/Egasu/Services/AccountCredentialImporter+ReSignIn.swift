@@ -98,9 +98,11 @@ extension AccountCredentialImporter {
             try store.cancelIdentityReplacement(transaction)
             return false
         }
+        let validatesShared =
+            profile.family == "claude"
+            && (transaction.replacesSharedAuthentication || transaction.externalClaudeGeneration != nil)
         let loginLock =
-            transaction.replacesSharedAuthentication && profile.family == "claude"
-            ? try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: switcher.homeDirectory) : nil
+            validatesShared ? try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: switcher.homeDirectory) : nil
         defer { withExtendedLifetime(loginLock) {} }
         AccountCredentialMutationLock.acquire(family: profile.family)
         defer { AccountCredentialMutationLock.release(family: profile.family) }
@@ -133,18 +135,33 @@ extension AccountCredentialImporter {
                     allowInteraction: allowInteraction)
             }
         }
+        let validatesShared =
+            transaction.replacesSharedAuthentication || transaction.externalClaudeGeneration != nil
         let loginLock =
-            transaction.replacesSharedAuthentication
-            ? try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: switcher.homeDirectory) : nil
+            validatesShared ? try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: switcher.homeDirectory) : nil
         defer { withExtendedLifetime(loginLock) {} }
         try AccountCredentialMutationLock.beginClaudeSwitch()
         defer { AccountCredentialMutationLock.endClaudeSwitch() }
-        let recovery = try await loadOffMainActor { () -> (hasReplacement: Bool, revision: UInt64)? in
-            var result: (Bool, UInt64)?
+        typealias Recovery = (hasReplacement: Bool, revision: UInt64, shared: AccountSwitchJournal.SharedState?)
+        let recovery = try await loadOffMainActor { () -> Recovery? in
+            var result: Recovery?
             _ = try AccountCredentialMutationLock.withUnchangedRevision(familyRevision, family: profile.family) {
                 let hasReplacement = try applyInterruptedCredentialFiles(
                     transaction, profile: profile, savedSnapshot: savedSnapshot, allowInteraction: allowInteraction)
-                result = (hasReplacement, AccountCredentialMutationLock.revision(for: profile.family))
+                let shared =
+                    validatesShared && hasReplacement
+                    ? try switcher.readClaudeSwitchState(allowInteraction: allowInteraction) : nil
+                if let shared, let generation = transaction.claudeGeneration,
+                    !generation.matchesReplacement(shared, identity: transaction.replacementIdentityKey)
+                {
+                    throw ClaudeAuthError.credentialsChanged
+                }
+                if let shared, let generation = transaction.externalClaudeGeneration,
+                    try shared.fingerprint() != generation.sharedFingerprint
+                {
+                    throw ClaudeAuthError.credentialsChanged
+                }
+                result = (hasReplacement, AccountCredentialMutationLock.revision(for: profile.family), shared)
             }
             return result
         }
@@ -155,6 +172,11 @@ extension AccountCredentialImporter {
             try AccountCredentialMutationLock.withUnchangedRevision(
                 recovery.revision, family: profile.family,
                 {
+                    if let shared = recovery.shared,
+                        try switcher.readClaudeSwitchState(allowInteraction: false) != shared
+                    {
+                        throw ClaudeAuthError.credentialsChanged
+                    }
                     try finishIdentityReplacementRecord(
                         transaction, profile: profile, hasReplacement: recovery.hasReplacement, in: store)
                 })
@@ -226,6 +248,17 @@ extension AccountCredentialImporter {
                 guard sharedMatchesSnapshot else { throw ClaudeAuthError.credentialsChanged }
                 targetSaved = savedIdentity == transaction.replacementIdentityKey
             }
+        } else if let generation = transaction.externalClaudeGeneration {
+            let fingerprint = try savedSnapshot.map(AccountIdentityReplacement.ExternalClaudeGeneration.fingerprint)
+            if fingerprint == generation.previousSnapshotFingerprint {
+                return false
+            }
+            guard fingerprint == generation.replacementSnapshotFingerprint,
+                savedIdentity == transaction.replacementIdentityKey,
+                try switcher.readClaudeSwitchState(allowInteraction: allowInteraction).fingerprint()
+                    == generation.sharedFingerprint
+            else { throw ClaudeAuthError.credentialsChanged }
+            targetSaved = true
         } else {
             targetSaved = savedIdentity == transaction.replacementIdentityKey
         }

@@ -259,8 +259,7 @@ struct AccountCredentialImporter {
 
     private struct ExternalClaudeObservation: Sendable {
         var previousSnapshot: AccountCredentialVault.Entry?
-        var shared: AccountCredentialVault.Entry
-        var sourceID: String
+        var sharedState: AccountSwitchJournal.SharedState
         var snapshot: AccountCredentialVault.Entry
         var identityKey: String
         var profile: AccountProfile
@@ -313,14 +312,20 @@ struct AccountCredentialImporter {
             observation.previousSnapshot != observation.snapshot || target.identityKey != observation.identityKey
         if !replacesCredential, target.id == profile.id { return .unchanged }
 
+        let loginLock = try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: switcher.homeDirectory)
+        defer { withExtendedLifetime(loginLock) {} }
         try AccountCredentialMutationLock.beginClaudeSwitch()
         defer { AccountCredentialMutationLock.endClaudeSwitch() }
         let transaction =
             replacesCredential
             ? try store.beginIdentityReplacement(
-                profileID: target.id, with: observation.identityKey, replacesSharedAuthentication: false
+                profileID: target.id, with: observation.identityKey, replacesSharedAuthentication: false,
+                externalClaudeGeneration: .init(
+                    state: observation.sharedState, previous: observation.previousSnapshot,
+                    replacement: observation.snapshot)
             ) : nil
         var appliedRevision: UInt64?
+        var attemptedSelection = false
         do {
             let applied = try await loadOffMainActor {
                 try applyExternalClaudeCredentials(
@@ -337,12 +342,26 @@ struct AccountCredentialImporter {
                     applied.revision, family: "claude",
                     {
                         appliedRevision = AccountCredentialMutationLock.revision(for: "claude")
+                        guard try switcher.readClaudeSwitchState(allowInteraction: false) == observation.sharedState
+                        else { throw ClaudeAuthError.credentialsChanged }
+                        attemptedSelection = true
                         try store.commitPreferredSelection(family: "claude", profileID: target.id)
                         if let transaction { _ = try store.commitIdentityReplacement(transaction) }
                     })
             else { throw ClaudeAuthError.credentialsChanged }
             return .updated(profileID: target.id)
         } catch {
+            var restoredSelection = true
+            if attemptedSelection, target.id != profile.id, store.preferredProfileID(family: "claude") == target.id {
+                do {
+                    try store.commitPreferredSelection(family: "claude", profileID: profile.id)
+                } catch {
+                    restoredSelection = false
+                    AppDiagnostics.failure(
+                        .accountRollback, error: error, providerID: "claude",
+                        localContext: "external reauthentication: restore selection")
+                }
+            }
             if let transaction, try store.pendingIdentityReplacement() == transaction {
                 let restored: Bool
                 if let appliedRevision {
@@ -362,7 +381,7 @@ struct AccountCredentialImporter {
                 } else {
                     restored = true
                 }
-                if restored { try store.cancelIdentityReplacement(transaction) }
+                if restored, restoredSelection { try store.cancelIdentityReplacement(transaction) }
             }
             throw error
         }
@@ -385,14 +404,16 @@ struct AccountCredentialImporter {
             profile.id == selected.id
             ? selectedSnapshot
             : try switcher.loadSnapshot(for: profile, allowInteraction: allowInteraction)
-        guard try switcher.loadSnapshot(for: profile, allowInteraction: allowInteraction) == previousSnapshot,
-            try sharedLoginMatches(shared, sourceID: verified.sourceID, allowInteraction: allowInteraction)
+        let latestSnapshot = try switcher.loadSnapshot(for: profile, allowInteraction: allowInteraction)
+        let sharedState = try switcher.readClaudeSwitchState(allowInteraction: allowInteraction)
+        guard latestSnapshot == previousSnapshot, sharedState.sourceID == verified.sourceID,
+            sharedState.credentials == [shared.credential], sharedState.accounts == [shared.claudeOAuthAccount]
         else {
             AppLog.warn(.auth, "Claude sign-in changed during observation; preserving all authentication")
             throw ClaudeAuthError.credentialsChanged
         }
         return ExternalClaudeObservation(
-            previousSnapshot: previousSnapshot, shared: shared, sourceID: verified.sourceID,
+            previousSnapshot: previousSnapshot, sharedState: sharedState,
             snapshot: verified.snapshot,
             identityKey: identityKey, profile: profile
         )
@@ -419,8 +440,8 @@ struct AccountCredentialImporter {
                     guard
                         try switcher.loadSnapshot(for: observation.profile, allowInteraction: allowInteraction)
                             == observation.previousSnapshot,
-                        try sharedLoginMatches(
-                            observation.shared, sourceID: observation.sourceID, allowInteraction: allowInteraction)
+                        try switcher.readClaudeSwitchState(allowInteraction: allowInteraction)
+                            == observation.sharedState
                     else { throw ClaudeAuthError.credentialsChanged }
                     if replacesCredential {
                         do {
@@ -430,9 +451,8 @@ struct AccountCredentialImporter {
                             guard
                                 try switcher.loadSnapshot(for: observation.profile, allowInteraction: allowInteraction)
                                     == observation.snapshot,
-                                try sharedLoginMatches(
-                                    observation.shared, sourceID: observation.sourceID,
-                                    allowInteraction: allowInteraction)
+                                try switcher.readClaudeSwitchState(allowInteraction: allowInteraction)
+                                    == observation.sharedState
                             else { throw ClaudeAuthError.credentialsChanged }
                         } catch {
                             failure = error

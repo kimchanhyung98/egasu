@@ -4,6 +4,28 @@ import XCTest
 final class AccountCredentialSwitcherTests: XCTestCase {
     // MARK: - Claude
 
+    func testMalformedWorkspaceCredentialDoesNotChangeKeychainOrAccount() throws {
+        let fixture = try makeFixture()
+        let account = profile(id: "profile-a", family: "claude", label: "Personal", identityKey: "acct-a|org-a")
+        let directory = try fixture.workspace.prepare(family: "claude", profileID: account.id)
+        let credentialFile = directory.appendingPathComponent(".credentials.json")
+        let accountFile = directory.appendingPathComponent(".claude.json")
+        try Data("{".utf8).write(to: credentialFile)
+        try Data(#"{"oauthAccount":{"accountUuid":"old"}}"#.utf8).write(to: accountFile)
+        let service = scopedClaudeService(home: directory.path)
+        let previous = claudeCredential(token: "token-old")
+        fixture.keychain.currentUserValues[service] = previous
+
+        XCTAssertThrowsError(
+            try fixture.switcher.writeWorkspaceAuthentication(
+                .init(credential: claudeCredential(token: "token-a"), claudeOAuthAccount: claudeAccount("a")),
+                for: account))
+
+        XCTAssertEqual(fixture.keychain.currentUserValues[service], previous)
+        XCTAssertEqual(try text(credentialFile), "{")
+        XCTAssertEqual(try text(accountFile), #"{"oauthAccount":{"accountUuid":"old"}}"#)
+    }
+
     func testSharedClaudeStateAcceptsANullAccountAndRejectsMalformedAccounts() throws {
         let fixture = try makeFixture()
         let url = fixture.home.appendingPathComponent(".claude.json")

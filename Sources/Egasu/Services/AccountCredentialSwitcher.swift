@@ -119,6 +119,15 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
         let sourceID: String
     }
 
+    func claudeProfile(for accessToken: String) async throws -> ClaudeProfileResponse {
+        let config = try ClaudeAuthStore(environment: environment).oauthConfig()
+        let response = try await claudeUsageClient.fetchProfile(accessToken: accessToken, config: config)
+        try ProviderAuthRetry.requireSuccess(
+            response, authExpired: ClaudeAuthError.tokenExpired, requestFailed: ClaudeUsageError.requestFailed
+        )
+        return try JSONDecoder().decode(ClaudeProfileResponse.self, from: response.body)
+    }
+
     /// CLI 인증은 그대로 두고 변경된 토큰의 계정·조직을 확인한 뒤 egasu 저장본에 반영.
     func readSharedClaudeExternalAuthentication(
         comparedTo previousSnapshot: AccountCredentialVault.Entry?, allowInteraction: Bool
@@ -136,12 +145,7 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
         }
         guard let token = ClaudeAuthStore.parseCredentials(observed.credential)?.claudeAiOauth?.accessToken?.nilIfEmpty
         else { return nil }
-        let config = try ClaudeAuthStore(environment: environment).oauthConfig()
-        let response = try await claudeUsageClient.fetchProfile(accessToken: token, config: config)
-        try ProviderAuthRetry.requireSuccess(
-            response, authExpired: ClaudeAuthError.tokenExpired, requestFailed: ClaudeUsageError.requestFailed
-        )
-        let profile = try JSONDecoder().decode(ClaudeProfileResponse.self, from: response.body)
+        let profile = try await claudeProfile(for: token)
         let verifiedIdentity = try profile.accountIdentityKey()
         let comparableIdentity =
             expectedIdentity.contains("|")
@@ -260,14 +264,16 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
                 forConfigDirLiteral: directory.path, environment: environment)
             let existing = try keychain.readGenericPasswordForCurrentUser(
                 service: service, allowInteraction: allowInteraction)
-            try keychain.writeCLISharedPassword(
-                service: service,
-                value: try ClaudeAccountLoginCredentials.replacingLogin(in: existing, with: entry.credential),
-                forCurrentUser: true
-            )
+            let keychainCredential = try ClaudeAccountLoginCredentials.replacingLogin(
+                in: existing, with: entry.credential)
             let url = directory.appendingPathComponent(".credentials.json")
             let fileCredential = try ClaudeAccountLoginCredentials.replacingLogin(
                 in: readTextIfPresent(url), with: entry.credential)
+            try keychain.writeCLISharedPassword(
+                service: service,
+                value: keychainCredential,
+                forCurrentUser: true
+            )
             try writePrivateFile(fileCredential, to: url)
             if let oauthAccount = entry.claudeOAuthAccount {
                 try mergeClaudeOAuthAccount(oauthAccount, at: directory.appendingPathComponent(".claude.json"))

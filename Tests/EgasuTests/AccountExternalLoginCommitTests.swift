@@ -3,12 +3,19 @@ import XCTest
 
 @MainActor
 final class AccountExternalLoginCommitTests: XCTestCase {
-    func testManualReconciliationReadsAndWritesKeychainOffMainThroughRollback() async throws {
+    func testManualReconciliationKeepsKeychainWritesAndApprovalReadsOffMain() async throws {
         for persistsSelection in [true, false] {
             let fixture = try AccountSwitchRecoveryFixture(test: self, synchronize: { persistsSelection })
             let rotated = AccountSwitchRecoveryFixture.entry("a", token: "rotated-access-a")
             fixture.keychain.currentUserValues[fixture.baseService] = rotated.credential
-            fixture.keychain.beforeRead = { _ in XCTAssertFalse(Thread.isMainThread) }
+            let keychain = fixture.keychain
+            let sharedService = fixture.baseService
+            keychain.beforeRead = { service in
+                if Thread.isMainThread {
+                    XCTAssertEqual(service, sharedService)
+                    XCTAssertTrue(keychain.noninteractiveReadServices.contains(service))
+                }
+            }
             fixture.keychain.beforeWrite = { _, _ in XCTAssertFalse(Thread.isMainThread) }
 
             let result = await ProviderRefreshContext.$isManual.withValue(true) {
@@ -27,6 +34,29 @@ final class AccountExternalLoginCommitTests: XCTestCase {
                 try fixture.switcher.loadSnapshot(for: fixture.a), persistsSelection ? rotated : fixture.entryA)
             XCTAssertNil(try fixture.store.pendingIdentityReplacement())
         }
+    }
+
+    func testExternalLoginChangedAtSelectionCommitDoesNotSelectStaleAccount() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        try fixture.switcher.applySharedAuthentication(fixture.entryB, family: "claude")
+        let external = AccountSwitchRecoveryFixture.entry("c")
+        let keychain = fixture.keychain
+        let base = fixture.baseService
+        let state = fixture.root.appendingPathComponent(".claude.json")
+        let account = try XCTUnwrap(external.claudeOAuthAccount)
+        keychain.beforeRead = { service in
+            guard service == base, Thread.isMainThread else { return }
+            keychain.beforeRead = nil
+            keychain.currentUserValues[base] = external.credential
+            try Data(#"{"oauthAccount":\#(account)}"#.utf8).write(to: state)
+        }
+
+        let result = await claudeReconciliationResult(fixture.importer, in: fixture.store)
+
+        XCTAssertThrowsError(try result.get()) { XCTAssertEqual($0 as? ClaudeAuthError, .credentialsChanged) }
+        XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.a.id)
+        XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), external)
+        try fixture.assertSavedAccountsUnchanged()
     }
 
     func testSelectionChangedDuringWorkspaceUpdateKeepsNewSelectionAndRestoresSnapshot() async throws {

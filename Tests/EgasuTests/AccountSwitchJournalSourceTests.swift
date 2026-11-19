@@ -122,6 +122,36 @@ final class AccountSwitchJournalSourceTests: XCTestCase {
         XCTAssertNil(try fixture.journal.load())
     }
 
+    func testLegacyRetryRejectsCurrentLoginMissingFromTheVerifiedLegacyRead() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let record = try fixture.stageIntent(legacy: true)
+        fixture.keychain.currentUserValues[fixture.scopedService] = fixture.entryB.credential
+        let base = fixture.baseService
+        let known = fixture.entryA.credential
+        let unrelated = AccountSwitchRecoveryFixture.entry("c").credential
+        let reads = OSAllocatedUnfairLock(initialState: 0)
+        let keychain = fixture.keychain
+        keychain.beforeRead = { service in
+            guard service == base else { return }
+            let read = reads.withLock {
+                $0 += 1
+                return $0
+            }
+            if read == 2 || read == 4 { keychain.currentUserValues[base] = unrelated }
+            if read == 3 { keychain.currentUserValues[base] = known }
+        }
+        defer { keychain.beforeRead = nil }
+        let writes = keychain.writeCount
+
+        await assertSwitchFails {
+            try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+        }
+
+        XCTAssertEqual(try fixture.journal.load(), record)
+        XCTAssertEqual(keychain.writeCount, writes)
+        XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.a.id)
+    }
+
     func testFailedSwitchToThirdAccountCanRetryFromThePreviousMixedState() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         let original = try fixture.stageIntent()
@@ -183,6 +213,99 @@ final class AccountSwitchJournalSourceTests: XCTestCase {
         XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), fixture.entryB)
         XCTAssertEqual(try fixture.freshStore().preferredProfileID(family: "claude"), fixture.b.id)
         XCTAssertNil(try fixture.journal.load())
+        try fixture.assertSavedAccountsUnchanged()
+    }
+
+    func testRetryRecognizesExactStagedAccountWhenThePreviousLoginWasSignedOut() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let base = fixture.baseService
+        fixture.keychain.currentUserValues.removeValue(forKey: base)
+        let stateURL = fixture.root.appendingPathComponent(".claude.json")
+        try fixture.switcher.mergeClaudeOAuthAccount(nil, at: stateURL)
+        fixture.keychain.beforeWrite = { service, _ in
+            if service == base { throw SwitchRecoveryKeychain.Failure.injected }
+        }
+        await assertSwitchFails {
+            try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+        }
+        fixture.keychain.beforeWrite = nil
+        let record = try XCTUnwrap(fixture.journal.load())
+        try fixture.switcher.mergeClaudeOAuthAccount(
+            AccountSwitchRecoveryFixture.entry("c").claudeOAuthAccount, at: stateURL)
+
+        await assertSwitchFails {
+            try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+        }
+        XCTAssertEqual(try fixture.journal.load(), record)
+        XCTAssertNil(fixture.keychain.currentUserValues[base])
+        try fixture.switcher.mergeClaudeOAuthAccount(fixture.entryB.claudeOAuthAccount, at: stateURL)
+
+        try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+
+        XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), fixture.entryB)
+        XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.b.id)
+        XCTAssertNil(try fixture.journal.load())
+    }
+
+    func testFailedSwitchRepairsAccountMetadataForTheVerifiedRotatedDeparture() async throws {
+        for failRecoveryCommit in [false, true] {
+            let fixture = try AccountSwitchRecoveryFixture(test: self, synchronize: { !failRecoveryCommit })
+            let rotated = AccountSwitchRecoveryFixture.entry("a", token: "rotated-a")
+            let keychain = fixture.keychain
+            let base = fixture.baseService
+            keychain.beforeWrite = { service, _ in
+                guard service == base else { return }
+                keychain.currentUserValues[base] = rotated.credential
+                throw SwitchRecoveryKeychain.Failure.injected
+            }
+
+            await assertSwitchFails {
+                try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+            }
+            keychain.beforeWrite = nil
+
+            XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), rotated)
+            XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.a.id)
+            XCTAssertEqual(try fixture.journal.load() != nil, failRecoveryCommit)
+
+            let reloaded = try fixture.freshStore()
+            try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: reloaded)
+
+            XCTAssertEqual(try fixture.switcher.loadSnapshot(for: fixture.a), rotated)
+            XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), fixture.entryB)
+            XCTAssertEqual(reloaded.preferredProfileID(family: "claude"), fixture.b.id)
+            XCTAssertNil(try fixture.journal.load())
+        }
+    }
+
+    func testFailedSwitchPreservesUnrelatedTokenAndStagedMetadataWhenOwnershipDiffers() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let unrelated = AccountSwitchRecoveryFixture.entry("c")
+        fixture.http.identities["token-c"] = "acct-c|org-c"
+        let keychain = fixture.keychain
+        let base = fixture.baseService
+        keychain.beforeWrite = { service, _ in
+            guard service == base else { return }
+            keychain.currentUserValues[base] = unrelated.credential
+            throw SwitchRecoveryKeychain.Failure.injected
+        }
+
+        await assertSwitchFails {
+            try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+        }
+        keychain.beforeWrite = nil
+        let record = try XCTUnwrap(fixture.journal.load())
+        let unresolved = try fixture.switcher.readClaudeSwitchState()
+        XCTAssertEqual(unresolved.credentials, [unrelated.credential])
+        XCTAssertEqual(unresolved.accounts, [fixture.entryB.claudeOAuthAccount])
+
+        await assertSwitchFails {
+            try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+        }
+
+        XCTAssertEqual(try fixture.switcher.readClaudeSwitchState(), unresolved)
+        XCTAssertEqual(try fixture.journal.load(), record)
+        XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.a.id)
         try fixture.assertSavedAccountsUnchanged()
     }
 

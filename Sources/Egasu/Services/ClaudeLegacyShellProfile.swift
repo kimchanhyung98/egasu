@@ -29,6 +29,10 @@ struct ClaudeLegacyShellProfile {
             guard markers.count == 2 else { throw ClaudeSharedLoginRoute.UnrecognizedSetup() }
             let first = markers[0]
             let last = markers[1]
+            // 여러 줄의 인용문·heredoc 안에서는 같은 텍스트가 함수 선언의 증거가 아님.
+            guard lines[..<first].allSatisfy({ Self.isStandaloneLine(content($0)) }) else {
+                throw ClaudeSharedLoginRoute.UnrecognizedSetup()
+            }
             let quoted = "'" + configDirectory.replacingOccurrences(of: "'", with: "'\\''") + "'"
             let removals = AccountSignInLauncher.claudeAuthEnvironmentRemovals.map { "-u \($0)" }.joined(separator: " ")
             let command = "  env \(removals) CLAUDE_CONFIG_DIR=\(quoted) command claude"
@@ -41,6 +45,29 @@ struct ClaudeLegacyShellProfile {
             let upperBound = min(lines[last].endIndex + 1, bytes.endIndex)
             return lines[first].startIndex..<upperBound
         }
+
+        private static func isStandaloneLine(_ line: String) -> Bool {
+            var quote: Character?
+            var escaped = false
+            var previous: Character?
+            for character in line {
+                defer { previous = character }
+                if escaped {
+                    escaped = false
+                } else if character == "\\", quote != "'" {
+                    escaped = true
+                } else if let open = quote {
+                    if character == open { quote = nil }
+                } else if character == "#" && (previous == nil || previous?.isWhitespace == true) {
+                    break
+                } else if ["'", "\"", "`"].contains(character) {
+                    quote = character
+                } else if character == "<", previous == "<" {
+                    return false
+                }
+            }
+            return quote == nil && !escaped
+        }
     }
 
     private let shell: Shell
@@ -51,6 +78,19 @@ struct ClaudeLegacyShellProfile {
     let configDirectory: String
 
     var relativePath: String { shell.relativePath }
+
+    var hasConfigDirectorySetting: Bool {
+        var outside = original
+        outside.removeSubrange(block)
+        return outside.split(separator: 0x0a).contains { bytes in
+            let line = String(decoding: bytes, as: UTF8.self).trimmingCharacters(in: .whitespaces)
+            guard !line.hasPrefix("#") else { return false }
+            return line.range(
+                of:
+                    #"(?:^|[;\s])(?:CLAUDE_CONFIG_DIR\s*=|(?:export|typeset|declare|set|setenv)\s+[^#;]*\bCLAUDE_CONFIG_DIR\b)"#,
+                options: .regularExpression) != nil
+        }
+    }
 
     static func configDirectory(in home: URL) -> String {
         home.resolvingSymlinksInPath().standardizedFileURL.appendingPathComponent(".claude").path
@@ -63,7 +103,7 @@ struct ClaudeLegacyShellProfile {
             let target = path.resolvingSymlinksInPath()
             let bytes: Data
             do {
-                bytes = try readRegularFile(target)
+                bytes = try LocalTextFileAccessor.readRegularFile(target)
             } catch let error as POSIXError where error.code == .ENOENT {
                 return nil
             }
@@ -80,17 +120,29 @@ struct ClaudeLegacyShellProfile {
         NSFileCoordinator().coordinate(writingItemAt: target, options: .forReplacing, error: &coordinatorError) { url in
             result = Result {
                 let files = FileManager.default
-                let temp = try files.url(
-                    for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: url, create: true)
-                defer { try? files.removeItem(at: temp) }
-                let replacement = temp.appendingPathComponent("profile")
+                guard path.resolvingSymlinksInPath().path == url.path,
+                    try LocalTextFileAccessor.readRegularFile(url) == original
+                else { throw POSIXError(.ESTALE) }
+                let replacement = url.deletingLastPathComponent()
+                    .appendingPathComponent(url.lastPathComponent + "." + UUID().uuidString + ".egasu-recovery")
+                try files.copyItem(at: url, to: replacement)
+                var exchanged = false
+                defer { if !exchanged { try? files.removeItem(at: replacement) } }
                 var updated = original
                 updated.removeSubrange(block)
-                try updated.write(to: replacement)
-                guard path.resolvingSymlinksInPath().path == url.path, try Self.readRegularFile(url) == original
-                else { throw POSIXError(.ESTALE) }
-                // 원래 대상의 권한·확장 속성을 승계하며 심볼릭 링크의 대상 파일만 교체.
-                _ = try files.replaceItemAt(url, withItemAt: replacement)
+                // 복사한 일반 파일의 권한·확장 속성을 유지하며 내용만 교체.
+                let fd = Darwin.open(replacement.path, O_WRONLY | O_CLOEXEC | O_NONBLOCK | O_NOFOLLOW)
+                guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+                let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+                var info = stat()
+                guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { throw POSIXError(.EFTYPE) }
+                try handle.truncate(atOffset: 0)
+                try handle.write(contentsOf: updated)
+                try handle.close()
+                guard path.resolvingSymlinksInPath().path == url.path else { throw POSIXError(.ESTALE) }
+                try Self.exchange(replacement, with: url)
+                exchanged = true
+                try Self.verifyDisplacedProfile(at: replacement, target: url, original: original, updated: updated)
             }
         }
         if let coordinatorError { throw coordinatorError }
@@ -98,13 +150,23 @@ struct ClaudeLegacyShellProfile {
         try result.get()
     }
 
-    private static func readRegularFile(_ url: URL) throws -> Data {
-        let fd = Darwin.open(url.path, O_RDONLY | O_CLOEXEC | O_NONBLOCK | O_NOFOLLOW)
-        guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
-        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-        var info = stat()
-        guard fstat(fd, &info) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
-        guard info.st_mode & S_IFMT == S_IFREG else { throw POSIXError(.EFTYPE) }
-        return try handle.readToEnd() ?? Data()
+    private static func exchange(_ first: URL, with second: URL) throws {
+        guard renamex_np(first.path, second.path, UInt32(RENAME_SWAP)) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+    }
+
+    static func verifyDisplacedProfile(at displaced: URL, target: URL, original: Data, updated: Data) throws {
+        guard (try? LocalTextFileAccessor.readRegularFile(displaced)) == original else {
+            // 교환 시점의 실제 파일을 복구. 두 번째 편집이 끼어들면 그 파일도 같은 디렉터리에 보존.
+            if (try? LocalTextFileAccessor.readRegularFile(target)) == updated {
+                try exchange(displaced, with: target)
+                if (try? LocalTextFileAccessor.readRegularFile(displaced)) == updated {
+                    try FileManager.default.removeItem(at: displaced)
+                }
+            }
+            throw ClaudeShellLoginMigrationError.concurrentProfileEdit
+        }
+        try FileManager.default.removeItem(at: displaced)
     }
 }

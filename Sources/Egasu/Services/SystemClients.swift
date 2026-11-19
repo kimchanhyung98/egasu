@@ -65,11 +65,27 @@ struct LocalTextFileAccessor: TextFileAccessing {
     }
 
     func readDataIfPresent(_ path: String) throws -> Data? {
+        // 대상이 없는 심볼릭 링크는 경로 부재이며 순환 링크는 읽기 오류.
+        guard let resolved = realpath(expandHome(path), nil) else {
+            if errno == ENOENT { return nil }
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        defer { free(resolved) }
         do {
-            return try Data(contentsOf: URL(fileURLWithPath: expandHome(path)))
-        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return try Self.readRegularFile(URL(fileURLWithPath: String(cString: resolved)))
+        } catch let error as POSIXError where error.code == .ENOENT {
             return nil
         }
+    }
+
+    static func readRegularFile(_ url: URL) throws -> Data {
+        let fd = Darwin.open(url.path, O_RDONLY | O_CLOEXEC | O_NONBLOCK | O_NOFOLLOW)
+        guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        var info = stat()
+        guard fstat(fd, &info) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        guard info.st_mode & S_IFMT == S_IFREG else { throw POSIXError(.EFTYPE) }
+        return try handle.readToEnd() ?? Data()
     }
 
     func readText(_ path: String) throws -> String {

@@ -39,6 +39,19 @@ struct AccountSwitchJournal: Sendable {
             return try [fingerprint(), staged.fingerprint()]
         }
 
+        func containsLegacyLogin(_ state: Self) -> Bool {
+            guard let credential = state.credentials[0], accounts.contains(state.accounts[0]) else { return false }
+            return credentials.compactMap { $0 }.contains {
+                (try? ClaudeAccountLoginCredentials.loginOnly($0)) == credential
+            }
+        }
+
+        func matchesStagedAccount(of record: Record, with previousCredential: String) throws -> Bool {
+            let staged = Self(
+                credentials: [previousCredential], accounts: accounts, identities: identities, sourceID: sourceID)
+            return try staged.fingerprint() == record.retryStateFingerprints?.last
+        }
+
         func matches(credentialFingerprint: String, identity: String, requiresAllSources: Bool) -> Bool {
             if requiresAllSources,
                (credentials.contains(where: { $0 == nil }) || identities.contains(where: { $0 == nil })) {

@@ -189,6 +189,62 @@ extension AccountCredentialSwitcherTests {
     }
 
     @MainActor
+    func testShellMigrationKeepsDifferentTokenOwnerDespiteMatchingAccountFiles() async throws {
+        let f = try makeFixture()
+        let defaults = try shellMigrationDefaults()
+        let rc = try installOldClaudeFunction(f)
+        try seedClaudeSharedHome(f, token: "other", account: claudeAccount("a"))
+        let scoped = scopedClaudeService(home: f.home.appendingPathComponent(".claude").path)
+        f.keychain.currentUserValues[scoped] = claudeCredential(token: "legacy")
+        f.http.identities = ["other": "acct-b|org-b", "legacy": "acct-a|org-a"]
+        let both = f.keychain.currentUserValues
+
+        await assertMigrationFails(defaults: defaults, switcher: f.switcher, expecting: .conflict)
+
+        XCTAssertEqual(f.keychain.currentUserValues, both)
+        XCTAssertEqual(f.keychain.writeCount, 0)
+        XCTAssertEqual(try text(rc), legacyClaudeZshBlock(home: f.home))
+        XCTAssertFalse(defaults.bool(forKey: ClaudeLegacyShellMigration.completedKey))
+    }
+
+    @MainActor
+    func testShellMigrationPreservesProfilesWithAnExportedConfigDirectory() async throws {
+        for (shell, setting) in [
+            ("zsh", "export CLAUDE_CONFIG_DIR=/another"), ("fish", "set -gx CLAUDE_CONFIG_DIR /another"),
+            ("environment", "")
+        ] {
+            let f = try makeFixture()
+            let defaults = try shellMigrationDefaults()
+            let rc = try installOldClaudeFunction(f)
+            let switcher = AccountCredentialSwitcher(
+                keychain: f.keychain,
+                environment: FakeEnvironment(shell == "environment" ? ["CLAUDE_CONFIG_DIR": "/another"] : [:]),
+                homeDirectory: f.home, workspace: f.workspace)
+            if shell == "zsh" {
+                try Data((setting + "\n" + legacyClaudeZshBlock(home: f.home)).utf8).write(to: rc)
+            } else if shell == "fish" {
+                let fish = f.home.appendingPathComponent(".config/fish/config.fish")
+                let block = legacyClaudeZshBlock(home: f.home)
+                    .replacingOccurrences(of: "unalias", with: "functions -e")
+                    .replacingOccurrences(of: "claude {", with: "claude")
+                    .replacingOccurrences(of: #""$@""#, with: "$argv")
+                    .replacingOccurrences(of: "\n}", with: "\nend")
+                try FileManager.default.createDirectory(
+                    at: fish.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try Data((block + "\n" + setting).utf8).write(to: fish)
+            }
+            let previous = try Data(contentsOf: rc)
+            f.keychain.onSharedRead = { _ in XCTFail("Redirected profiles must not migrate a login") }
+
+            await assertMigrationFails(defaults: defaults, switcher: switcher, expecting: .configDirectoryOverride)
+
+            XCTAssertFalse(defaults.bool(forKey: ClaudeLegacyShellMigration.completedKey))
+            XCTAssertEqual(try Data(contentsOf: rc), previous)
+            XCTAssertEqual(f.keychain.writeCount, 0)
+        }
+    }
+
+    @MainActor
     func testShellMigrationOnlyCopiesAnIdenticalUnscopedDefaultLogin() async throws {
         for unscopedToken in ["other", "active"] {
             let f = try makeFixture()
@@ -267,6 +323,7 @@ extension AccountCredentialSwitcherTests {
             try seedClaudeSharedHome(f, token: "base", account: claudeAccount("a"))
             let base = baseClaudeService()
             let scoped = scopedClaudeService(home: f.home.appendingPathComponent(".claude").path)
+            f.http.identities = ["new": "acct-a|org-a", "old": "acct-a|org-a"]
             let later = #"{"claudeAiOauth":{"accessToken":"new","expiresAt":4102444800000}}"#
             let earlier = #"{"claudeAiOauth":{"accessToken":"old","expiresAt":4070908800000}}"#
             f.keychain.currentUserValues[base] = sourceIsNewer ? earlier : later
@@ -288,6 +345,7 @@ extension AccountCredentialSwitcherTests {
         f.keychain.currentUserValues[scoped] = claudeCredential(token: "first")
         try f.switcher.mergeClaudeOAuthAccount(
             claudeAccount("a"), at: f.home.appendingPathComponent(".claude/.claude.json"))
+        f.http.identities = ["first": "acct-a|org-a", "rotated": "acct-a|org-a"]
         let rotated = claudeCredential(token: "rotated")
         f.keychain.afterSharedWrite = { keychain, _ in keychain.currentUserValues[scoped] = rotated }
         await assertMigrationFails(defaults: defaults, switcher: f.switcher)

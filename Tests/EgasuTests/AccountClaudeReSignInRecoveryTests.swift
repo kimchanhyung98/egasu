@@ -71,6 +71,20 @@ final class AccountClaudeReSignInRecoveryTests: XCTestCase {
         XCTAssertEqual(fixture.store.profile(id: fixture.a.id)?.identityKey, fixture.a.identityKey)
     }
 
+    func testWhitespaceAccessTokenDoesNotBlockApplyingSharedLogin() throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        fixture.keychain.currentUserValues[fixture.baseService] =
+            #"{"claudeAiOauth":{"accessToken":"   "},"mcpOAuth":{"provider":"keep-me"}}"#
+        XCTAssertNil(try fixture.switcher.readSharedAuthentication(family: "claude"))
+
+        try fixture.switcher.applySharedAuthentication(fixture.entryB, family: "claude")
+
+        XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), fixture.entryB)
+        let raw = try XCTUnwrap(fixture.keychain.currentUserValues[fixture.baseService])
+        let document = try XCTUnwrap(ProviderParse.jsonObjectWithHexFallback(raw))
+        XCTAssertEqual(document["mcpOAuth"] as? [String: String], ["provider": "keep-me"])
+    }
+
     func testReSignInPreservesNewCLIGenerationWhenVaultWriteTriggersRotation() throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         let replacement = AccountSwitchRecoveryFixture.entry("c")
@@ -198,6 +212,48 @@ final class AccountClaudeReSignInRecoveryTests: XCTestCase {
                 savedReplacement ? replacement : fixture.entryA)
             XCTAssertNil(try fixture.store.pendingIdentityReplacement())
         }
+    }
+
+    func testExternalRenewalRecoveryDiscardsIntentWhenReplacementWasNeverSaved() throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let rotated = try fixture.rotateDefaultCredentials()
+        let generation = try AccountIdentityReplacement.ExternalClaudeGeneration(
+            state: fixture.switcher.readClaudeSwitchState(), previous: fixture.entryA, replacement: rotated)
+        _ = try fixture.store.beginIdentityReplacement(
+            profileID: fixture.a.id, with: fixture.a.identityKey, replacesSharedAuthentication: false,
+            externalClaudeGeneration: generation)
+        let writes = fixture.keychain.writeCount
+
+        XCTAssertFalse(try fixture.importer.recoverInterruptedIdentityReplacement(in: fixture.store))
+        XCTAssertEqual(fixture.keychain.writeCount, writes)
+        XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), rotated)
+        XCTAssertNil(try fixture.store.pendingIdentityReplacement())
+        try fixture.assertSavedAccountsUnchanged()
+    }
+
+    func testActiveRecoveryKeepsRecordWhenCLIChangesAtIdentityCommit() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let replacement = AccountSwitchRecoveryFixture.entry("c")
+        let record = try beginReplacement(in: fixture, replacement: replacement, identity: "acct-c|org-c")
+        try fixture.switcher.saveSnapshot(replacement, for: fixture.a)
+        let keychain = fixture.keychain
+        let base = fixture.baseService
+        let external = fixture.entryB
+        let account = try XCTUnwrap(external.claudeOAuthAccount)
+        let state = fixture.root.appendingPathComponent(".claude.json")
+        keychain.beforeRead = { service in
+            guard service == base, Thread.isMainThread else { return }
+            keychain.beforeRead = nil
+            keychain.currentUserValues[base] = external.credential
+            try Data(#"{"oauthAccount":\#(account)}"#.utf8).write(to: state)
+        }
+
+        let result = await claudeReconciliationResult(fixture.importer, in: fixture.store)
+
+        XCTAssertThrowsError(try result.get()) { XCTAssertEqual($0 as? ClaudeAuthError, .credentialsChanged) }
+        XCTAssertEqual(try fixture.store.pendingIdentityReplacement(), record)
+        XCTAssertEqual(fixture.store.profile(id: fixture.a.id)?.identityKey, fixture.a.identityKey)
+        XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), external)
     }
 
     func testCrashBetweenAccountAndTokenWritesCompletesThePendingSignIn() throws {

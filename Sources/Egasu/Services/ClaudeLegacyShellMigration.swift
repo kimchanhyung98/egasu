@@ -2,7 +2,7 @@ import Foundation
 
 enum ClaudeShellLoginMigrationError: String, Error, UserPresentableError {
     case conflict, incompleteOAuth, sourceIdentity, defaultIdentity, missingAccount, missingOrganization, verification
-    case pendingSwitch, busy, shellEnvironmentUnavailable
+    case pendingSwitch, busy, shellEnvironmentUnavailable, configDirectoryOverride, concurrentProfileEdit
 
     var presentationMessage: LocalizedMessage {
         switch self {
@@ -16,6 +16,14 @@ enum ClaudeShellLoginMigrationError: String, Error, UserPresentableError {
             )
         case .pendingSwitch:
             .init("Finish the pending Claude account switch in Accounts, then restart egasu.")
+        case .concurrentProfileEdit:
+            .init(
+                "Your shell settings changed during migration. Check your changes and any .egasu-recovery file next to your shell settings, then restart egasu."
+            )
+        case .configDirectoryOverride:
+            .init(
+                "Your shell sets CLAUDE_CONFIG_DIR outside the old Claude function. Check which login you want to use before removing the function."
+            )
         case .shellEnvironmentUnavailable:
             .init(
                 "egasu could not read your login shell environment. Check that your login shell starts, then restart egasu."
@@ -60,7 +68,9 @@ enum ClaudeLegacyShellMigration {
         }
         if let reader = switcher.environment as? ProcessEnvironmentReader {
             // Keychain 서비스의 OAuth 접미사를 결정하는 값은 미설정 여부까지 확인한 뒤 이전.
-            let scopeKeys = ["USER_TYPE", "USE_LOCAL_OAUTH", "USE_STAGING_OAUTH", "CLAUDE_CODE_CUSTOM_OAUTH_URL"]
+            let scopeKeys = [
+                "CLAUDE_CONFIG_DIR", "USER_TYPE", "USE_LOCAL_OAUTH", "USE_STAGING_OAUTH", "CLAUDE_CODE_CUSTOM_OAUTH_URL"
+            ]
             let pinnedKeys = reader.launchSnapshot()?.pinnedKeys ?? []
             let scopeKnown = scopeKeys.allSatisfy {
                 reader.processEnvironment[$0]?.nilIfEmpty != nil || pinnedKeys.contains($0)
@@ -76,14 +86,17 @@ enum ClaudeLegacyShellMigration {
         let profiles = try ClaudeLegacyShellProfile.find(in: home)
         if let profile = profiles.first {
             try checkPendingSwitch(defaults: defaults, switcher: switcher)
+            guard switcher.environment.value(for: "CLAUDE_CONFIG_DIR")?.nilIfEmpty == nil,
+                !profiles.contains(where: \.hasConfigDirectorySetting)
+            else { throw ClaudeShellLoginMigrationError.configDirectoryOverride }
             let route = ClaudeSharedLoginRoute.legacy(configDir: profile.configDirectory)
             let source = try switcher.sharedClaudeLogin(route: route, allowInteraction: true).state
-            try switcher.preparePlainClaudeLogin(from: source)
+            let expectedLogin = try await switcher.preparePlainClaudeLogin(from: source, route: route)
             for profile in profiles {
                 try checkPendingSwitch(defaults: defaults, switcher: switcher)
                 guard try switcher.sharedClaudeLogin(route: route, allowInteraction: true).state == source
                 else { throw ClaudeAuthError.credentialsChanged }
-                try switcher.verifyPlainClaudeLogin(from: source)
+                try switcher.verifyPlainClaudeLogin(from: source, expecting: expectedLogin)
                 try profile.remove()
             }
             AppLog.info(.config, "migrated legacy Claude shell setup")
@@ -137,7 +150,10 @@ enum ClaudeLegacyShellMigration {
 
 extension AccountCredentialSwitcher {
     /// 다른 기본 계정은 보존. 같은 계정의 OAuth가 둘이면 더 늦은 만료 시각을 우선.
-    fileprivate func preparePlainClaudeLogin(from source: AccountSwitchJournal.SharedState) throws {
+    @MainActor
+    fileprivate func preparePlainClaudeLogin(
+        from source: AccountSwitchJournal.SharedState, route: ClaudeSharedLoginRoute
+    ) async throws -> String? {
         // macOS CLI의 기본 Keychain에 복사. 파일에 남은 토큰만으로 이전 완료를 판정하지 않음.
         let destination = try sharedClaudeLogin(
             route: .plain, allowInteraction: true,
@@ -145,7 +161,7 @@ extension AccountCredentialSwitcher {
         ).state
         guard let login = source.credentials[0] else {
             try verifyLoggedOut(destination)
-            return
+            return nil
         }
         guard let account = source.accounts[0], let identity = source.identities[0] else {
             throw ClaudeShellLoginMigrationError.sourceIdentity
@@ -164,15 +180,27 @@ extension AccountCredentialSwitcher {
             if destination.accounts[0] == nil {
                 guard existing == login else { throw ClaudeShellLoginMigrationError.missingAccount }
             } else if existing == login {
-                return
+                return login
             } else {
                 guard identity.contains("|") else { throw ClaudeShellLoginMigrationError.missingOrganization }
+                for candidate in [existing, login] {
+                    guard let token = ClaudeAuthStore.parseCredentials(candidate)?.claudeAiOauth?.accessToken else {
+                        throw ClaudeShellLoginMigrationError.incompleteOAuth
+                    }
+                    let profile = try await claudeProfile(for: token)
+                    guard try profile.accountIdentityKey() == identity else {
+                        throw ClaudeShellLoginMigrationError.conflict
+                    }
+                }
+                guard try sharedClaudeLogin(route: route, allowInteraction: true).state == source else {
+                    throw ClaudeAuthError.credentialsChanged
+                }
                 let sourceExpiry = ClaudeAuthStore.parseCredentials(login)?.claudeAiOauth?.expiresAt
                 let existingExpiry = ClaudeAuthStore.parseCredentials(existing)?.claudeAiOauth?.expiresAt
                 if destination.identities[0] == identity, let sourceExpiry, let existingExpiry,
                     existingExpiry >= sourceExpiry
                 {
-                    return
+                    return existing
                 }
             }
         }
@@ -187,9 +215,12 @@ extension AccountCredentialSwitcher {
         try applySharedClaudeLogin(
             .init(credential: login, claudeOAuthAccount: destination.accounts[0] ?? account), expecting: destination,
             allowInteraction: true, route: .plain)
+        return login
     }
 
-    fileprivate func verifyPlainClaudeLogin(from source: AccountSwitchJournal.SharedState) throws {
+    fileprivate func verifyPlainClaudeLogin(from source: AccountSwitchJournal.SharedState, expecting login: String?)
+        throws
+    {
         let destination = try sharedClaudeLogin(
             route: .plain, allowInteraction: true,
             fallbacks: source.credentials[0] == nil ? .legacyKeychainAndFile : .disabled
@@ -198,7 +229,7 @@ extension AccountCredentialSwitcher {
             try verifyLoggedOut(destination)
         } else {
             guard let identity = source.identities[0], destination.identities[0] == identity,
-                identity.contains("|") || source.credentials == destination.credentials
+                destination.credentials == [login]
             else { throw ClaudeShellLoginMigrationError.verification }
         }
     }

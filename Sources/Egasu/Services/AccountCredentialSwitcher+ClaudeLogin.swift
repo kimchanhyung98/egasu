@@ -93,7 +93,7 @@ extension AccountCredentialSwitcher {
                 current.state.accounts == [canonicalAccount], current.state.credentials == before.state.credentials
             else { throw ClaudeAuthError.credentialsChanged }
             if current.state.credentials != [targetLogin] {
-                try writeClaudeLogin(targetLogin, to: current)
+                try writeClaudeLogin(targetLogin, expecting: current, route: route)
             }
             let applied = try sharedClaudeLogin(route: route, allowInteraction: allowInteraction)
             guard applied.state.sourceID == before.state.sourceID,
@@ -132,7 +132,7 @@ extension AccountCredentialSwitcher {
         guard current.state.sourceID == before.state.sourceID, current.state.accounts == [account] else { return }
         if current.state.credentials != before.state.credentials {
             guard current.state.credentials == [target] else { return }
-            try writeClaudeLogin(before.state.credentials[0], to: current)
+            try writeClaudeLogin(before.state.credentials[0], expecting: current, route: route)
         }
         guard before.state.accounts != [account] else { return }
         let restored = try sharedClaudeLogin(route: route, allowInteraction: before.allowInteraction)
@@ -143,7 +143,13 @@ extension AccountCredentialSwitcher {
             before.state.accounts[0], at: before.stateURL, removeCreatedState: !before.stateFileExisted)
     }
 
-    private func writeClaudeLogin(_ credential: String?, to destination: SharedClaudeLogin) throws {
+    private func writeClaudeLogin(
+        _ credential: String?, expecting expected: SharedClaudeLogin, route: ClaudeSharedLoginRoute?
+    ) throws {
+        let destination = try sharedClaudeLogin(route: route, allowInteraction: expected.allowInteraction)
+        guard destination.state == expected.state, destination.stateURL == expected.stateURL else {
+            throw ClaudeAuthError.credentialsChanged
+        }
         let existing: String?
         if let raw = destination.rawCredential {
             existing = raw
@@ -151,7 +157,9 @@ extension AccountCredentialSwitcher {
             // 로그아웃된 Keychain에도 MCP 등이 있을 수 있음.
             existing = try keychain.readGenericPasswordForCurrentUser(
                 service: service, allowInteraction: destination.allowInteraction)
-            if let existing, ClaudeAuthStore.parseCredentials(existing)?.claudeAiOauth?.accessToken?.nilIfEmpty != nil {
+            if let existing, let access = ClaudeAuthStore.parseCredentials(existing)?.claudeAiOauth?.accessToken,
+                !access.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
                 throw ClaudeAuthError.credentialsChanged
             }
         } else {
@@ -168,5 +176,21 @@ extension AccountCredentialSwitcher {
             try keychain.writeCLISharedPassword(service: service, value: merged, forCurrentUser: false)
         default: throw ClaudeAuthError.credentialsChanged
         }
+    }
+
+    /// 프로필 API로 현재 토큰의 소유자를 확인한 복구에서 계정 정보만 교체.
+    func repairSharedClaudeAccountMetadata(
+        _ account: String, identity: String, expecting expected: AccountSwitchJournal.SharedState
+    ) throws -> AccountSwitchJournal.SharedState {
+        let current = try sharedClaudeLogin()
+        guard current.state == expected else { throw ClaudeAuthError.credentialsChanged }
+        if current.state.accounts != [account] {
+            try mergeClaudeOAuthAccount(account, at: current.stateURL)
+        }
+        let repaired = try sharedClaudeLogin().state
+        guard repaired.sourceID == expected.sourceID, repaired.credentials == expected.credentials,
+            repaired.accounts == [account], repaired.identities == [identity]
+        else { throw ClaudeAuthError.credentialsChanged }
+        return repaired
     }
 }

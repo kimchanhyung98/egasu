@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import XCTest
 @testable import Egasu
@@ -35,6 +36,65 @@ final class LegacyClaudeShellSetupTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: rc), prefix + suffix)
         let attributes = try FileManager.default.attributesOfItem(atPath: target.path)
         XCTAssertEqual(attributes[.posixPermissions] as? Int, 0o640)
+    }
+
+    func testQuotedWrapperIsNotAnInstalledFunction() throws {
+        let home = try temporaryHome()
+        let rc = home.appendingPathComponent(".zshrc")
+        for (prefix, suffix) in [("cat <<'EXAMPLE'", "EXAMPLE"), ("example='", "'")] {
+            let contents = Data((prefix + "\n" + legacyClaudeZshBlock(home: home) + "\n" + suffix).utf8)
+            try contents.write(to: rc)
+            XCTAssertThrowsError(try ClaudeLegacyShellProfile.find(in: home))
+            XCTAssertThrowsError(
+                try ClaudeSharedLoginRoute.resolve(
+                    homeDirectory: home, files: LocalTextFileAccessor(),
+                    environment: FakeEnvironment(["SHELL": "/bin/zsh"])))
+            XCTAssertEqual(try Data(contentsOf: rc), contents)
+        }
+    }
+
+    func testRouteRejectsNamedPipeWithoutReadingIt() throws {
+        let home = try temporaryHome()
+        let rc = home.appendingPathComponent(".zshrc")
+        XCTAssertEqual(mkfifo(rc.path, 0o600), 0)
+        // 회귀 시에도 읽기 스레드가 writer를 기다리며 멈추지 않도록 지연된 EOF 전달.
+        DispatchQueue.global().asyncAfter(deadline: .now() + 1) {
+            let fd = Darwin.open(rc.path, O_WRONLY | O_NONBLOCK)
+            if fd >= 0 { Darwin.close(fd) }
+        }
+        XCTAssertThrowsError(
+            try ClaudeSharedLoginRoute.resolve(
+                homeDirectory: home, files: LocalTextFileAccessor(), environment: FakeEnvironment(["SHELL": "/bin/zsh"])
+            )
+        ) {
+            XCTAssertTrue($0 is ClaudeSharedLoginRoute.UnrecognizedSetup)
+        }
+    }
+
+    func testReplacementRestoresTheActualDisplacedEditAndKeepsAnyLaterSave() throws {
+        let home = try temporaryHome()
+        let target = home.appendingPathComponent("profile")
+        let displaced = home.appendingPathComponent("profile.egasu-recovery")
+        let original = Data("initial".utf8)
+        let updated = Data("migration".utf8)
+        let edited = Data("external save".utf8)
+        for later in [updated, Data("second external save".utf8)] {
+            try edited.write(to: displaced)
+            try later.write(to: target)
+            XCTAssertThrowsError(
+                try ClaudeLegacyShellProfile.verifyDisplacedProfile(
+                    at: displaced, target: target, original: original, updated: updated)
+            ) {
+                XCTAssertEqual($0 as? ClaudeShellLoginMigrationError, .concurrentProfileEdit)
+            }
+            if later == updated {
+                XCTAssertEqual(try Data(contentsOf: target), edited)
+                XCTAssertFalse(FileManager.default.fileExists(atPath: displaced.path))
+            } else {
+                XCTAssertEqual(try Data(contentsOf: target), later)
+                XCTAssertEqual(try Data(contentsOf: displaced), edited)
+            }
+        }
     }
 
     func testConcurrentShellEditsAndMalformedInstallerBlocksArePreserved() throws {

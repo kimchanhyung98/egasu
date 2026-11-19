@@ -37,11 +37,13 @@ struct AccountSelectionSwitcher {
             if let profileID = selection(for: record, state: state, in: store) {
                 try finish(record, selecting: profileID, observed: state, in: store)
                 previousRecord = nil
+            } else if state.permitsRetry(of: record) {
+                interruptedState = state
             } else {
-                guard state.permitsRetry(of: record) else {
+                guard try await repairRotatedDeparture(record, state: state, in: store) else {
                     throw AccountCredentialSwitcher.Error.switchRecoveryRequired
                 }
-                interruptedState = state
+                previousRecord = nil
             }
         }
         guard let preferred = store.preferredProfile(family: "claude") else {
@@ -75,6 +77,9 @@ struct AccountSelectionSwitcher {
             state = try await readSwitchState(in: store, expecting: previousRecord, legacyRecord: false)
             guard try await readSwitchState(in: store, expecting: previousRecord) == interruptedState else {
                 throw ClaudeAuthError.credentialsChanged
+            }
+            guard interruptedState.containsLegacyLogin(state) else {
+                throw AccountCredentialSwitcher.Error.switchRecoveryRequired
             }
             let oldCredential = interruptedState.credentials.compactMap { $0 }.first {
                 AccountSwitchJournal.fingerprint($0) == previousCredential
@@ -131,6 +136,21 @@ struct AccountSelectionSwitcher {
                 verifiedClaudeDeparture: previousRecord == nil ? departure.verified : nil,
                 expectedTarget: target, expectedClaudeState: state
             )
+        } catch let switchError {
+            do {
+                if try journal.load() == record {
+                    let interrupted = try await readSwitchState(in: store, expecting: record)
+                    if interrupted.identities == [record.selectedIdentity], !interrupted.permitsRetry(of: record) {
+                        _ = try await repairRotatedDeparture(
+                            record, state: interrupted, in: store, sharedLoginLockHeld: true)
+                    }
+                }
+            } catch {
+                AppDiagnostics.failure(
+                    .accountRollback, error: error, providerID: "claude",
+                    localContext: "verify and repair interrupted switch metadata")
+            }
+            throw switchError
         }
         let applied = try await readSwitchState(in: store, expecting: record)
         guard
@@ -143,6 +163,59 @@ struct AccountSelectionSwitcher {
             throw AccountCredentialSwitcher.Error.switchRecoveryRequired
         }
         try finish(record, selecting: selected.id, observed: applied, in: store, sharedLoginLockHeld: true)
+    }
+
+    private func repairRotatedDeparture(
+        _ record: AccountSwitchJournal.Record, state: AccountSwitchJournal.SharedState,
+        in store: AccountProfilesStore, sharedLoginLockHeld: Bool = false
+    ) async throws -> Bool {
+        guard record.sourceID != nil, state.sourceID == record.sourceID, record.retryStateFingerprints != nil,
+            let previous = store.profile(id: record.previousProfileID), previous.family == "claude",
+            previous.identityKey == record.previousIdentity, previous.identityKey.contains("|"),
+            let previousFingerprint = record.previousCredentialFingerprint,
+            let selected = store.profile(id: record.selectedProfileID), selected.family == "claude",
+            selected.identityKey == record.selectedIdentity,
+            let preferred = store.preferredProfileID(family: "claude"),
+            ([previous.id, selected.id] + record.priorSelectionIDs).contains(preferred),
+            let credential = state.credentials[0],
+            let token = ClaudeAuthStore.parseCredentials(credential)?.claudeAiOauth?.accessToken?.nilIfEmpty
+        else { return false }
+
+        let profiles = store.profiles
+        let revision = store.authenticationRevision
+        let observer = switcher
+        let snapshot = try await loadOffMainActor {
+            try observer.loadSnapshot(for: previous, allowInteraction: true)
+        }
+        guard let saved = snapshot, let previousAccount = saved.claudeOAuthAccount,
+            switcher.identity(of: saved, family: "claude")?.identityKey == previous.identityKey,
+            AccountSwitchJournal.fingerprint(saved.credential) == previousFingerprint
+        else { return false }
+        let alreadyRepaired = state.accounts == [previousAccount] && state.identities == [previous.identityKey]
+        let matchesStagedAccount = try state.matchesStagedAccount(of: record, with: saved.credential)
+        guard alreadyRepaired || matchesStagedAccount else { return false }
+
+        let profile = try await switcher.claudeProfile(for: token)
+        guard try profile.accountIdentityKey() == previous.identityKey else {
+            AppLog.warn(.auth, "interrupted Claude switch token ownership differs from the departing account")
+            return false
+        }
+        try Task.checkCancellation()
+        let loginLock =
+            sharedLoginLockHeld
+            ? nil : try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: switcher.homeDirectory)
+        defer { withExtendedLifetime(loginLock) {} }
+        AccountCredentialMutationLock.acquire(family: "claude")
+        defer { AccountCredentialMutationLock.release(family: "claude") }
+        try AccountCredentialMutationLock.requireIdleClaudeRotation()
+        guard !store.hasUnreadableRegistry, store.profiles == profiles, store.authenticationRevision == revision,
+            store.preferredProfileID(family: "claude") == preferred, try store.pendingIdentityReplacement() == nil,
+            try journal.load() == record, try switcher.loadSnapshot(for: previous, allowInteraction: true) == saved
+        else { throw ClaudeAuthError.credentialsChanged }
+        let repaired = try switcher.repairSharedClaudeAccountMetadata(
+            previousAccount, identity: previous.identityKey, expecting: state)
+        try finish(record, selecting: previous.id, observed: repaired, in: store, sharedLoginLockHeld: true)
+        return true
     }
 
     private func verifiedDeparture(
