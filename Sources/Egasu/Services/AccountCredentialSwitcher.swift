@@ -119,9 +119,12 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
         let sourceID: String
     }
 
-    func claudeProfile(for accessToken: String) async throws -> ClaudeProfileResponse {
+    func claudeProfile(
+        for accessToken: String, timeout: TimeInterval = ClaudeUsageClient.profileTimeout
+    ) async throws -> ClaudeProfileResponse {
         let config = try ClaudeAuthStore(environment: environment).oauthConfig()
-        let response = try await claudeUsageClient.fetchProfile(accessToken: accessToken, config: config)
+        let response = try await claudeUsageClient.fetchProfile(
+            accessToken: accessToken, config: config, timeout: timeout)
         try ProviderAuthRetry.requireSuccess(
             response, authExpired: ClaudeAuthError.tokenExpired, requestFailed: ClaudeUsageError.requestFailed
         )

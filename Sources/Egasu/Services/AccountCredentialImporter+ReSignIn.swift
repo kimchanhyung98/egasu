@@ -21,6 +21,10 @@ extension AccountCredentialImporter {
             isActive && profile.family == "claude"
             ? try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: switcher.homeDirectory) : nil
         defer { withExtendedLifetime(loginLock) {} }
+        if loginLock != nil {
+            try store.checkPendingPeerClaudeLoginChanges(
+                home: switcher.homeDirectory, ownJournal: switcher.switchJournal)
+        }
         AccountCredentialMutationLock.acquire(family: profile.family)
         defer { AccountCredentialMutationLock.release(family: profile.family) }
         if profile.family == "claude" { try AccountCredentialMutationLock.requireIdleClaudeRotation() }
@@ -98,12 +102,14 @@ extension AccountCredentialImporter {
             try store.cancelIdentityReplacement(transaction)
             return false
         }
-        let validatesShared =
-            profile.family == "claude"
-            && (transaction.replacesSharedAuthentication || transaction.externalClaudeGeneration != nil)
+        let validatesShared = profile.family == "claude" && transaction.replacesSharedAuthentication
         let loginLock =
             validatesShared ? try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: switcher.homeDirectory) : nil
         defer { withExtendedLifetime(loginLock) {} }
+        if loginLock != nil {
+            try store.checkPendingPeerClaudeLoginChanges(
+                home: switcher.homeDirectory, ownJournal: switcher.switchJournal)
+        }
         AccountCredentialMutationLock.acquire(family: profile.family)
         defer { AccountCredentialMutationLock.release(family: profile.family) }
         if profile.family == "claude" { try AccountCredentialMutationLock.requireIdleClaudeRotation() }
@@ -135,11 +141,14 @@ extension AccountCredentialImporter {
                     allowInteraction: allowInteraction)
             }
         }
-        let validatesShared =
-            transaction.replacesSharedAuthentication || transaction.externalClaudeGeneration != nil
+        let validatesShared = transaction.replacesSharedAuthentication
         let loginLock =
             validatesShared ? try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: switcher.homeDirectory) : nil
         defer { withExtendedLifetime(loginLock) {} }
+        if loginLock != nil {
+            try store.checkPendingPeerClaudeLoginChanges(
+                home: switcher.homeDirectory, ownJournal: switcher.switchJournal)
+        }
         try AccountCredentialMutationLock.beginClaudeSwitch()
         defer { AccountCredentialMutationLock.endClaudeSwitch() }
         typealias Recovery = (hasReplacement: Bool, revision: UInt64, shared: AccountSwitchJournal.SharedState?)
@@ -153,11 +162,6 @@ extension AccountCredentialImporter {
                     ? try switcher.readClaudeSwitchState(allowInteraction: allowInteraction) : nil
                 if let shared, let generation = transaction.claudeGeneration,
                     !generation.matchesReplacement(shared, identity: transaction.replacementIdentityKey)
-                {
-                    throw ClaudeAuthError.credentialsChanged
-                }
-                if let shared, let generation = transaction.externalClaudeGeneration,
-                    try shared.fingerprint() != generation.sharedFingerprint
                 {
                     throw ClaudeAuthError.credentialsChanged
                 }
@@ -253,10 +257,9 @@ extension AccountCredentialImporter {
             if fingerprint == generation.previousSnapshotFingerprint {
                 return false
             }
+            // 이미 검증한 보관함 저장만 완료. 이후의 CLI 로그인은 다음 관찰에서 별도 반영.
             guard fingerprint == generation.replacementSnapshotFingerprint,
-                savedIdentity == transaction.replacementIdentityKey,
-                try switcher.readClaudeSwitchState(allowInteraction: allowInteraction).fingerprint()
-                    == generation.sharedFingerprint
+                savedIdentity == transaction.replacementIdentityKey
             else { throw ClaudeAuthError.credentialsChanged }
             targetSaved = true
         } else {

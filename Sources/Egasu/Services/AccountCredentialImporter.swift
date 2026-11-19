@@ -342,8 +342,14 @@ struct AccountCredentialImporter {
                     applied.revision, family: "claude",
                     {
                         appliedRevision = AccountCredentialMutationLock.revision(for: "claude")
-                        guard try switcher.readClaudeSwitchState(allowInteraction: false) == observation.sharedState
-                        else { throw ClaudeAuthError.credentialsChanged }
+                        let current = try switcher.readClaudeSwitchState(allowInteraction: false)
+                        if let generation = transaction?.externalClaudeGeneration {
+                            guard try current.fingerprint() == generation.sharedFingerprint else {
+                                throw ClaudeAuthError.credentialsChanged
+                            }
+                        } else if current != observation.sharedState {
+                            throw ClaudeAuthError.credentialsChanged
+                        }
                         attemptedSelection = true
                         try store.commitPreferredSelection(family: "claude", profileID: target.id)
                         if let transaction { _ = try store.commitIdentityReplacement(transaction) }

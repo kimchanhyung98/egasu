@@ -353,4 +353,51 @@ final class AccountSwitchJournalSourceTests: XCTestCase {
         XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.b.id)
         XCTAssertNil(try fixture.journal.load())
     }
+
+    func testPeerJournalBlocksSharedWritesAndOwnJournalCanRetryAfterPeerRecovery() async throws {
+        for hasOwnJournal in [false, true] {
+            let fixture = try AccountSwitchRecoveryFixture(test: self)
+            let record = try fixture.stageIntent()
+            try fixture.journal.clear(record)
+            let production = StorageNamespace.productionBundleIdentifier
+            let peerID = AppBundleLocator.current.bundleIdentifier == production ? production + ".dev" : production
+            let peerNamespace = StorageNamespace(bundleIdentifier: peerID)
+            let support = fixture.root.appendingPathComponent("Library/Application Support")
+            let ownJournal = AccountSwitchJournal(
+                path: support.appendingPathComponent(
+                    "\(StorageNamespace.current.name)/AccountSignIn/claude-switch.json"
+                ).path)
+            let peerJournal = AccountSwitchJournal(
+                path: support.appendingPathComponent("\(peerNamespace.name)/AccountSignIn/claude-switch.json").path)
+            try peerJournal.save(record, replacing: nil)
+            if hasOwnJournal {
+                try ownJournal.save(record, replacing: nil)
+                try fixture.switcher.mergeClaudeOAuthAccount(
+                    fixture.entryB.claudeOAuthAccount, at: fixture.root.appendingPathComponent(".claude.json"))
+            }
+            let switcher = AccountSelectionSwitcher(switcher: fixture.switcher, journal: ownJournal)
+            let writesBefore = fixture.keychain.writeCount
+            let before = try fixture.switcher.readClaudeSwitchState()
+
+            do {
+                try await switcher.switchAuthentication(to: fixture.b, in: fixture.store)
+                XCTFail("Expected the peer journal to block changing shared authentication")
+            } catch {
+                XCTAssertEqual(error as? ClaudeShellLoginMigrationError, .pendingSwitch)
+            }
+
+            XCTAssertEqual(try peerJournal.load(), record)
+            XCTAssertEqual(try ownJournal.load(), hasOwnJournal ? record : nil)
+            XCTAssertEqual(fixture.keychain.writeCount, writesBefore)
+            XCTAssertEqual(try fixture.switcher.readClaudeSwitchState(), before)
+            XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.a.id)
+
+            try peerJournal.clear(record)
+            try await switcher.switchAuthentication(to: fixture.b, in: fixture.store)
+
+            XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.b.id)
+            XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), fixture.entryB)
+            XCTAssertNil(try ownJournal.load())
+        }
+    }
 }

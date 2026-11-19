@@ -123,6 +123,7 @@ struct AccountSelectionSwitcher {
 
         let loginLock = try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: switcher.homeDirectory)
         defer { withExtendedLifetime(loginLock) {} }
+        try store.checkPendingPeerClaudeLoginChanges(home: switcher.homeDirectory, ownJournal: journal)
         try AccountCredentialMutationLock.beginClaudeSwitch()
         defer { AccountCredentialMutationLock.endClaudeSwitch() }
         do {
@@ -205,6 +206,7 @@ struct AccountSelectionSwitcher {
             sharedLoginLockHeld
             ? nil : try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: switcher.homeDirectory)
         defer { withExtendedLifetime(loginLock) {} }
+        try store.checkPendingPeerClaudeLoginChanges(home: switcher.homeDirectory, ownJournal: journal)
         AccountCredentialMutationLock.acquire(family: "claude")
         defer { AccountCredentialMutationLock.release(family: "claude") }
         try AccountCredentialMutationLock.requireIdleClaudeRotation()

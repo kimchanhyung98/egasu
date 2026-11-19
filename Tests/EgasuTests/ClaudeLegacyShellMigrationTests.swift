@@ -93,7 +93,7 @@ extension AccountCredentialSwitcherTests {
     }
 
     @MainActor
-    func testShellMigrationUsesShellOAuthScopeFromCaptureOrPinnedSnapshot() async throws {
+    func testShellMigrationUsesFreshShellOAuthScopeWithOrWithoutMatchingSnapshot() async throws {
         let stdout = [
             "__EGASU_ENV_BEGIN__", "CLAUDE_CODE_CUSTOM_OAUTH_URL=https://example.test",
             "__EGASU_ENV_END__"
@@ -106,7 +106,7 @@ extension AccountCredentialSwitcherTests {
                 usesSnapshot
                 ? ShellEnvironmentSnapshot(
                     values: ["CLAUDE_CODE_CUSTOM_OAUTH_URL": "https://example.test"], capturedAt: Date()) : nil
-            let shell = LoginShellEnvironment(runner: MigrationShellRunner(stdout: usesSnapshot ? nil : stdout))
+            let shell = LoginShellEnvironment(runner: MigrationShellRunner(stdout: stdout))
             let reader = ProcessEnvironmentReader(
                 processEnvironment: [:], shellEnvironment: shell, launchSnapshot: { snapshot })
             let switcher = AccountCredentialSwitcher(
@@ -129,14 +129,14 @@ extension AccountCredentialSwitcherTests {
     }
 
     @MainActor
-    func testShellMigrationPreservesWrapperWhenCaptureFailsAndOAuthScopeIsNotPinned() async throws {
+    func testShellMigrationPreservesWrapperWhenCaptureFailsDespiteCompleteSnapshot() async throws {
         let f = try makeFixture()
         let defaults = try shellMigrationDefaults()
         let rc = try installOldClaudeFunction(f)
-        let partial = ShellEnvironmentSnapshot(values: [:], capturedAt: Date(), pinnedKeys: ["USER_TYPE"])
+        let snapshot = ShellEnvironmentSnapshot(values: [:], capturedAt: Date())
         let reader = ProcessEnvironmentReader(
             processEnvironment: [:], shellEnvironment: LoginShellEnvironment(runner: MigrationShellRunner(stdout: "")),
-            launchSnapshot: { partial })
+            launchSnapshot: { snapshot })
         let switcher = AccountCredentialSwitcher(
             keychain: f.keychain, environment: reader, homeDirectory: f.home, workspace: f.workspace)
         f.keychain.onSharedRead = { _ in XCTFail("An unknown OAuth scope must not read Keychain") }
@@ -144,6 +144,38 @@ extension AccountCredentialSwitcherTests {
         XCTAssertEqual(try text(rc), legacyClaudeZshBlock(home: f.home))
         XCTAssertFalse(defaults.bool(forKey: ClaudeLegacyShellMigration.completedKey))
         XCTAssertEqual(f.keychain.writeCount, 0)
+    }
+
+    @MainActor
+    func testShellMigrationPreservesWrapperAndBothLoginsWhenSourcedSettingsChanged() async throws {
+        for setting in ["CLAUDE_CONFIG_DIR=/fixture/custom", "CLAUDE_CODE_CUSTOM_OAUTH_URL=https://changed.example"] {
+            let f = try makeFixture()
+            let defaults = try shellMigrationDefaults()
+            let rc = try installOldClaudeFunction(f)
+            let profile = "source ~/.claude-login-settings\n" + legacyClaudeZshBlock(home: f.home)
+            try Data(profile.utf8).write(to: rc)
+            let snapshot = ShellEnvironmentSnapshot(values: [:], capturedAt: Date())
+            let stdout = ["__EGASU_ENV_BEGIN__", setting, "__EGASU_ENV_END__"].joined(separator: "\0")
+            let reader = ProcessEnvironmentReader(
+                processEnvironment: [:],
+                shellEnvironment: LoginShellEnvironment(runner: MigrationShellRunner(stdout: stdout)),
+                launchSnapshot: { snapshot })
+            let switcher = AccountCredentialSwitcher(
+                keychain: f.keychain, environment: reader, homeDirectory: f.home, workspace: f.workspace)
+            let scoped = scopedClaudeService(home: f.home.appendingPathComponent(".claude").path)
+            f.keychain.currentUserValues = [
+                baseClaudeService(): claudeCredential(token: "default"), scoped: claudeCredential(token: "legacy")
+            ]
+            let before = f.keychain.currentUserValues
+            f.keychain.onSharedRead = { _ in XCTFail("Changed shell scope must be detected before reading Keychain") }
+
+            await assertMigrationFails(defaults: defaults, switcher: switcher, expecting: .shellEnvironmentChanged)
+
+            XCTAssertEqual(f.keychain.currentUserValues, before)
+            XCTAssertEqual(f.keychain.writeCount, 0)
+            XCTAssertEqual(try text(rc), profile)
+            XCTAssertFalse(defaults.bool(forKey: ClaudeLegacyShellMigration.completedKey))
+        }
     }
 
     @MainActor
@@ -333,6 +365,9 @@ extension AccountCredentialSwitcherTests {
                 ClaudeAuthStore.parseCredentials(try XCTUnwrap(f.keychain.currentUserValues[base]))?.claudeAiOauth?
                     .accessToken, "new")
             XCTAssertEqual(f.keychain.writeCount, sourceIsNewer ? 1 : 0)
+            XCTAssertEqual(f.http.requests.map(\.timeout), [2, 2])
+            _ = try await f.switcher.claudeProfile(for: "new")
+            XCTAssertEqual(f.http.requests.last?.timeout, 10)
         }
     }
 
@@ -381,15 +416,11 @@ extension AccountCredentialSwitcherTests {
 }
 
 private struct MigrationShellRunner: ProcessRunning {
-    let stdout: String?
+    let stdout: String
 
     func run(
         executable: String, arguments: [String], environment: [String: String], timeout: TimeInterval
     ) throws -> ProcessResult {
-        guard let stdout else {
-            XCTFail("A fully pinned OAuth scope must not require shell capture")
-            throw CocoaError(.fileReadUnknown)
-        }
-        return ProcessResult(exitCode: 0, stdout: stdout, stderr: "")
+        ProcessResult(exitCode: 0, stdout: stdout, stderr: "")
     }
 }

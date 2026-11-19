@@ -316,6 +316,7 @@
 "The old shell and default Claude CLI use different accounts. Sign in to the same account in both, then restart egasu." = "이전 셸 함수와 기본 Claude CLI가 서로 다른 계정을 사용합니다. 두 위치에서 같은 계정으로 로그인한 뒤 egasu를 다시 여세요.";
 "Claude sign-in is incomplete. Finish signing in to Claude, then restart egasu to finish migrating the old shell setup." = "Claude 로그인이 완료되지 않았습니다. Claude에 로그인한 뒤 egasu를 다시 열면 셸 설정 이전을 재시도합니다.";
 "Finish the pending Claude account switch in Accounts, then restart egasu." = "계정 화면에서 진행 중인 Claude 계정 전환을 마친 뒤 egasu를 다시 여세요.";
+"Claude login settings differ between egasu and your current login shell. Check your shell settings, then restart egasu." = "egasu와 현재 로그인 셸의 Claude 로그인 설정이 다릅니다. 셸 설정을 확인한 뒤 egasu를 다시 여세요.";
 "egasu could not read your login shell environment. Check that your login shell starts, then restart egasu." = "로그인 셸 환경을 읽을 수 없습니다. 로그인 셸이 정상적으로 시작되는지 확인한 뒤 egasu를 다시 여세요.";
 "Your shell sets CLAUDE_CONFIG_DIR outside the old Claude function. Check which login you want to use before removing the function." = "기존 Claude 함수 밖에서 CLAUDE_CONFIG_DIR를 설정하고 있습니다. 함수를 제거하기 전에 사용할 로그인을 확인하세요.";
 "Your shell settings changed during migration. Check your changes and any .egasu-recovery file next to your shell settings, then restart egasu." = "이전 중에 셸 설정이 바뀌었습니다. 편집한 내용과 셸 설정 파일 옆의 .egasu-recovery 파일을 확인한 뒤 egasu를 다시 여세요.";

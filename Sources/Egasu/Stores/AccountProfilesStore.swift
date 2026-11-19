@@ -193,6 +193,12 @@ public final class AccountProfilesStore {
         load()
     }
 
+    /// 공유 로그인 잠금 안에서 다른 번들의 복구 기록 확인.
+    func checkPendingPeerClaudeLoginChanges(home: URL, ownJournal: AccountSwitchJournal) throws {
+        try ClaudeLegacyShellMigration.checkPendingSharedLoginChanges(
+            home: home, defaults: defaults, ownJournal: ownJournal, checkingPeersOnly: true)
+    }
+
     /// 한 family의 active profile — 등록순(표시 순서).
     public func profiles(family: String) -> [AccountProfile] {
         profiles

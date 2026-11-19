@@ -112,6 +112,33 @@ final class AccountClaudeReSignInRecoveryTests: XCTestCase {
         XCTAssertNotNil(try fixture.store.pendingIdentityReplacement())
     }
 
+    func testActiveReSignInPreservesPeerBundlesPendingSwitch() throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let record = try fixture.stageIntent()
+        try fixture.journal.clear(record)
+        let production = StorageNamespace.productionBundleIdentifier
+        let development = production + ".dev"
+        let peer = AppBundleLocator.current.bundleIdentifier == development ? production : development
+        let namespace = StorageNamespace(bundleIdentifier: peer)
+        let journal = AccountSwitchJournal(
+            path: fixture.root.appendingPathComponent(
+                "Library/Application Support/\(namespace.name)/AccountSignIn/claude-switch.json"
+            ).path)
+        try journal.save(record, replacing: nil)
+        try fixture.switcher.writeWorkspaceAuthentication(AccountSwitchRecoveryFixture.entry("c"), for: fixture.a)
+        let writes = fixture.keychain.writeCount
+
+        XCTAssertThrowsError(
+            try fixture.importer.completeReSignIn(profileID: fixture.a.id, in: fixture.store, isActive: true)
+        ) {
+            XCTAssertEqual($0 as? ClaudeShellLoginMigrationError, .pendingSwitch)
+        }
+        XCTAssertEqual(fixture.keychain.writeCount, writes)
+        XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), fixture.entryA)
+        XCTAssertEqual(try journal.load(), record)
+        XCTAssertNil(try fixture.store.pendingIdentityReplacement())
+    }
+
     func testActiveRotationDefersReSignInBeforeCreatingRecoveryOrWritingCredentials() throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         try fixture.switcher.writeWorkspaceAuthentication(AccountSwitchRecoveryFixture.entry("c"), for: fixture.a)
@@ -229,6 +256,28 @@ final class AccountClaudeReSignInRecoveryTests: XCTestCase {
         XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), rotated)
         XCTAssertNil(try fixture.store.pendingIdentityReplacement())
         try fixture.assertSavedAccountsUnchanged()
+    }
+
+    func testVerifiedExternalReplacementRecoversBeforeObservingNewerCLILogin() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let replacement = AccountSwitchRecoveryFixture.entry("c")
+        try fixture.switcher.applySharedAuthentication(replacement, family: "claude")
+        let generation = try AccountIdentityReplacement.ExternalClaudeGeneration(
+            state: fixture.switcher.readClaudeSwitchState(), previous: fixture.entryA, replacement: replacement)
+        _ = try fixture.store.beginIdentityReplacement(
+            profileID: fixture.a.id, with: "acct-c|org-c", replacesSharedAuthentication: false,
+            externalClaudeGeneration: generation)
+        try fixture.switcher.saveSnapshot(replacement, for: fixture.a)
+        try fixture.switcher.applySharedAuthentication(fixture.entryB, family: "claude")
+
+        let result = await claudeReconciliationResult(fixture.importer, in: fixture.store)
+
+        XCTAssertEqual(try result.get(), .updated(profileID: fixture.b.id))
+        XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.b.id)
+        XCTAssertEqual(fixture.store.profile(id: fixture.a.id)?.identityKey, "acct-c|org-c")
+        XCTAssertEqual(try fixture.switcher.loadSnapshot(for: fixture.a), replacement)
+        XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), fixture.entryB)
+        XCTAssertNil(try fixture.store.pendingIdentityReplacement())
     }
 
     func testActiveRecoveryKeepsRecordWhenCLIChangesAtIdentityCommit() async throws {
