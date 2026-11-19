@@ -63,6 +63,30 @@ final class ClaudeQuotaValidationTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testDuplicateFableDisplaysFirstValueWithoutDecidingWeeklyQuota() throws {
+        let runtime = ClaudeProvider()
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        for percents in [[95, 10], [10, 95]] {
+            let limits: [[String: Any]] = percents.map { percent in
+                ["kind": "weekly_scoped", "scope": ["model": ["display_name": "Fable"]], "percent": percent]
+            }
+            let usage = try map(["seven_day": ["utilization": 25], "limits": limits])
+            XCTAssertEqual(usage.hasIncompleteWeeklyQuota, true)
+            XCTAssertEqual(
+                usage.lines.first { $0.label == "Fable" },
+                .progress(label: "Fable", used: Double(percents[0]), limit: 100, format: .percent))
+            let snapshot = ProviderSnapshot.make(
+                provider: runtime.provider, plan: nil, lines: usage.lines, refreshedAt: now,
+                incompleteQuotaWindows: [.weekly], liveQuotaObservedAt: now)
+            let reading = try XCTUnwrap(
+                SoftLimitObservation.project(
+                    snapshot: snapshot, descriptors: runtime.widgetDescriptors, window: .weekly, now: now))
+            XCTAssertEqual(reading.quotaState(thresholdPercent: 90, at: now), .unknown)
+            XCTAssertEqual(reading.quotaState(thresholdPercent: 25, at: now), .reached)
+        }
+    }
+
     private func map(_ body: [String: Any]) throws -> ClaudeMappedUsage {
         let response = HTTPResponse(
             statusCode: 200, headers: [:], body: try JSONSerialization.data(withJSONObject: body))

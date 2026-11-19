@@ -84,11 +84,11 @@ final class ZAIProvider: ProviderRuntime {
             }
             do {
                 let mapped = try ZAIUsageMapper.map(quotaBody: body, subscriptionBody: subscription)
-                recordUsageTimer(lines: mapped.lines, apiKey: auth.apiKey, observedAt: observedAt)
                 let statistics = await loadStatistics(apiKey: auth.apiKey, at: refreshedAt)
-                if Task.isCancelled {
-                    return ProviderSnapshot.error(provider: provider, error: CancellationError())
-                }
+                let current = try await loadOffMainActor { [authStore] in try authStore.requireAPIKey() }
+                try Task.checkCancellation()
+                guard current == auth else { throw ZAIAuthError.credentialsChanged }
+                recordUsageTimer(lines: mapped.lines, apiKey: auth.apiKey, observedAt: observedAt)
                 return ProviderSnapshot.make(
                     provider: provider, plan: mapped.plan, lines: mapped.lines,
                     totalSpendLines: statistics.lines,

@@ -56,6 +56,36 @@ final class GrokCollectionSafetyTests: XCTestCase {
         XCTAssertEqual(degradation, [false, true, false])
     }
 
+    func testChangedLoginDuringOptionalPlanLookupDiscardsQuota() async {
+        let path = GrokAuthStore.authPath
+        let auth = FakeFiles([path: #"{"https://auth.x.ai::client":{"key":"token"}}"#])
+        let provider = makeProvider(
+            files: GrokCollectionFiles(), auth: auth,
+            http: GrokCollectionHTTP(beforeRequest: { request in
+                if request.url != GrokUsageClient.creditsConfigURL {
+                    auth.files[path] = #"{"https://auth.x.ai::client":{"key":"replaced-token"}}"#
+                }
+            }))
+
+        let snapshot = await provider.refresh()
+
+        XCTAssertNil(snapshot.liveQuotaObservedAt)
+        XCTAssertEqual(snapshot.errorPresentation, GrokAuthError.credentialsChanged.presentationMessage)
+    }
+
+    func testMultipleBillingCredentialsKeepMetersWithoutAuthoritativeQuota() async {
+        let auth = FakeFiles([
+            GrokAuthStore.authPath:
+                #"{"https://auth.x.ai::first":{"key":"token-one"},"https://auth.x.ai::second":{"key":"token-two"}}"#
+        ])
+        let provider = makeProvider(files: GrokCollectionFiles(), auth: auth)
+        let snapshot = await provider.refresh()
+
+        XCTAssertNotNil(snapshot.line(label: "Weekly limit"))
+        XCTAssertNil(snapshot.liveQuotaObservedAt)
+        XCTAssertNil(snapshot.errorCategory)
+    }
+
     func testUnsupportedAuthNeverReachesSubscriptionAPI() async {
         let http = GrokCollectionHTTP()
         let auth = FakeFiles([GrokAuthStore.authPath: #"{"xai::api_key":{"key":"api","auth_mode":"api_key"}}"#])
@@ -98,9 +128,15 @@ private struct GrokCollectionStub: UsageCollecting {
 
 private final class GrokCollectionHTTP: HTTPClient, @unchecked Sendable {
     var requests: [HTTPRequest] = []
+    private let beforeRequest: @Sendable (HTTPRequest) -> Void
+
+    init(beforeRequest: @escaping @Sendable (HTTPRequest) -> Void = { _ in }) {
+        self.beforeRequest = beforeRequest
+    }
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         requests.append(request)
+        beforeRequest(request)
         return HTTPResponse(
             statusCode: 200, headers: [:],
             body: request.url == GrokUsageClient.creditsConfigURL ? GrokCreditsFixtures.capturedResponseBody : Data("{}".utf8)

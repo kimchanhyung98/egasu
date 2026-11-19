@@ -141,7 +141,7 @@ struct AntigravityUsageClient: Sendable {
                 }
                 continue
             }
-            guard let summary = AntigravityUsageMapper.parseQuotaSummary(response.body) else {
+            guard let summary = AntigravityUsageMapper.parseQuotaSummary(response.body, logWarnings: false) else {
                 AppLog.warn(LogTag.plugin("antigravity"), "quota summary response has no decodable groups on \(base)")
                 continue
             }

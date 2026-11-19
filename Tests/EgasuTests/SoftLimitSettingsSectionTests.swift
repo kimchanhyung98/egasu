@@ -48,10 +48,10 @@ final class SoftLimitSettingsSectionTests: XCTestCase {
             }
             let numbers = try await Task.detached {
                 let request = VNRecognizeTextRequest()
-                request.recognitionLanguages = [language.locale.identifier]
+                request.recognitionLanguages = [language.locale.identifier, "en-US"]
                 try VNImageRequestHandler(cgImage: image).perform([request])
                 return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
-                    .joined().filter(\.isNumber)
+                    .joined().precomposedStringWithCompatibilityMapping.filter { "0123456789".contains($0) }
             }.value
             XCTAssertEqual(numbers, "90", language.rawValue)
         }

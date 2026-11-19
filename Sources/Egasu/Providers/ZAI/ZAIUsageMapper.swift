@@ -139,7 +139,7 @@ enum ZAIUsageMapper {
             throw ZAIUsageError.invalidResponse
         }
         let percentage = ProviderParse.clampPercent(rawPercentage)
-        let resetsAt = ProviderParse.number(entry["nextResetTime"]).map { epochMsToDate($0) }
+        let resetsAt = try resetDate(entry["nextResetTime"])
         return .progress(
             label: label,
             used: percentage,
@@ -159,7 +159,7 @@ enum ZAIUsageMapper {
             throw ZAIUsageError.invalidResponse
         }
         // 기간을 생략한 이전 응답도 사용 횟수와 상한은 표시.
-        let resetsAt = ProviderParse.number(entry["nextResetTime"]).map { epochMsToDate($0) }
+        let resetsAt = try resetDate(entry["nextResetTime"])
         let duration = entry["unit"] == nil && entry["number"] == nil ? nil : try windowDuration(entry)
         return .progress(
             label: "Web Searches",
@@ -182,7 +182,11 @@ enum ZAIUsageMapper {
     }
 
     /// `nextResetTime`은 epoch 밀리초로 도착 (예: `1770648402389`).
-    private static func epochMsToDate(_ ms: Double) -> Date {
-        Date(timeIntervalSince1970: ms / 1000)
+    private static func resetDate(_ value: Any?) throws -> Date? {
+        guard let value, !(value is NSNull) else { return nil }
+        guard let milliseconds = ProviderParse.number(value), milliseconds >= 0 else {
+            throw ZAIUsageError.invalidResponse
+        }
+        return Date(timeIntervalSince1970: milliseconds / 1000)
     }
 }

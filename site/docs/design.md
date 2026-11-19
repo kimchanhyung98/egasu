@@ -57,8 +57,10 @@ provider 마크는 빌드 시 네이티브 앱 리소스에서 조회.
 ## 앱 미리보기
 
 공통 Total Spend 요약 아래 Priority·All Usage 탭 배치.
-Alerts에서 네 조건의 **Show in Priority**를 모두 끄면 대시보드에 탭 선택 없이 All Usage만 표시.
-활성 프로바이더가 없으면 **Add an Account** 표시.
+Alerts에서 네 조건의 **Show in Priority**를 모두 끄면 활성 프로바이더가 있을 때 탭 선택 없이 All Usage 표시.
+활성 프로바이더가 없으면 All Usage 대신 **Add an Account** 표시.
+모든 활성 프로바이더에 예시 사용량이 있지만 표시 지표가 없을 때 All Usage에서 Accounts 안내 표시.
+예시 사용량이 없는 프로바이더는 자체 안내 유지.
 Accounts는 독립 화면이며 계정별·공통 지표 설정 구분.
 Settings는 General·Display·Alerts·Advanced 탭으로 구성.
 General에서 Beta Updates를 켜면 Labs 탭 표시.

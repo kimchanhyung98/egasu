@@ -40,6 +40,21 @@ final class CodexPartialWindowTests: XCTestCase {
             threshold: 90, expected: .belowLimit)
     }
 
+    func testMalformedAdditionalLimitsKeepDefaultBreachButCannotConfirmBelow() throws {
+        for (additional, expectedBelow) in [
+            ("null", SoftLimitQuotaState.belowLimit), ("[]", .belowLimit), ("[null]", .belowLimit),
+            ("{}", .unknown), ("false", .unknown), ("[false]", .unknown)
+        ] {
+            let body = Data(
+                """
+                {"rate_limit":{"primary_window":{"limit_window_seconds":604800,"used_percent":20}},
+                 "additional_rate_limits":\(additional)}
+                """.utf8)
+            try assertState(body: body, window: .weekly, threshold: 90, expected: expectedBelow)
+            try assertState(body: body, window: .weekly, threshold: 20, expected: .reached)
+        }
+    }
+
     private func assertState(
         fields: String, window: SoftLimitWindowSelection = .weekly, threshold: Int, expected: SoftLimitQuotaState,
         file: StaticString = #filePath, line: UInt = #line
@@ -51,6 +66,13 @@ final class CodexPartialWindowTests: XCTestCase {
                 "secondary_window":{"used_percent":20,"limit_window_seconds":2592000}
             }}]}
             """.utf8)
+        try assertState(body: body, window: window, threshold: threshold, expected: expected, file: file, line: line)
+    }
+
+    private func assertState(
+        body: Data, window: SoftLimitWindowSelection, threshold: Int, expected: SoftLimitQuotaState,
+        file: StaticString = #filePath, line: UInt = #line
+    ) throws {
         let runtime = CodexProvider()
         let mapped = try CodexUsageMapper.mapUsageResponse(
             HTTPResponse(statusCode: 200, headers: [:], body: body), now: now)
@@ -62,6 +84,6 @@ final class CodexPartialWindowTests: XCTestCase {
                 snapshot: snapshot, descriptors: runtime.widgetDescriptors, window: window, now: now),
             file: file, line: line)
         XCTAssertEqual(
-            observation.quotaState(thresholdPercent: threshold, at: now), expected, fields, file: file, line: line)
+            observation.quotaState(thresholdPercent: threshold, at: now), expected, file: file, line: line)
     }
 }

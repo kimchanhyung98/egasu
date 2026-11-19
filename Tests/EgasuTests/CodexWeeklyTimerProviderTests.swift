@@ -89,6 +89,36 @@ final class CodexWeeklyTimerProviderTests: XCTestCase {
         XCTAssertNil(fixture.provider.weeklyTimerObservation)
     }
 
+    func testResetCreditLookupCannotExtendRelativeQuotaResets() async throws {
+        let files = try fixture().files
+        let http = RoutingHTTPClient { request in
+            if request.url == CodexUsageClient.resetCreditsURL {
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"available_count":0}"#.utf8))
+            }
+            let body = Data(
+                """
+                {"rate_limit":{"primary_window":{"used_percent":95,"limit_window_seconds":604800,"reset_after_seconds":2}},
+                 "additional_rate_limits":[{"metered_feature":"spark","rate_limit":{
+                   "primary_window":{"used_percent":95,"limit_window_seconds":604800,"reset_after_seconds":3}}}]}
+                """.utf8)
+            return HTTPResponse(statusCode: 200, headers: [:], body: body)
+        }
+        let provider = makeProvider(files: files, http: http) {
+            http.requests.contains { $0.url == CodexUsageClient.resetCreditsURL }
+                ? Self.instant.addingTimeInterval(5) : Self.instant
+        }
+
+        let snapshot = await provider.refresh()
+        XCTAssertEqual(snapshot.liveQuotaObservedAt, Self.instant)
+        XCTAssertEqual(snapshot.refreshedAt, Self.instant.addingTimeInterval(5))
+        let reading = try XCTUnwrap(
+            SoftLimitObservation.project(
+                snapshot: snapshot, descriptors: provider.widgetDescriptors, window: .weekly, now: Self.instant))
+        XCTAssertEqual(reading.nextExpiry(after: Self.instant), Self.instant.addingTimeInterval(2))
+        XCTAssertEqual(reading.quotaState(thresholdPercent: 90, at: Self.instant.addingTimeInterval(2)), .reached)
+        XCTAssertEqual(reading.quotaState(thresholdPercent: 90, at: Self.instant.addingTimeInterval(3)), .unknown)
+    }
+
     func testPreparationReadsQuotaOnlyAndReturnsTheSameCredentialSource() async throws {
         let fixture = try fixture()
         let key = try XCTUnwrap(CodexWeeklyTimerIdentity.accountKey(for: fixture.auth))
@@ -385,7 +415,10 @@ final class CodexWeeklyTimerProviderTests: XCTestCase {
         return (makeProvider(files: files, http: http), files, http, resolved)
     }
 
-    private func makeProvider(files: FakeFiles, http: any HTTPClient) -> CodexProvider {
+    private func makeProvider(
+        files: FakeFiles, http: any HTTPClient,
+        now: @escaping @Sendable () -> Date = { CodexWeeklyTimerProviderTests.instant }
+    ) -> CodexProvider {
         CodexProvider(
             authStore: CodexAuthStore(
                 environment: FakeEnvironment(), files: files, keychain: FakeKeychain(),
@@ -393,7 +426,7 @@ final class CodexWeeklyTimerProviderTests: XCTestCase {
             ),
             usageClient: CodexUsageClient(http: http),
             logUsageScanner: CodexLogUsageScanner(cacheIdentityOverride: "weekly-timer-tests", rootsOverride: []),
-            includeSharedUsage: false, now: { Self.instant }, pricing: { .empty }
+            includeSharedUsage: false, now: now, pricing: { .empty }
         )
     }
 

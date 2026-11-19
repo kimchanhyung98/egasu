@@ -277,6 +277,7 @@
 "Weekly timer message could not be started. Retries wait at least five minutes and are limited to 2 attempts per 24 hours." = "Weekly timer message could not be started. Retries wait at least five minutes and are limited to 2 attempts per 24 hours.";
 "Weekly timer messages paused: this account reached the limit of 2 attempts in 24 hours. Usage checks will continue." = "Weekly timer messages paused: this account reached the limit of 2 attempts in 24 hours. Usage checks will continue.";
 "Weekly" = "Weekly";
+"Z.ai API key changed while refreshing. Refresh again to use the current key." = "Z.ai API key changed while refreshing. Refresh again to use the current key.";
 "Z.ai API key invalid. Check your key at z.ai/manage-apikey/apikey-list." = "Z.ai API key invalid. Check your key at z.ai/manage-apikey/apikey-list.";
 "iCloud Drive isn’t available. Check that this Mac is signed into iCloud and iCloud Drive is on." = "iCloud Drive isn’t available. Check that this Mac is signed into iCloud and iCloud Drive is on.";
 "macOS couldn't prepare the authorization request." = "macOS couldn't prepare the authorization request.";

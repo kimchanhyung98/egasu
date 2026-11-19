@@ -353,7 +353,7 @@ extension ZAIAuthError: CategorizedError {
         switch self {
         case .missingKey: .notLoggedIn
         case .invalidKey: .authInvalid
-        case .saveFailed, .deleteFailed: .other
+        case .credentialsChanged, .saveFailed, .deleteFailed: .other
         }
     }
 }

@@ -99,7 +99,7 @@ final class GrokProvider: ProviderRuntime {
         // provider의 primary remote fetch — 실패 시 다른 usage 호출과 동일하게 provider 실패 처리
         let creditsResponse = try await fetchCreditsConfigWithRetry(accessToken: accessToken, state: &state)
         var mapped = try GrokUsageMapper.mapCreditsConfig(creditsResponse)
-        let observedAt = hasSoftLimitQuota(in: mapped.lines) ? now() : nil
+        var observedAt = hasSoftLimitQuota(in: mapped.lines) ? now() : nil
 
         let plan = await fetchPlanName(accessToken: state.token)
 
@@ -128,6 +128,22 @@ final class GrokProvider: ProviderRuntime {
                 SpendTileMapper.appendUsageTrend(scan.series, to: &mapped.lines, now: now(),
                                                  note: sourceNote)
             }
+        }
+
+        if observedAt != nil {
+            let expectedPath = state.authPath
+            let expectedEntryKey = state.entryKey
+            let expectedRevision = state.entryRevision
+            let current = try await loadOffMainActor { [authStore] in try authStore.loadAuthCandidates() }
+            try Task.checkCancellation()
+            guard
+                current.contains(where: {
+                    $0.authPath == expectedPath && $0.entryKey == expectedEntryKey
+                        && $0.entryRevision == expectedRevision
+                })
+            else { throw GrokAuthError.credentialsChanged }
+            // 구독 로그인이 여럿이면 조회에 성공해도 현재 CLI 탭의 계정을 확인할 수 없음.
+            if current.count != 1 { observedAt = nil }
         }
 
         return ProviderSnapshot.make(

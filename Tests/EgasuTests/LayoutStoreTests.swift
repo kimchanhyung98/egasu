@@ -452,22 +452,30 @@ final class LayoutStoreTests: XCTestCase {
         ])
         let store = LayoutStore(registry: registry, defaults: makeDefaults("FreshCustomizeOrder"), storageKey: "layout")
 
-        XCTAssertEqual(store.orderedSupportedMetrics(for: "claude").map(\.id), [
-            "claude.session", "claude.weekly", "claude.fable", "claude.trend", "claude.extra",
-            "claude.sonnet", "claude.today", "claude.yesterday", "claude.last30"
-        ])
-        XCTAssertEqual(store.orderedSupportedMetrics(for: "codex").map(\.id), [
+        XCTAssertEqual(
+            store.orderedSupportedMetrics(for: "claude").map(\.id),
+            [
+                "claude.session", "claude.weekly", "claude.fable", "claude.trend", "claude.extra",
+                "claude.sonnet", "claude.today", "claude.yesterday", "claude.last30"
+            ])
+        XCTAssertEqual(
+            store.orderedSupportedMetrics(for: "codex").map(\.id),
+            [
                 "codex.session", "codex.weekly", "codex.monthly", "codex.trend", "codex.resetWatch",
                 "codex.rateLimitResets", "codex.spark", "codex.sparkWeekly", "codex.sparkMonthly", "codex.credits",
-            "codex.today", "codex.yesterday", "codex.last30"
-        ])
-        XCTAssertEqual(store.orderedSupportedMetrics(for: "devin").map(\.id), [
-            "devin.daily", "devin.weekly", "devin.extra"
-        ])
-        XCTAssertEqual(store.orderedSupportedMetrics(for: "grok").map(\.id), [
+                "codex.today", "codex.yesterday", "codex.last30"
+            ])
+        XCTAssertEqual(
+            store.orderedSupportedMetrics(for: "devin").map(\.id),
+            [
+                "devin.daily", "devin.weekly", "devin.extra"
+            ])
+        XCTAssertEqual(
+            store.orderedSupportedMetrics(for: "grok").map(\.id),
+            [
                 "grok.weekly", "grok.monthly", "grok.payAsYouGo",
-            "grok.trend", "grok.today", "grok.yesterday", "grok.last30"
-        ])
+                "grok.trend", "grok.today", "grok.yesterday", "grok.last30"
+            ])
         XCTAssertEqual(
             store.orderedSupportedMetrics(for: "zai").map(\.id),
             [

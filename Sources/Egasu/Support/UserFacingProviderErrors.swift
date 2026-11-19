@@ -323,6 +323,8 @@ extension ZAIAuthError: UserPresentableError {
             .init("No Z.ai API key. Set ZAI_API_KEY or add it to %@.", [ZAIAuthStore.configPaths[0]])
         case .invalidKey:
             .init("Z.ai API key invalid. Check your key at z.ai/manage-apikey/apikey-list.")
+        case .credentialsChanged:
+            .init("Z.ai API key changed while refreshing. Refresh again to use the current key.")
         case .saveFailed:
             .init("Couldn't save the Z.ai API key.")
         case .deleteFailed:

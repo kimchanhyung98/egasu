@@ -135,6 +135,8 @@ final class FailureBackoffTests: XCTestCase {
         )
         let devinStore = makeStore(runtime: devinRuntime, clock: { clock })
         await devinStore.refreshAll()
+        clock = clock.addingTimeInterval(1)
+        await devinStore.refreshAll(force: true)
         XCTAssertFalse(devinStore.needsKeychainApproval(devin.id), "다른 프로바이더는 재시도해도 승인 창이 뜨지 않아 계정 상세로 안내")
     }
 

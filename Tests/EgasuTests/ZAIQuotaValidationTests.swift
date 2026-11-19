@@ -106,6 +106,26 @@ final class ZAIQuotaValidationMapperTests: XCTestCase {
             ])
     }
 
+    func testMalformedResetIsRejectedForMonthlyCreditAndSearchQuotas() throws {
+        for fields in [
+            #""type":"TOKENS_LIMIT","percentage":95"#,
+            #""type":"TIME_LIMIT","usage":100,"currentValue":95"#
+        ] {
+            for reset in [#""invalid""#, "false", "-1"] {
+                let body = Data(
+                    """
+                    {"limits":[{\(fields),"unit":5,"number":1,"nextResetTime":\(reset)}]}
+                    """.utf8)
+                XCTAssertThrowsError(try ZAIUsageMapper.mapQuota(body)) {
+                    XCTAssertEqual($0 as? ZAIUsageError, .invalidResponse)
+                }
+            }
+            let noReset = Data("{\"limits\":[{\(fields),\"unit\":5,\"number\":1}]}".utf8)
+            let nullReset = Data("{\"limits\":[{\(fields),\"unit\":5,\"number\":1,\"nextResetTime\":null}]}".utf8)
+            XCTAssertEqual(try ZAIUsageMapper.mapQuota(noReset), try ZAIUsageMapper.mapQuota(nullReset))
+        }
+    }
+
     func testCreditQuotaRequiresValidPercentageAndWindow() {
         for fields in [
             #""unit":3,"number":5"#,

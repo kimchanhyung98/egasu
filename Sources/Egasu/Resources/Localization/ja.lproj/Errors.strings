@@ -277,6 +277,7 @@
 "Weekly timer message could not be started. Retries wait at least five minutes and are limited to 2 attempts per 24 hours." = "週間タイマーのメッセージ送信を開始できませんでした。再試行には最低5分の間隔が必要で、試行回数は24時間に2回までです。";
 "Weekly timer messages paused: this account reached the limit of 2 attempts in 24 hours. Usage checks will continue." = "週間タイマーのメッセージ送信を一時停止しました。このアカウントは24時間に2回の試行上限に達しました。使用量の確認は継続します。";
 "Weekly" = "週間";
+"Z.ai API key changed while refreshing. Refresh again to use the current key." = "更新中に Z.ai の API キーが変更されました。現在のキーを使うには、もう一度更新してください。";
 "Z.ai API key invalid. Check your key at z.ai/manage-apikey/apikey-list." = "Z.ai API キーが無効です。z.ai/manage-apikey/apikey-list でキーを確認してください。";
 "iCloud Drive isn’t available. Check that this Mac is signed into iCloud and iCloud Drive is on." = "iCloud Drive を使用できません。この Mac が iCloud にサインインしていて、iCloud Drive がオンになっていることを確認してください。";
 "macOS couldn't prepare the authorization request." = "macOSで認証リクエストを準備できませんでした。";

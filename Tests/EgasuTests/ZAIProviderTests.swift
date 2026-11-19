@@ -416,6 +416,27 @@ final class ZAIProviderTests: XCTestCase {
         XCTAssertNil(snapshot.plan)
     }
 
+    func testChangedAPIKeyDiscardsQuotaAndTimerObservation() async {
+        let path = ZAIAuthStore.configPaths[0]
+        let files = FakeFiles([path: "zai-original"])
+        let provider = ZAIProvider(
+            authStore: ZAIAuthStore(files: files, environment: FakeEnvironment()),
+            usageClient: ZAIUsageClient(
+                http: RoutingHTTPClient { request in
+                    if request.url == ZAIUsageClient.quotaURL { return jsonResponse(quotaBothLimitsJSON) }
+                    files.files[path] = "zai-replaced"
+                    return HTTPResponse(statusCode: 500, headers: [:], body: Data("{}".utf8))
+                }),
+            pricing: { .empty }
+        )
+
+        let snapshot = await provider.refresh()
+
+        XCTAssertNil(snapshot.liveQuotaObservedAt)
+        XCTAssertEqual(snapshot.errorPresentation, ZAIAuthError.credentialsChanged.presentationMessage)
+        XCTAssertTrue(provider.usageTimerObservations.isEmpty)
+    }
+
     func testRefreshWithoutKeyReportsNotLoggedIn() async {
         let provider = ZAIProvider(
             authStore: ZAIAuthStore(files: FakeFiles(), environment: FakeEnvironment()),
