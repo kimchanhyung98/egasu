@@ -96,8 +96,9 @@ egasu가 응답의 키 종류를 확인해 관리 키의 통계를 자동 조회
 
 앱은 설정 파일의 키를 환경 변수보다 먼저 사용.
 **Remove Account…**에서 제거를 확정하면 추적을 끔.
-설정 파일에서 키를 확인한 경우 현재 앱의 `openrouter.json`과 대체 경로 `~/.config/openrouter/key.json`도 삭제.
-키 파일 삭제에 실패하면 오류를 표시하고 추적을 유지.
+현재 앱의 `openrouter.json`과 대체 경로 `~/.config/openrouter/key.json`에서 확인한 키 제거.
+JSON의 다른 설정은 유지하고 키만 담긴 파일은 삭제.
+설정 파일을 읽거나 변경하지 못하면 오류를 표시하고 추적 유지.
 환경 변수 키를 다시 쓰려면 **Add New Account**에서 OpenRouter를 선택하고 입력란을 비워 둔 채 **Add Account** 선택.
 앱에서 키를 저장하면 적용 중인 키로 새로 조회하며, 이전 요청이 진행 중이면 완료를 기다리고 그 결과는 무시.
 이전 요청이 대기 한도보다 오래 걸리면 다음 주기 새로 고침에서 현재 키로 재시도.
@@ -109,6 +110,7 @@ egasu가 응답의 키 종류를 확인해 관리 키의 통계를 자동 조회
 
 ## 문제 해결
 
+- **"Couldn't read the saved API key"** — 설정 파일 권한을 확인하고 필요하면 계정 추가 시 새 키 입력.
 - **"No OpenRouter API key"** — **Add New Account**에서 OpenRouter 키를 추가하거나 기존 계정 상세의 **Add API Key…** 사용.
   환경 변수를 사용하면 위 설정 절차에 따라 앱 재실행.
 - **"API key invalid"** — 잔액과 키 정보 조회가 모두 401/403으로 거부된 상태.

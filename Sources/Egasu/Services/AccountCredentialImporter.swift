@@ -121,18 +121,13 @@ struct AccountCredentialImporter {
     ) throws -> AccountProfile {
         AccountCredentialMutationLock.acquire(family: family)
         defer { AccountCredentialMutationLock.release(family: family) }
-        if family == "claude" {
-            do {
-                try AccountCredentialMutationLock.requireIdleClaudeRotation()
-            } catch {
-                // 인증 회전 중에는 추가 계정의 로그인 작업 공간 보존.
-                if id != nil {
-                    AppDiagnostics.record(
-                        .accountRollback, result: .degraded, providerID: family, error: error,
-                        localContext: "staged workspace cleanup deferred during credential rotation")
-                }
-                throw error
+        // 새 작업 공간은 등록 계정의 회전 대상과 분리. 기존 ID의 인증에는 접근하지 않음.
+        if let id {
+            guard !store.profiles.contains(where: { $0.id == id }) else {
+                throw AccountProfileError.profileNotFound(id)
             }
+        } else if family == "claude" {
+            try AccountCredentialMutationLock.requireIdleClaudeRotation()
         }
         let staged = AccountProfile(
             id: id ?? UUID().uuidString,
@@ -184,8 +179,39 @@ struct AccountCredentialImporter {
         AccountCredentialMutationLock.acquire(family: family)
         defer { AccountCredentialMutationLock.release(family: family) }
         if family == "claude" { try AccountCredentialMutationLock.requireIdleClaudeRotation() }
+        try removeSignInWorkspaceContents(family: family, profileID: profileID)
+    }
+
+    /// 등록된 계정의 갱신과 무관한 임시 로그인만 정리.
+    func discardUnregisteredSignInWorkspace(family: String, profileID: String, in store: AccountProfilesStore) throws {
+        AccountCredentialMutationLock.acquire(family: family)
+        defer { AccountCredentialMutationLock.release(family: family) }
+        guard !store.profiles.contains(where: { $0.id == profileID }) else { return }
+        try removeSignInWorkspaceContents(family: family, profileID: profileID)
+    }
+
+    private nonisolated func removeSignInWorkspaceContents(family: String, profileID: String) throws {
         try switcher.removeWorkspaceCredentialArtifacts(family: family, profileID: profileID)
         try workspace.remove(family: family, profileID: profileID)
+    }
+
+    nonisolated func codexWorkspaceAuthPath(profileID: String) throws -> String {
+        try workspace.assertNoSymlinkComponents(family: "codex", profileID: profileID)
+        return try workspace.directory(family: "codex", profileID: profileID).appendingPathComponent("auth.json").path
+    }
+
+    /// 현재 시도만 제거. 같은 프로필의 다른 로그인 시도와 이전 인증 파일은 보존.
+    nonisolated func restoreCodexWorkspace(
+        profileID: String, attemptID: String, previousAuthentication: String?
+    ) throws {
+        let path = try codexWorkspaceAuthPath(profileID: profileID)
+        let files = LocalTextFileAccessor()
+        if let previousAuthentication {
+            try files.writeText(path, previousAuthentication)
+        } else {
+            try files.remove(path)
+        }
+        try workspace.remove(family: "codex", profileID: profileID, attemptID: attemptID)
     }
 
     /// managed 계정 제거 — switchable snapshot을 잃은 등록 profile 잔존 금지.
@@ -233,8 +259,7 @@ struct AccountCredentialImporter {
 
     private struct ExternalClaudeObservation: Sendable {
         var previousSnapshot: AccountCredentialVault.Entry?
-        var shared: AccountCredentialVault.Entry
-        var sourceID: String
+        var sharedState: AccountSwitchJournal.SharedState
         var snapshot: AccountCredentialVault.Entry
         var identityKey: String
         var profile: AccountProfile
@@ -245,11 +270,12 @@ struct AccountCredentialImporter {
     func reconcileSelectedClaudeSharedAuthenticationAfterStartup(
         in store: AccountProfilesStore
     ) async throws -> ExternalReauthenticationResult {
-        if try await AccountSelectionSwitcher(switcher: switcher).recoverInterruptedSwitchAfterStartup(in: store),
-           let profileID = store.preferredProfileID(family: "claude") {
+        let allowInteraction = ProviderRefreshContext.isManual
+        if try await AccountSelectionSwitcher(switcher: switcher).recoverInterruptedSwitchAfterStartup(
+            in: store, allowInteraction: allowInteraction), let profileID = store.preferredProfileID(family: "claude")
+        {
             return .updated(profileID: profileID)
         }
-        let allowInteraction = ProviderRefreshContext.isManual
         if let transaction = try store.pendingIdentityReplacement() {
             if let profile = store.profile(id: transaction.profileID) {
                 guard
@@ -286,14 +312,20 @@ struct AccountCredentialImporter {
             observation.previousSnapshot != observation.snapshot || target.identityKey != observation.identityKey
         if !replacesCredential, target.id == profile.id { return .unchanged }
 
+        let loginLock = try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: switcher.homeDirectory)
+        defer { withExtendedLifetime(loginLock) {} }
         try AccountCredentialMutationLock.beginClaudeSwitch()
         defer { AccountCredentialMutationLock.endClaudeSwitch() }
         let transaction =
             replacesCredential
             ? try store.beginIdentityReplacement(
-                profileID: target.id, with: observation.identityKey, replacesSharedAuthentication: false
+                profileID: target.id, with: observation.identityKey, replacesSharedAuthentication: false,
+                externalClaudeGeneration: .init(
+                    state: observation.sharedState, previous: observation.previousSnapshot,
+                    replacement: observation.snapshot)
             ) : nil
         var appliedRevision: UInt64?
+        var attemptedSelection = false
         do {
             let applied = try await loadOffMainActor {
                 try applyExternalClaudeCredentials(
@@ -310,12 +342,32 @@ struct AccountCredentialImporter {
                     applied.revision, family: "claude",
                     {
                         appliedRevision = AccountCredentialMutationLock.revision(for: "claude")
+                        let current = try switcher.readClaudeSwitchState(allowInteraction: false)
+                        if let generation = transaction?.externalClaudeGeneration {
+                            guard try current.fingerprint() == generation.sharedFingerprint else {
+                                throw ClaudeAuthError.credentialsChanged
+                            }
+                        } else if current != observation.sharedState {
+                            throw ClaudeAuthError.credentialsChanged
+                        }
+                        attemptedSelection = true
                         try store.commitPreferredSelection(family: "claude", profileID: target.id)
                         if let transaction { _ = try store.commitIdentityReplacement(transaction) }
                     })
             else { throw ClaudeAuthError.credentialsChanged }
             return .updated(profileID: target.id)
         } catch {
+            var restoredSelection = true
+            if attemptedSelection, target.id != profile.id, store.preferredProfileID(family: "claude") == target.id {
+                do {
+                    try store.commitPreferredSelection(family: "claude", profileID: profile.id)
+                } catch {
+                    restoredSelection = false
+                    AppDiagnostics.failure(
+                        .accountRollback, error: error, providerID: "claude",
+                        localContext: "external reauthentication: restore selection")
+                }
+            }
             if let transaction, try store.pendingIdentityReplacement() == transaction {
                 let restored: Bool
                 if let appliedRevision {
@@ -335,7 +387,7 @@ struct AccountCredentialImporter {
                 } else {
                     restored = true
                 }
-                if restored { try store.cancelIdentityReplacement(transaction) }
+                if restored, restoredSelection { try store.cancelIdentityReplacement(transaction) }
             }
             throw error
         }
@@ -358,14 +410,16 @@ struct AccountCredentialImporter {
             profile.id == selected.id
             ? selectedSnapshot
             : try switcher.loadSnapshot(for: profile, allowInteraction: allowInteraction)
-        guard try switcher.loadSnapshot(for: profile, allowInteraction: allowInteraction) == previousSnapshot,
-            try sharedLoginMatches(shared, sourceID: verified.sourceID, allowInteraction: allowInteraction)
+        let latestSnapshot = try switcher.loadSnapshot(for: profile, allowInteraction: allowInteraction)
+        let sharedState = try switcher.readClaudeSwitchState(allowInteraction: allowInteraction)
+        guard latestSnapshot == previousSnapshot, sharedState.sourceID == verified.sourceID,
+            sharedState.credentials == [shared.credential], sharedState.accounts == [shared.claudeOAuthAccount]
         else {
             AppLog.warn(.auth, "Claude sign-in changed during observation; preserving all authentication")
             throw ClaudeAuthError.credentialsChanged
         }
         return ExternalClaudeObservation(
-            previousSnapshot: previousSnapshot, shared: shared, sourceID: verified.sourceID,
+            previousSnapshot: previousSnapshot, sharedState: sharedState,
             snapshot: verified.snapshot,
             identityKey: identityKey, profile: profile
         )
@@ -392,8 +446,8 @@ struct AccountCredentialImporter {
                     guard
                         try switcher.loadSnapshot(for: observation.profile, allowInteraction: allowInteraction)
                             == observation.previousSnapshot,
-                        try sharedLoginMatches(
-                            observation.shared, sourceID: observation.sourceID, allowInteraction: allowInteraction)
+                        try switcher.readClaudeSwitchState(allowInteraction: allowInteraction)
+                            == observation.sharedState
                     else { throw ClaudeAuthError.credentialsChanged }
                     if replacesCredential {
                         do {
@@ -403,9 +457,8 @@ struct AccountCredentialImporter {
                             guard
                                 try switcher.loadSnapshot(for: observation.profile, allowInteraction: allowInteraction)
                                     == observation.snapshot,
-                                try sharedLoginMatches(
-                                    observation.shared, sourceID: observation.sourceID,
-                                    allowInteraction: allowInteraction)
+                                try switcher.readClaudeSwitchState(allowInteraction: allowInteraction)
+                                    == observation.sharedState
                             else { throw ClaudeAuthError.credentialsChanged }
                         } catch {
                             failure = error

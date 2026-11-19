@@ -128,6 +128,8 @@ final class AccountFirstImportVerificationTests: XCTestCase {
         }
         XCTAssertTrue(fixture.store.profiles.isEmpty)
         XCTAssertTrue(keychain.currentUserValues.isEmpty)
+        XCTAssertEqual(
+            try String(contentsOf: directory.appendingPathComponent(".credentials.json"), encoding: .utf8), source)
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.workspace.baseDirectory.path))
     }
 

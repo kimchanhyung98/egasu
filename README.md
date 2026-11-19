@@ -34,6 +34,8 @@ The app updates itself in place via signed, notarized [Sparkle](docs/updates.md)
 
 대부분의 프로바이더는 Mac의 Keychain, 인증 파일 또는 앱에 저장된 로그인 정보 재사용.
 [OpenRouter](/docs/providers/openrouter.md)와 [Z.ai](/docs/providers/zai.md)는 앱에 저장하거나 지원 환경 변수로 제공한 API 키 사용.
+쓸 수 있는 키가 없고 저장 파일을 읽지 못하면, 미등록 상태와 구분해 파일 접근 오류 표시.
+계정 제거 시 설정 파일의 API 키를 제거하고, JSON의 다른 설정은 보존.
 인증 정보는 해당 프로바이더 요청에만 사용.
 익명 요약과 공개 가격표 다운로드는 [개인정보 및 사용 데이터](/docs/privacy.md) 참조.
 
@@ -50,9 +52,8 @@ The app updates itself in place via signed, notarized [Sparkle](docs/updates.md)
   [프로바이더 섹션 공유 이미지](/docs/dashboard.md#공유)는 표시 중인 모든 계정과 지표 순서를 반영.
 - **[계정 전환](/docs/cli.md#계정).** Claude·Codex의 기본 인증 저장소를 쓰는 새 CLI 세션에 선택한 로그인 적용.
   이전 OpenUsage가 설치한 Claude 셸 함수는 앱 실행 시 [CLI 로그인을 기본 위치로 이전](/docs/accounts.md#이전-claude-셸-함수-정리)한 뒤 자동 제거.
-  Claude 첫 등록·외부 로그인과 계정 전환 중 보존할 변경된 인증은 토큰의 계정·조직을 검증한 뒤 저장본에 반영.
-  Accounts에서 이전 OpenUsage의 Claude 셸 함수가 남은 파일과 제거 방법 안내.
-  셸 설정 파일·터미널 환경을 유지하며, Claude 첫 등록·외부 로그인과 전환 중 보존할 변경된 인증은 토큰의 계정·조직을 검증한 뒤 저장본에 반영.
+  이전이 보류되면 Accounts에서 사유 안내.
+  계정 전환 시 셸 설정 파일·터미널 환경을 유지하며, Claude 첫 등록·외부 로그인과 전환 중 보존할 변경된 인증은 토큰의 계정·조직을 검증한 뒤 저장본에 반영.
   선택된 Claude 공유 로그인은 사용량 조회에서도 계정·조직 일치 검증.
 - **[구독 타이머](/docs/refreshing.md#구독-타이머-자동-시작).** Codex·Claude·Antigravity·Kimi·Z.ai의 지원 한도를 확인하고 짧은 구독 메시지로 시작 유도.
   Claude·Antigravity·Kimi·Z.ai는 CLI 준비가 끝난 뒤 서버 한도를 다시 조회.
@@ -64,6 +65,7 @@ The app updates itself in place via signed, notarized [Sparkle](docs/updates.md)
 - **[전역 단축키](/docs/settings.md#general).** Settings → General에서 지정한 키 조합으로 패널 열기·닫기.
 - **Accounts.** 계정 추가·전환·재로그인·API 키와 계정별 지표 표시·순서 관리.
   숨긴 계정 복원과 이름 변경·중단된 Claude 전환 복구 지원.
+  기존 Claude 계정의 토큰 갱신 중에도 새 작업 공간의 로그인 등록 가능.
 - **Stale-while-revalidate.** Cached values display instantly at launch; refresh runs every 5 minutes (15 minutes for Claude).
 - **[iCloud 동기화](/docs/icloud-sync.md).** 여러 Mac의 사용 내역을 선택적으로 합산.
   현재·기존 저장 위치를 함께 읽고 기기별 최신 기록 사용.
@@ -85,7 +87,6 @@ The app updates itself in place via signed, notarized [Sparkle](docs/updates.md)
 Behavior docs live in [docs/](docs/README.md): the [dashboard](docs/dashboard.md), [menu bar display](/docs/menu-bar.md), [settings](docs/settings.md), [refresh & caching](docs/refreshing.md), the [CLI](docs/cli.md), the [local HTTP API](docs/local-http-api.md), the [proxy](docs/proxy.md), and one page per provider.
 
 For working on the code, see the developer docs: [architecture](docs/architecture.md), [adding a provider](docs/adding-a-provider.md), and [debugging & capturing logs](docs/debugging.md).
-저장한 API 키를 읽지 못하면 프로바이더 카드에 파일 접근 오류 표시.
 사용량 조회·계정 전환 오류를 제보할 때는 [로그 수집 방법](/docs/logging.md#오류-제보용-로그-수집)에 따라 발생 시각 주변의 기록 공유.
 
 ## Requirements

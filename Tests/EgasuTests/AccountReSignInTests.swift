@@ -65,6 +65,32 @@ final class AccountReSignInTests: XCTestCase {
         XCTAssertEqual(CodexAuthStore.parseAuth(sharedAuth)?.tokens?.accessToken, "fresh-token")
     }
 
+    func testRollbackWithoutSnapshotKeepsOtherCodexSignInAttemptsAndThePreviousWorkspaceFile() throws {
+        let (store, cleanup) = makeStore()
+        defer { cleanup() }
+        let profile = try store.add(family: "codex", label: "alpha", identityKey: "acct-a", id: "profile-a")
+        let attempt = try workspace.prepareReauthentication(family: "codex", profileID: profile.id)
+        let sibling = try workspace.prepareReauthentication(family: "codex", profileID: profile.id)
+        let siblingAuth = sibling.directory.appendingPathComponent("auth.json")
+        let previous = codexAuth(token: "previous", accountID: "acct-a")
+        let replacement = codexEntry(token: "replacement", accountID: "acct-a")
+        try Data(previous.utf8).write(to: siblingAuth)
+        try switcher.writeWorkspaceAuthentication(replacement, for: profile)
+        try switcher.saveSnapshot(replacement, for: profile)
+
+        XCTAssertTrue(
+            importer.rollbackCredentialTransaction(
+                profile: profile, previousSnapshot: nil,
+                isolatedCodexAttempt: (try XCTUnwrap(attempt.attemptID), previous), context: "test rollback"))
+
+        XCTAssertNil(try switcher.loadSnapshot(for: profile))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: attempt.directory.path))
+        XCTAssertEqual(try String(contentsOf: siblingAuth, encoding: .utf8), previous)
+        XCTAssertEqual(
+            try importer.readWorkspaceCredential(family: "codex", profileID: profile.id)?.entry.credential,
+            previous)
+    }
+
     func testReSignInWithAnInactiveProfileLeavesTheSharedHomeAlone() throws {
         let (store, cleanup) = makeStore()
         defer { cleanup() }

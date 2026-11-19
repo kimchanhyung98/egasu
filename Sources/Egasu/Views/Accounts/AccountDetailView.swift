@@ -219,7 +219,7 @@ struct ProblemCard: View {
 }
 
 /// 등록 계정 이외의 계정 관리 — API 키 교체와 "Remove Account…" 제공.
-/// 감지형은 추적만 끄고 로그인은 그대로, API 키형은 앱이 저장한 키만 지우고 끔(환경 변수 키는 그대로).
+/// 감지형은 추적만 끄고 로그인은 그대로, API 키형은 설정 파일의 키를 지우고 끔.
 struct ProviderAccountRows: View {
     let provider: Provider
     let keyProvider: (any APIKeyManaging)?
@@ -259,7 +259,7 @@ struct ProviderAccountRows: View {
                                 "egasu stops tracking this account. Your %@ sign-in stays as it is.",
                                 provider.displayName)
                             : L10n.accounts(
-                                "egasu deletes the API key it saved and stops tracking this account. Keys in your environment stay as they are."
+                                "egasu removes API keys from local configuration files and stops tracking this account. Environment keys remain available when you add the account again."
                             ))
                 }
             }

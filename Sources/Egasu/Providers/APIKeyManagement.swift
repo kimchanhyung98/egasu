@@ -4,6 +4,7 @@ import Foundation
 /// auth store의 우선순위(config file > env)가 saved key를 자동으로 override로 만드는 구조 — 이 타입은 어떤 조합이 있는지만 보고.
 enum APIKeyStatus: Sendable, Equatable {
     case notSet
+    case unreadable
     case fromEnvironment
     case saved
     case overrideActive

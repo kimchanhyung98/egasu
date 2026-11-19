@@ -37,6 +37,49 @@ final class ClaudeManagedRotationSwitchTests: XCTestCase {
         XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.b.id)
     }
 
+    func testDefaultCLIRefreshDoesNotConsumeGrantWhileAnotherProcessOwnsSharedLogin() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let lock = try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: fixture.root)
+        defer { withExtendedLifetime(lock) {} }
+        await assertSharedGrantNotConsumed(in: fixture)
+    }
+
+    func testDefaultCLIRefreshDoesNotConsumeGrantWithAnotherBundlesPendingSwitch() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let record = try fixture.stageIntent()
+        let namespace = StorageNamespace(bundleIdentifier: StorageNamespace.productionBundleIdentifier + ".dev")
+        let path = fixture.root.appendingPathComponent(
+            "Library/Application Support/\(namespace.name)/AccountSignIn/claude-switch.json"
+        ).path
+        try AccountSwitchJournal(path: path).save(record, replacing: nil)
+        await assertSharedGrantNotConsumed(in: fixture)
+        XCTAssertEqual(try AccountSwitchJournal(path: path).load(), record)
+    }
+
+    private func assertSharedGrantNotConsumed(in fixture: AccountSwitchRecoveryFixture) async {
+        let http = RoutingHTTPClient { request in
+            if request.url.path.hasSuffix("/profile") {
+                return HTTPResponse(
+                    statusCode: 200, headers: [:],
+                    body: Data(#"{"account":{"uuid":"acct-a"},"organization":{"uuid":"org-a"}}"#.utf8))
+            }
+            return HTTPResponse(statusCode: 401, headers: [:], body: Data())
+        }
+        let auth = ClaudeAuthStore(
+            environment: FakeEnvironment(), files: FakeFiles(), keychain: fixture.keychain,
+            allowsDesktopFallback: false, sharedLoginHome: fixture.root)
+        let provider = ClaudeProvider(
+            authStore: auth, usageClient: ClaudeUsageClient(httpClient: http),
+            usageStateStore: isolatedClaudeUsageStore(), logUsageScanner: ClaudeLogFixture.scanner(home: nil),
+            includeSharedUsage: false, pricing: { TestPricing.bundled })
+
+        let result = await provider.refresh()
+        XCTAssertNil(result.liveQuotaObservedAt)
+        XCTAssertTrue(http.requests.contains { $0.url.path.hasSuffix("/usage") })
+        XCTAssertFalse(http.requests.contains { $0.url.path.hasSuffix("/token") })
+        XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), fixture.entryA)
+    }
+
     private func checkSwitchDuringRotation(rotateShared: Bool) async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         let account = rotateShared ? "a" : "b"

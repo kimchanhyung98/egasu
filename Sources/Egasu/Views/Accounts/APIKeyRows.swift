@@ -81,6 +81,7 @@ struct APIKeyRows: View {
     static func statusLabel(_ status: APIKeyStatus) -> String {
         switch status {
         case .notSet: L10n.accounts("Not Set")
+        case .unreadable: L10n.accounts("Can't Read Saved Key")
         case .fromEnvironment: L10n.customize("From Your Environment")
         case .saved: L10n.customize("Saved in App")
         case .overrideActive: L10n.customize("Custom Key")

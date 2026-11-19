@@ -70,7 +70,7 @@ struct OpenCodeUsageScanner: Sendable {
         var failures: [String: String] = [:]
         var rejectedNumericRows = 0
 
-        for path in paths {
+        for (index, path) in paths.enumerated() {
             try Task.checkCancellation()
             checked.insert(path)
             var stage = "schema_probe"
@@ -87,7 +87,7 @@ struct OpenCodeUsageScanner: Sendable {
                 rejectedNumericRows += parsed.rejectedNumericRows
             } catch {
                 if error is CancellationError { throw error }
-                failures[path] = "stage=\(stage) \(AppLog.errorDetails(error))"
+                failures[path] = "db_index=\(index + 1) stage=\(stage) \(AppLog.errorDetails(error))"
                 continue
             }
             // monthly cycle anchor는 최초 로컬 Go 사용 시각(무제한 조회라 day-window cutoff와 무관) — best-effort, 실패 시 calendar month fallback
@@ -96,7 +96,7 @@ struct OpenCodeUsageScanner: Sendable {
                 anchorMs = Swift.min(anchorMs ?? value, value)
             }
         }
-        // 실패 경로는 중복 판정에만 사용하고 로그에는 실패 단계와 오류 분류만 기록.
+        // 실패 경로는 중복 판정에만 사용. 로그에는 조회 목록 순번과 오류 분류 기록.
         let newlyFailing = await readFailureReporter.update(
             checkedPaths: checked.union([directoryMarker]), failingPaths: Set(failures.keys)
         )
@@ -164,14 +164,15 @@ struct OpenCodeUsageScanner: Sendable {
             AppLog.warn(LogTag.plugin("opencode"), "history probe failed stage=directory \(AppLog.errorDetails(error))")
             return true
         }
-        for path in paths {
+        for (index, path) in paths.enumerated() {
             do {
                 if let value = try sqlite.queryValue(path: path, sql: Self.probeSQL), !value.isEmpty {
                     return true
                 }
             } catch {
                 AppLog.warn(
-                    LogTag.plugin("opencode"), "history probe failed stage=usage_query \(AppLog.errorDetails(error))")
+                    LogTag.plugin("opencode"),
+                    "history probe failed db_index=\(index + 1) stage=usage_query \(AppLog.errorDetails(error))")
             }
         }
         return false

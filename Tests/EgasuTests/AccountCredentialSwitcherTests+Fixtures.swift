@@ -6,6 +6,7 @@ extension AccountCredentialSwitcherTests {
         let home: URL
         let keychain: SwitcherTestKeychain
         let workspace: AccountSignInWorkspace
+        let http: ClaudeReconciliationHTTPClient
         let switcher: AccountCredentialSwitcher
         let vault: AccountCredentialVault
     }
@@ -33,6 +34,7 @@ extension AccountCredentialSwitcherTests {
             home: home,
             keychain: keychain,
             workspace: workspace,
+            http: http,
             switcher: switcher,
             vault: AccountCredentialVault(keychain: keychain)
         )

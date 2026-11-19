@@ -21,8 +21,8 @@ extension ClaudeAuthError: UserPresentableError {
             .init("Claude login changed during refresh. Refresh again.")
         case .rotationInProgress:
             .init("Claude is renewing a login. Try again when the refresh finishes.")
-        case .invalidOAuthURL(let value):
-            .init("Invalid Claude OAuth URL: %@. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE.", [String(value)])
+        case .invalidOAuthURL:
+            .init("Invalid Claude OAuth URL. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE.")
         }
     }
 }

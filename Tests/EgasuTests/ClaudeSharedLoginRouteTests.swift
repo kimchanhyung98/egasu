@@ -34,6 +34,9 @@ final class ClaudeSharedLoginRouteTests: XCTestCase {
             let route = try ClaudeSharedLoginRoute.resolve(homeDirectory: home, files: files, environment: environment)
             XCTAssertEqual(route, .legacy(configDir: config))
             XCTAssertEqual(route.stateURL(homeDirectory: home).path, config + "/.claude.json")
+            XCTAssertNotEqual(
+                route.service(environment: environment),
+                ClaudeAuthStore.baseKeychainServiceName(environment: environment))
             XCTAssertEqual(
                 route.service(environment: environment),
                 ClaudeAuthStore.scopedKeychainServiceName(forConfigDirLiteral: config, environment: environment))

@@ -103,9 +103,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         LegacyLaunchAgentCleanup.removeLeftoverAgent()
         // 앱 전역 theme override는 AppKit 수준 적용 — popover가 SwiftUI `preferredColorScheme` 미준수.
         AppearanceSetting.applyCurrent()
+        Task { await finishLaunching(isFreshInstall: isFreshInstall) }
+    }
+
+    private func finishLaunching(isFreshInstall: Bool) async {
         let migrationError: Error?
         do {
-            try ClaudeLegacyShellMigration.runIfNeeded()
+            try await ClaudeLegacyShellMigration.runIfNeeded()
             migrationError = nil
         } catch {
             migrationError = error
