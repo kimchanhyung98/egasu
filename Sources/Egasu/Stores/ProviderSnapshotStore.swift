@@ -48,8 +48,9 @@ final class ProviderSnapshotStore {
     }
 
     func cachedSnapshot(for providerID: String) -> ProviderSnapshot? {
+        let identity = identityKeys[providerID] ?? localSnapshots[providerID]?.producedByIdentityKey
         guard !unresolvedIdentityCacheRejections.contains(providerID),
-            !cache.hasStaleAccountStamp(providerID: providerID, currentIdentityKey: identityKeys[providerID])
+            !cache.hasStaleAccountStamp(providerID: providerID, currentIdentityKey: identity)
         else { return nil }
         return cache.snapshot(providerID: providerID)
     }
@@ -107,6 +108,18 @@ final class ProviderSnapshotStore {
         }
     }
 
+    private func previousSnapshot(for incoming: ProviderSnapshot) -> ProviderSnapshot? {
+        let id = incoming.providerID
+        let local = localSnapshots[id]
+        guard ProviderAccountID.family(of: id) == "cursor" else { return local }
+        guard let identity = incoming.producedByIdentityKey else { return nil }
+        if local?.producedByIdentityKey == identity { return local }
+        guard cache.producedByIdentityKey(providerID: id) == identity else { return nil }
+        var stored = cache.loadSnapshots(providerIDs: [id])[id]
+        stored?.producedByIdentityKey = identity
+        return stored
+    }
+
     /// 현재 인증에 속하는 응답만 수신. 실패 응답의 로컬 이력 갱신은 한도 성공으로 저장하지 않음.
     func accept(_ incoming: ProviderSnapshot, from provider: ProviderRuntime) -> Update {
         let providerID = provider.provider.id
@@ -130,11 +143,16 @@ final class ProviderSnapshotStore {
         if let failure = snapshot.refreshFailure {
             var notifyHistoryChange = false
             var render = false
-            // 계정 미확인 Claude는 이전 값 숨김 — 나머지는 마지막 정상 결과 유지.
             if unresolvedClaudeIdentity {
                 render = true
                 let removedHistory = localSnapshots.removeValue(forKey: providerID)?.usageHistory != nil
                 notifyHistoryChange = removedHistory
+            } else if ProviderAccountID.family(of: providerID) == "cursor" {
+                let local = localSnapshots[providerID]
+                let retained = previousSnapshot(for: snapshot)
+                render = local != retained
+                notifyHistoryChange = local?.usageHistory != retained?.usageHistory
+                localSnapshots[providerID] = retained
             } else if (snapshot.usageHistory != nil && registry.historyDescriptorsByProvider[providerID] != nil)
                       || (provider.provider.usesDedicatedSpendLines && snapshot.totalSpendLines != nil)
                       || (provider.retainsDedicatedSpendOnScanFailure && localSnapshots[providerID]?.totalSpendLines != nil) {
@@ -180,14 +198,9 @@ final class ProviderSnapshotStore {
         // 한도 조회는 성공했지만 로컬 이력이 없으면 마지막 정상 이력만 보존 — 새 한도·플랜·경고·시각은 반영.
         // nil이 아닌 빈 이력은 수집 완료 결과로 취급하여 기존 이력 제거.
         var degraded = snapshot.warning != nil || snapshot.isDegraded == true
-        let historyMatchesAccount =
-            ProviderAccountID.family(of: providerID) != "cursor"
-            || (snapshot.producedByIdentityKey != nil
-                && snapshot.producedByIdentityKey == cache.producedByIdentityKey(providerID: providerID))
         if snapshot.usageHistory == nil,
-           historyMatchesAccount,
-           let history = localSnapshots[providerID]?.usageHistory,
-           let descriptor = registry.historyDescriptorsByProvider[providerID]
+            let history = previousSnapshot(for: snapshot)?.usageHistory,
+            let descriptor = registry.historyDescriptorsByProvider[providerID]
         {
             degraded = true
             snapshot.isDegraded = true
@@ -212,7 +225,8 @@ final class ProviderSnapshotStore {
         }
         localSnapshots[providerID] = snapshot
         // 현재 계정 식별 정보로 저장 결과 귀속 — 비계정 프로바이더·계정 미확인 카드는 식별 키 생략.
-        cache.store(snapshot, producedByIdentityKey: snapshot.producedByIdentityKey ?? identityKeys[providerID])
+        let catalogIdentity = ProviderAccountID.family(of: providerID) == "cursor" ? nil : identityKeys[providerID]
+        cache.store(snapshot, producedByIdentityKey: snapshot.producedByIdentityKey ?? catalogIdentity)
         if !unresolvedClaudeIdentity { unresolvedIdentityCacheRejections.remove(providerID) }
         return .succeeded(snapshot, degraded: degraded)
     }

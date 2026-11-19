@@ -258,7 +258,7 @@ enum CursorUsageMapper {
         var costByDay: [String: UsageCostTotal] = [:]
         var tokensByDay: [String: Int] = [:]
         var modelsByDay: [String: [String: ModelAccumulator]] = [:]
-        for row in rows {
+        for row in rows where row.costUSD > 0 || row.tokens.totalTokens > 0 {
             let day = DailyUsageAccumulator.dayKey(from: row.date, calendar: calendar)
             let model = row.model.trimmingCharacters(in: .whitespacesAndNewlines)
             costByDay[day, default: UsageCostTotal()].add(row.costUSD)

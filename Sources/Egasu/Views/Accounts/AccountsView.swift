@@ -10,6 +10,12 @@ struct AccountsView: View {
 
     @State private var rowFrames: [String: CGRect] = [:]
     @State private var reconciliationError: String?
+    @State private var legacyShellSetup = LegacyClaudeShellSetup()
+
+    private var showsClaudeShellNotice: Bool {
+        guard let id = popover.accountDetailID else { return true }
+        return ProviderAccountID.family(of: id) == "claude"
+    }
 
     private struct ReconciliationRequest: Equatable {
         let authenticationRevision: Int
@@ -20,6 +26,7 @@ struct AccountsView: View {
         PopoverScrollView {
             VStack(alignment: .leading, spacing: PanelMetrics.sectionSpacing) {
                 if let reconciliationError { ProblemCard(message: reconciliationError) }
+                if showsClaudeShellNotice { LegacyClaudeShellNotices(setup: legacyShellSetup) }
                 content
             }
             .padding(.horizontal, PanelMetrics.margin)
@@ -35,6 +42,12 @@ struct AccountsView: View {
             // 다른 창의 설정 변경을 반영하도록 화면을 열 때마다 등록 계정 다시 읽기.
             container.accountProfiles.reloadFromDefaults()
             container.refreshAccountCatalog()
+        }
+        .task(id: showsClaudeShellNotice) {
+            guard showsClaudeShellNotice else { return }
+            let setup = await LegacyClaudeShellSetup.check()
+            guard !Task.isCancelled else { return }
+            legacyShellSetup = setup
         }
         .task(
             id: ReconciliationRequest(
@@ -66,6 +79,27 @@ struct AccountsView: View {
                 rowFrames: rowFrames
             )
             .transition(.move(edge: .leading))
+        }
+    }
+}
+
+struct LegacyClaudeShellNotices: View {
+    let setup: LegacyClaudeShellSetup
+
+    var body: some View {
+        if !setup.found.isEmpty {
+            ProblemCard(
+                message: L10n.accounts(
+                    "An old OpenUsage shell function can make Claude use a different login. Remove the “OpenUsage claude account switching” block from %@ and open a new terminal window.",
+                    setup.found.joined(separator: ", ")
+                ))
+        }
+        if !setup.unreadable.isEmpty {
+            ProblemCard(
+                message: L10n.accounts(
+                    "Couldn’t check %@ for the old OpenUsage Claude shell function.",
+                    setup.unreadable.joined(separator: ", ")
+                ))
         }
     }
 }

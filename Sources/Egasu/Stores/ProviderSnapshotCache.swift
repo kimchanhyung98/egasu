@@ -108,11 +108,11 @@ struct ProviderSnapshotCache {
     /// 저장 entry를 `currentIdentityKey`로 귀속할 수 없는지 — entry 존재 + 현재 identity known + stamp 누락/타 account.
     /// 모든 read 경로(launch paint 필터·refresh cache-hit gate·one-shot CLI의 persisted-freshness 읽기)가 이를
     /// 부재로 취급해야 같은 home에서의 swap이 이전 account 데이터를 서빙하지 않음.
-    /// identity 미해석(nil)이면 false — 검증 불가 entry는 stamp 도입 전과 동일하게 paint.
+    /// 현재 계정을 확인할 수 없는 Cursor 캐시는 표시·재사용 제외.
     func hasStaleAccountStamp(providerID: String, currentIdentityKey: String?) -> Bool {
-        guard let currentIdentityKey else { return false }
         let payload = loadPayload()
         guard payload.snapshots[providerID] != nil else { return false }
+        guard let currentIdentityKey else { return ProviderAccountID.family(of: providerID) == "cursor" }
         return payload.producedByIdentityKeys[providerID] != currentIdentityKey
     }
 

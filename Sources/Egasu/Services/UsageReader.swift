@@ -72,12 +72,19 @@ public struct UsageReader {
             matchedIDs?.contains(id) ?? enablement.isEnabled(id)
         }
         let cache = ProviderSnapshotCache(userDefaults: defaults, allowsPersistedFreshness: true)
+        var identityKeys = accountAssembly.identityKeysByCard
+        if includesProvider("cursor"),
+            let cursor = providers.first(where: { $0.provider.id == "cursor" }) as? CursorProvider
+        {
+            identityKeys["cursor"] = await cursor.currentIdentityKey()
+        }
         let allProviderIDs = registry.providers.map(\.id)
         // 앱과 동일한 계정 guard — 타 계정 캐시와 신원 미확인 Claude 캐시는 TTL 안에서도 재조회.
-        let staleAccountStampIDs = Set(allProviderIDs.filter {
-            (ProviderAccountID.family(of: $0) == "claude" && accountAssembly.identityKeysByCard[$0] == nil)
-                || cache.hasStaleAccountStamp(providerID: $0, currentIdentityKey: accountAssembly.identityKeysByCard[$0])
-        })
+        let staleAccountStampIDs = Set(
+            allProviderIDs.filter {
+                (ProviderAccountID.family(of: $0) == "claude" && identityKeys[$0] == nil)
+                    || cache.hasStaleAccountStamp(providerID: $0, currentIdentityKey: identityKeys[$0])
+            })
         let cachedSnapshots = cache.loadSnapshots(providerIDs: allProviderIDs)
             .filter { providerID, _ in !staleAccountStampIDs.contains(providerID) }
         let savedOrder = LayoutPersistence(
@@ -102,7 +109,7 @@ public struct UsageReader {
                 defaults: defaults,
                 isProviderEnabled: includesProvider,
                 // CLI는 앱의 snapshot cache 공유 — 쓰기에 동일한 계정 stamp 필수, 미stamp claude/codex entry는 앱의 다음 launch에 폐기.
-                providerIdentityKeys: accountAssembly.identityKeysByCard,
+                providerIdentityKeys: identityKeys,
                 workQueue: .shared
             )
             if let matchedIDs {

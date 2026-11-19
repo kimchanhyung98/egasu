@@ -75,3 +75,5 @@
 "Replace API Key…" = "APIキーを置き換え…";
 
 "Moved metric %@ to position %lld of %lld." = "指標「%1$@」を全 %3$lld 件中 %2$lld 番目に移動しました。";
+"An old OpenUsage shell function can make Claude use a different login. Remove the “OpenUsage claude account switching” block from %@ and open a new terminal window." = "以前の OpenUsage シェル関数により、Claude が別のログイン情報を使う場合があります。%@ から「OpenUsage claude account switching」ブロックを削除して、新しいターミナルウインドウを開いてください。";
+"Couldn’t check %@ for the old OpenUsage Claude shell function." = "%@ で以前の OpenUsage の Claude シェル関数を確認できませんでした。";
