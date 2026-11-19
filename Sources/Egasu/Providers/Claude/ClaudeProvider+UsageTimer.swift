@@ -16,29 +16,19 @@ extension ClaudeProvider: UsageTimerProviding {
         }
         let current = try await Self.validateTimerLogin(cliStore, credentials: credentials)
         guard let accessToken = current.oauth.accessToken else { throw UsageTimerError.currentLoginRequired }
-        return UsageTimerSession(
-            observation: observation,
-            send: { canLaunch in
-                await executors.cli.execute(.claude(accessToken: accessToken)) {
-                    guard await canLaunch() else { return false }
-                    do {
-                        let current = try await Self.validateTimerLogin(cliStore, credentials: credentials)
-                        guard current.oauth.accessToken == accessToken else { return false }
-                    } catch {
-                        AppDiagnostics.failure(
-                            .weeklyTimer, error: error, localContext: "Claude timer credential validation failed")
-                        return false
-                    }
-                    return await canLaunch()
-                }
+        return executors.cli.session(
+            observation: observation, configuration: .claude(accessToken: accessToken), now: now,
+            validateLogin: {
+                let current = try await Self.validateTimerLogin(cliStore, credentials: credentials)
+                return current.oauth.accessToken == accessToken
             },
-            verify: { [self] in
+            readQuota: { [self] in
                 let snapshot = await refresh()
+                guard let observedAt = snapshot.liveQuotaObservedAt else { throw UsageTimerError.usageUnavailable }
                 return usageTimerObservations.first {
-                    $0.accountKey == expected.accountKey && snapshot.liveQuotaObservedAt == $0.observedAt
+                    $0.accountKey == expected.accountKey && $0.observedAt == observedAt
                 }
-            }
-        )
+            })
     }
 
     private static func validateTimerLogin(_ store: ClaudeAuthStore, credentials: ClaudeCredentialState) async throws

@@ -61,7 +61,10 @@ final class ClaudeUsageTimerValidationTests: XCTestCase {
     }
 
     func testMalformedWeeklyQuotaCannotPrepareOrLaunchAnAutomaticMessage() async throws {
-        for weekly in ["unavailable", ["utilization": "unavailable"], ["utilization": -1]] as [Any] {
+        for weekly in [
+            "unavailable", ["utilization": "unavailable"], ["utilization": -1],
+            ["utilization": 0, "resets_at": -1]
+        ] as [Any] {
             let fixture = try Fixture()
             defer { fixture.remove() }
             _ = await fixture.provider.refresh()
@@ -87,6 +90,35 @@ final class ClaudeUsageTimerValidationTests: XCTestCase {
         }
     }
 
+    func testInvalidSessionResetOrNewlyUsedQuotaStopsPreparedMessage() async throws {
+        for (session, weekly, invalidated) in [
+            (#"{"utilization":0,"resets_at":-1}"#, 0, false),
+            (#"{"utilization":0,"resets_at":"1969-12-31T23:59:59Z"}"#, 0, false),
+            (#"{"utilization":0,"resets_at":"2099-01-01T00:00:00Z"}"#, 0, true),
+            (#"{"utilization":1}"#, 0, true),
+            (#"{"utilization":0}"#, 100, true)
+        ] {
+            let fixture = try Fixture()
+            defer { fixture.remove() }
+            _ = await fixture.provider.refresh()
+            let expected = try XCTUnwrap(fixture.provider.usageTimerObservations.first)
+            let prepared = try await fixture.provider.prepareUsageTimer(expected, executors: fixture.executors)
+            let timer = try XCTUnwrap(prepared)
+            fixture.files.quotaBody = Data(
+                """
+                {"five_hour":\(session),"seven_day":{"utilization":\(weekly)}}
+                """.utf8)
+
+            let result = await timer.send { true }
+
+            XCTAssertFalse(result.launched)
+            XCTAssertNil(fixture.cli.token)
+            XCTAssertEqual(result.launchObservationInvalidated, invalidated)
+            XCTAssertEqual(
+                result.failureDescription, invalidated ? nil : UsageTimerError.usageUnavailable.errorDescription)
+        }
+    }
+
     func testVerificationCannotConfirmQuotaWhenStateSaveFails() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
@@ -96,9 +128,12 @@ final class ClaudeUsageTimerValidationTests: XCTestCase {
         let session = try XCTUnwrap(prepared)
         fixture.files.blockNextStateSave = true
 
-        let verified = try await session.verify()
-
-        XCTAssertNil(verified)
+        do {
+            _ = try await session.verify()
+            XCTFail("A failed quota save cannot confirm a timer")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, UsageTimerError.usageUnavailable.localizedDescription)
+        }
         XCTAssertTrue(fixture.provider.usageTimerObservations.isEmpty)
         XCTAssertNil(fixture.provider.usageTimerCredentialState)
     }

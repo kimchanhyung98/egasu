@@ -49,10 +49,13 @@ The app updates itself in place via signed, notarized [Sparkle](docs/updates.md)
 - **[계정 전환](/docs/cli.md#계정).** Claude·Codex의 기본 인증 저장소를 쓰는 새 CLI 세션에 선택한 로그인 적용.
   셸 설정 파일·터미널 환경을 유지하며, Claude 첫 등록·외부 로그인과 전환 중 보존할 변경된 인증은 토큰의 계정·조직을 검증한 뒤 저장본에 반영.
   선택된 Claude 공유 로그인은 사용량 조회에서도 계정·조직 일치 검증.
-- **[구독 타이머](/docs/refreshing.md#구독-타이머-자동-시작).** Codex·Claude·Antigravity·Kimi·Z.ai의 지원 한도를 서버에서 재확인한 뒤 짧은 구독 메시지로 시작 유도.
+- **[구독 타이머](/docs/refreshing.md#구독-타이머-자동-시작).** Codex·Claude·Antigravity·Kimi·Z.ai의 지원 한도를 확인하고 짧은 구독 메시지로 시작 유도.
+  Claude·Antigravity·Kimi·Z.ai는 CLI 준비가 끝난 뒤 서버 한도를 다시 조회.
+  전송 예약 후 한도 관측값이 바뀌면 메시지를 생략하고 예약 횟수 유지.
   계정·풀·기간별 전송 상한과 기록은 앱 재시작 뒤에도 유지.
 - **[알림](/docs/settings.md#alerts).** 잔량 부족·빠른 소진·기간 종료 전 남은 할당량과 Codex Reset Watch 통지.
   다섯 조건을 개별 선택하며 기본값은 꺼짐.
+  기간 종료 전 잔량 알림은 한도별로 한 기간에 한 번 통지.
 - **[전역 단축키](/docs/settings.md#general).** Settings → General에서 지정한 키 조합으로 패널 열기·닫기.
 - **Accounts.** 계정 추가·전환·재로그인·API 키와 계정별 지표 표시·순서 관리.
   숨긴 계정 복원과 이름 변경·중단된 Claude 전환 복구 지원.

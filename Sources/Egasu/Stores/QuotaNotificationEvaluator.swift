@@ -48,20 +48,19 @@ final class QuotaNotificationEvaluator {
             let data = metric.data
             let state = data.meterState(now: now)
             let previous = notificationState[key] ?? NotificationState()
-            let hasPaceContext = data.paceContext != nil
+            let period = data.paceContext?.period
+            let hasPaceContext = period != nil
             let currentBucket = PaceNotificationLogic.bucket(for: state, used: data.used, hasPaceContext: hasPaceContext)
             let resetDelta = Self.resetDelta(current: data.resetsAt, previous: previous.resetsAt)
-            let resetAdvanced = data.hasData && PaceNotificationLogic.resetWindowAdvanced(
-                resetsAt: data.resetsAt,
-                previousReset: previous.resetsAt,
-                now: now,
-                usageReset: data.used == 0 && (previous.previousUsed ?? 0) > 0
-            )
+            let windowChange = PaceNotificationLogic.windowChange(
+                from: previous, used: data.used, resetsAt: data.resetsAt, period: period, now: now)
+            let resetAdvanced = data.hasData && windowChange != .unchanged
             let result = PaceNotificationLogic.transitions(
                 state: state,
                 severity: data.severity,
                 used: data.used,
                 resetsAt: data.resetsAt,
+                windowChange: windowChange,
                 hasPaceContext: hasPaceContext,
                 unusedNearReset: PaceNotificationLogic.isUnusedNearReset(data, now: now),
                 previous: previous,
@@ -96,7 +95,8 @@ final class QuotaNotificationEvaluator {
                     next.firedMilestones.insert(milestone)
                 }
             }
-            let held = PaceNotificationLogic.carriedOver(previous, used: data.used, resetsAt: data.resetsAt, now: now)
+            let held = PaceNotificationLogic.carriedOver(
+                previous, used: data.used, resetsAt: data.resetsAt, change: windowChange, now: now)
             if result.fire.contains(where: \.isPace) && !paceDelivered {
                 next.previousBucket = held.previousBucket
             }

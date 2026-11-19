@@ -300,31 +300,39 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
 
         }
 
-        // 실행 준비 중 비교 기준이 바뀌면 시작 직전에 차단. 재시도 간격은 유지.
+        // 실행 준비 중 비교 기준이 바뀌면 시작 직전에 차단하고 전송 예약 유지.
         let launchObservation = session.observation
-        var launchObservationInvalidated = false
+        var launchObservationIsCurrent: Bool? = true
         executing = candidate
         let result = await execute(candidate.providerID, candidate.bindingID, session) { [weak self] in
-            guard let self, self.current(candidate) else { return false }
+            guard let self else { return false }
+            guard candidate.observationEpoch == self.observationEpoch else {
+                launchObservationIsCurrent = false
+                return false
+            }
+            guard self.current(candidate) else { return false }
             do {
-                launchObservationInvalidated = try !self.store.isLatest(launchObservation)
-                return !launchObservationInvalidated
+                let isLatest = try self.store.isLatest(launchObservation)
+                launchObservationIsCurrent = isLatest
+                return isLatest
             } catch {
-                launchObservationInvalidated = true
+                launchObservationIsCurrent = nil
                 self.fail(candidate, "Usage timer automation could not read its saved state. No message was sent.")
                 return false
             }
         }
         executing = nil
         attempt.execution = result.completed ? .completed : .failed
-        attempt.messageLaunched = result.launched
+        let observationChanged = launchObservationIsCurrent == false || result.launchObservationInvalidated
+        if result.launched || !observationChanged { attempt.messageLaunched = result.launched }
         var stateSaveFailed = false
         do { try store.update(accountKey: accountKey, attempt: attempt) }
         catch {
             stateSaveFailed = true
             fail(candidate, "Usage timer automation could not update its saved state.")
         }
-        guard current(candidate), !launchObservationInvalidated else { return }
+        guard current(candidate), launchObservationIsCurrent != nil else { return }
+        if observationChanged && result.verificationCanClearFailure { return }
         guard result.launched else {
             fail(candidate, result.failureDescription ?? "Usage timer message could not be started. Refresh after five minutes to try again.")
             return

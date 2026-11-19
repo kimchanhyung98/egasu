@@ -199,12 +199,12 @@ enum ClaudeUsageMapper {
         if let text = (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
            !text.isEmpty,
            let date = EgasuISO8601.date(from: text) {
-            return date
+            return date.timeIntervalSince1970 >= 0 ? date : nil
         }
-        guard let number = ProviderParse.number(value), number.isFinite else {
+        guard let number = ProviderParse.number(value), number.isFinite, number >= 0 else {
             return nil
         }
-        let milliseconds = abs(number) < 1e10 ? number * 1000 : number
+        let milliseconds = number < 1e10 ? number * 1000 : number
         return Date(timeIntervalSince1970: milliseconds / 1000)
     }
 

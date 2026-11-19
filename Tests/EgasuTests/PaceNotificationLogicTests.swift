@@ -18,15 +18,22 @@ final class PaceNotificationLogicTests: XCTestCase {
         from previous: NotificationState = NotificationState(),
         now: Date? = nil
     ) -> PaceNotificationLogic.Transition {
-        PaceNotificationLogic.transitions(
+        let now = now ?? reset.addingTimeInterval(-1800)
+        let used = (1 - fraction) * 100
+        let resetsAt = resetsAt ?? reset
+        let change = PaceNotificationLogic.windowChange(
+            from: previous, used: used, resetsAt: resetsAt, period: 7 * 86_400, now: now)
+        return PaceNotificationLogic.transitions(
             state: state,
-            severity: WidgetData(title: "Weekly", icon: .providerMark("codex"), kind: .percent, used: (1 - fraction) * 100, limit: 100).severity,
-            used: (1 - fraction) * 100,
-            resetsAt: resetsAt ?? reset,
+            severity: WidgetData(title: "Weekly", icon: .providerMark("codex"), kind: .percent, used: used, limit: 100)
+                .severity,
+            used: used,
+            resetsAt: resetsAt,
+            windowChange: change,
             hasPaceContext: true,
             unusedNearReset: unusedNearReset,
             previous: previous,
-            now: now ?? reset.addingTimeInterval(-1800)
+            now: now
         )
     }
 

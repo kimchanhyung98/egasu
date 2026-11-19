@@ -4,37 +4,31 @@ extension KimiProvider: UsageTimerProviding {
     func prepareUsageTimer(
         _ expected: UsageTimerObservation, executors: UsageTimerExecutors
     ) async throws -> UsageTimerSession? {
-        _ = await quotaSnapshot()
-        guard let observation = usageTimerObservations.first,
+        let reading = await readQuota()
+        guard let observation = reading.observation,
             observation.accountKey == expected.accountKey,
-            let document = usageTimerCredential,
+            let document = reading.credential,
             let token = document.credentials.accessToken,
             Self.hasTimerLifetime(document, at: now())
         else { throw UsageTimerError.usageUnavailable }
-        return UsageTimerSession(
+        return executors.cli.session(
             observation: observation,
-            send: { [authStore, now] canLaunch in
-                await executors.cli.execute(
-                    .kimi(
-                        accessToken: token,
-                        baseURL: document.service.usageURL.deletingLastPathComponent().absoluteString
-                    )
-                ) {
-                    guard await canLaunch() else { return false }
-                    do {
-                        let current = try await loadOffMainActor { try authStore.loadCredentialDocument() }
-                        guard let current, current == document, Self.hasTimerLifetime(current, at: now()) else {
-                            return false
-                        }
-                    } catch { return false }
-                    return await canLaunch()
+            configuration: .kimi(
+                accessToken: token, baseURL: document.service.usageURL.deletingLastPathComponent().absoluteString),
+            now: now,
+            validateLogin: { [authStore, now] in
+                guard let current = try await loadOffMainActor({ try authStore.loadCredentialDocument() }) else {
+                    return false
                 }
+                return current == document && Self.hasTimerLifetime(current, at: now())
             },
-            verify: { [self] in
-                _ = await quotaSnapshot()
-                return usageTimerObservations.first { $0.accountKey == expected.accountKey }
-            }
-        )
+            readQuota: { [self] in
+                let reading = await readQuota()
+                guard reading.snapshot.liveQuotaObservedAt != nil else { throw UsageTimerError.usageUnavailable }
+                guard let observation = reading.observation else { return nil }
+                guard observation.accountKey == expected.accountKey else { throw UsageTimerError.accountChanged }
+                return observation
+            })
     }
 
     private static func hasTimerLifetime(_ document: KimiCredentialDocument, at now: Date) -> Bool {

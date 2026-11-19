@@ -21,36 +21,24 @@ extension AntigravityProvider: UsageTimerProviding {
         }
     }
 
-    private func timerQuota(_ expected: UsageTimerObservation) async throws -> UsageTimerObservation {
+    private func timerQuota(_ expected: UsageTimerObservation) async throws -> UsageTimerObservation? {
         usageTimerObservations = []
         _ = try await probeCloudCode()
-        guard
-            let observation = usageTimerObservations.first(where: {
-                $0.accountKey == expected.accountKey && $0.timerID == expected.timerID
-            })
-        else { throw UsageTimerError.usageUnavailable }
-        return observation
+        return usageTimerObservations.first { $0.storageKey == expected.storageKey }
     }
 
     func prepareUsageTimer(
         _ expected: UsageTimerObservation, executors: UsageTimerExecutors
     ) async throws -> UsageTimerSession? {
-        let observation = try await timerQuota(expected)
+        guard let observation = try await timerQuota(expected) else { throw UsageTimerError.usageUnavailable }
         guard let credentials = usageTimerCredential else { throw UsageTimerError.currentLoginRequired }
         let modelPrefix = expected.timerID.hasPrefix("antigravity.gemini.") ? "gemini-" : "claude-"
-        return UsageTimerSession(
-            observation: observation,
-            send: { [authStore] canLaunch in
-                await executors.cli.execute(.antigravity(model: modelPrefix)) {
-                    guard await canLaunch() else { return false }
-                    do {
-                        let current = try await loadOffMainActor { try authStore.loadKeychainToken() }
-                        guard current?.refreshToken == credentials.refreshToken else { return false }
-                    } catch { return false }
-                    return await canLaunch()
-                }
+        return executors.cli.session(
+            observation: observation, configuration: .antigravity(model: modelPrefix), now: now,
+            validateLogin: { [authStore] in
+                let current = try await loadOffMainActor { try authStore.loadKeychainToken() }
+                return current?.refreshToken == credentials.refreshToken
             },
-            verify: { [self] in try await timerQuota(expected) }
-        )
+            readQuota: { [self] in try await timerQuota(expected) })
     }
 }

@@ -121,6 +121,12 @@ final class KimiProvider: ProviderRuntime {
     }
 
     func quotaSnapshot() async -> ProviderSnapshot {
+        await readQuota().snapshot
+    }
+
+    func readQuota() async -> (
+        snapshot: ProviderSnapshot, observation: UsageTimerObservation?, credential: KimiCredentialDocument?
+    ) {
         usageTimerObservations = []
         usageTimerCredential = nil
         do {
@@ -169,26 +175,33 @@ final class KimiProvider: ProviderRuntime {
             )
             let mapped = try KimiUsageMapper.map(response.body)
             let observedAt = now()
+            let observation: UsageTimerObservation?
             if !usesAPIKey,
                let subject = ProviderParse.jwtPayload(accessToken)?["sub"] as? String, !subject.isEmpty,
                !UsageTimerObservation.hasExhaustedQuota(mapped.lines) {
                 // 기존 기본 서버의 계정 키 유지, 다른 서버의 동명 계정은 분리.
                 let identity = document.service == .standard
                     ? subject : "\(document.service.baseURL)|\(document.service.oauthHost)|\(subject)"
-                usageTimerCredential = document
-                usageTimerObservations = [UsageTimerObservation.from(
+                observation = UsageTimerObservation.from(
                     lines: mapped.lines, accountKey: UsageTimerObservation.accountKey(family: "kimi", identity: identity),
                     timerID: "kimi.session", observedAt: observedAt
-                )].compactMap { $0 }
+                )
+            } else {
+                observation = nil
             }
-            return ProviderSnapshot.make(
+            usageTimerObservations = [observation].compactMap { $0 }
+            usageTimerCredential = observation == nil ? nil : document
+            let snapshot = ProviderSnapshot.make(
                 provider: provider,
                 plan: mapped.plan,
                 lines: mapped.lines,
                 refreshedAt: observedAt, liveQuotaObservedAt: observedAt
             )
+            return (snapshot, observation, usageTimerCredential)
         } catch {
-            return ProviderSnapshot.error(provider: provider, error: normalized(error))
+            usageTimerObservations = []
+            usageTimerCredential = nil
+            return (ProviderSnapshot.error(provider: provider, error: normalized(error)), nil, nil)
         }
     }
 

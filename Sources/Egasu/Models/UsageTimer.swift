@@ -32,6 +32,13 @@ struct UsageTimerObservation: Equatable, Sendable {
         }
     }
 
+    func canStart(after prepared: Self, at date: Date) -> Bool {
+        guard canStart(at: date) else { return false }
+        return startRule == .missingReset
+            || observedAt.timeIntervalSince(prepared.observedAt) < Self.verificationInterval
+            || !Self.resetTimesMatch(rawResetAt, prepared.rawResetAt)
+    }
+
     static func resetTimesMatch(_ first: Date?, _ second: Date?) -> Bool {
         guard let first, let second else { return false }
         return abs(first.timeIntervalSince(second)) <= resetTimeTolerance
@@ -72,6 +79,7 @@ struct UsageTimerExecutionResult: Sendable {
     var completed: Bool
     var failureDescription: String? = nil
     var verificationCanClearFailure = true
+    var launchObservationInvalidated = false
 }
 
 struct UsageTimerSession: UsageTimerPreparedSession {

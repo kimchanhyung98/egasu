@@ -41,8 +41,29 @@ final class KimiQuotaTimerTests: XCTestCase {
         XCTAssertNotNil(provider.usageTimerCredential)
     }
 
+    func testExhaustedTimerReadCannotReuseAnOverlappingSuccessfulQuota() async throws {
+        let suspended = expectation(description: "Timer quota request suspended")
+        let http = OverlappingKimiQuotaHTTP(suspended: suspended)
+        let provider = try makeProvider(monthlyTotal: nil, monthlyCode: 0, http: http)
+        _ = await provider.quotaSnapshot()
+        let expected = try XCTUnwrap(provider.usageTimerObservations.first)
+        let prepared = try await provider.prepareUsageTimer(
+            expected, executors: .init(codex: UsageTimerRouterTests.Executor(), cli: UnexpectedUsageTimerCLI()))
+        let session = try XCTUnwrap(prepared)
+        let timerRead = Task { try await session.verify() }
+        await fulfillment(of: [suspended], timeout: 3)
+
+        _ = await provider.quotaSnapshot()
+        XCTAssertEqual(provider.usageTimerObservations.count, 1)
+        await http.finishExhaustedRead()
+
+        let observation = try await timerRead.value
+        XCTAssertNil(observation)
+        XCTAssertTrue(provider.usageTimerObservations.isEmpty)
+    }
+
     private func makeProvider(
-        monthlyTotal: Double?, monthlyCode: Double, extraCapExhausted: Bool = false
+        monthlyTotal: Double?, monthlyCode: Double, extraCapExhausted: Bool = false, http: (any HTTPClient)? = nil
     ) throws -> KimiProvider {
         var usages: [String: Any] = [
             "limit_5h": ["used_ratio": 0, "reset_time": "1970-01-01T05:00:00Z"],
@@ -65,11 +86,11 @@ final class KimiQuotaTimerTests: XCTestCase {
             root.appendingPathComponent("credentials/kimi-code.json").path:
                 #"{"access_token":"\#(jwt)","expires_at":9000}"#
         ])
+        let client = try http ?? KimiQuotaTimerHTTP(body: JSONSerialization.data(withJSONObject: payload))
         return KimiProvider(
             authStore: KimiAuthStore(
                 files: files, environment: FakeEnvironment(["KIMI_CODE_HOME": root.path]), homeDirectory: { root }),
-            usageClient: KimiUsageClient(
-                http: KimiQuotaTimerHTTP(body: try JSONSerialization.data(withJSONObject: payload))),
+            usageClient: KimiUsageClient(http: client),
             now: { Date(timeIntervalSince1970: 2_000) }, pricing: { .empty }
         )
     }
@@ -80,5 +101,37 @@ private struct KimiQuotaTimerHTTP: HTTPClient {
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         HTTPResponse(statusCode: 200, headers: [:], body: body)
+    }
+}
+
+private actor OverlappingKimiQuotaHTTP: HTTPClient {
+    let suspended: XCTestExpectation
+    private var requestCount = 0
+    private var waiting: CheckedContinuation<HTTPResponse, Never>?
+
+    init(suspended: XCTestExpectation) { self.suspended = suspended }
+
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        requestCount += 1
+        if requestCount == 3 {
+            return await withCheckedContinuation {
+                waiting = $0
+                suspended.fulfill()
+            }
+        }
+        return response(monthlyUsed: 0)
+    }
+
+    func finishExhaustedRead() {
+        waiting?.resume(returning: response(monthlyUsed: 1))
+        waiting = nil
+    }
+
+    private func response(monthlyUsed: Int) -> HTTPResponse {
+        let body = """
+            {"usages":{"limit_5h":{"used_ratio":0,"reset_time":"1970-01-01T05:00:00Z"},
+            "limit_month_total":{"used_ratio":\(monthlyUsed)}}}
+            """
+        return HTTPResponse(statusCode: 200, headers: [:], body: Data(body.utf8))
     }
 }
