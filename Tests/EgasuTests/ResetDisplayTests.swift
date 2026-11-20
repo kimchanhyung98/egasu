@@ -46,10 +46,62 @@ final class ResetDisplayTests: XCTestCase {
         XCTAssertEqual(data.resetTooltip()?.hasPrefix("Resets in "), true)
     }
 
-    func testZeroUsageSessionSignalPreservesAntigravityAndKimiBehavior() {
+    private func kimiSession(usedRatio: Double, resetTime: String?) throws -> WidgetData {
+        var quota: [String: Any] = ["used_ratio": usedRatio]
+        quota["reset_time"] = resetTime
+        let mapped = try KimiUsageMapper.map(["usages": ["limit_5h": quota]])
+        let provider = KimiProvider()
+        let descriptor = try XCTUnwrap(provider.widgetDescriptors.first { $0.id == "kimi.session" })
+        let snapshot = ProviderSnapshot.make(
+            provider: provider.provider, plan: nil, lines: mapped.lines, refreshedAt: Date())
+        return WidgetDataResolver.resolve(descriptor, snapshot: snapshot, codexResetWatch: .init())
+    }
+
+    func testKimiZeroUsageSessionShowsTheReportedResetInBothLayouts() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let reset = now.addingTimeInterval(4 * 3600 + 54 * 60)
+        var data = try kimiSession(usedRatio: 0, resetTime: EgasuISO8601.string(from: reset))
+        XCTAssertEqual(data.used, 0)
+        XCTAssertEqual(data.resetsAt, reset)
+        XCTAssertTrue(data.hasResetLabel(now: now))
+
+        for mode in [ResetDisplayMode.relative, .absolute] {
+            data.resetDisplayMode = mode
+            let row = data.dashboardRow(now: now)
+            guard case .bar(_, _, _, let gridReset, _) = row.mark else { return XCTFail("Expected session meter") }
+            let expectedGrid =
+                mode == .relative
+                ? Formatters.countdown(to: reset, now: now) : Formatters.compactClock(reset, now: now)
+            let expectedCard =
+                mode == .relative
+                ? Formatters.resetRelativeLabel(until: reset, now: now)
+                : Formatters.resetAbsoluteLabel(at: reset, now: now)
+            XCTAssertEqual(gridReset, expectedGrid)
+            XCTAssertEqual(row.cardReset, expectedCard)
+        }
+    }
+
+    func testKimiSessionWithoutAValidResetShowsOnlyUsageInBothLayouts() throws {
+        for reset in [nil, "invalid"] as [String?] {
+            for ratio in [0.0, 0.25] {
+                let data = try kimiSession(usedRatio: ratio, resetTime: reset)
+                XCTAssertTrue(data.hasData)
+                XCTAssertEqual(data.used, ratio * 100)
+                XCTAssertEqual(data.periodDurationMs, KimiUsageMapper.sessionPeriodMs)
+                XCTAssertFalse(data.hasResetLabel())
+                XCTAssertNil(data.resetTooltip())
+                let row = data.dashboardRow()
+                guard case .bar(_, _, _, let gridReset, _) = row.mark else { return XCTFail("Expected session meter") }
+                XCTAssertNil(gridReset)
+                XCTAssertNil(row.cardReset)
+            }
+        }
+    }
+
+    func testZeroUsageSessionSignalPreservesAntigravityBehavior() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let period: TimeInterval = 5 * 3600
-        for id in ["antigravity.geminiPro", "antigravity.claude", "kimi.session"] {
+        for id in ["antigravity.geminiPro", "antigravity.claude"] {
             var data = WidgetData(title: "Session", icon: .providerMark("codex"), kind: .percent, used: 0, limit: 100)
             data.sessionStartSignal = .zeroUsage
             data.periodDurationMs = Int(period * 1000)
@@ -124,9 +176,13 @@ final class ResetDisplayTests: XCTestCase {
         let signals = Dictionary(uniqueKeysWithValues: descriptors.compactMap { descriptor in
             descriptor.sample.sessionStartSignal.map { (descriptor.id, $0) }
         })
-        XCTAssertEqual(signals, ["claude.session": .missingResetDate,
-                                 "antigravity.geminiPro": .zeroUsage, "antigravity.claude": .zeroUsage,
-                                 "kimi.session": .zeroUsage])
+        XCTAssertEqual(
+            signals,
+            [
+                "claude.session": .missingResetDate,
+                "antigravity.geminiPro": .zeroUsage,
+                "antigravity.claude": .zeroUsage
+            ])
 
         let suffixed = descriptors.filter { $0.sample.traySuffix != nil }
         XCTAssertEqual(suffixed.map(\.id), ["codex.rateLimitResets"])
