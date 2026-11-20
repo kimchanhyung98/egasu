@@ -2,6 +2,41 @@
 
 This changelog starts with v0.8.0, the first release of this fork.
 
+## v1.0.0-beta.4
+
+### New Features
+
+- 베타 업데이트를 켜면 설정에 실험실 탭 표시. 기존 Soft Limit과 Terminal Helper를 실험실로 이동. 실측한 주간·월간 한도에 Soft Limit 적용. 경고와 위험을 포함해 Priority 표시 조건을 개별 설정하고, 모든 조건을 끄면 전체 사용량만 표시. ([#208](https://github.com/kimchanhyung98/egasu/pull/208)) by @kimchanhyung98
+- 실험실에서 Codex·Claude·Kimi의 한도를 확인한 뒤 새 CLI를 시작하는 명령 복사. 그 외 지원 프로바이더는 한도 확인 명령 제공. 이미 실행 중인 작업은 계속 진행. ([#210](https://github.com/kimchanhyung98/egasu/pull/210)) by @kimchanhyung98
+
+### Bug Fixes
+
+- Kimi 세션 사용량이 0%여도 서버가 제공한 초기화 시각을 표시하고, 시각이 없거나 유효하지 않으면 사용량만 표시. ([#214](https://github.com/kimchanhyung98/egasu/pull/214)) by @kimchanhyung98
+- Cursor 조회 시간 초과 후 승인 창 없이 계정을 재확인. 같은 계정의 마지막 사용량과 지출 이력을 유지하고 이전 한도 측정값은 자동화 판단에서 제외. ([#211](https://github.com/kimchanhyung98/egasu/pull/211)) by @kimchanhyung98
+- OpenRouter·Z.ai에서 API 키를 저장·삭제할 때 손상된 JSON, 한 줄 설정과 기존 구조화된 필드 보존. 기존 파일 형식 때문에 저장할 수 없으면 오류 안내. ([#212](https://github.com/kimchanhyung98/egasu/pull/212)) by @kimchanhyung98
+- 복사한 CLI 시작 명령에서 셸 별칭·함수로 로그인이 바뀌는 문제 수정. Codex 시작 명령은 파일 인증을 사용하며 Keychain 전용 로그인과 인증 저장소를 강제하는 관리자 정책은 지원 범위에서 제외. Kimi는 기본 모델의 서비스와 인증을 확인할 수 있을 때만 시작 허용. ([#213](https://github.com/kimchanhyung98/egasu/pull/213)) by @kimchanhyung98
+- 이전 OpenUsage의 Claude 셸 함수를 사용하는 환경에서 기본 CLI 로그인 이전과 검증 후 함수 제거. 토큰 갱신과 계정 전환이 겹치거나 전환 중 앱이 종료된 경우의 복구 개선. 확인할 수 없는 로그인은 보존하고 이전 보류. ([#206](https://github.com/kimchanhyung98/egasu/pull/206)) by @kimchanhyung98
+- OpenRouter·Z.ai API 키 읽기 오류를 표시하고, 키 삭제가 실패하면 계정 추적 유지. ([#207](https://github.com/kimchanhyung98/egasu/pull/207)) by @kimchanhyung98
+- Cursor 계정별 캐시와 사용 이력 복구, Kimi 일부 응답 처리 개선. ([#201](https://github.com/kimchanhyung98/egasu/pull/201)) by @kimchanhyung98
+- 구독 타이머 실행 직전 한도와 로그인 재확인. 한도 기간이 바뀌면 새 기간의 잔량 알림 재개. ([#202](https://github.com/kimchanhyung98/egasu/pull/202)) by @kimchanhyung98
+- 셸 시작 파일이 배너를 출력하는 환경에서 PATH를 보존해 Codex 실행 파일 탐색 오류 수정. ([#204](https://github.com/kimchanhyung98/egasu/pull/204)) by @shlifedev
+- CLI를 먼저 사용한 경우에도 앱 첫 실행 시 로컬 프로바이더 탐지. ([#199](https://github.com/kimchanhyung98/egasu/pull/199)) by @kimchanhyung98
+- 사이트 미리보기에서 계정 이름 중복 방지 및 숨긴 지표를 다시 표시하는 방법 안내. ([#198](https://github.com/kimchanhyung98/egasu/pull/198)) by @kimchanhyung98
+- 사용량 조회·인증·계정 전환 실패를 진단 로그에서 구분. 오류 신고용 로그의 민감 정보 보호 개선. ([#205](https://github.com/kimchanhyung98/egasu/pull/205)) by @kimchanhyung98
+
+### Chores
+
+- 첫 실행·오프라인 비용 추정에 사용하는 LiteLLM·models.dev 번들 단가표 갱신. ([f8a068e](https://github.com/kimchanhyung98/egasu/commit/f8a068ec42572d80e927509896c48187641d6d94)) by @kimchanhyung98
+- 문서와 사이트 이미지의 색상 정보를 보존하면서 파일 크기 축소. ([#197](https://github.com/kimchanhyung98/egasu/pull/197)) by @kimchanhyung98
+- 계정 이름 숨김 표시 검증 및 기존 레이아웃 설정 이전 조건 문서화. ([#200](https://github.com/kimchanhyung98/egasu/pull/200)) by @kimchanhyung98
+- 설치·업데이트 절차와 프로바이더 설명을 한국어로 정리. ([#209](https://github.com/kimchanhyung98/egasu/pull/209)) by @kimchanhyung98
+
+---
+
+### Changelog
+
+**Full Changelog**: [v1.0.0-beta.3...v1.0.0-beta.4](https://github.com/kimchanhyung98/egasu/compare/0702b04e0ffab90ca6c8a8e2a6db5e29a3a0dd90...f8a068ec42572d80e927509896c48187641d6d94)
+
 ## v1.0.0-beta.3
 
 ### New Features
