@@ -86,7 +86,32 @@ final class KimiCLIConfigurationTests: XCTestCase {
         api_key = "managed-key"
         """)
 
-        XCTAssertEqual(try store.loadCredentialDocument()?.credentials.accessToken, "managed-key")
+        let dashboard = try XCTUnwrap(store.loadCredentialDocument())
+        XCTAssertEqual(dashboard.credentials.accessToken, "managed-key")
+        XCTAssertFalse(try store.matchesTerminalLogin(dashboard, environment: FakeEnvironment()))
+    }
+
+    func testTerminalModelOverrideCannotReuseTheConfiguredModelQuota() throws {
+        let store = makeStore(
+            config: """
+                default_model = "kimi-code/k3"
+                [models."kimi-code/k3"]
+                provider = "managed:kimi-code"
+                model = "k3"
+                max_context_size = 262144
+                \(providerConfiguration(auth: oauth()))
+                """,
+            credentials: ["kimi-code": credential("managed")]
+        )
+        let terminal = FakeEnvironment([
+            "KIMI_MODEL_NAME": "claude-sonnet",
+            "KIMI_MODEL_PROVIDER_TYPE": "anthropic",
+            "KIMI_MODEL_API_KEY": "temporary-key"
+        ])
+
+        let dashboard = try XCTUnwrap(store.loadCredentialDocument())
+        XCTAssertTrue(try store.matchesTerminalLogin(dashboard, environment: FakeEnvironment()))
+        XCTAssertFalse(try store.matchesTerminalLogin(dashboard, environment: terminal))
     }
 
     func testManagedProviderWinsWhenThereIsNoCodeDefaultModel() throws {
@@ -102,7 +127,9 @@ final class KimiCLIConfigurationTests: XCTestCase {
         api_key = "managed-key"
         """)
 
-        XCTAssertEqual(try store.loadCredentialDocument()?.credentials.accessToken, "managed-key")
+        let dashboard = try XCTUnwrap(store.loadCredentialDocument())
+        XCTAssertEqual(dashboard.credentials.accessToken, "managed-key")
+        XCTAssertFalse(try store.matchesTerminalLogin(dashboard, environment: FakeEnvironment()))
     }
 
     func testUniqueCodeProviderIsUsedWithoutManagedProvider() throws {

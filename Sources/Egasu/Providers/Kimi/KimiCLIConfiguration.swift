@@ -37,8 +37,14 @@ struct KimiCLIConfiguration {
     var allowsLegacy: Bool
 
     static func resolve(
-        _ text: String?, environment: any EnvironmentReading
-    ) throws -> KimiCLIConfiguration {
+        _ text: String?,
+        environment: any EnvironmentReading,
+        requiresDefaultModel: Bool
+    ) throws -> KimiCLIConfiguration? {
+        // CLI는 환경 변수로 선언한 임시 모델을 TOML 기본 모델보다 먼저 선택.
+        if requiresDefaultModel, environment.value(for: "KIMI_MODEL_NAME")?.isEmpty == false {
+            return nil
+        }
         try validateEnvironment(environment)
         let document: Document
         if let text {
@@ -52,10 +58,15 @@ struct KimiCLIConfiguration {
         }
 
         guard let providers = document.providers else {
+            guard !requiresDefaultModel else { return nil }
             let service = try oauthService(baseURL: nil, oauth: nil, environment: environment)
             return KimiCLIConfiguration(service: service, apiKey: nil, allowsLegacy: service == .standard)
         }
-        let selected = try selectProvider(document, providers: providers)
+        guard
+            let selected = try selectProvider(
+                document, providers: providers, requiresDefaultModel: requiresDefaultModel
+            )
+        else { return nil }
         let provider = selected.provider
         let inlineKey = nonempty(provider.apiKey)
         let keyEnvironment = nonempty(provider.apiKeyEnvironment)
@@ -110,8 +121,8 @@ struct KimiCLIConfiguration {
     }
 
     private static func selectProvider(
-        _ document: Document, providers: [String: CLIProvider]
-    ) throws -> SelectedProvider {
+        _ document: Document, providers: [String: CLIProvider], requiresDefaultModel: Bool
+    ) throws -> SelectedProvider? {
         func selection(_ name: String) -> SelectedProvider? {
             guard let provider = providers[name] else { return nil }
             let baseURL =
@@ -124,10 +135,12 @@ struct KimiCLIConfiguration {
         if let defaultModel = document.defaultModel,
             let providerName = document.models?[defaultModel]?.provider,
             let selected = selection(providerName),
-            let baseURL = selected.baseURL, isCodeHost(baseURL)
+            let baseURL = selected.baseURL, isCodeHost(baseURL),
+            !requiresDefaultModel || allowedBaseHost(baseURL) != nil
         {
             return selected
         }
+        guard !requiresDefaultModel else { return nil }
         if let selected = selection("managed:kimi-code") { return selected }
         let candidates = providers.keys.compactMap(selection).filter { selected in
             selected.baseURL.map { allowedBaseHost($0) != nil } ?? false
