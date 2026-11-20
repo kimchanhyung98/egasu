@@ -115,18 +115,6 @@ public struct UsageReader {
         guard descriptors.contains(where: { $0.hasMeasuredSoftLimit(in: window) }) else {
             return unknown("unsupported_window")
         }
-        if id == "kimi", let kimi = context.providers.first(where: { $0.provider.id == id }) as? KimiProvider {
-            do {
-                let matches = try await loadOffMainActor { [store = kimi.authStore] in
-                    try store.matchesTerminalLogin(environment: InheritedTerminalEnvironment())
-                }
-                guard matches else { return unknown("terminal_login_mismatch") }
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                return unknown("terminal_login_unreadable")
-            }
-        }
         let loaded = await load(
             context: context, matchedIDs: [id], force: false, preflight: (id, window, settings.thresholdPercent))
         let verified: Bool
@@ -237,7 +225,8 @@ public struct UsageReader {
                 codexSharedAuthHome: accountAssembly.codexSharedAuthHome,
                 codexAccountBinding: accountAssembly.codexDefaultAccountBinding,
                 claudeManagedSwitchActive: accountAssembly.claudeManagedSwitchActive,
-                allowsClaudeDesktopFallback: preflightCardID != "claude"
+                allowsClaudeDesktopFallback: preflightCardID != "claude",
+                kimiTerminalEnvironment: preflightCardID == "kimi" ? InheritedTerminalEnvironment() : nil
             )
         let observer = DefaultAccountObserver(
             pinsClaudeSharedHome: accountAssembly.claudeManagedSwitchActive,

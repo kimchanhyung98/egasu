@@ -146,7 +146,31 @@ final class KimiProviderTests: XCTestCase {
         XCTAssertEqual(snapshot.errorPresentation?.key, KimiAuthError.credentialsChanged.localizedDescription)
     }
 
-    func testProactiveRefreshPersistsRotatedCredentialBeforeUsageFetch() async throws {
+    func testTerminalPreflightRejectsQuotaWhenTheTerminalSwitchesLoginsDuringFetch() async throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let legacy = fixture.root.appendingPathComponent(".kimi/credentials/kimi-code.json")
+        let terminalCredential = fixture.root.appendingPathComponent(".kimi-code/credentials/kimi-code.json")
+        let files = KimiProviderFiles(
+            files: [legacy.path: credentialJSON(access: "legacy", refresh: nil, expiresAt: nil)], failWrites: false)
+        let switched = credentialJSON(access: "terminal", refresh: nil, expiresAt: nil)
+        let http = KimiRecordingHTTPClient { request in
+            XCTAssertEqual(request.headers["Authorization"], "Bearer legacy")
+            try files.writeText(terminalCredential.path, switched)
+            return HTTPResponse(statusCode: 200, headers: [:], body: Self.usageBody)
+        }
+        let provider = makeProvider(fixture: fixture, files: files, http: http, terminalEnvironment: FakeEnvironment())
+
+        let snapshot = await provider.refresh()
+        let subsequent = await provider.refresh()
+
+        XCTAssertNil(snapshot.liveQuotaObservedAt)
+        XCTAssertEqual(snapshot.errorPresentation?.key, KimiAuthError.credentialsChanged.localizedDescription)
+        XCTAssertNil(subsequent.liveQuotaObservedAt)
+        XCTAssertEqual(http.requests.count, 1)
+    }
+
+    func testTerminalPreflightUsesTheRotatedCredentialBeforeUsageFetch() async throws {
         let fixture = try makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
         let files = FakeFiles([
@@ -165,11 +189,13 @@ final class KimiProviderTests: XCTestCase {
             XCTAssertEqual(request.headers["Authorization"], "Bearer rotated-access")
             return HTTPResponse(statusCode: 200, headers: [:], body: Self.usageBody)
         }
-        let provider = makeProvider(fixture: fixture, files: files, http: http)
+        let terminal = FakeEnvironment(["KIMI_CODE_HOME": fixture.root.path])
+        let provider = makeProvider(fixture: fixture, files: files, http: http, terminalEnvironment: terminal)
 
         let snapshot = await provider.refresh()
 
         XCTAssertNil(snapshot.errorCategory)
+        XCTAssertNotNil(snapshot.liveQuotaObservedAt)
         XCTAssertEqual(http.requests.map(\.url), [KimiUsageClient.refreshURL, KimiUsageClient.usageURL])
         let saved = try XCTUnwrap(ProviderParse.jsonObject(Data(files.files[fixture.credential.path]!.utf8)))
         XCTAssertEqual(saved["access_token"] as? String, "rotated-access")
@@ -439,7 +465,8 @@ final class KimiProviderTests: XCTestCase {
         files: TextFileAccessing,
         http: HTTPClient,
         environment: EnvironmentReading? = nil,
-        homeDirectory: (@Sendable () -> URL)? = nil
+        homeDirectory: (@Sendable () -> URL)? = nil,
+        terminalEnvironment: (any EnvironmentReading)? = nil
     ) -> KimiProvider {
         let fixedNow = now
         return KimiProvider(
@@ -455,7 +482,7 @@ final class KimiProviderTests: XCTestCase {
                 acquisitionBudget: 0.3,
                 retryDelay: 0.005
             )),
-            now: { fixedNow }, pricing: { .empty }
+            now: { fixedNow }, terminalEnvironment: terminalEnvironment, pricing: { .empty }
         )
     }
 

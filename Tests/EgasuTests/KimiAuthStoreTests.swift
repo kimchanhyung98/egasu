@@ -44,8 +44,9 @@ final class KimiAuthStoreTests: XCTestCase {
             homeDirectory: { home }
         )
 
-        XCTAssertTrue(try store.matchesTerminalLogin(environment: effective))
-        XCTAssertFalse(try store.matchesTerminalLogin(environment: FakeEnvironment()))
+        let usageCredential = try XCTUnwrap(store.loadCredentialDocument())
+        XCTAssertTrue(try store.matchesTerminalLogin(usageCredential, environment: effective))
+        XCTAssertFalse(try store.matchesTerminalLogin(usageCredential, environment: FakeEnvironment()))
     }
 
     func testCurrentCredentialWinsOverLegacy() throws {

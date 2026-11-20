@@ -14,7 +14,8 @@ enum ProviderCatalog {
         codexSharedSnapshotProfileID: String? = nil,
         codexAccountBinding: CodexAccountBinding? = nil,
         claudeManagedSwitchActive: Bool = false,
-        allowsClaudeDesktopFallback: Bool = true
+        allowsClaudeDesktopFallback: Bool = true,
+        kimiTerminalEnvironment: (any EnvironmentReading)? = nil
     ) -> [ProviderRuntime] {
         // 기본 provider 순서: 기존 3개 먼저, 나머지는 display name 알파벳순. account 카드는 family 기본 카드 바로 뒤.
         var runtimes: [ProviderRuntime] = []
@@ -58,7 +59,7 @@ enum ProviderCatalog {
             CopilotProvider(defaults: defaults),
             DevinProvider(),
             GrokProvider(),
-            KimiProvider(),
+            KimiProvider(terminalEnvironment: kimiTerminalEnvironment),
             KiroProvider(),
             OpenCodeProvider(),
             OpenRouterProvider(),
