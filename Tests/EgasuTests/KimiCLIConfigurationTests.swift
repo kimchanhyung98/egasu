@@ -114,6 +114,57 @@ final class KimiCLIConfigurationTests: XCTestCase {
         XCTAssertFalse(try store.matchesTerminalLogin(dashboard, environment: terminal))
     }
 
+    func testTerminalCustomHeadersCannotReplaceTheCheckedCredential() throws {
+        for (headers, terminalHeaders, expected) in [
+            ("", "X-Trace: fixture\nX-Label: a:b", true),
+            ("custom_headers = { 'X-Trace' = 'fixture' }", "", true),
+            ("custom_headers = { 'X-Trace' = 'fixture' }", "X-Trace: other\n AUTHORIZATION : fixture", false),
+            (#"custom_headers = { "Authoriz\u0061tion" = 'fixture' }"#, "", false),
+            ("custom_headers = { 'x-API-key' = 'fixture' }", "", false),
+            ("custom_headers = { 'X-Trace' = 7 }", "", false),
+            ("custom_headers = 'unexpected'", "", false),
+            ("", "unreadable header", false),
+            ("", "invalid name: fixture", false)
+        ] {
+            let store = terminalStore(providerFields: headers)
+            let dashboard = try XCTUnwrap(store.loadCredentialDocument())
+            XCTAssertEqual(dashboard.credentials.accessToken, "checked-key")
+            let environment = FakeEnvironment(["KIMI_CODE_CUSTOM_HEADERS": terminalHeaders])
+            XCTAssertEqual(
+                try store.matchesTerminalLogin(dashboard, environment: environment), expected, headers + terminalHeaders
+            )
+        }
+    }
+
+    func testTerminalUsesEffectiveDefaultModelEndpoint() throws {
+        for (fields, expected) in [
+            ("", true),
+            ("base_url = 'https://other.example/v1'", true),
+            ("protocol = 'openai'\nbase_url = 'https://api.kimi.com/coding/v1/'", true),
+            ("protocol = 'openai'\nbase_url = 'https://api.kimi.ai/coding/v1'", false),
+            ("protocol = 'openai'\nbase_url = 'https://api.kimi.com/v1'", false),
+            ("protocol = 'openai'\nbase_url = 3", false)
+        ] {
+            let store = terminalStore(modelFields: fields)
+            let dashboard = try XCTUnwrap(store.loadCredentialDocument())
+            XCTAssertEqual(try store.matchesTerminalLogin(dashboard, environment: FakeEnvironment()), expected, fields)
+        }
+    }
+
+    private func terminalStore(modelFields: String = "", providerFields: String = "") -> KimiAuthStore {
+        makeStore(
+            config: """
+                default_model = "chosen"
+                [models.chosen]
+                provider = "managed:kimi-code"
+                model = "k3"
+                max_context_size = 262144
+                \(modelFields)
+                \(providerConfiguration(auth: "api_key = 'checked-key'"))
+                \(providerFields)
+                """)
+    }
+
     func testManagedProviderWinsWhenThereIsNoCodeDefaultModel() throws {
         let store = makeStore(
             config: """

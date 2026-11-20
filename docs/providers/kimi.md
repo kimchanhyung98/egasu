@@ -192,6 +192,8 @@ Kimi Code 파서가 집계한 행만 보충 집계에서 제외하며 같은 파
 선택할 수 없는 여러 Code 프로바이더는 설정 오류로 표시.
 CLI 시작 전에는 터미널의 기본 모델이 Kimi Code에 연결되며 사용량 조회와 같은 인증을 쓰는지 확인.
 기본 모델을 확인할 수 없거나 [`KIMI_MODEL_NAME`](https://moonshotai.github.io/kimi-code/en/configuration/env-vars#define-a-model-from-environment-variables-kimi_model_)으로 임시 모델을 지정하면 한도 미확인 반환.
+모델의 `protocol`과 `base_url`이 사용량 조회와 다른 서비스를 가리키면 한도 미확인 반환.
+프로바이더의 `custom_headers`나 환경 변수 `KIMI_CODE_CUSTOM_HEADERS`에 `Authorization`·`X-Api-Key`가 있거나 헤더 설정을 해석할 수 없어도 같은 결과.
 [공식 CLI 설정](https://moonshotai.github.io/kimi-code/en/configuration/config-files)의 다음 인증 방식 지원:
 
 - OAuth: `oauth.storage`·`oauth.key`·`oauth.oauth_host`와 `base_url` 확인.
