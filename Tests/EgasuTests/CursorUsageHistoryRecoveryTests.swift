@@ -190,32 +190,46 @@ final class CursorUsageHistoryRecoveryTests: XCTestCase {
         XCTAssertEqual(quotaRequests, 1)
     }
 
-    func testTimeoutWhileCursorLoginChangesHidesUnverifiedUsage() async throws {
-        let fixture = try makeFixture()
-        defer { fixture.defaults.removePersistentDomain(forName: fixture.suite) }
-        _ = await fixture.store.refresh(providerID: "cursor", force: true)
-        let switchedToken = try token(identity: "new-login")
-        let delayed = RoutingHTTPClient { [sqlite = fixture.sqlite] _ in
-            sqlite.setToken(switchedToken)
-            try await Task.sleep(for: .seconds(60))
-            throw URLError(.timedOut)
+    func testTimeoutPreservesDisplayOnlyForVerifiedCursorLogin() async throws {
+        for identity in ["history-fixture", "new-login", nil] {
+            let fixture = try makeFixture()
+            defer { fixture.defaults.removePersistentDomain(forName: fixture.suite) }
+            _ = await fixture.store.refresh(providerID: "cursor", force: true)
+            var previous = try XCTUnwrap(fixture.store.snapshots["cursor"])
+            previous.liveQuotaObservedAt = fixture.clock.now
+            fixture.cache.store(previous, producedByIdentityKey: "history-fixture")
+            let updatedToken = try token(identity: identity, expiresAt: 9_999_999_998)
+            let delayed = RoutingHTTPClient { [sqlite = fixture.sqlite] _ in
+                sqlite.setToken(updatedToken)
+                try await Task.sleep(for: .seconds(60))
+                throw URLError(.timedOut)
+            }
+            let cursor = CursorProvider(
+                authStore: CursorAuthStore(sqlite: fixture.sqlite, keychain: FakeKeychain()),
+                usageClient: CursorUsageClient(http: delayed))
+            let store = WidgetDataStore(
+                registry: .from([cursor]), providers: [cursor], cache: fixture.cache, defaults: fixture.defaults,
+                providerRefreshTimeout: 1, providerIdentityKeys: ["cursor": "history-fixture"])
+            XCTAssertNotNil(store.snapshots["cursor"]?.usageHistory)
+
+            let outcome = await store.refresh(providerID: "cursor", force: true)
+
+            XCTAssertEqual(outcome, .failed)
+            XCTAssertEqual(delayed.requests.first?.url, CursorUsageClient.usageURL)
+            XCTAssertTrue(store.providerErrors["cursor"]?.contains("timed out") == true)
+            if identity == "history-fixture" {
+                let retained = try XCTUnwrap(store.snapshots["cursor"])
+                XCTAssertEqual(retained.usageHistory, previous.usageHistory)
+                XCTAssertEqual(retained.line(label: "Total usage"), previous.line(label: "Total usage"))
+                XCTAssertEqual(retained.refreshedAt, previous.refreshedAt)
+                XCTAssertNil(retained.liveQuotaObservedAt)
+                XCTAssertNil(fixture.cache.snapshot(providerID: "cursor")?.liveQuotaObservedAt)
+            } else {
+                XCTAssertNil(store.snapshots["cursor"])
+            }
+            XCTAssertEqual(fixture.cache.producedByIdentityKey(providerID: "cursor"), "history-fixture")
+            await store.waitForAccountRefreshes(providerIDs: ["cursor"])
         }
-        let cursor = CursorProvider(
-            authStore: CursorAuthStore(sqlite: fixture.sqlite, keychain: FakeKeychain()),
-            usageClient: CursorUsageClient(http: delayed))
-        let store = WidgetDataStore(
-            registry: .from([cursor]), providers: [cursor], cache: fixture.cache, defaults: fixture.defaults,
-            providerRefreshTimeout: 1, providerIdentityKeys: ["cursor": "history-fixture"])
-        XCTAssertNotNil(store.snapshots["cursor"]?.usageHistory)
-
-        let outcome = await store.refresh(providerID: "cursor", force: true)
-
-        XCTAssertEqual(outcome, .failed)
-        XCTAssertEqual(delayed.requests.first?.url, CursorUsageClient.usageURL)
-        XCTAssertTrue(store.providerErrors["cursor"]?.contains("timed out") == true)
-        XCTAssertNil(store.snapshots["cursor"])
-        XCTAssertEqual(fixture.cache.producedByIdentityKey(providerID: "cursor"), "history-fixture")
-        await store.waitForAccountRefreshes(providerIDs: ["cursor"])
     }
 
     func testQuotaFailureDropsMismatchedMemoryOnlySnapshot() throws {

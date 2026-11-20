@@ -162,7 +162,8 @@ final class ProviderSnapshotStore {
                 notifyHistoryChange = removedHistory
             } else if ProviderAccountID.family(of: providerID) == "cursor" {
                 let local = localSnapshots[providerID]
-                let retained = previousSnapshot(for: snapshot)
+                var retained = previousSnapshot(for: snapshot)
+                retained?.liveQuotaObservedAt = nil
                 render = local != retained
                 notifyHistoryChange = local?.usageHistory != retained?.usageHistory
                 localSnapshots[providerID] = retained
