@@ -36,6 +36,11 @@ enum SoftLimitWindowSelection: String, CaseIterable, Sendable {
 }
 
 extension WidgetDescriptor {
+    func hasMeasuredSoftLimit(in selection: SoftLimitWindowSelection) -> Bool {
+        softLimitWindows.contains(where: selection.includes)
+            && limitResources.contains { $0.kind == .consumption && !$0.estimated }
+    }
+
     func supportingSoftLimit(
         _ window: SoftLimitWindow, _ otherWindows: SoftLimitWindow..., acceptsMissingDuration: Bool = false,
         allowsDSTOffset: Bool = false

@@ -74,7 +74,8 @@ public struct UsageReader {
         let isManagedFamily = ProviderAccountID.families.contains(id)
         let settings = activeSoftLimitSettings()
         let enabled = ProviderEnablementStore(defaults: defaults).isEnabled(id)
-        let context = try await makeContext(prepare: settings != nil && enabled, resolveAccounts: isManagedFamily)
+        let context = try await makeContext(
+            prepare: settings != nil && enabled, resolveAccounts: isManagedFamily, preflightCardID: id)
         guard context.knownIDs.contains(id) else { throw UsageReaderError.unknownProvider(id) }
         // 로컬 진단에는 프로바이더 종류와 고정 사유만 기록. 계정 ID와 사용량은 제외.
         func unknown(_ reason: StaticString) -> SoftLimitCheckStatus {
@@ -85,18 +86,30 @@ public struct UsageReader {
         guard let settings else { return .disabled }
         guard enabled else { return unknown("provider_disabled") }
         if isManagedFamily, context.identityKeys[id] == nil { return unknown("identity_unresolved") }
+        if let boundHome = context.defaultHomes[id] {
+            let environment = ProcessInfo.processInfo.environment
+            let homeVariable = id == "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"
+            guard
+                Self.matchesTerminalHome(
+                    boundHome: boundHome, defaultDirectory: ".\(id)", override: environment[homeVariable],
+                    homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
+            else { return unknown("terminal_home_mismatch") }
+            let overrides =
+                id == "codex"
+                ? AccountSignInLauncher.codexAuthEnvironmentRemovals
+                : AccountSignInLauncher.claudeAuthEnvironmentRemovals
+            guard !overrides.contains(where: { environment[$0]?.nilIfEmpty != nil }) else {
+                return unknown("terminal_auth_override")
+            }
+        }
 
         let descriptors = context.registry.descriptors(for: id)
         let window = settings.window
-        guard
-            descriptors.contains(where: { descriptor in
-                descriptor.softLimitWindows.contains(where: window.includes)
-                    && descriptor.limitResources.contains(where: { $0.kind == .consumption && !$0.estimated })
-            })
-        else {
+        guard descriptors.contains(where: { $0.hasMeasuredSoftLimit(in: window) }) else {
             return unknown("unsupported_window")
         }
-        let loaded = await load(context: context, matchedIDs: [id], force: false, preflightCardID: id)
+        let loaded = await load(
+            context: context, matchedIDs: [id], force: false, preflight: (id, window, settings.thresholdPercent))
         let verified: Bool
         // 조회 중 로그인 전환 가능. 캐시의 계정 식별자가 없으면 이번 호출에서 직접 조회한 카드만 허용.
         if let stamped = loaded.verifiedIdentity {
@@ -130,6 +143,18 @@ public struct UsageReader {
         return settings.isActive ? settings : nil
     }
 
+    /// CLI 프로세스가 상속한 홈과 한도를 조회할 홈이 같은지 확인.
+    static func matchesTerminalHome(
+        boundHome: String, defaultDirectory: String, override: String?, homeDirectory: URL
+    ) -> Bool {
+        let terminalHome = override?.nilIfEmpty ?? homeDirectory.appendingPathComponent(defaultDirectory).path
+        let expanded =
+            terminalHome.hasPrefix("~/") || terminalHome == "~"
+            ? homeDirectory.path + String(terminalHome.dropFirst()) : terminalHome
+        return URL(fileURLWithPath: expanded).resolvingSymlinksInPath().standardizedFileURL.path
+            == URL(fileURLWithPath: boundHome).resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
     private func currentIdentity(for id: String, context: ReadContext) async -> String? {
         if let identityKeysOverride { return identityKeysOverride()[id] }
         if id == "cursor", let cursor = context.providers.first(where: { $0.provider.id == id }) as? CursorProvider {
@@ -145,11 +170,15 @@ public struct UsageReader {
         let providers: [ProviderRuntime]
         let registry: WidgetRegistry
         let identityKeys: [String: String]
+        let defaultHomes: [String: String]
+        let claudeCacheMayUseDesktopLogin: Bool
         let accountObserver: DefaultAccountObserver
         var knownIDs: Set<String> { Set(registry.providers.map(\.id)) }
     }
 
-    private func makeContext(prepare: Bool = true, resolveAccounts: Bool = true) async throws -> ReadContext {
+    private func makeContext(
+        prepare: Bool = true, resolveAccounts: Bool = true, preflightCardID: String? = nil
+    ) async throws -> ReadContext {
         // 계정 확인과 사용량 조회가 같은 CLI 홈을 읽도록 로그인 셸 환경을 먼저 준비.
         if providersOverride == nil && prepare {
             try StorageMigration.runForCLI(.init(defaults: defaults))
@@ -162,25 +191,32 @@ public struct UsageReader {
             ? ProviderAccountAssembly.make(defaults: defaults, waitsForLoginShell: false)
             : ProviderAccountAssembly(identityKeysByCard: identityKeysOverride?() ?? [:])
         // 비활성 계정의 Keychain 복사본은 앱 전용이므로 CLI 카탈로그에서 제외.
-        let providers = providersOverride ?? ProviderCatalog.make(
-            defaults: defaults,
-            hasUnregisteredClaudeLogins: accountAssembly.hasUnregisteredClaudeLogins,
-            defaultClaudeExtraLogRoots: accountAssembly.defaultClaudeExtraLogRoots,
-            codexSharedAuthHome: accountAssembly.codexSharedAuthHome,
-            codexAccountBinding: accountAssembly.codexDefaultAccountBinding,
-            claudeManagedSwitchActive: accountAssembly.claudeManagedSwitchActive
-        )
+        let providers =
+            providersOverride
+            ?? ProviderCatalog.make(
+                defaults: defaults,
+                hasUnregisteredClaudeLogins: accountAssembly.hasUnregisteredClaudeLogins,
+                defaultClaudeExtraLogRoots: accountAssembly.defaultClaudeExtraLogRoots,
+                codexSharedAuthHome: accountAssembly.codexSharedAuthHome,
+                codexAccountBinding: accountAssembly.codexDefaultAccountBinding,
+                claudeManagedSwitchActive: accountAssembly.claudeManagedSwitchActive,
+                allowsClaudeDesktopFallback: preflightCardID != "claude"
+            )
         let observer = DefaultAccountObserver(
             pinsClaudeSharedHome: accountAssembly.claudeManagedSwitchActive,
             pinsCodexSharedHome: accountAssembly.codexSharedAuthHome != nil
         )
         return ReadContext(
             providers: providers, registry: .from(providers), identityKeys: accountAssembly.identityKeysByCard,
+            defaultHomes: accountAssembly.defaultHomePathsByFamily,
+            claudeCacheMayUseDesktopLogin: !accountAssembly.claudeManagedSwitchActive
+                && !accountAssembly.hasUnregisteredClaudeLogins,
             accountObserver: observer)
     }
 
     private func load(
-        context: ReadContext, matchedIDs: Set<String>?, force: Bool, preflightCardID: String? = nil
+        context: ReadContext, matchedIDs: Set<String>?, force: Bool,
+        preflight: (cardID: String, window: SoftLimitWindowSelection, threshold: Int)? = nil
     ) async -> (
         state: LocalUsageAPI.State, warnings: [String], cache: ProviderSnapshotCache,
         verifiedIdentity: String?, didRefreshPreflight: Bool
@@ -197,12 +233,27 @@ public struct UsageReader {
         {
             identityKeys["cursor"] = await cursor.currentIdentityKey()
         }
-        // 귀속 정보가 없는 디스크 캐시는 이전 로그인일 수 있어 사전 검사 때만 직접 조회.
-        let trustsPersistedFreshness = preflightCardID.map { identityKeys[$0] != nil } ?? true
+        let preflightCardID = preflight?.cardID
+        // 계정 귀속 또는 유효한 실측 한도가 없는 표시용 캐시는 사전 검사에서 재조회.
+        let trustsPersistedFreshness =
+            preflightCardID.map { id in
+                identityKeys[id] != nil && (id != "claude" || !context.claudeCacheMayUseDesktopLogin)
+            } ?? true
         // 사전 검사에서 계정 확인 전 조회된 결과와 무효화는 현재 검사 메모리에만 유지.
-        let cache = ProviderSnapshotCache(
+        var cache = ProviderSnapshotCache(
             userDefaults: defaults, allowsPersistedFreshness: trustsPersistedFreshness,
             persistsWrites: preflightCardID == nil)
+        if let preflight, let snapshot = cache.snapshot(providerID: preflight.cardID) {
+            let now = Date()
+            let observation = SoftLimitObservation.project(
+                snapshot: snapshot, descriptors: registry.descriptors(for: preflight.cardID),
+                window: preflight.window, now: now)
+            let state = observation?.quotaState(thresholdPercent: preflight.threshold, at: now) ?? .unknown
+            if state == .unknown {
+                cache = ProviderSnapshotCache(
+                    userDefaults: defaults, allowsPersistedFreshness: false, persistsWrites: false)
+            }
+        }
         let allProviderIDs = registry.providers.map(\.id)
         // 앱과 동일한 계정 guard — 타 계정 캐시와 신원 미확인 Claude 캐시는 TTL 안에서도 재조회.
         let staleAccountStampIDs = Set(

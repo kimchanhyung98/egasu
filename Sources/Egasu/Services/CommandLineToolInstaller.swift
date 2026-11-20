@@ -22,6 +22,7 @@ final class CommandLineToolInstaller {
     var isConfirmingRemoval = false
 
     let destinationPath: String
+    var bundledExecutablePath: String? { isExecutableHelper(at: sourcePath) ? sourcePath : nil }
     private let sourcePath: String
     private let fileManager: FileManager
     private let performPrivileged: @MainActor (Operation, String, String) -> OperationResult
@@ -217,7 +218,7 @@ final class CommandLineToolInstaller {
         )
     }
 
-    private static func shellQuote(_ value: String) -> String {
+    nonisolated static func shellQuote(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 

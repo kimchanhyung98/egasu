@@ -123,6 +123,29 @@ final class KimiProviderTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.lockURL.path))
     }
 
+    func testRefreshDiscardsQuotaWhenLoginChangesDuringTheRequest() async throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let files = KimiProviderFiles(
+            files: [
+                fixture.credential.path: credentialJSON(
+                    access: "account-before", refresh: "refresh-before", expiresAt: nil)
+            ], failWrites: false)
+        let changed = credentialJSON(access: "account-after", refresh: "refresh-after", expiresAt: nil)
+        let http = KimiRecordingHTTPClient { request in
+            XCTAssertEqual(request.headers["Authorization"], "Bearer account-before")
+            try files.writeText(fixture.credential.path, changed)
+            return HTTPResponse(statusCode: 200, headers: [:], body: Self.usageBody)
+        }
+        let provider = makeProvider(fixture: fixture, files: files, http: http)
+
+        let snapshot = await provider.refresh()
+
+        XCTAssertNil(snapshot.liveQuotaObservedAt)
+        XCTAssertEqual(snapshot.errorCategory, .credentialAccess)
+        XCTAssertEqual(snapshot.errorPresentation?.key, KimiAuthError.credentialsChanged.localizedDescription)
+    }
+
     func testProactiveRefreshPersistsRotatedCredentialBeforeUsageFetch() async throws {
         let fixture = try makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }

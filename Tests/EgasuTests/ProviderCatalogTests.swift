@@ -152,6 +152,15 @@ final class ProviderCatalogTests: XCTestCase {
         XCTAssertTrue(claudeRuntimes.allSatisfy { !$0.authStore.allowsDesktopFallback })
     }
 
+    func testClaudeDesktopFallbackCanBeDisabledForTerminalQuotaChecks() throws {
+        let provider = try XCTUnwrap(
+            ProviderCatalog.make(allowsClaudeDesktopFallback: false)
+                .compactMap { $0 as? ClaudeProvider }.first)
+        XCTAssertFalse(provider.authStore.allowsDesktopFallback)
+        XCTAssertFalse(provider.authStore.pinsSharedHome)
+        XCTAssertTrue(provider.includeSharedUsage)
+    }
+
     func testCustomizeShowsEachAccountForRestoringItsHiddenQuota() {
         let card = AccountUsageSnapshotCard(id: "claude@profile-work", profileID: "work", family: "claude")
         let registry = WidgetRegistry.from(ProviderCatalog.make(snapshotCards: [card]))

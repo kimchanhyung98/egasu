@@ -77,8 +77,11 @@ final class SettingsLabsTabTests: XCTestCase {
         settings.enabled = true
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let helper = CommandLineToolInstaller(
-            sourcePath: temporary.appendingPathComponent("helper").path,
+            sourcePath: "/bin/sh",
             destinationPath: temporary.appendingPathComponent("egasu").path)
+        let account = SoftLimitAccountStatus(
+            id: "codex", name: "Codex", quota: .belowLimit, usedFraction: 0.5, estimatedFraction: nil,
+            cancellation: .init(phase: .unsupported, message: ""), supportsPreflight: true)
         defaults.set(false, forKey: MenuBarPrivacyStore.key)
         let privacy = MenuBarPrivacyStore(defaults: defaults, probe: { false }, installChangeNotifications: { _ in })
         let telemetry = TelemetryRecorder(
@@ -98,7 +101,7 @@ final class SettingsLabsTabTests: XCTestCase {
                     Form {
                         if tab == .labs {
                             SettingsLabsSections(
-                                settings: settings, accounts: { [] }, commandLineTool: helper)
+                                settings: settings, accounts: { [account] }, commandLineTool: helper)
                         } else {
                             SettingsAdvancedSections(
                                 privacy: privacy, telemetry: telemetry,
@@ -110,7 +113,7 @@ final class SettingsLabsTabTests: XCTestCase {
                     .contentMargins(.horizontal, PanelMetrics.margin - 20, for: .scrollContent)
                     .contentMargins(.top, DashboardContentView.barGap - 20, for: .scrollContent)
                 }
-                .frame(width: PanelMetrics.width, height: tab == .labs ? 490 : 500)
+                .frame(width: PanelMetrics.width, height: tab == .labs ? 520 : 500)
                 .background(Theme.panelBody)
                 .environment(state)
                 .environment(updater)
@@ -119,11 +122,14 @@ final class SettingsLabsTabTests: XCTestCase {
                 let host = NSHostingView(rootView: view)
                 let window = makeWindow(host, scheme: .light)
                 defer { window.close() }
-                return try settingsBitmap(in: host)
+                return try settingsBitmap(in: host, scale: 4)
             }
             let image = try XCTUnwrap(bitmap.cgImage)
             let text = try await recognizedText(in: image, language: language)
-            for key in ["Soft Limit", "Weekly and Monthly", "Quota Status", "Terminal Helper", "Privacy Mode"] {
+            for key in [
+                "Soft Limit", "Weekly and Monthly", "Quota Status", "Terminal Commands", "Copy Command",
+                "Terminal Helper", "Privacy Mode"
+            ] {
                 let label = L10n.withLanguage(language) { L10n.settings(key).filter(\.isLetter).lowercased() }
                 let expected = tab == (key == "Privacy Mode" ? .advanced : .labs)
                 XCTAssertEqual(text.contains(label), expected, "\(key): \(text)")

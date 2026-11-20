@@ -74,7 +74,8 @@ final class KimiProvider: ProviderRuntime {
     }
 
     func refresh() async -> ProviderSnapshot {
-        var snapshot = await quotaSnapshot()
+        let quota = await readQuota()
+        var snapshot = quota.snapshot
         guard snapshot.errorCategory == nil else { return snapshot }
         let refreshedAt = snapshot.refreshedAt
         do {
@@ -117,6 +118,20 @@ final class KimiProvider: ProviderRuntime {
                 .historyScan, result: .failure, providerID: provider.id, error: error
             )
             appendWarning((error as? KimiHistoryError ?? .unreadable).localizedDescription, to: &snapshot)
+        }
+        // 이력 조회 중 로그인 전환 가능. 한도 요청에 사용한 인증과 같은 경우에만 결과 사용.
+        if let credential = quota.credential, hasSoftLimitQuota(in: snapshot.lines) {
+            do {
+                let current = try await loadOffMainActor { [authStore] in try authStore.loadCredentialDocument() }
+                try Task.checkCancellation()
+                guard current == credential else { throw KimiAuthError.credentialsChanged }
+            } catch is CancellationError {
+                return ProviderSnapshot.error(provider: provider, error: CancellationError())
+            } catch {
+                usageTimerObservations = []
+                usageTimerCredential = nil
+                return ProviderSnapshot.error(provider: provider, error: normalized(error))
+            }
         }
         return snapshot
     }
@@ -209,7 +224,7 @@ final class KimiProvider: ProviderRuntime {
                 lines: mapped.lines,
                 refreshedAt: observedAt, liveQuotaObservedAt: observedAt
             )
-            return (snapshot, observation, usageTimerCredential)
+            return (snapshot, observation, document)
         } catch {
             usageTimerObservations = []
             usageTimerCredential = nil

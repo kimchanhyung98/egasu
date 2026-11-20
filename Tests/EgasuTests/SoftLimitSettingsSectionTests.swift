@@ -67,7 +67,16 @@ final class SoftLimitSettingsSectionTests: XCTestCase {
         func render(enabled: Bool, appearance: ColorScheme) throws -> CGFloat {
             settings.enabled = enabled
             let view = SoftLimitSettingsSection(
-                settings: settings, accounts: { [] }
+                settings: settings,
+                accounts: {
+                    [
+                        SoftLimitAccountStatus(
+                            id: "codex", name: "Codex", quota: .belowLimit, usedFraction: 0.5,
+                            estimatedFraction: nil, cancellation: .init(phase: .unsupported, message: ""),
+                            supportsPreflight: true)
+                    ]
+                },
+                commandLineTool: .init(sourcePath: "/bin/sh")
             )
             .padding(12)
             .frame(width: 360)
@@ -113,5 +122,42 @@ final class SoftLimitSettingsSectionTests: XCTestCase {
             let enabledHeight = try render(enabled: true, appearance: appearance)
             XCTAssertGreaterThan(enabledHeight, disabledHeight, "appearance=\(appearance)")
         }
+    }
+
+    func testCopiedLaunchCommandsStartEachCLIOnlyWhenPreflightAllowsIt() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Egasu's Terminal \(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let helper = directory.appendingPathComponent("egasu helper")
+        try executable(
+            """
+            #!/bin/sh
+            if [ "${EGASU_DEFAULTS_SUITE+x}${OPENUSAGE_DEFAULTS_SUITE+x}" ]; then exit 0; fi
+            printf 'check:%s\\n' "$*"
+            exit "$EGASU_TEST_CHECK_CODE"
+            """ + "\n", at: helper)
+        for id in ["codex", "claude", "kimi"] {
+            try executable("#!/bin/sh\nprintf 'launch:\(id)\\n'\n", at: directory.appendingPathComponent(id))
+            let command = try XCTUnwrap(SoftLimitTerminalCommand(helperPath: helper.path, cardID: id)?.launch)
+            for status in [0, 2, 3, 4] as [Int32] {
+                let result = try SystemProcessRunner().run(
+                    executable: "/bin/zsh", arguments: ["-fc", command],
+                    environment: [
+                        "PATH": directory.path, "EGASU_TEST_CHECK_CODE": String(status),
+                        "EGASU_DEFAULTS_SUITE": "OtherApp", "OPENUSAGE_DEFAULTS_SUITE": "LegacyApp"
+                    ], timeout: 5)
+                XCTAssertEqual(result.exitCode, status, id)
+                let launch = status == 0 ? "launch:\(id)\n" : ""
+                XCTAssertEqual(result.stdout, "check:soft-limit check \(id)\n\(launch)")
+            }
+        }
+        XCTAssertNil(SoftLimitTerminalCommand(helperPath: helper.path, cardID: "codex@other"))
+        XCTAssertNil(SoftLimitTerminalCommand(helperPath: helper.path, cardID: "cursor")?.launch)
+    }
+
+    private func executable(_ script: String, at url: URL) throws {
+        try script.write(to: url, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
     }
 }

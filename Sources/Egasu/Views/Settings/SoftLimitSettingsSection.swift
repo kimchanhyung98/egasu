@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SoftLimitAccountStatus: Identifiable {
@@ -8,6 +9,7 @@ struct SoftLimitAccountStatus: Identifiable {
     let estimatedFraction: Double?
     let cancellation: SoftLimitProviderStatus
     var nextExpiry: Date?
+    var supportsPreflight = false
 
     var usageLabel: String {
         switch quota {
@@ -31,9 +33,11 @@ struct SoftLimitAccountStatus: Identifiable {
 struct SoftLimitSettingsSection: View {
     let settings: SoftLimitSettingsStore
     let accounts: () -> [SoftLimitAccountStatus]
+    let commandLineTool: CommandLineToolInstaller
     @State private var showsStatus = false
     @State private var lastExpiry = Date.distantPast
     @State private var confirmActivation = false
+    @State private var commandCopied: Bool?
 
     var body: some View {
         @Bindable var settings = settings
@@ -54,7 +58,7 @@ struct SoftLimitSettingsSection: View {
             } message: {
                 Text(
                     L10n.settings(
-                        "Shows a guide on supported weekly and monthly quota bars. Automatic cancellation requires a verified connection to the same account."
+                        "Shows a guide on weekly and monthly quota bars. Use a copied command to check the limit before starting a new CLI session."
                     ))
             }
 
@@ -65,6 +69,10 @@ struct SoftLimitSettingsSection: View {
                     $0.label
                 }
                 SoftLimitThresholdField(settings: settings)
+                terminalCommands(
+                    for: accounts.filter {
+                        $0.supportsPreflight && !ProviderAccountID.isAccountCard($0.id)
+                    })
                 DisclosureGroup(L10n.settings("Quota Status"), isExpanded: $showsStatus) {
                     VStack(alignment: .leading, spacing: 8) {
                         if accounts.isEmpty {
@@ -99,6 +107,7 @@ struct SoftLimitSettingsSection: View {
             Text(L10n.settings("Soft Limit"))
         } footer: {
             if settings.enabled {
+                if commandCopied == false { SettingsNote(L10n.settings("Couldn't copy the terminal command.")) }
                 ForEach(accounts.filter { $0.cancellation.phase == .failed }) { account in
                     SettingsNote(L10n.settings("%@: %@", account.name, account.cancellation.message))
                 }
@@ -109,5 +118,49 @@ struct SoftLimitSettingsSection: View {
             do { try await Task.sleep(for: .seconds(max(0, nextExpiry.timeIntervalSinceNow))) } catch { return }
             lastExpiry = nextExpiry
         }
+    }
+
+    @ViewBuilder
+    private func terminalCommands(for accounts: [SoftLimitAccountStatus]) -> some View {
+        if !accounts.isEmpty {
+            LabeledContent {
+                if let helper = commandLineTool.bundledExecutablePath {
+                    let commands = accounts.compactMap { account in
+                        SoftLimitTerminalCommand(helperPath: helper, cardID: account.id).map { (account, $0) }
+                    }
+                    let launchCommands = commands.compactMap { account, command in
+                        command.launch.map { (account, $0) }
+                    }
+                    Menu(L10n.settings(commandCopied == true ? "Copied" : "Copy Command")) {
+                        if !launchCommands.isEmpty {
+                            Section(L10n.settings("Start CLI")) {
+                                ForEach(launchCommands, id: \.0.id) { account, launch in
+                                    Button(account.name) { copyCommand(launch) }
+                                }
+                            }
+                        }
+                        Section(L10n.settings("Check Quota")) {
+                            ForEach(commands, id: \.0.id) { account, command in
+                                Button(account.name) { copyCommand(command.check) }
+                            }
+                        }
+                    }
+                } else {
+                    Text(L10n.settings("Unavailable")).foregroundStyle(.secondary)
+                }
+            } label: {
+                SettingsTitle(
+                    title: L10n.settings("Terminal Commands"),
+                    info: L10n.settings(
+                        "Paste the command in Terminal. A new session starts only if the quota check allows it.")
+                )
+            }
+        }
+    }
+
+    private func copyCommand(_ command: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        commandCopied = pasteboard.setString(command, forType: .string)
     }
 }
