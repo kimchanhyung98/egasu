@@ -66,6 +66,8 @@ struct WidgetData: Hashable {
     var traySuffix: String?
     /// provider가 미시작 할당량 기간을 알리는 신호 — descriptor에서 실제 row까지 전달.
     var sessionStartSignal: SessionStartSignal?
+    /// 초기화 시각이 없을 때 보조 문구에 한도 주기를 표시할지 여부.
+    var showsPeriodWithoutResetDate = true
     /// Usage Trend row 표시 — true면 view가 값 layout 대신 sparkline 렌더.
     /// `chartPoints`는 일별 point(다른 tile은 빈 배열), `chartNote`는 hover에 표시할 source 문구.
     var isChart: Bool = false
@@ -278,7 +280,7 @@ struct WidgetData: Hashable {
             return resetLabel
         }
         // 정확한 reset 일시 없는 cycle형 metric은 reset 주기 표시.
-        if let periodDurationMs,
+        if showsPeriodWithoutResetDate, let periodDurationMs,
            let duration = Formatters.compactDuration(TimeInterval(periodDurationMs) / 1000) {
             return L10n.metrics("Resets in %@", duration)
         }

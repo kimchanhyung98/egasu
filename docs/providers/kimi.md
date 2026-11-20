@@ -21,6 +21,8 @@ egasu 안에서 별도 로그인이나 API 키 재입력 불필요.
 총사용량은 `limit_month_total`만 사용하며 Code 사용분을 더하거나 총사용량 대신 사용하지 않음.
 월간 주기는 구독 갱신 주기이므로 시작일 없이 30일로 추정하거나 페이스를 계산하지 않음.
 초기화 시각은 API의 `reset_time` 그대로 사용.
+Session은 사용량이 0%여도 표시 설정에 따라 남은 시간 또는 서버의 초기화 시각 표시.
+초기화 시각이 없거나 읽을 수 없으면 사용량만 표시.
 표시 순서는 Session·Weekly·Total Usage·Extra Usage·Extra Balance이며 새 지표는 기본 켜짐.
 기존 표시·숨김·순서 설정 우선 유지.
 `goods_version`으로 요금제 이름을 추정하지 않음.
@@ -36,6 +38,8 @@ Extra Usage를 활성화하고 사용 가능한 잔액이 있으면 추가 사�
 현재 형식의 `usages` 응답에 `limit_7d`가 없으면 Weekly 행 미생성.
 레거시 응답의 `usage`가 있으면 Weekly 행 표시.
 알 수 없는 등급도 읽기 쉬운 형태로 유지.
+
+![세션 사용량이 0%일 때 초기화 시각의 수신 여부에 따른 카드 표시](/docs/assets/kimi-session-reset-ko.png)
 
 ## 추가 사용량
 
@@ -61,6 +65,7 @@ USD 지출은 양수 상한이 켜진 경우 금액·상한 게이지로 표시.
 ## 구독 타이머
 
 적용 한도·실행 조건·CLI 로그인 요건은 [구독 타이머 자동 시작](/docs/refreshing.md#구독-타이머-자동-시작) 참조.
+사용량 0%에서도 서버 초기화 시각이 재확인 사이에 고정되어 있으면 이미 진행 중인 기간으로 판단하고 메시지 미전송.
 자동 전송은 환경 변수 인증을 지원하는 Node.js Kimi Code CLI 2.0.1 이상 지원.
 [공식 명령 규약](https://moonshotai.github.io/kimi-code/en/reference/kimi-command.html)의 `--prompt`와 [Markdown agent 형식](https://moonshotai.github.io/kimi-code/en/customization/agents)의 빈 도구 목록 사용.
 Python CLI 1.x는 실행 전에 호환 오류로 차단.

@@ -10,10 +10,12 @@ extension WidgetDescriptor {
         provider: Provider,
         title: String,
         metricLabel: String? = nil,
-        sessionStartSignal: WidgetData.SessionStartSignal? = nil
+        sessionStartSignal: WidgetData.SessionStartSignal? = nil,
+        showsPeriodWithoutResetDate: Bool = true
     ) -> WidgetDescriptor {
         var sample = WidgetData(title: title, icon: provider.icon, kind: .percent, used: 0, limit: 100)
         sample.sessionStartSignal = sessionStartSignal
+        sample.showsPeriodWithoutResetDate = showsPeriodWithoutResetDate
         return make(id: id, provider: provider, metricLabel: metricLabel ?? title, sample: sample)
     }
 

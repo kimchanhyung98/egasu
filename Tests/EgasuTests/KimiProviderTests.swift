@@ -22,7 +22,7 @@ final class KimiProviderTests: XCTestCase {
             [
                 "Session", "Weekly", "Total Usage", "Extra Usage", "Extra Balance"
         ])
-        XCTAssertEqual(provider.widgetDescriptors[0].sample.sessionStartSignal, .zeroUsage)
+        XCTAssertNil(provider.widgetDescriptors[0].sample.sessionStartSignal)
         XCTAssertEqual(provider.widgetDescriptors[0].limitResources.first?.key, "session")
         XCTAssertEqual(provider.widgetDescriptors[1].limitResources.first?.key, "weekly")
         let resources = provider.widgetDescriptors.flatMap(\.limitResources)

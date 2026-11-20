@@ -45,7 +45,8 @@ final class KimiProvider: ProviderRuntime {
 
     var widgetDescriptors: [WidgetDescriptor] {
         [
-            .percent(id: "kimi.session", provider: provider, title: "Session", sessionStartSignal: .zeroUsage)
+            // 세션 사용량이 0%여도 서버의 초기화 시각만 사용.
+            .percent(id: "kimi.session", provider: provider, title: "Session", showsPeriodWithoutResetDate: false)
                 .exportingLimit("session", unit: "percent"),
             .percent(id: "kimi.weekly", provider: provider, title: "Weekly")
                 .supportingSoftLimit(.weekly)

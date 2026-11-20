@@ -87,6 +87,7 @@ enum WidgetDataResolver {
             }
             // progress 결과는 새로 생성하므로 프로바이더별 미시작 판정 신호 별도 전달.
             result.sessionStartSignal = descriptor.sample.sessionStartSignal
+            result.showsPeriodWithoutResetDate = descriptor.sample.showsPeriodWithoutResetDate
             return result
         case .text:
             // text는 로컬 API용 안내 — 숫자 행은 구조화된 값만 사용하며 표시 문자열 재해석 금지.
