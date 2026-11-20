@@ -334,7 +334,7 @@ final class ProviderRefreshCoordinator {
                 // 제한 시간 뒤에는 현재 로그인만 짧게 확인. 확인한 계정의 캐시만 표시.
                 let verification = await ProviderRefreshDeadline.run(timeout: .seconds(1)) {
                     var verified = timeout
-                    verified.producedByIdentityKey = await cursor.currentIdentityKey()
+                    verified.producedByIdentityKey = await cursor.currentIdentityKey(allowKeychainInteraction: false)
                     return verified
                 }
                 if case .snapshot(let verified) = verification { snapshot = verified }

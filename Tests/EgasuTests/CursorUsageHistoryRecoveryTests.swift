@@ -250,6 +250,34 @@ final class CursorUsageHistoryRecoveryTests: XCTestCase {
         XCTAssertNil(store.localSnapshots["cursor"])
     }
 
+    func testTimeoutNeverPromptsWhenCursorKeychainAccountIsUnverified() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.defaults.removePersistentDomain(forName: fixture.suite) }
+        _ = await fixture.store.refresh(providerID: "cursor", force: true)
+        fixture.sqlite.membershipType = "free"
+        let keychain = LockedCursorRecoveryKeychain()
+        let delayed = RoutingHTTPClient { _ in
+            try await Task.sleep(for: .seconds(60))
+            throw URLError(.timedOut)
+        }
+        let cursor = CursorProvider(
+            authStore: CursorAuthStore(sqlite: fixture.sqlite, keychain: keychain),
+            usageClient: CursorUsageClient(http: delayed))
+        let store = WidgetDataStore(
+            registry: .from([cursor]), providers: [cursor], cache: fixture.cache, defaults: fixture.defaults,
+            providerRefreshTimeout: 1, providerIdentityKeys: ["cursor": "history-fixture"])
+        XCTAssertNotNil(store.snapshots["cursor"]?.usageHistory)
+
+        let outcome = await store.refresh(providerID: "cursor", force: true)
+        await store.waitForAccountRefreshes(providerIDs: ["cursor"])
+
+        XCTAssertEqual(outcome, .failed)
+        XCTAssertEqual(delayed.requests.first?.url, CursorUsageClient.usageURL)
+        XCTAssertTrue(store.providerErrors["cursor"]?.contains("timed out") == true)
+        XCTAssertNil(store.snapshots["cursor"])
+        XCTAssertEqual(keychain.interactionRequests, [true, true, false])
+    }
+
     func testCLIVerifiesCursorAccountBeforeUsingFreshCache() async throws {
         for (identity, stamp) in [
             ("history-fixture", "history-fixture"), ("current", "old"), (nil, "old"), ("current", nil)
@@ -501,13 +529,41 @@ private final class CursorHistoryClock: @unchecked Sendable {
 private final class CursorRecoverySQLite: SQLiteAccessing, @unchecked Sendable {
     private let lock = NSLock()
     private var accessToken: String
+    private var membership: String?
+    var membershipType: String? {
+        get { lock.withLock { membership } }
+        set { lock.withLock { membership = newValue } }
+    }
 
     init(accessToken: String) { self.accessToken = accessToken }
     func setToken(_ token: String) { lock.withLock { accessToken = token } }
 
     func queryValue(path: String, sql: String) throws -> String? {
-        lock.withLock { sql.contains(CursorAuthStore.accessTokenKey) ? accessToken : nil }
+        lock.withLock {
+            if sql.contains(CursorAuthStore.accessTokenKey) { return accessToken }
+            if sql.contains(CursorAuthStore.membershipTypeKey) { return membership }
+            return nil
+        }
     }
 
     func execute(path: String, sql: String) throws {}
+}
+
+private final class LockedCursorRecoveryKeychain: KeychainAccessing, @unchecked Sendable {
+    private let lock = NSLock()
+    private var reads: [Bool] = []
+    var interactionRequests: [Bool] { lock.withLock { reads } }
+
+    func readGenericPassword(service: String) throws -> String? {
+        try readGenericPassword(service: service, allowInteraction: true)
+    }
+
+    func readGenericPassword(service: String, allowInteraction: Bool) throws -> String? {
+        lock.withLock { reads.append(allowInteraction) }
+        if !allowInteraction { throw KeychainError.readFailed("Keychain requires approval") }
+        return nil
+    }
+
+    func writeGenericPassword(service: String, value: String) throws {}
+    func deleteGenericPassword(service: String) throws {}
 }
