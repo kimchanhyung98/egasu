@@ -169,6 +169,67 @@ final class OpenRouterAuthStoreTests: XCTestCase {
         XCTAssertEqual(store.loadAPIKey()?.apiKey, "sk-or-new")
     }
 
+    func testUnsupportedOrDamagedConfigIsNotReadAsKeyOrChanged() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let config = root.appendingPathComponent("openrouter.json")
+        let store = UserAPIKeyStore(
+            providerID: "openrouter", configPaths: [config.path], environmentNames: [],
+            files: LocalTextFileAccessor(), environment: FakeEnvironment(), makeError: { OpenRouterAuthError($0) })
+
+        for text in [
+            #"["setting"]"#, "42", #"{"theme":"dark""#, "theme=dark\ncompact=true", "\"unfinished",
+            "theme=dark", "mode:compact", "values==group", "#comment", "1mode:compact",
+            "café=dark", "cafe\u{0301}=dark", "q\u{0301}:compact",
+            #"{"apiKey":{"source":"managed"}}"#, #"{"apiKey":["setting"]}"#, #"{"apiKey":false}"#, #"{"apiKey":42}"#
+        ] {
+            let original = Data(text.utf8)
+            try original.write(to: config)
+
+            XCTAssertNil(try store.loadKey())
+            XCTAssertThrowsError(try store.saveKey("sk-or-new")) { error in
+                XCTAssertEqual(ErrorCategory.classify(error), .decoding)
+                XCTAssertEqual(
+                    L10n.withLanguage(.english) { UserFacingErrors.message(error) },
+                    "Couldn't save the API key. Check the existing configuration file format.")
+            }
+            XCTAssertEqual(try Data(contentsOf: config), original)
+            try store.deleteKey()
+            XCTAssertEqual(try Data(contentsOf: config), original)
+        }
+    }
+
+    func testSaveAPIKeyReplacesNullPlaceholderAndPreservesOtherFields() throws {
+        let primary = OpenRouterAuthStore.configPaths[0]
+        let files = FakeFiles([primary: #"{"apiKey":null,"key":{"source":"managed"}}"#])
+        let store = OpenRouterAuthStore(files: files, environment: FakeEnvironment())
+
+        XCTAssertNil(store.currentAPIKey())
+        try store.saveAPIKey("sk-or-new")
+
+        XCTAssertEqual(files.files[primary], #"{"apiKey":"sk-or-new","key":{"source":"managed"}}"#)
+        XCTAssertEqual(try store.requireAPIKey().apiKey, "sk-or-new")
+        try store.deleteAPIKey()
+        XCTAssertEqual(files.files[primary], #"{"key":{"source":"managed"}}"#)
+    }
+
+    func testSaveReplacesLegacyPlainTextKeyAndFillsBlankConfig() throws {
+        let primary = OpenRouterAuthStore.configPaths[0]
+        for (existing, expected) in [
+            ("  sk-or-existing\n", "sk-or-existing"), ("  YWJjZA==\n", "YWJjZA=="), ("  \n", nil)
+        ] {
+            let files = FakeFiles([primary: existing])
+            let store = OpenRouterAuthStore(files: files, environment: FakeEnvironment())
+
+            XCTAssertEqual(store.currentAPIKey(), expected)
+            try store.saveAPIKey("sk-or-new")
+
+            XCTAssertEqual(files.files[primary], #"{"apiKey":"sk-or-new"}"#)
+            XCTAssertEqual(try store.requireAPIKey().apiKey, "sk-or-new")
+        }
+    }
+
     func testSaveAPIKeyRejectsEmptyKey() {
         let files = FakeFiles()
         let store = OpenRouterAuthStore(files: files, environment: FakeEnvironment())
@@ -263,7 +324,7 @@ final class OpenRouterAuthStoreTests: XCTestCase {
     }
 
     func testDeleteAPIKeyClearsAlternatePathOnly() throws {
-        let files = FakeFiles([OpenRouterAuthStore.configPaths[1]: "sk-or-alt"])
+        let files = FakeFiles([OpenRouterAuthStore.configPaths[1]: "YWJjZA=="])
         let store = OpenRouterAuthStore(files: files, environment: FakeEnvironment())
 
         XCTAssertEqual(store.keyStatus(), .saved)
