@@ -9,6 +9,8 @@ struct CursorAuthState: Hashable, Sendable {
     var accessToken: String?
     var refreshToken: String?
     var source: Source
+
+    fileprivate var hasCredentials: Bool { accessToken != nil || refreshToken != nil }
 }
 
 enum CursorAuthError: Error, LocalizedError, Equatable {
@@ -68,47 +70,37 @@ struct CursorAuthStore: Sendable {
         self.now = now
     }
 
-    func loadAuthState() -> CursorAuthState? {
-        let sqliteAccessToken = readStateValue(Self.accessTokenKey)
-        let sqliteRefreshToken = readStateValue(Self.refreshTokenKey)
-        let sqliteMembershipType = readStateValue(Self.membershipTypeKey)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-
-        let keychainAccessToken = readKeychainValue(Self.keychainAccessTokenService)
-        let keychainRefreshToken = readKeychainValue(Self.keychainRefreshTokenService)
-
-        let hasSQLiteAuth = sqliteAccessToken != nil || sqliteRefreshToken != nil
-        let hasKeychainAuth = keychainAccessToken != nil || keychainRefreshToken != nil
-
-        if hasSQLiteAuth {
-            let sqliteSubject = Self.tokenSubject(sqliteAccessToken)
-            let keychainSubject = Self.tokenSubject(keychainAccessToken)
-            let subjectsDiffer = sqliteSubject != nil && keychainSubject != nil && sqliteSubject != keychainSubject
-            if hasKeychainAuth, sqliteMembershipType == "free", subjectsDiffer {
-                return CursorAuthState(
-                    accessToken: keychainAccessToken,
-                    refreshToken: keychainRefreshToken,
-                    source: .keychain
-                )
-            }
-
-            return CursorAuthState(
-                accessToken: sqliteAccessToken,
-                refreshToken: sqliteRefreshToken,
+    func loadAuthState(allowKeychainInteraction: Bool = true) -> CursorAuthState? {
+        do {
+            let sqlite = CursorAuthState(
+                accessToken: try readStateValue(Self.accessTokenKey, bestEffort: allowKeychainInteraction),
+                refreshToken: try readStateValue(Self.refreshTokenKey, bestEffort: allowKeychainInteraction),
                 source: .sqlite
             )
-        }
+            let membership = try readStateValue(Self.membershipTypeKey, bestEffort: allowKeychainInteraction)?
+                .lowercased()
+            if !allowKeychainInteraction, sqlite.hasCredentials, membership != "free" { return sqlite }
 
-        if hasKeychainAuth {
-            return CursorAuthState(
-                accessToken: keychainAccessToken,
-                refreshToken: keychainRefreshToken,
+            let keychain = CursorAuthState(
+                accessToken: try readKeychainValue(
+                    Self.keychainAccessTokenService, allowInteraction: allowKeychainInteraction),
+                refreshToken: try readKeychainValue(
+                    Self.keychainRefreshTokenService, allowInteraction: allowKeychainInteraction),
                 source: .keychain
             )
+            guard sqlite.hasCredentials else { return keychain.hasCredentials ? keychain : nil }
+            if membership == "free",
+                let sqliteSubject = Self.tokenSubject(sqlite.accessToken),
+                let keychainSubject = Self.tokenSubject(keychain.accessToken),
+                sqliteSubject != keychainSubject
+            {
+                return keychain
+            }
+            return sqlite
+        } catch {
+            // 비대화형 검증 중 읽기 오류를 인증 부재로 처리하면 다른 계정의 캐시를 표시할 수 있음.
+            return nil
         }
-
-        return nil
     }
 
     func needsRefresh(_ accessToken: String?) -> Bool {
@@ -156,8 +148,9 @@ struct CursorAuthStore: Sendable {
         }
     }
 
-    private func readStateValue(_ key: String) -> String? {
-        try? stateValue(key)
+    private func readStateValue(_ key: String, bestEffort: Bool) throws -> String? {
+        if bestEffort { return try? stateValue(key) }
+        return try stateValue(key)
     }
 
     private func stateValue(_ key: String) throws -> String? {
@@ -167,10 +160,14 @@ struct CursorAuthStore: Sendable {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    private func readKeychainValue(_ service: String) -> String? {
-        guard let value = try? keychain.readGenericPassword(service: service) else { return nil }
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+    private func readKeychainValue(_ service: String, allowInteraction: Bool) throws -> String? {
+        let value: String?
+        if allowInteraction {
+            value = try? keychain.readGenericPassword(service: service)
+        } else {
+            value = try keychain.readGenericPassword(service: service, allowInteraction: false)
+        }
+        return value?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
     }
 
     private static func tokenExpiration(_ token: String) -> Date? {

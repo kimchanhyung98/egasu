@@ -78,6 +78,7 @@ DMG 하나로 Apple Silicon과 Intel Mac 모두 지원.
   기존 Claude 계정의 토큰 갱신 중에도 새 작업 공간의 로그인 등록 가능.
 - **[사용량 자동 갱신](/docs/refreshing.md).** 앱을 열면 저장된 사용량부터 표시.
   기본 갱신 주기는 Claude 15분, 나머지 프로바이더 5분.
+  Cursor 조회 실패 시 현재 로그인과 일치하는 마지막 정상 사용량만 표시.
 - **[iCloud 동기화](/docs/icloud-sync.md).** 여러 Mac의 사용 내역을 선택적으로 합산.
   현재·기존 저장 위치를 함께 읽고 기기별 최신 기록 사용.
 - **[명령줄](/docs/cli.md).** 메뉴 막대 앱이 꺼져 있어도 `egasu`로 한도와 잔액을 JSON으로 조회.

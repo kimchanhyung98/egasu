@@ -65,8 +65,12 @@ final class CursorProvider: ProviderRuntime {
         await loadOffMainActor { [authStore] in authStore.loadAuthState() } != nil
     }
 
-    func currentIdentityKey() async -> String? {
-        guard let state = await loadOffMainActor({ [authStore] in authStore.loadAuthState() }) else { return nil }
+    func currentIdentityKey(allowKeychainInteraction: Bool = true) async -> String? {
+        guard
+            let state = await loadOffMainActor({ [authStore] in
+                authStore.loadAuthState(allowKeychainInteraction: allowKeychainInteraction)
+            })
+        else { return nil }
         let token = refreshedKeychainToken?.source == state ? refreshedKeychainToken?.accessToken : state.accessToken
         return token.flatMap { CursorUsageClient.session(from: $0)?.userID }
     }
@@ -90,7 +94,9 @@ final class CursorProvider: ProviderRuntime {
         } catch {
             if error is CursorAuthError { refreshedKeychainToken = nil }
             var failure = ProviderSnapshot.error(provider: provider, error: error)
-            failure.producedByIdentityKey = await currentIdentityKey()
+            if !Task.isCancelled {
+                failure.producedByIdentityKey = await currentIdentityKey()
+            }
             return failure
         }
     }

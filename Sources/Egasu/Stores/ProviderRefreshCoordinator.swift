@@ -318,6 +318,31 @@ final class ProviderRefreshCoordinator {
             start = self.monotonicNow()
             return true
         }) else { return .skipped }
+        var snapshot: ProviderSnapshot
+        switch result {
+        case .snapshot(let value):
+            snapshot = value
+        case .timedOut:
+            let timeout = ProviderSnapshot.error(
+                provider: provider.provider,
+                message: "Refresh timed out. Retrying is available after the previous request finishes.",
+                category: .network,
+                presentation: .init("Refresh timed out. Retrying is available after the previous request finishes.")
+            )
+            snapshot = timeout
+            if let cursor = provider as? CursorProvider {
+                // 제한 시간 뒤에는 현재 로그인만 짧게 확인. 확인한 계정의 캐시만 표시.
+                let verification = await ProviderRefreshDeadline.run(timeout: .seconds(1)) {
+                    var verified = timeout
+                    verified.producedByIdentityKey = await cursor.currentIdentityKey(allowKeychainInteraction: false)
+                    return verified
+                }
+                if case .snapshot(let verified) = verification { snapshot = verified }
+            }
+        case .cancelled:
+            needsScheduleWake = true
+            return .skipped
+        }
         // 취소 후 반환된 조회 결과는 반영하지 않고 마지막 정상 결과 유지.
         guard !Task.isCancelled else {
             needsScheduleWake = true
@@ -337,21 +362,6 @@ final class ProviderRefreshCoordinator {
         guard credentialGenerations[providerID, default: 0] == boundCredentialGeneration else {
             needsScheduleWake = true
             AppLog.info(.refresh, "\(family) discarding result: credentials changed mid-fetch")
-            return .skipped
-        }
-        var snapshot: ProviderSnapshot
-        switch result {
-        case .snapshot(let value):
-            snapshot = value
-        case .timedOut:
-            snapshot = .error(
-                provider: provider.provider,
-                message: "Refresh timed out. Retrying is available after the previous request finishes.",
-                category: .network,
-                presentation: .init("Refresh timed out. Retrying is available after the previous request finishes.")
-            )
-        case .cancelled:
-            needsScheduleWake = true
             return .skipped
         }
         if let codexBinding, snapshot.refreshFailure == nil,
