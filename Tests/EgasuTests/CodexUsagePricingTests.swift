@@ -17,7 +17,7 @@ final class CodexUsagePricingTests: XCTestCase {
         let cases: [(String, Double)] = [
             ("gpt-5.6-sol", 2.55), ("gpt-6-astra", 4.95),
             ("gpt-5.6-terra", 1.02), ("gpt-5.6-luna", 0.102),
-            ("gpt-daybreak-blue-latest", 2.55), ("gpt-6-rosalind", 7.425)
+            ("gpt-daybreak-blue-latest", 2.55), ("gpt-6-rosalind", 4.95)
         ]
         for (model, expected) in cases {
             let native = CodexLogUsageScanner.aggregate(events: [
@@ -59,15 +59,15 @@ final class CodexUsagePricingTests: XCTestCase {
 
     func testRosalindLongContextBoundaryIncludesCachedInputForQualifiedNames() throws {
         let cases: [(TokenBreakdown, Double)] = [
-            (.init(input: 272_000, output: 1_000), 4.155),
-            (.init(input: 272_001, output: 1_000), 8.27253),
-            (.init(input: 300_000, output: 1_000), 9.1125),
-            (.init(input: 200_000, cacheRead: 72_000, output: 1_000), 3.183),
-            (.init(input: 200_001, cacheRead: 72_000, output: 1_000), 6.32853),
-            (.init(input: 200_000, cacheWrite5m: 72_000, output: 1_000), 4.425),
-            (.init(input: 200_001, cacheWrite5m: 72_000, output: 1_000), 8.81253),
-            (.init(input: 200_000, cacheRead: 100_000, output: 1_000), 6.4125),
-            (.init(input: 1, output: 300_000), 22.500015),
+            (.init(input: 272_000, output: 1_000), 2.77),
+            (.init(input: 272_001, output: 1_000), 5.51502),
+            (.init(input: 300_000, output: 1_000), 6.075),
+            (.init(input: 200_000, cacheRead: 72_000, output: 1_000), 2.122),
+            (.init(input: 200_001, cacheRead: 72_000, output: 1_000), 4.21902),
+            (.init(input: 200_000, cacheWrite5m: 72_000, output: 1_000), 2.95),
+            (.init(input: 200_001, cacheWrite5m: 72_000, output: 1_000), 5.87502),
+            (.init(input: 200_000, cacheRead: 100_000, output: 1_000), 4.275),
+            (.init(input: 1, output: 300_000), 15.00001),
         ]
         for prefix in ["", "openai/"] {
             for suffix in ["", "-20261108", "-2026-11-08"] {
