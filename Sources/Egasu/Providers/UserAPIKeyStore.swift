@@ -15,6 +15,12 @@ struct UserAPIKeyStore: Sendable {
         var errorDescription: String? { presentationMessage.key }
     }
 
+    private struct UnsupportedConfigFormat: UserPresentableError, CategorizedError {
+        let presentationMessage = LocalizedMessage(
+            "Couldn't save the API key. Check the existing configuration file format.")
+        let errorCategory = ErrorCategory.decoding
+    }
+
     let providerID: String
     let configPaths: [String]
     let environmentNames: [String]
@@ -54,7 +60,19 @@ struct UserAPIKeyStore: Sendable {
         guard !trimmed.isEmpty else { throw makeError(.missingKey) }
         do {
             let path = configPaths[0]
-            var fields = try readConfigText(path).flatMap { Self.configValue($0) as? [String: Any] } ?? [:]
+            var fields: [String: Any] = [:]
+            if let existing = try readConfigText(path),
+                let text = existing.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            {
+                if let object = Self.configValue(text) as? [String: Any] {
+                    fields = object
+                } else if Self.keyFromConfigText(text) == nil {
+                    throw UnsupportedConfigFormat()
+                }
+            }
+            if let value = fields["apiKey"], !(value is String || value is NSNull) {
+                throw UnsupportedConfigFormat()
+            }
             for field in Self.keyFields where fields[field] is String {
                 fields.removeValue(forKey: field)
             }
@@ -63,6 +81,7 @@ struct UserAPIKeyStore: Sendable {
             try files.writeText(path, String(decoding: data, as: UTF8.self))
         } catch {
             recordFileFailure(.credentialSave, error: error, context: "API key config write")
+            if error is UnsupportedConfigFormat { throw error }
             throw makeError(.saveFailed)
         }
         AppDiagnostics.record(.credentialSave, result: .success, providerID: providerID)
@@ -164,9 +183,15 @@ struct UserAPIKeyStore: Sendable {
         }
 
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.hasPrefix("["), !trimmed.contains("{"),
+        guard !trimmed.isEmpty, !trimmed.hasPrefix("#"), !trimmed.hasPrefix("\""),
+            !trimmed.hasPrefix("["), !trimmed.contains("{"),
             trimmed.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
         else { return nil }
+        // 이름과 값이 붙은 설정을 제외하고, 레거시 토큰 끝의 `=` 패딩은 허용.
+        guard trimmed.range(of: #"^[\p{L}\p{N}_][\p{L}\p{N}_.-]*(?::|=+[^=])"#, options: .regularExpression) == nil
+        else {
+            return nil
+        }
         return trimmed
     }
 }

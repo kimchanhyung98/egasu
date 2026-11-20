@@ -43,6 +43,7 @@ DMG 하나로 Apple Silicon과 Intel Mac 모두 지원.
 대부분의 프로바이더는 Mac의 Keychain, 인증 파일 또는 앱에 저장된 로그인 정보 재사용.
 [OpenRouter](/docs/providers/openrouter.md)와 [Z.ai](/docs/providers/zai.md)는 앱에 저장하거나 지원 환경 변수로 제공한 API 키 사용.
 쓸 수 있는 키가 없고 저장 파일을 읽지 못하면, 미등록 상태와 구분해 파일 접근 오류 표시.
+기존 설정 파일의 형식을 인식할 수 없으면 내용을 보존하고 API 키 저장 오류 표시.
 계정 제거 시 설정 파일의 API 키를 제거하고, JSON의 다른 설정은 보존.
 인증 정보는 해당 프로바이더 요청에만 사용.
 익명 요약과 공개 가격표 다운로드는 [개인정보 및 사용 데이터](/docs/privacy.md) 참조.

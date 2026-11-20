@@ -77,6 +77,7 @@
 "Couldn't remove the saved Z.ai API key." = "Couldn't remove the saved Z.ai API key.";
 "Couldn't remove the terminal helper: %@" = "Couldn't remove the terminal helper: %@";
 "Couldn't save the OpenRouter API key." = "Couldn't save the OpenRouter API key.";
+"Couldn't save the API key. Check the existing configuration file format." = "Couldn't save the API key. Check the existing configuration file format.";
 "Couldn't save the Z.ai API key." = "Couldn't save the Z.ai API key.";
 "Cursor request-based usage data unavailable. Try again later." = "Cursor request-based usage data unavailable. Try again later.";
 "Cursor sign-in changed while refreshing. Refresh again to use the current account." = "Cursor sign-in changed while refreshing. Refresh again to use the current account.";

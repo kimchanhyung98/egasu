@@ -77,6 +77,7 @@
 "Couldn't remove the saved Z.ai API key." = "저장된 Z.ai API 키를 삭제할 수 없습니다.";
 "Couldn't remove the terminal helper: %@" = "터미널 도구를 삭제하지 못했습니다: %@";
 "Couldn't save the OpenRouter API key." = "OpenRouter API 키를 저장할 수 없습니다.";
+"Couldn't save the API key. Check the existing configuration file format." = "API 키를 저장할 수 없습니다. 기존 설정 파일의 형식을 확인하세요.";
 "Couldn't save the Z.ai API key." = "Z.ai API 키를 저장할 수 없습니다.";
 "Cursor request-based usage data unavailable. Try again later." = "Cursor의 요청 수 기반 사용량 데이터를 확인할 수 없습니다. 잠시 후 다시 시도하세요.";
 "Cursor sign-in changed while refreshing. Refresh again to use the current account." = "새로고침 중 Cursor 로그인 정보가 변경되었습니다. 현재 계정을 사용하려면 다시 새로고침하세요.";

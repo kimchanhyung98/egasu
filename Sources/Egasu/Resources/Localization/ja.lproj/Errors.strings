@@ -77,6 +77,7 @@
 "Couldn't remove the saved Z.ai API key." = "保存済みの Z.ai API キーを削除できませんでした。";
 "Couldn't remove the terminal helper: %@" = "ターミナルツールを削除できませんでした：%@";
 "Couldn't save the OpenRouter API key." = "OpenRouter API キーを保存できませんでした。";
+"Couldn't save the API key. Check the existing configuration file format." = "API キーを保存できませんでした。既存の設定ファイルの形式を確認してください。";
 "Couldn't save the Z.ai API key." = "Z.ai API キーを保存できませんでした。";
 "Cursor request-based usage data unavailable. Try again later." = "Cursorのリクエスト数ベースの使用量データを取得できません。しばらくしてから、もう一度お試しください。";
 "Cursor sign-in changed while refreshing. Refresh again to use the current account." = "更新中に Cursor のログイン情報が変更されました。現在のアカウントを使用するには、もう一度更新してください。";
