@@ -181,6 +181,7 @@ final class OpenRouterAuthStoreTests: XCTestCase {
         for text in [
             #"["setting"]"#, "42", #"{"theme":"dark""#, "theme=dark\ncompact=true", "\"unfinished",
             "theme=dark", "mode:compact", "values==group", "#comment", "1mode:compact",
+            "café=dark", "cafe\u{0301}=dark", "q\u{0301}:compact",
             #"{"apiKey":{"source":"managed"}}"#, #"{"apiKey":["setting"]}"#, #"{"apiKey":false}"#, #"{"apiKey":42}"#
         ] {
             let original = Data(text.utf8)

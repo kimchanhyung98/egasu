@@ -188,7 +188,11 @@ struct UserAPIKeyStore: Sendable {
             trimmed.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
         else { return nil }
         // 이름과 값이 붙은 설정을 제외하고, 레거시 토큰 끝의 `=` 패딩은 허용.
-        guard trimmed.range(of: #"^[\p{L}\p{N}_][\p{L}\p{N}_.-]*(?::|=+[^=])"#, options: .regularExpression) == nil
+        guard
+            trimmed.range(
+                of: #"^[\p{L}\p{N}_][\p{L}\p{M}\p{N}_.-]*(?::|=+[^=])"#,
+                options: .regularExpression
+            ) == nil
         else {
             return nil
         }
