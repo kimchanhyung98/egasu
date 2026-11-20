@@ -200,5 +200,5 @@
 "Copied" = "コピー済み";
 "Start CLI" = "CLI を起動";
 "Check Quota" = "使用量上限を確認";
-"Paste the command in Terminal. A new session starts only if the quota check allows it." = "コマンドをターミナルに貼り付けてください。上限の確認で許可された場合にだけ、新しいセッションを開始します。";
+"Paste the command in Terminal. A new session starts only if the quota check allows it. The Codex start command uses the login saved in auth.json." = "コマンドをターミナルに貼り付けてください。上限の確認で許可された場合にだけ、新しいセッションを開始します。Codex の起動コマンドは auth.json に保存されたログインを使います。";
 "Couldn't copy the terminal command." = "ターミナルコマンドをコピーできませんでした。";

@@ -149,31 +149,68 @@ final class KimiProviderTests: XCTestCase {
     func testTerminalPreflightRejectsQuotaWhenTheTerminalSwitchesLoginsDuringFetch() async throws {
         let fixture = try makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
-        let legacy = fixture.root.appendingPathComponent(".kimi/credentials/kimi-code.json")
-        let terminalCredential = fixture.root.appendingPathComponent(".kimi-code/credentials/kimi-code.json")
         let files = KimiProviderFiles(
-            files: [legacy.path: credentialJSON(access: "legacy", refresh: nil, expiresAt: nil)], failWrites: false)
+            files: [
+                fixture.root.appendingPathComponent("config.toml").path: Self.terminalOAuthConfiguration,
+                fixture.credential.path: credentialJSON(access: "current", refresh: nil, expiresAt: nil)
+            ], failWrites: false)
         let switched = credentialJSON(access: "terminal", refresh: nil, expiresAt: nil)
         let http = KimiRecordingHTTPClient { request in
-            XCTAssertEqual(request.headers["Authorization"], "Bearer legacy")
-            try files.writeText(terminalCredential.path, switched)
+            XCTAssertEqual(request.headers["Authorization"], "Bearer current")
+            try files.writeText(fixture.credential.path, switched)
             return HTTPResponse(statusCode: 200, headers: [:], body: Self.usageBody)
         }
-        let provider = makeProvider(fixture: fixture, files: files, http: http, terminalEnvironment: FakeEnvironment())
+        let terminal = FakeEnvironment(["KIMI_CODE_HOME": fixture.root.path])
+        let provider = makeProvider(fixture: fixture, files: files, http: http, terminalEnvironment: terminal)
 
         let snapshot = await provider.refresh()
-        let subsequent = await provider.refresh()
 
         XCTAssertNil(snapshot.liveQuotaObservedAt)
         XCTAssertEqual(snapshot.errorPresentation?.key, KimiAuthError.credentialsChanged.localizedDescription)
-        XCTAssertNil(subsequent.liveQuotaObservedAt)
         XCTAssertEqual(http.requests.count, 1)
+    }
+
+    func testTerminalPreflightSkipsFetchWhenDefaultModelIsNotKimiCode() async throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let config = """
+            default_model = "other"
+            \(Self.kimiOAuthProviderConfiguration)
+            [models.other]
+            provider = "anthropic"
+            model = "claude-sonnet"
+            max_context_size = 100000
+            [providers.anthropic]
+            type = "anthropic"
+            base_url = "https://api.anthropic.com"
+            api_key = "other-key"
+            """
+        let files = FakeFiles([
+            fixture.root.appendingPathComponent("config.toml").path: config,
+            fixture.credential.path: credentialJSON(access: "current", refresh: nil, expiresAt: nil)
+        ])
+        let http = KimiRecordingHTTPClient { _ in
+            HTTPResponse(statusCode: 200, headers: [:], body: Self.usageBody)
+        }
+        let terminal = FakeEnvironment(["KIMI_CODE_HOME": fixture.root.path])
+        let provider = makeProvider(fixture: fixture, files: files, http: http, terminalEnvironment: terminal)
+
+        let preflight = await provider.refresh()
+
+        XCTAssertNil(preflight.liveQuotaObservedAt)
+        XCTAssertTrue(http.requests.isEmpty)
+
+        let dashboard = await makeProvider(fixture: fixture, files: files, http: http).refresh()
+
+        XCTAssertNotNil(dashboard.liveQuotaObservedAt)
+        XCTAssertEqual(http.requests.map(\.url), [KimiUsageClient.usageURL])
     }
 
     func testTerminalPreflightUsesTheRotatedCredentialBeforeUsageFetch() async throws {
         let fixture = try makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
         let files = FakeFiles([
+            fixture.root.appendingPathComponent("config.toml").path: Self.terminalOAuthConfiguration,
             fixture.credential.path: credentialJSON(
                 access: "expiring-access",
                 refresh: "fake-refresh",
@@ -513,6 +550,22 @@ final class KimiProviderTests: XCTestCase {
         if let expiresIn { object["expires_in"] = expiresIn }
         return String(decoding: try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]), as: UTF8.self)
     }
+
+    private static let terminalOAuthConfiguration = """
+        default_model = "kimi-code/k3"
+        \(kimiOAuthProviderConfiguration)
+        """
+
+    private static let kimiOAuthProviderConfiguration = """
+        [models."kimi-code/k3"]
+        provider = "managed:kimi-code"
+        model = "k3"
+        max_context_size = 1048576
+        [providers."managed:kimi-code"]
+        type = "kimi"
+        base_url = "https://api.kimi.com/coding/v1"
+        oauth = { storage = "file", key = "oauth/kimi-code" }
+        """
 
     private static let usageBody = Data(#"""
     {

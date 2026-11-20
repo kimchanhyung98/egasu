@@ -152,7 +152,8 @@ struct SoftLimitSettingsSection: View {
                 SettingsTitle(
                     title: L10n.settings("Terminal Commands"),
                     info: L10n.settings(
-                        "Paste the command in Terminal. A new session starts only if the quota check allows it.")
+                        "Paste the command in Terminal. A new session starts only if the quota check allows it. The Codex start command uses the login saved in auth.json."
+                    )
                 )
             }
         }

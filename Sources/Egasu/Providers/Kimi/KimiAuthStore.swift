@@ -47,7 +47,7 @@ struct KimiAuthStore: Sendable {
         self.homeDirectory = homeDirectory
     }
 
-    func loadCredentialDocument() throws -> KimiCredentialDocument? {
+    func loadCredentialDocument(requiresDefaultModel: Bool = false) throws -> KimiCredentialDocument? {
         try KimiCLIConfiguration.validateEnvironment(environment)
         let home = currentHome()
         let configurationURL = home.appendingPathComponent("config.toml")
@@ -57,7 +57,11 @@ struct KimiAuthStore: Sendable {
         } catch {
             throw KimiAuthError.credentialsUnreadable
         }
-        let configuration = try KimiCLIConfiguration.resolve(text, environment: environment)
+        guard
+            let configuration = try KimiCLIConfiguration.resolve(
+                text, environment: environment, requiresDefaultModel: requiresDefaultModel
+            )
+        else { return nil }
         if let apiKey = configuration.apiKey {
             return KimiCredentialDocument(
                 credentials: KimiCredentials(
@@ -81,13 +85,13 @@ struct KimiAuthStore: Sendable {
         return try readDocument(source: legacySource(), service: .standard)
     }
 
-    /// 한도 요청에 사용한 인증 문서와 현재 터미널의 인증 비교. 토큰 갱신 후에는 새 문서 사용.
+    /// 한도 요청에 사용한 인증 문서와 터미널 기본 모델의 인증 비교. 토큰 갱신 후에는 새 문서 사용.
     func matchesTerminalLogin(
         _ document: KimiCredentialDocument, environment terminal: any EnvironmentReading
     ) throws -> Bool {
         var terminalStore = self
         terminalStore.environment = terminal
-        return try terminalStore.loadCredentialDocument() == document
+        return try terminalStore.loadCredentialDocument(requiresDefaultModel: true) == document
     }
 
     func isUsable(_ document: KimiCredentialDocument, now: Date) -> Bool {

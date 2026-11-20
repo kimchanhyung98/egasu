@@ -200,5 +200,5 @@
 "Copied" = "복사됨";
 "Start CLI" = "CLI 시작";
 "Check Quota" = "한도 확인";
-"Paste the command in Terminal. A new session starts only if the quota check allows it." = "명령을 터미널에 붙여넣으세요. 한도 확인 결과가 허용일 때만 새 세션을 시작합니다.";
+"Paste the command in Terminal. A new session starts only if the quota check allows it. The Codex start command uses the login saved in auth.json." = "명령을 터미널에 붙여넣으세요. 한도 확인을 통과하면 새 세션을 시작합니다. Codex 시작 명령은 auth.json에 저장된 로그인을 사용합니다.";
 "Couldn't copy the terminal command." = "터미널 명령을 복사하지 못했습니다.";

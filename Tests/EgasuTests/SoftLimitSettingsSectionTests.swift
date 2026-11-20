@@ -138,7 +138,13 @@ final class SoftLimitSettingsSectionTests: XCTestCase {
             exit "$EGASU_TEST_CHECK_CODE"
             """ + "\n", at: helper)
         for id in ["codex", "claude", "kimi"] {
-            try executable("#!/bin/sh\nprintf 'launch:\(id)\\n'\n", at: directory.appendingPathComponent(id))
+            try executable(
+                """
+                #!/bin/sh
+                printf 'launch:\(id)'
+                for argument do printf ' <%s>' "$argument"; done
+                printf '\\n'
+                """ + "\n", at: directory.appendingPathComponent(id))
             let command = try XCTUnwrap(SoftLimitTerminalCommand(helperPath: helper.path, cardID: id)?.launch)
             for status in [0, 2, 3, 4] as [Int32] {
                 let result = try SystemProcessRunner().run(
@@ -148,12 +154,48 @@ final class SoftLimitSettingsSectionTests: XCTestCase {
                         "EGASU_DEFAULTS_SUITE": "OtherApp", "OPENUSAGE_DEFAULTS_SUITE": "LegacyApp"
                     ], timeout: 5)
                 XCTAssertEqual(result.exitCode, status, id)
-                let launch = status == 0 ? "launch:\(id)\n" : ""
+                let arguments = id == "codex" ? " <-c> <cli_auth_credentials_store=\"file\">" : ""
+                let launch = status == 0 ? "launch:\(id)\(arguments)\n" : ""
                 XCTAssertEqual(result.stdout, "check:soft-limit check \(id)\n\(launch)")
             }
         }
         XCTAssertNil(SoftLimitTerminalCommand(helperPath: helper.path, cardID: "codex@other"))
         XCTAssertNil(SoftLimitTerminalCommand(helperPath: helper.path, cardID: "cursor")?.launch)
+    }
+
+    func testCopiedLaunchCommandsBypassShellAliasesAndFunctions() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let helper = directory.appendingPathComponent("egasu")
+        try executable("#!/bin/sh\nexit 0\n", at: helper)
+
+        let shellPaths = ["/bin/zsh", "/bin/bash", "/opt/homebrew/bin/fish", "/usr/local/bin/fish"]
+        for id in ["codex", "claude", "kimi"] {
+            try executable("#!/bin/sh\nprintf 'path-executable\\n'\n", at: directory.appendingPathComponent(id))
+            let launch = try XCTUnwrap(SoftLimitTerminalCommand(helperPath: helper.path, cardID: id)?.launch)
+            for shell in shellPaths where FileManager.default.isExecutableFile(atPath: shell) {
+                let isBash = shell.hasSuffix("/bash")
+                let flags = isBash ? ["--noprofile", "--norc", "-c"] : ["-fc"]
+                let setup: [String]
+                if shell.hasSuffix("/fish") {
+                    setup = ["function \(id); printf 'shell-function\\n'; end"]
+                } else {
+                    let aliasSetup = isBash ? "shopt -s expand_aliases\n" : ""
+                    setup = [
+                        "\(aliasSetup)alias \(id)='printf shell-alias'",
+                        "\(id)() { printf shell-function; }"
+                    ]
+                }
+                for wrapper in setup {
+                    let result = try SystemProcessRunner().run(
+                        executable: shell, arguments: flags + ["\(wrapper)\n\(launch)"],
+                        environment: ["PATH": directory.path], timeout: 5)
+                    XCTAssertEqual(result.exitCode, 0, "\(shell) \(id)")
+                    XCTAssertEqual(result.stdout, "path-executable\n", "\(shell) \(id)")
+                }
+            }
+        }
     }
 
     private func executable(_ script: String, at url: URL) throws {

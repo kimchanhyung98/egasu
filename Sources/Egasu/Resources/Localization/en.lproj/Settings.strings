@@ -200,5 +200,5 @@
 "Copied" = "Copied";
 "Start CLI" = "Start CLI";
 "Check Quota" = "Check Quota";
-"Paste the command in Terminal. A new session starts only if the quota check allows it." = "Paste the command in Terminal. A new session starts only if the quota check allows it.";
+"Paste the command in Terminal. A new session starts only if the quota check allows it. The Codex start command uses the login saved in auth.json." = "Paste the command in Terminal. A new session starts only if the quota check allows it. The Codex start command uses the login saved in auth.json.";
 "Couldn't copy the terminal command." = "Couldn't copy the terminal command.";
