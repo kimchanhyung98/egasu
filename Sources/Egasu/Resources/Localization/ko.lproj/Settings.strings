@@ -194,4 +194,11 @@
 "%@ used · Soft limit reached" = "%@ 사용 · 소프트 한도 도달";
 "Estimated usage: %@" = "추정 사용량 %@";
 "Automatic cancellation is unavailable for these accounts." = "이 계정에서는 실행 중인 작업이 자동으로 중단되지 않습니다.";
-"Shows a guide on supported weekly and monthly quota bars. Automatic cancellation requires a verified connection to the same account." = "지원하는 주간·월간 사용량 바에 기준선을 표시합니다. 작업을 자동으로 중단하려면 같은 계정의 클라이언트 연결을 확인할 수 있어야 합니다.";
+"Shows a guide on weekly and monthly quota bars. Use a copied command to check the limit before starting a new CLI session." = "주간·월간 사용량에 기준선을 표시합니다. 새 CLI 세션을 시작하기 전에 복사한 명령으로 한도를 확인할 수 있습니다.";
+"Terminal Commands" = "터미널 명령";
+"Copy Command" = "명령 복사";
+"Copied" = "복사됨";
+"Start CLI" = "CLI 시작";
+"Check Quota" = "한도 확인";
+"Paste the command in Terminal. A new session starts only if the quota check allows it." = "명령을 터미널에 붙여넣으세요. 한도 확인 결과가 허용일 때만 새 세션을 시작합니다.";
+"Couldn't copy the terminal command." = "터미널 명령을 복사하지 못했습니다.";

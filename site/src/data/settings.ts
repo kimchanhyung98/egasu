@@ -95,6 +95,8 @@ export const settingGroups: SettingGroup[] = [
     { id: 'softLimitEnabled', label: 'Enabled', control: { kind: 'toggle', on: false } },
     { id: 'softLimitWindow', label: 'Window', requires: 'softLimitEnabled', control: { kind: 'picker', value: 'Weekly and Monthly', options: ['Weekly and Monthly', 'Weekly', 'Monthly'] } },
     { id: 'softLimitThreshold', label: 'Threshold', requires: 'softLimitEnabled', control: { kind: 'number', value: '90', min: 1, max: 100 } },
+    { id: 'softLimitCommands', label: 'Terminal Commands', requires: 'softLimitEnabled',
+      control: { kind: 'action', label: 'Copy Command', message: 'Open the Mac app to use this feature.' } },
   ] },
   { id: 'commandLine', title: 'Command Line', tab: 'Labs', rows: [
     { id: 'terminalHelper', label: 'Terminal Helper', control: { kind: 'terminalHelper' },

@@ -237,7 +237,7 @@ extension KimiAuthError: CategorizedError {
     var errorCategory: ErrorCategory {
         switch self {
         case .notLoggedIn, .apiKeyMissing: .notLoggedIn
-        case .credentialsUnreadable, .credentialLockUnavailable,
+        case .credentialsUnreadable, .credentialsChanged, .credentialLockUnavailable,
              .credentialLockCompromised, .credentialSaveFailed: .credentialAccess
         case .credentialsInvalid, .unsupportedConfiguration, .configurationInvalid,
             .apiKeyRejected:

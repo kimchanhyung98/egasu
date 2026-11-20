@@ -54,7 +54,8 @@ struct SettingsLabsTab: View {
                 name: container.dataStore.resolveDisplayName?(cardID) ?? container.displayName(for: provider),
                 quota: reading.state, usedFraction: reading.usedFraction,
                 estimatedFraction: estimate, cancellation: coordinator.status(for: cardID),
-                nextExpiry: estimate == nil ? reading.nextExpiry : estimateExpiry
+                nextExpiry: estimate == nil ? reading.nextExpiry : estimateExpiry,
+                supportsPreflight: descriptors.contains { $0.hasMeasuredSoftLimit(in: selection) }
             )
         }
     }
@@ -69,7 +70,7 @@ struct SettingsLabsSections: View {
         Text(L10n.settings("Experimental features may change or be removed."))
             .font(.caption)
             .foregroundStyle(.secondary)
-        SoftLimitSettingsSection(settings: settings, accounts: accounts)
+        SoftLimitSettingsSection(settings: settings, accounts: accounts, commandLineTool: commandLineTool)
         TerminalHelperSettingsSection(commandLineTool: commandLineTool)
     }
 }

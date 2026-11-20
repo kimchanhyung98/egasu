@@ -157,6 +157,8 @@ extension KimiAuthError: UserPresentableError {
             .init("Kimi credentials could not be read. Check the credential file permissions.")
         case .credentialsInvalid:
             .init("Kimi credentials are invalid. Run `kimi` to log in again.")
+        case .credentialsChanged:
+            .init("Kimi sign-in changed while refreshing. Refresh again to use the current account.")
         case .unsupportedConfiguration:
             .init("Custom Kimi API or OAuth hosts are not supported.")
         case .configurationInvalid:

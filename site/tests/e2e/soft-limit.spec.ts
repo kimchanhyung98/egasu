@@ -85,10 +85,14 @@ test('Soft Limit confirmation preserves navigation and shows coverage by account
   await openSettings(page);
   await enableLabs(page);
   const quotaStatus = app.getByText('Quota Status', { exact: true });
+  const copyCommand = app.getByRole('button', { name: 'Copy Command', exact: true });
   await expect(quotaStatus).toBeHidden();
+  await expect(copyCommand).toBeHidden();
   await app.getByRole('switch', { name: 'Enable Soft Limit' }).click();
-  await expect(app.locator('[data-soft-limit-dialog]')).toContainText('Automatic cancellation requires a verified connection to the same account.');
+  await expect(app.locator('[data-soft-limit-dialog]')).toContainText('Use a copied command to check the limit before starting a new CLI session.');
   await app.locator('[data-soft-confirm]').click();
+  await copyCommand.click();
+  await expect(app.locator('[data-pill]')).toHaveText('Open the Mac app to use this feature.');
   await app.getByRole('button', { name: 'Back', exact: true }).click();
   await expect(app).toHaveAttribute('data-soft-limit', 'Weekly and Monthly');
   const options = app.getByRole('button', { name: 'Options', exact: true });

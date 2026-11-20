@@ -194,4 +194,11 @@
 "%@ used · Soft limit reached" = "%@ 使用 · ソフト上限に到達";
 "Estimated usage: %@" = "推定使用率 %@";
 "Automatic cancellation is unavailable for these accounts." = "これらのアカウントでは実行中のタスクは自動で停止しません。";
-"Shows a guide on supported weekly and monthly quota bars. Automatic cancellation requires a verified connection to the same account." = "対応する週間・月間の使用量バーに目安を表示します。タスクの自動停止には、同じアカウントのクライアント接続を確認できる必要があります。";
+"Shows a guide on weekly and monthly quota bars. Use a copied command to check the limit before starting a new CLI session." = "週間・月間の使用量バーに目安を表示します。コピーしたコマンドで、新しい CLI セッションを開始する前に上限を確認できます。";
+"Terminal Commands" = "ターミナルコマンド";
+"Copy Command" = "コマンドをコピー";
+"Copied" = "コピー済み";
+"Start CLI" = "CLI を起動";
+"Check Quota" = "使用量上限を確認";
+"Paste the command in Terminal. A new session starts only if the quota check allows it." = "コマンドをターミナルに貼り付けてください。上限の確認で許可された場合にだけ、新しいセッションを開始します。";
+"Couldn't copy the terminal command." = "ターミナルコマンドをコピーできませんでした。";

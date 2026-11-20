@@ -194,4 +194,11 @@
 "%@ used · Soft limit reached" = "%@ used · Soft limit reached";
 "Estimated usage: %@" = "Estimated usage: %@";
 "Automatic cancellation is unavailable for these accounts." = "Automatic cancellation is unavailable for these accounts.";
-"Shows a guide on supported weekly and monthly quota bars. Automatic cancellation requires a verified connection to the same account." = "Shows a guide on supported weekly and monthly quota bars. Automatic cancellation requires a verified connection to the same account.";
+"Shows a guide on weekly and monthly quota bars. Use a copied command to check the limit before starting a new CLI session." = "Shows a guide on weekly and monthly quota bars. Use a copied command to check the limit before starting a new CLI session.";
+"Terminal Commands" = "Terminal Commands";
+"Copy Command" = "Copy Command";
+"Copied" = "Copied";
+"Start CLI" = "Start CLI";
+"Check Quota" = "Check Quota";
+"Paste the command in Terminal. A new session starts only if the quota check allows it." = "Paste the command in Terminal. A new session starts only if the quota check allows it.";
+"Couldn't copy the terminal command." = "Couldn't copy the terminal command.";

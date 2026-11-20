@@ -115,6 +115,7 @@
 "Kimi API key was rejected. Check the CLI provider settings." = "Kimi API 키가 거부되었습니다. CLI의 프로바이더 설정을 확인하세요.";
 "Kimi configuration is invalid. Check config.toml." = "Kimi 설정이 올바르지 않습니다. config.toml을 확인하세요.";
 "Kimi credential lock changed during refresh. Try again." = "새로고침 중 Kimi 인증 정보의 잠금이 변경되었습니다. 다시 시도하세요.";
+"Kimi sign-in changed while refreshing. Refresh again to use the current account." = "새로고침 중 Kimi 로그인이 변경되었습니다. 현재 계정의 사용량을 보려면 다시 새로고침하세요.";
 "Kimi credentials are busy. Try again shortly." = "Kimi 인증 정보를 사용 중입니다. 잠시 후 다시 시도하세요.";
 "Kimi credentials are invalid. Run `kimi` to log in again." = "Kimi 인증 정보가 올바르지 않습니다. `kimi`를 실행해 다시 로그인하세요.";
 "Kimi credentials could not be read. Check the credential file permissions." = "Kimi 인증 정보를 읽을 수 없습니다. 인증 정보 파일의 권한을 확인하세요.";

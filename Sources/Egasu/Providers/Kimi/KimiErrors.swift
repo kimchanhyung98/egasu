@@ -4,6 +4,7 @@ enum KimiAuthError: Error, LocalizedError, Equatable {
     case notLoggedIn
     case credentialsUnreadable
     case credentialsInvalid
+    case credentialsChanged
     case unsupportedConfiguration
     case configurationInvalid
     case apiKeyMissing
@@ -23,6 +24,8 @@ enum KimiAuthError: Error, LocalizedError, Equatable {
             "Kimi credentials could not be read. Check the credential file permissions."
         case .credentialsInvalid:
             "Kimi credentials are invalid. Run `kimi` to log in again."
+        case .credentialsChanged:
+            "Kimi sign-in changed while refreshing. Refresh again to use the current account."
         case .unsupportedConfiguration:
             "Custom Kimi API or OAuth hosts are not supported."
         case .configurationInvalid:

@@ -16,6 +16,7 @@ final class KimiProvider: ProviderRuntime {
     let usageScanner: KimiUsageScanner
     let now: @Sendable () -> Date
     let pricing: @Sendable () async -> ModelPricing
+    private let terminalEnvironment: (any EnvironmentReading)?
 
     var usageTimerObservations: [UsageTimerObservation] = []
     var usageTimerCredential: KimiCredentialDocument?
@@ -28,6 +29,7 @@ final class KimiProvider: ProviderRuntime {
         credentialLock: KimiCredentialLock = KimiCredentialLock(),
         usageScanner: KimiUsageScanner? = nil,
         now: @escaping @Sendable () -> Date = Date.init,
+        terminalEnvironment: (any EnvironmentReading)? = nil,
         pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() }
     ) {
         self.authStore = authStore
@@ -37,6 +39,7 @@ final class KimiProvider: ProviderRuntime {
             environment: authStore.environment, homeDirectory: authStore.homeDirectory()
         )
         self.now = now
+        self.terminalEnvironment = terminalEnvironment
         self.pricing = pricing
     }
 
@@ -74,7 +77,8 @@ final class KimiProvider: ProviderRuntime {
     }
 
     func refresh() async -> ProviderSnapshot {
-        var snapshot = await quotaSnapshot()
+        let quota = await readQuota()
+        var snapshot = quota.snapshot
         guard snapshot.errorCategory == nil else { return snapshot }
         let refreshedAt = snapshot.refreshedAt
         do {
@@ -118,6 +122,24 @@ final class KimiProvider: ProviderRuntime {
             )
             appendWarning((error as? KimiHistoryError ?? .unreadable).localizedDescription, to: &snapshot)
         }
+        // 이력 조회 중 로그인 전환 가능. 한도 요청에 사용한 인증과 같은 경우에만 결과 사용.
+        if let credential = quota.credential, hasSoftLimitQuota(in: snapshot.lines) {
+            do {
+                let matches = try await loadOffMainActor { [authStore, terminalEnvironment] in
+                    guard try authStore.loadCredentialDocument() == credential else { return false }
+                    guard let terminalEnvironment else { return true }
+                    return try authStore.matchesTerminalLogin(credential, environment: terminalEnvironment)
+                }
+                try Task.checkCancellation()
+                guard matches else { throw KimiAuthError.credentialsChanged }
+            } catch is CancellationError {
+                return ProviderSnapshot.error(provider: provider, error: CancellationError())
+            } catch {
+                usageTimerObservations = []
+                usageTimerCredential = nil
+                return ProviderSnapshot.error(provider: provider, error: normalized(error))
+            }
+        }
         return snapshot
     }
 
@@ -149,6 +171,12 @@ final class KimiProvider: ProviderRuntime {
             }
             guard authStore.isUsable(document, now: now()) else {
                 throw KimiAuthError.authExpired
+            }
+            if let terminalEnvironment {
+                let matches = try await loadOffMainActor { [authStore, document] in
+                    try authStore.matchesTerminalLogin(document, environment: terminalEnvironment)
+                }
+                guard matches else { throw KimiAuthError.credentialsChanged }
             }
 
             if prepared == nil && authStore.needsRefresh(document, now: now()) {
@@ -209,7 +237,7 @@ final class KimiProvider: ProviderRuntime {
                 lines: mapped.lines,
                 refreshedAt: observedAt, liveQuotaObservedAt: observedAt
             )
-            return (snapshot, observation, usageTimerCredential)
+            return (snapshot, observation, document)
         } catch {
             usageTimerObservations = []
             usageTimerCredential = nil

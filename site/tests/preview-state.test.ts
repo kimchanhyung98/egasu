@@ -90,7 +90,7 @@ test('Alerts, Soft Limit, and Tokscale expose their preview controls', () => {
       useItOrLoseItNotification: 'toggle',
     } },
     notifications: { tab: 'Alerts', rows: { codexResetWatch: 'toggle' } },
-    softLimit: { tab: 'Labs', rows: { softLimitEnabled: 'toggle', softLimitWindow: 'picker', softLimitThreshold: 'number' } },
+    softLimit: { tab: 'Labs', rows: { softLimitEnabled: 'toggle', softLimitWindow: 'picker', softLimitThreshold: 'number', softLimitCommands: 'action' } },
     tokscale: { tab: 'Advanced', rows: { usageSync: 'action' } },
   };
   for (const [groupId, { tab, rows }] of Object.entries(expectedRows)) {
@@ -102,7 +102,7 @@ test('Alerts, Soft Limit, and Tokscale expose their preview controls', () => {
     }
   }
   const softLimit = settingGroups.find((group) => group.id === 'softLimit');
-  for (const id of ['softLimitWindow', 'softLimitThreshold']) {
+  for (const id of ['softLimitWindow', 'softLimitThreshold', 'softLimitCommands']) {
     assert.equal(softLimit?.rows.find((row) => row.id === id)?.requires, 'softLimitEnabled', id);
   }
 });
