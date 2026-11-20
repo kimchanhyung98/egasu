@@ -29,6 +29,25 @@ final class KimiAuthStoreTests: XCTestCase {
         XCTAssertEqual(document.credentials.accessToken, "current")
     }
 
+    func testTerminalLoginMustUseSameKimiCredentialDocument() throws {
+        let home = URL(fileURLWithPath: "/Users/test")
+        let credentialName = "credentials/kimi-code.json"
+        let defaultCredential = home.appendingPathComponent(".kimi-code/\(credentialName)")
+        let alternateCredential = home.appendingPathComponent("other/\(credentialName)")
+        let effective = FakeEnvironment(["KIMI_CODE_HOME": "~/other"])
+        let store = KimiAuthStore(
+            files: FakeFiles([
+                defaultCredential.path: credentialJSON(access: "default", expiresAt: 4_000),
+                alternateCredential.path: credentialJSON(access: "alternate", expiresAt: 4_000)
+            ]),
+            environment: effective,
+            homeDirectory: { home }
+        )
+
+        XCTAssertTrue(try store.matchesTerminalLogin(environment: effective))
+        XCTAssertFalse(try store.matchesTerminalLogin(environment: FakeEnvironment()))
+    }
+
     func testCurrentCredentialWinsOverLegacy() throws {
         let home = URL(fileURLWithPath: "/Users/test")
         let current = home.appendingPathComponent(".kimi-code/credentials/kimi-code.json")

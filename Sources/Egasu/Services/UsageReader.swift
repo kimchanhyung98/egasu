@@ -87,18 +87,25 @@ public struct UsageReader {
         guard enabled else { return unknown("provider_disabled") }
         if isManagedFamily, context.identityKeys[id] == nil { return unknown("identity_unresolved") }
         if let boundHome = context.defaultHomes[id] {
-            let environment = ProcessInfo.processInfo.environment
+            let terminal = InheritedTerminalEnvironment()
             let homeVariable = id == "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"
             guard
                 Self.matchesTerminalHome(
-                    boundHome: boundHome, defaultDirectory: ".\(id)", override: environment[homeVariable],
+                    boundHome: boundHome, defaultDirectory: ".\(id)", override: terminal.value(for: homeVariable),
                     homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
             else { return unknown("terminal_home_mismatch") }
+            if id == "claude",
+                !Self.matchesClaudeTerminalScope(
+                    terminal: terminal, usage: context.accountObserver.environment,
+                    pinsSharedHome: context.accountObserver.pinsClaudeSharedHome)
+            {
+                return unknown("terminal_config_scope_mismatch")
+            }
             let overrides =
                 id == "codex"
                 ? AccountSignInLauncher.codexAuthEnvironmentRemovals
                 : AccountSignInLauncher.claudeAuthEnvironmentRemovals
-            guard !overrides.contains(where: { environment[$0]?.nilIfEmpty != nil }) else {
+            guard !overrides.contains(where: { terminal.value(for: $0) != nil }) else {
                 return unknown("terminal_auth_override")
             }
         }
@@ -107,6 +114,18 @@ public struct UsageReader {
         let window = settings.window
         guard descriptors.contains(where: { $0.hasMeasuredSoftLimit(in: window) }) else {
             return unknown("unsupported_window")
+        }
+        if id == "kimi", let kimi = context.providers.first(where: { $0.provider.id == id }) as? KimiProvider {
+            do {
+                let matches = try await loadOffMainActor { [store = kimi.authStore] in
+                    try store.matchesTerminalLogin(environment: InheritedTerminalEnvironment())
+                }
+                guard matches else { return unknown("terminal_login_mismatch") }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                return unknown("terminal_login_unreadable")
+            }
         }
         let loaded = await load(
             context: context, matchedIDs: [id], force: false, preflight: (id, window, settings.thresholdPercent))
@@ -153,6 +172,24 @@ public struct UsageReader {
             ? homeDirectory.path + String(terminalHome.dropFirst()) : terminalHome
         return URL(fileURLWithPath: expanded).resolvingSymlinksInPath().standardizedFileURL.path
             == URL(fileURLWithPath: boundHome).resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    /// Claude Keychain은 정규화된 경로가 아닌 `CLAUDE_CONFIG_DIR` 설정값으로 스코프 결정.
+    static func matchesClaudeTerminalScope(
+        terminal: any EnvironmentReading, usage: any EnvironmentReading, pinsSharedHome: Bool
+    ) -> Bool {
+        let key = "CLAUDE_CONFIG_DIR"
+        let usageOverride = pinsSharedHome ? nil : usage.value(for: key)?.nilIfEmpty
+        return terminal.value(for: key)?.nilIfEmpty == usageOverride
+            && ClaudeAuthStore.baseKeychainServiceName(environment: terminal)
+                == ClaudeAuthStore.baseKeychainServiceName(environment: usage)
+    }
+
+    /// CLI 시작 검사에는 현재 터미널이 넘긴 값만 사용. 셸 재실행이나 저장한 환경으로 보충하지 않음.
+    private struct InheritedTerminalEnvironment: EnvironmentReading {
+        let variables = ProcessInfo.processInfo.environment
+
+        func value(for key: String) -> String? { variables[key]?.nilIfEmpty }
     }
 
     private func currentIdentity(for id: String, context: ReadContext) async -> String? {

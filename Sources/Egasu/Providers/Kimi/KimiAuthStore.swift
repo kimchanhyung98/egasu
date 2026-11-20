@@ -81,6 +81,14 @@ struct KimiAuthStore: Sendable {
         return try readDocument(source: legacySource(), service: .standard)
     }
 
+    /// 사용량 조회와 현재 터미널이 같은 설정·인증 문서를 읽는지 확인.
+    func matchesTerminalLogin(environment terminal: any EnvironmentReading) throws -> Bool {
+        guard let document = try loadCredentialDocument() else { return false }
+        var terminalStore = self
+        terminalStore.environment = terminal
+        return try terminalStore.loadCredentialDocument() == document
+    }
+
     func isUsable(_ document: KimiCredentialDocument, now: Date) -> Bool {
         guard document.credentials.accessToken?.nilIfEmpty != nil else {
             return false

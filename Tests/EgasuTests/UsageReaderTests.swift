@@ -76,6 +76,25 @@ final class UsageReaderTests: XCTestCase {
                 homeDirectory: home))
     }
 
+    func testClaudePreflightDistinguishesKeychainScopesAtTheSameHome() {
+        let explicit = FakeEnvironment(["CLAUDE_CONFIG_DIR": "~/.claude"])
+        let canonical = FakeEnvironment(["CLAUDE_CONFIG_DIR": "/fixture/user/.claude"])
+        let implicit = FakeEnvironment()
+        XCTAssertTrue(
+            UsageReader.matchesClaudeTerminalScope(terminal: explicit, usage: explicit, pinsSharedHome: false))
+        XCTAssertFalse(
+            UsageReader.matchesClaudeTerminalScope(terminal: explicit, usage: canonical, pinsSharedHome: false))
+        XCTAssertFalse(
+            UsageReader.matchesClaudeTerminalScope(terminal: implicit, usage: explicit, pinsSharedHome: false))
+        XCTAssertFalse(
+            UsageReader.matchesClaudeTerminalScope(terminal: explicit, usage: explicit, pinsSharedHome: true))
+        XCTAssertTrue(
+            UsageReader.matchesClaudeTerminalScope(terminal: implicit, usage: explicit, pinsSharedHome: true))
+        let staging = FakeEnvironment(["USER_TYPE": "ant", "USE_STAGING_OAUTH": "1"])
+        XCTAssertFalse(
+            UsageReader.matchesClaudeTerminalScope(terminal: implicit, usage: staging, pinsSharedHome: false))
+    }
+
     func testPreflightChecksOnlyRequestedActiveCardAndUsesLatestThreshold() async throws {
         let defaults = defaults()
         enableSoftLimit(defaults)
