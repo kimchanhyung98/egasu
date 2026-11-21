@@ -1,7 +1,9 @@
 import Foundation
 
 extension ClaudeProvider {
-    struct ProfileScopeRemoved: Error {}
+    struct ProfileScopeRemoved: Error {
+        let persisted: Bool
+    }
 
     func fetchLiveUsage(
         state: inout ClaudeCredentialState,
@@ -329,7 +331,7 @@ extension ClaudeProvider {
         AppLog.info(LogTag.auth("claude"), "token refresh ok (rotated)")
         // 회전한 인증을 저장한 뒤 새 권한으로 프로필·사용량 재시도 여부 확인.
         guard authStore.liveUsageAvailability(state) != .missingProfileScope else {
-            throw ProfileScopeRemoved()
+            throw ProfileScopeRemoved(persisted: persisted)
         }
         return RefreshedAccess(accessToken: decoded.accessToken, persisted: persisted)
     }

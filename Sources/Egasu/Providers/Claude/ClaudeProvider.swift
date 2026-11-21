@@ -196,6 +196,7 @@ final class ClaudeProvider: ProviderRuntime {
                     credentialGeneration: &credentialGeneration,
                     rejectedGrant: &rejectedGrant,
                     fallbackWarning: desktopFallbackWarning,
+                    canReloadCredentials: credentialReloadsRemaining > 0,
                     requestedAt: requestedAt
                 )
                 AppLog.info(LogTag.plugin("claude"), "refresh end (\(Int(Date().timeIntervalSince(start) * 1000))ms)")
@@ -241,6 +242,7 @@ final class ClaudeProvider: ProviderRuntime {
         credentialGeneration: inout ClaudeCredentialGeneration,
         rejectedGrant: inout ClaudeUsageStateStore.AuthenticationFailure?,
         fallbackWarning: ClaudeAuthError?,
+        canReloadCredentials: Bool,
         requestedAt: Date
     ) async throws -> ProviderSnapshot {
         var state = initialState
@@ -261,7 +263,8 @@ final class ClaudeProvider: ProviderRuntime {
                     rejectedGrant: &rejectedGrant,
                     requestedAt: requestedAt
                 )
-            } catch is ProfileScopeRemoved {
+            } catch let change as ProfileScopeRemoved {
+                if change.persisted && canReloadCredentials { throw ClaudeAuthError.credentialsChanged }
                 availability = .missingProfileScope
             }
         }
