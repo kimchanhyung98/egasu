@@ -475,13 +475,10 @@ final class CursorProvider: ProviderRuntime {
     private func snapshot(
         _ mapped: CursorMappedUsage, observedAt: Date, accessToken: String
     ) async -> ProviderSnapshot {
-        // 회복 알림은 청구 주기가 없는 구독 한도도 사용. 소프트 한도는 관측을 투영할 때 주기를 별도 검사.
-        let hasSubscriptionQuota = widgetDescriptors.contains { descriptor in
-            !descriptor.softLimitWindows.isEmpty
-                && mapped.lines.contains { line in
-                    guard case .progress(let label, _, _, _, _, _, _) = line else { return false }
-                    return label == descriptor.metricLabel
-                }
+        // 이력 추가 전 진행률 행은 서버가 보낸 구독 또는 추가 지출 한도.
+        let hasMeasuredQuota = mapped.lines.contains { line in
+            if case .progress = line { return true }
+            return false
         }
         var lines = mapped.lines
         let usageHistory = await appendSpendLines(to: &lines, accessToken: accessToken)
@@ -494,7 +491,7 @@ final class CursorProvider: ProviderRuntime {
             warning: usageHistory == nil ? "Cursor usage history could not be refreshed. Try again later." : nil,
             isDegraded: refreshIsDegraded ? true : nil,
             incompleteQuotaWindows: mapped.incompleteQuotaWindows.isEmpty ? nil : mapped.incompleteQuotaWindows,
-            liveQuotaObservedAt: hasSubscriptionQuota ? observedAt : nil
+            liveQuotaObservedAt: hasMeasuredQuota ? observedAt : nil
         )
         snapshot.producedByIdentityKey = CursorUsageClient.session(from: accessToken)?.userID
         snapshot.liveQuotaAccountKey = snapshot.producedByIdentityKey
