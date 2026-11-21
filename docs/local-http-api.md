@@ -135,7 +135,7 @@ Antigravity는 잔여 비율에서 계산하므로 `used`·`remaining`이 정수
 | 프로바이더 | 리소스 키 |
 | --- | --- |
 | Claude | `session`, `weekly`, `sonnet`, `fable`, `extraUsage` |
-| Codex | `session`, `weekly`, `monthly`, `spark`, `sparkWeekly`, `sparkMonthly`, `credits`, `creditValue`, `rateLimitResets` |
+| Codex | `session`, `weekly`, `monthly`, `spark`, `sparkWeekly`, `sparkMonthly`, `credits`, `creditValue`, `individualCredits`, `rateLimitResets` |
 | Cursor | `totalUsage`, `autoUsage`, `apiUsage`, `onDemand`, `requests`, `credits` |
 | Antigravity | `geminiSession`, `geminiWeekly`, `nonGeminiSession`, `nonGeminiWeekly`, `argonWeekly` |
 | Copilot | `premiumCredits`, `extraUsage`, `orgCredits`, `orgSpend`, `chat`, `completions` |

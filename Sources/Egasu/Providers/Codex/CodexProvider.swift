@@ -51,6 +51,9 @@ final class CodexProvider: ProviderRuntime {
             .percent(id: "\(provider.id).monthly", provider: provider, title: "Monthly")
                 .supportingSoftLimit(.monthly)
                 .exportingLimit("monthly", unit: "percent"),
+            .boundedCount(id: "\(provider.id).individualCredits", provider: provider, title: "Individual Credits",
+                          limit: 1, suffix: "credits")
+                .exportingLimit("individualCredits", unit: "credits"),
             .usageTrend(provider: provider)
                 .exportingHistory(
                     scope: .machineLocal,

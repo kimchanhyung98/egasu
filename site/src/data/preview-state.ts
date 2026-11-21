@@ -237,7 +237,13 @@ export function restorePreviewState(value: unknown): PreviewState {
     }
     const legacyPrivate = scope !== 'shared' && !order.some((id) => rows.find((row) => row.id === id)!.shared);
     const missing = legacyPrivate ? rows.filter((row) => !row.shared).map((row) => row.id) : valid;
-    state.metricOrder[key] = [...order, ...missing.filter((id) => !order.includes(id))];
+    const merged = [...order, ...missing.filter((id) => !order.includes(id))];
+    const credits = 'codex.individualCredits';
+    if (merged.includes(credits) && !order.includes(credits)) {
+      merged.splice(merged.indexOf(credits), 1);
+      merged.splice(merged.indexOf('codex.monthly') + 1, 0, credits);
+    }
+    state.metricOrder[key] = merged;
   }
   for (const [key, candidates] of [['providerOrder', state.providerOrder]] as const) {
     const order = stored[key];
