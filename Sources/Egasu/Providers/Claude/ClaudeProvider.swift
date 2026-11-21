@@ -252,30 +252,27 @@ final class ClaudeProvider: ProviderRuntime {
             lines: []
         )
 
-        var warning: String?
-        var warningPresentation: [LocalizedMessage] = []
+        var availability = authStore.liveUsageAvailability(state)
+        if availability == .available {
+            do {
+                mapped = try await fetchLiveUsage(
+                    state: &state,
+                    credentialGeneration: &credentialGeneration,
+                    rejectedGrant: &rejectedGrant,
+                    requestedAt: requestedAt
+                )
+            } catch is ProfileScopeRemoved {
+                availability = .missingProfileScope
+            }
+        }
+        var warning = mapped.warning
+        var warningPresentation = mapped.warningPresentation.map { [$0] } ?? []
         var authenticationIssue: ProviderAuthenticationIssue?
-        switch authStore.liveUsageAvailability(state) {
-        case .available:
-            mapped = try await fetchLiveUsage(
-                state: &state,
-                credentialGeneration: &credentialGeneration,
-                rejectedGrant: &rejectedGrant,
-                requestedAt: requestedAt
-            )
-            // rate-limited notice는 mapped usage에 실어 header 삼각형까지 전달 — badge/note 라인이 레이아웃에 없어도 표시.
-            warning = mapped.warning
-            warningPresentation = mapped.warningPresentation.map { [$0] } ?? []
-        case .missingProfileScope:
-            // `user:profile` scope 없는 로그인(`claude setup-token` 계열) — session/weekly 바를 조용히
-            // 비우는 대신 로그 + header 경고로 재로그인 안내; 로컬 로그 spend 타일은 영향 없음.
-            AppLog.warn(LogTag.plugin("claude"), "live usage unavailable: credential lacks the user:profile scope (inference-only token); re-login with `claude` to restore session/weekly limits")
+        if availability == .missingProfileScope {
+            AppLog.warn(LogTag.plugin("claude"), "live usage unavailable: credential lacks the user:profile scope")
             warning = ClaudeUsageMapper.missingProfileScopeWarning
             warningPresentation = [.init(ClaudeUsageMapper.missingProfileScopeWarning)]
             authenticationIssue = .signInNeeded
-        case .inferenceOnlyToken:
-            // 명시적 CLAUDE_CODE_OAUTH_TOKEN은 설계상 inference 전용 — 조회·안내 대상 아님, spend 타일은 유지.
-            break
         }
         if let fallbackWarning, authenticationIssue == nil || fallbackWarning == .desktopPermissionRequired {
             warning = fallbackWarning.localizedDescription

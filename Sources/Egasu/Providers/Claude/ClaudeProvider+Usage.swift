@@ -1,6 +1,8 @@
 import Foundation
 
 extension ClaudeProvider {
+    struct ProfileScopeRemoved: Error {}
+
     func fetchLiveUsage(
         state: inout ClaudeCredentialState,
         credentialGeneration: inout ClaudeCredentialGeneration,
@@ -197,6 +199,8 @@ extension ClaudeProvider {
             }
             // 프로필 신원은 사용량 저장 키로만 사용. 로컬 credential 세대와 홈 메타데이터는 변경하지 않음.
             return identity
+        } catch let change as ProfileScopeRemoved {
+            throw change
         } catch {
             try ProviderAuthRetry.rethrowCancellation(error)
             AppLog.error(LogTag.plugin("claude"), "usage account verification failed")
@@ -323,6 +327,10 @@ extension ClaudeProvider {
                                   localContext: "failed to persist rotated credentials; using the refreshed token for this session only")
         }
         AppLog.info(LogTag.auth("claude"), "token refresh ok (rotated)")
+        // 회전한 인증을 저장한 뒤 새 권한으로 프로필·사용량 재시도 여부 확인.
+        guard authStore.liveUsageAvailability(state) != .missingProfileScope else {
+            throw ProfileScopeRemoved()
+        }
         return RefreshedAccess(accessToken: decoded.accessToken, persisted: persisted)
     }
 
