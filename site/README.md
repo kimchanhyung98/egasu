@@ -273,13 +273,15 @@ WebKit의 초기 화면 보정과 입력 검사 간 경합 방지.
 기본 동작 줄이기 검사와 실제 계정 추가 애니메이션·빠른 취소 검사 병행.
 실패 시 `test-results/`에 스크린샷·trace, `playwright-report/`에 HTML 보고서 저장.
 런타임 오류와 예상하지 않은 CSP 오류는 실패 처리.
-잘못된 XML 검사에서만 Chromium 자체 `parsererror` 스타일의 두 CSP 차단 메시지를 정확한 해시로 검증.
+잘못된 XML 입력에서만 브라우저가 생성한 스타일의 CSP 진단을 최대 두 건 허용.
+Chromium은 알려진 해시, WebKit은 해당 진단 문구로 확인.
 `.github/workflows/site.yml`은 GitHub Actions의 Playwright 공식 Docker 이미지에서 같은 검증과 조립 수행. 배포 동작 없음.
-이미지는 `mcr.microsoft.com/playwright:v1.64.1-noble`, Node는 24 사용.
-브라우저·시스템 라이브러리는 이미지에 포함되어 CI의 별도 `playwright install` 단계 생략. 프로젝트 의존성은 `npm ci`로 설치.
+`site/package-lock.json`에 기록된 `playwright-core` 버전으로 Ubuntu Noble 이미지 선택.
+Node는 24 사용.
+브라우저·시스템 라이브러리는 이미지에 포함되어 CI의 별도 `playwright install` 단계 생략. 버전 조회와 검증에 같은 커밋을 사용.
+프로젝트 의존성은 `npm ci`로 설치.
 컨테이너는 GitHub Actions 홈 디렉터리와 같은 UID 1001로 실행하여 Firefox의 root·홈 소유권 충돌 방지.
 사이트 빌드·미리보기 서버·E2E가 같은 컨테이너 안에서 실행되므로 호스트 포트 공개 불필요.
-`@playwright/test`를 갱신할 때 workflow의 이미지 버전도 함께 갱신.
 Docker 안의 WebKit 검사는 Linux 환경이며 실제 macOS Safari·iPhone 검증과 별개.
 구성 기준은 [Playwright Docker 안내](https://playwright.dev/docs/docker)와 [GitHub Actions 컨테이너 예제](https://playwright.dev/docs/ci#via-containers).
 

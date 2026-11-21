@@ -7,6 +7,7 @@ egasu는 Mac 앱의 표준 업데이트 프레임워크인 [Sparkle](https://spa
 
 이름 변경 첫 정식 릴리스는 `egasu 1.0.0`이며 태그는 `v1.0.0`.
 설치 파일은 `egasu-1.0.0.dmg`, 앱 이름은 `egasu.app`, 터미널 명령은 `egasu`.
+Spotlight가 앱을 색인하면 `openusage`와 `usage` 검색 결과에도 `egasu.app` 표시.
 기존 설치의 설정·계정·iCloud 기록을 이어 쓰기 위해 Apple Bundle ID와 iCloud 컨테이너 ID 유지.
 `openusage.*` 저장 키·API 스키마, Keychain 서비스 이름, 기존 설정·데이터 경로도 유지.
 이름 변경 때문에 계정을 다시 등록하거나 설정 파일을 옮길 필요 없음.
