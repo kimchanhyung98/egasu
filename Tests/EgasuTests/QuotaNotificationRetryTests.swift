@@ -65,6 +65,36 @@ final class QuotaNotificationRetryTests: XCTestCase {
         XCTAssertEqual(delivered.count, 1)
     }
 
+    func testFailedQuotaRecoveryRetriesUntilDelivered() async {
+        let evaluator = QuotaNotificationEvaluator()
+        let recoveryID = "codex.quotaRecovered"
+        var attempts: [String] = []
+        var delivered: [String] = []
+        let post: QuotaNotificationEvaluator.Post = { id, _, _, _, isCurrent in
+            guard isCurrent() else { return false }
+            attempts.append(id)
+            guard attempts.count > 1 else { return false }
+            delivered.append(id)
+            return true
+        }
+
+        await evaluate(evaluator, used: 100, enabled: [.quotaRecovered], account: "a", post: post)
+        XCTAssertTrue(attempts.isEmpty)
+        XCTAssertTrue(delivered.isEmpty)
+
+        await evaluate(evaluator, used: 20, enabled: [.quotaRecovered], account: "a", post: post)
+        XCTAssertEqual(attempts, [recoveryID])
+        XCTAssertTrue(delivered.isEmpty)
+
+        await evaluate(evaluator, used: 10, enabled: [.quotaRecovered], account: "a", post: post)
+        XCTAssertEqual(attempts, [recoveryID, recoveryID])
+        XCTAssertEqual(delivered, [recoveryID])
+
+        await evaluate(evaluator, used: 5, enabled: [.quotaRecovered], account: "a", post: post)
+        XCTAssertEqual(attempts, [recoveryID, recoveryID])
+        XCTAssertEqual(delivered, [recoveryID])
+    }
+
     private func evaluate(
         _ evaluator: QuotaNotificationEvaluator, used: Double, enabled: Set<PaceMilestone>, account: String? = nil,
         post: QuotaNotificationEvaluator.Post
