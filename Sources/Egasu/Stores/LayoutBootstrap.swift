@@ -43,7 +43,7 @@ enum LayoutBootstrap {
         for (cardID, ids) in order {
             let family = ProviderAccountID.family(of: cardID)
             let valid = registry.canonicalMetricIDs(family: family)
-            order[cardID] = LayoutOrdering.insertingNewMonthlyMetrics(into: ids, validIDs: valid, cardID: cardID)
+            order[cardID] = LayoutOrdering.insertingNewAnchoredMetrics(into: ids, validIDs: valid, cardID: cardID)
         }
         if copiesFamily {
             order = LayoutOrdering.copyingOrderToCards(order, accountCards: cards.filter(ProviderAccountID.isAccountCard).sorted())
@@ -79,14 +79,14 @@ enum LayoutBootstrap {
                     }
                 }
                 disabled = existingIDs.subtracting(enabled)
-                // 이전 켜짐 목록에 존재할 수 없었던 월간 지표는 새 지표의 표시 기본값 적용.
+                // 이전 켜짐 목록에 존재할 수 없었던 지표는 새 지표의 표시 기본값 적용.
                 let seededDefaults = persistence.loadSeededDefaults()
                 let known = Set(
                     (savedOrder.values.flatMap { $0 } + (seededDefaults ?? []))
                         .map(ProviderAccountID.canonicalMetricID))
-                let newMonthly = Set(defaults.metricIDs).intersection(LayoutOrdering.weeklyByMonthly.keys).subtracting(
+                let newMetrics = Set(defaults.metricIDs).intersection(LayoutOrdering.anchoredMetrics.map(\.id)).subtracting(
                     known)
-                disabled = disabled.filter { !newMonthly.contains(ProviderAccountID.canonicalMetricID($0)) }
+                disabled = disabled.filter { !newMetrics.contains(ProviderAccountID.canonicalMetricID($0)) }
                 if let seeded = seededDefaults {
                     let unseenDefaults = Set(defaults.metricIDs)
                         .intersection(DefaultLayout.legacyV1DefaultMetricIDs)
@@ -123,28 +123,29 @@ enum LayoutBootstrap {
 
 /// startup과 라이브 layout 변경이 공유하는 순수 ordering·default helper
 enum LayoutOrdering {
-    static let weeklyByMonthly = [
-        "codex.monthly": "codex.weekly", "codex.sparkMonthly": "codex.sparkWeekly",
-        "grok.monthly": "grok.weekly", "zai.monthly": "zai.weekly"
+    // 선행 행부터 삽입해 기존 버전을 건너뛰어도 주간 → 월간 → 개인 크레딧 순서 유지.
+    static let anchoredMetrics = [
+        (id: "codex.monthly", after: "codex.weekly"), (id: "codex.individualCredits", after: "codex.monthly"),
+        (id: "codex.sparkMonthly", after: "codex.sparkWeekly"), (id: "grok.monthly", after: "grok.weekly"),
+        (id: "zai.monthly", after: "zai.weekly")
     ]
 
-    /// 기존 순서와 공통 행 위치를 복원한 뒤 월간 행을 넣을 수 있도록 새 기본 행 삽입을 연기.
-    static func deferringMonthlyMetrics(_ canonicalIDs: [String]) -> [String] {
+    /// 저장 순서와 공통 행을 복원한 뒤 선행 행 바로 아래에 새 지표 삽입.
+    static func deferringAnchoredMetrics(_ canonicalIDs: [String]) -> [String] {
         canonicalIDs.filter { id in
-            guard let weekly = weeklyByMonthly[id] else { return true }
-            return !canonicalIDs.contains(weekly)
+            !anchoredMetrics.contains { $0.id == id && canonicalIDs.contains($0.after) }
         }
     }
 
-    /// 저장 순서에 이미 있는 월간 지표는 사용자가 옮긴 위치 유지.
-    static func insertingNewMonthlyMetrics(into saved: [String], validIDs: [String], cardID: String) -> [String] {
+    /// 이미 저장된 지표는 사용자가 정한 위치 유지.
+    static func insertingNewAnchoredMetrics(into saved: [String], validIDs: [String], cardID: String) -> [String] {
         var result = saved
         let known = Set(saved.map(ProviderAccountID.canonicalMetricID))
-        for (monthly, weekly) in weeklyByMonthly where !known.contains(monthly) && validIDs.contains(monthly) {
-            guard let index = result.firstIndex(where: { ProviderAccountID.canonicalMetricID($0) == weekly }) else {
+        for (id, after) in anchoredMetrics where !known.contains(id) && validIDs.contains(id) {
+            guard let index = result.firstIndex(where: { ProviderAccountID.canonicalMetricID($0) == after }) else {
                 continue
             }
-            result.insert(cardMetricID(monthly, on: cardID), at: result.index(after: index))
+            result.insert(cardMetricID(id, on: cardID), at: result.index(after: index))
         }
         return result
     }
@@ -257,7 +258,7 @@ enum LayoutOrdering {
         for provider in registry.providers {
             let family = ProviderAccountID.family(of: provider.id)
             // 새 월간 행은 옛 On Demand 순서를 평탄화한 다음 대응 주간 뒤에 삽입.
-            let valid = deferringMonthlyMetrics(registry.canonicalMetricIDs(family: family))
+            let valid = deferringAnchoredMetrics(registry.canonicalMetricIDs(family: family))
             if let savedIDs = fallback[family] {
                 var seen = Set<String>()
                 var retained = savedIDs.filter { seen.insert($0).inserted }

@@ -174,6 +174,7 @@ final class OpenCodeSharedUsageTests: XCTestCase {
         let timestamp = Int((nativeAt ?? now.addingTimeInterval(-3600)).timeIntervalSince1970 * 1000)
         let payload = "[[\(timestamp),1,{\"total\":100},\"glm-5.2\",\"opencode-go\"]]"
         return OpenCodeProvider(
+            http: RoutingHTTPClient { _ in throw URLError(.timedOut) },
             authStore: OpenCodeAuthStore(
                 files: FakeFiles(hasGoKey ? ["/fixture/auth.json": #"{"opencode-go":{"type":"api","key":"fixture"}}"#] : [:]),
                 environment: FakeEnvironment(["OPENCODE_DATA_DIR": "/fixture"]),

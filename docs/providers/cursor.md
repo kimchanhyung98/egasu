@@ -14,6 +14,12 @@ Cursor 앱 또는 CLI의 기존 로그인으로 Cursor 요금제 사용량 추�
 | Extra Usage | 온디맨드 지출 — 가능하면 사용자 단위, 아니면 팀 집계이며 Cursor에서 한도를 반환하면 미터로 표시 |
 
 Cursor가 요금제 이름을 보고하면 egasu의 프로바이더 이름 옆에 표시.
+Cursor·Grok·X 통합 계정은 주간 공유 한도를 Total Usage 한 줄로 표시.
+요금제 조회에 실패하면 같은 계정에서 확인한 통합 판정을 유지하고, 통합 여부를 확인하지 못했으면 Stripe 응답에서 확인.
+Credits는 통합 계정의 선불 잔액, Extra Usage는 대시보드가 보고한 월간 추가 사용액.
+사용량·이력 조회 도중 Cursor 로그인이 바뀌면 이전 계정의 사용량·잔액 제외.
+추가 사용을 끄거나 상한이 0이면 해당 행을 숨김.
+추가 지출 상한이 없으면 사용액만 표시하며, 이 지출은 소프트 한도 판정에서 제외.
 구독 한도만 있고 사용량·잔여량·사용률이 모두 없으면 해당 지표 생략.
 사용량이나 사용률이 0으로 명시되면 그대로 표시.
 소프트 한도는 확인된 청구 주기가 7일 또는 한 달(28~31일)인 Total Usage·Requests·Auto Usage·API Usage에 적용.
@@ -85,6 +91,7 @@ Cursor가 활성화돼 있으면 실행 시, 활성화 시, 5분마다, 대시�
 
 ## 내부 동작
 
+통합 계정의 선불 잔액은 `api2.cursor.sh/aiserver.v1.DashboardService/GetComplatCreditBalance`, 월간 추가 사용액은 `cursor.com/api/dashboard/v2/usage-status?scope=user`에서 조회.
 `api2.cursor.sh`의 Connect RPC(대시보드 사용량), Enterprise/팀 계정용 `cursor.com/api/usage`와 `cursor.com/api/usage-summary`의 두 REST 응답을 조합하는 대체 경로, `cursor.com/api/auth/stripe`의 Stripe 잔액, `cursor.com/api/dashboard/get-filtered-usage-events`의 페이지별 사용 이벤트.
 대체 경로는 포함 요청 허용량과 구조화된 백분율 및 사용자 단위 온디맨드 지출을 결합하며, 어느 REST 응답도 단독으로 전체 계정 스냅샷으로 취급하지 않음.
 기본 대시보드 사용량 요청은 401/403 후 토큰을 갱신해 한 번 재시도하며, 다른 대체 응답을 사용할 수 있으면 선택적 엔드포인트 실패를 치명적 오류로 처리하지 않고 진단 로그에 기록.

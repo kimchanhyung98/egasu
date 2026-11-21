@@ -3,6 +3,48 @@ import XCTest
 
 extension ClaudeDesktopAuthStoreTests {
     @MainActor
+    func testLosingCLIProfileScopeFallsBackToDesktopDuringSameRefresh() async throws {
+        let account = "11111111-1111-4111-8111-111111111111"
+        let fixture = try makeFixture(
+            activeOrganization: organization,
+            activeAccountUUID: account,
+            v2: [cacheKey(organization: organization): tokenEntry("desktop-token", expiresIn: 3_600)]
+        )
+        fixture.files.files["/tmp/claude/.claude.json"] = """
+            {"oauthAccount":{"accountUuid":"\(account)","organizationUuid":"\(organization)"}}
+            """
+        let path = "/tmp/claude/.credentials.json"
+        fixture.files.files[path] = """
+            {"claudeAiOauth":{"accessToken":"old","refreshToken":"refresh","expiresAt":1,"scopes":["user:profile"]}}
+            """
+        let http = RoutingHTTPClient { request in
+            if request.url.path == "/v1/oauth/token" {
+                let body = #"{"access_token":"fresh","refresh_token":"rotated","scope":"user:inference"}"#
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(body.utf8))
+            }
+            XCTAssertEqual(request.headers["Authorization"], "Bearer desktop-token")
+            return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"five_hour":{"utilization":42}}"#.utf8))
+        }
+        let now = now
+        let runtime = ClaudeProvider(
+            authStore: ClaudeAuthStore(
+                environment: FakeEnvironment(["CLAUDE_CONFIG_DIR": "/tmp/claude"]),
+                files: fixture.files, keychain: FakeKeychain(), desktop: fixture.store, now: { now }),
+            usageClient: ClaudeUsageClient(httpClient: http), usageStateStore: isolatedClaudeUsageStore(),
+            logUsageScanner: ClaudeLogFixture.scanner(home: nil), includeSharedUsage: false,
+            now: { now }, pricing: { TestPricing.bundled })
+
+        let snapshot = await runtime.refresh()
+
+        XCTAssertEqual(http.requests.map(\.url.path), ["/v1/oauth/token", "/api/oauth/usage"])
+        XCTAssertNotNil(snapshot.line(label: "Session"))
+        XCTAssertNil(snapshot.authenticationIssue)
+        let saved = try XCTUnwrap(ClaudeAuthStore.parseCredentials(try fixture.files.readText(path))?.claudeAiOauth)
+        XCTAssertEqual(saved.refreshToken, "rotated")
+        XCTAssertEqual(saved.scopes, ["user:inference"])
+    }
+
+    @MainActor
     func testLegacyDesktopLoginRecoversIdentityWithoutWritingCredentials() async throws {
         let fixture = try makeFixture(
             activeOrganization: organization,
