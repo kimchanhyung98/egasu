@@ -266,7 +266,7 @@ extension ClaudeProvider {
         AppLog.info(LogTag.auth("claude"), "token refresh attempt")
         let decoded: ClaudeRefreshResponse
         do {
-            let response = try await usageClient.refreshToken(refreshToken, config: config)
+            let response = try await usageClient.refreshToken(refreshToken, scopes: state.oauth.scopes, config: config)
             if response.statusCode == 400 || response.statusCode == 401 {
                 let body = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]
                 let errorCode = body?["error"] as? String ?? body?["error_description"] as? String
@@ -292,6 +292,7 @@ extension ClaudeProvider {
             throw error
         }
         AppDiagnostics.record(.credentialRefresh, result: .success, providerID: provider.id)
+        if let scope = decoded.scope { state.oauth.scopes = scope.split(separator: " ").map(String.init) }
         state.oauth.accessToken = decoded.accessToken
         if let refreshToken = decoded.refreshToken {
             state.oauth.refreshToken = refreshToken

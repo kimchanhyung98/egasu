@@ -256,6 +256,7 @@ struct ClaudeAuthStore: Sendable {
         else { return false }
 
         // 같은 저장소에서 다시 읽은 원문에 회전한 값만 적용 — MCP 인증과 CLI 확장 필드 보존.
+        if state.oauth.scopes != saved.oauth.scopes { oauth["scopes"] = state.oauth.scopes }
         if state.oauth.accessToken != saved.oauth.accessToken { oauth["accessToken"] = state.oauth.accessToken }
         if state.oauth.refreshToken != saved.oauth.refreshToken { oauth["refreshToken"] = state.oauth.refreshToken }
         if state.oauth.expiresAt != saved.oauth.expiresAt { oauth["expiresAt"] = state.oauth.expiresAt }
