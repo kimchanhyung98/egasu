@@ -12,6 +12,7 @@ struct StalenessHint: Equatable {
 final class WidgetDataStore {
     private var registry: WidgetRegistry
     private let refreshCoordinator: ProviderRefreshCoordinator
+    private let cache: ProviderSnapshotCache
     private let defaults: UserDefaults
     /// 프로바이더 활성화 여부 조회 — 테스트·미리보기의 기본값은 모두 활성.
     private let isProviderEnabled: @MainActor (String) -> Bool
@@ -141,6 +142,7 @@ final class WidgetDataStore {
         precondition(slowProviderRefreshThreshold >= 0)
         precondition(providerRefreshTimeout.isFinite && providerRefreshTimeout > 0)
         self.registry = registry
+        self.cache = cache
         self.defaults = defaults
         self.isProviderEnabled = isProviderEnabled
         self.orderedDescriptors = orderedDescriptors ?? { registry.descriptors }
@@ -177,6 +179,7 @@ final class WidgetDataStore {
     /// 활성 프로바이더 순차 갱신 — force는 정상 캐시와 실패 대기 우회.
     func refreshAll(force: Bool = false, trigger: RefreshTrigger = .scheduled, cadence: RefreshSetting.Cadence? = nil) async {
         await refreshCoordinator.refreshAll(force: force, trigger: trigger, cadence: cadence)
+        if trigger == .manual { await evaluateNotifications(now: now()) }
     }
 
     @discardableResult
@@ -184,9 +187,11 @@ final class WidgetDataStore {
         providerID: String, force: Bool = false, trigger: RefreshTrigger = .scheduled,
         notifyHistoryChange: Bool = true, codexBinding: CodexResetClaimBinding? = nil
     ) async -> RefreshOutcome {
-        await refreshCoordinator.refresh(
+        let outcome = await refreshCoordinator.refresh(
             providerID: providerID, force: force, trigger: trigger,
             notifyHistoryChange: notifyHistoryChange, codexBinding: codexBinding)
+        if trigger == .manual, outcome == .refreshed { await evaluateNotifications(now: now()) }
+        return outcome
     }
 
     func isRefreshQueued(for providerID: String) -> Bool { refreshCoordinator.isRefreshQueued(for: providerID) }
@@ -336,10 +341,15 @@ final class WidgetDataStore {
             .compactMap { descriptor -> QuotaNotificationEvaluator.Metric? in
                 let data = data(for: descriptor)
                 guard data.isQuotaMeter else { return nil }
+                let reading = settings.quotaRecovered ? recoveryReading(for: descriptor, now: now) : nil
                 return QuotaNotificationEvaluator.Metric(
                     key: "\(descriptor.providerID).\(descriptor.id)",
                     providerID: descriptor.providerID,
-                    data: data
+                    data: data, recoveryReading: reading,
+                    isRecoveryCurrent: {
+                        guard let reading else { return false }
+                        return reading == self.recoveryReading(for: descriptor, now: self.now())
+                    }
                 )
             }
         await notificationEvaluator.evaluate(
@@ -352,6 +362,25 @@ final class WidgetDataStore {
             },
             post: postNotification
         )
+    }
+
+    /// 캐시와 다른 Mac의 합산 자료를 제외하고 현재 계정의 실측 한도만 알림에 사용.
+    private func recoveryReading(for descriptor: WidgetDescriptor, now: Date) -> QuotaNotificationEvaluator
+        .RecoveryReading?
+    {
+        let id = descriptor.providerID
+        // 회복 대상으로 선언한 행은 실측 consumption 한 종류만 사용. 혼합·추정 리소스는 비교하지 않음.
+        guard descriptor.limitResources.count == 1, let resource = descriptor.limitResources.first,
+            resource.kind == .consumption, !resource.estimated,
+            refreshResults[id] == .succeeded, let snapshot = refreshCoordinator.localSnapshots[id],
+            let account = snapshot.liveQuotaAccountKey, let observed = snapshot.liveQuotaObservedAt, observed <= now,
+            now.timeIntervalSince(observed) < RefreshSetting.interval(for: id),
+            !cache.isQuotaInvalidated(providerID: id, observedAt: observed),
+            let line = snapshot.line(label: descriptor.metricLabel),
+            case let .progress(_, used, limit, _, reset, _, _) = line,
+            used.isFinite, used >= 0, limit.isFinite, limit > 0, reset.map({ $0 > now }) != false
+        else { return nil }
+        return .init(account: account, isExhausted: used >= limit)
     }
 
     /// 프로바이더별 현재 조회 결과 — 일괄 조회 요약에 사용.

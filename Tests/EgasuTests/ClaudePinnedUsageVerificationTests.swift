@@ -49,7 +49,12 @@ final class ClaudePinnedUsageVerificationTests: XCTestCase {
             XCTAssertEqual(http.paths, ["/api/oauth/profile", "/api/oauth/usage"])
             let saved = try await store.acquire(accountKey: "acct-a|org-a", usageURL: auth.oauthConfig().usageURL)
                 .read()
-            XCTAssertEqual(saved.lastGood, result)
+            XCTAssertEqual(
+                result.liveQuotaAccountKey, UsageTimerObservation.accountKey(family: "claude", identity: "acct-a|org-a")
+            )
+            var expectedPersisted = result
+            expectedPersisted.liveQuotaAccountKey = nil
+            XCTAssertEqual(saved.lastGood, expectedPersisted)
             XCTAssertNotNil(saved.lastGood?.quotaObservedAt)
         }
     }
@@ -117,6 +122,7 @@ final class ClaudePinnedUsageVerificationTests: XCTestCase {
         XCTAssertEqual(result.quotaObservedAt, original.lastGood?.quotaObservedAt)
         XCTAssertEqual(result.retryAfter, original.retryAfter)
         XCTAssertNil(result.liveQuotaObservedAt)
+        XCTAssertNil(result.liveQuotaAccountKey)
         let saved = try await store.acquire(accountKey: "acct-a|org-a", usageURL: auth.oauthConfig().usageURL).read()
         XCTAssertEqual(saved.lastGood, original.lastGood)
         XCTAssertEqual(saved.completedAt, original.completedAt)
@@ -169,6 +175,11 @@ final class ClaudePinnedUsageVerificationTests: XCTestCase {
         XCTAssertEqual(http.paths.filter { $0.hasSuffix("/usage") }.count, 1)
         XCTAssertEqual(secondResult.quotaObservedAt, firstResult.quotaObservedAt)
         XCTAssertEqual([firstResult.liveQuotaObservedAt, secondResult.liveQuotaObservedAt].compactMap { $0 }.count, 1)
+        let fresh = try XCTUnwrap([firstResult, secondResult].first { $0.liveQuotaObservedAt != nil })
+        XCTAssertNotNil(fresh.liveQuotaAccountKey)
+        XCTAssertNil([firstResult, secondResult].first { $0.liveQuotaObservedAt == nil }?.liveQuotaAccountKey)
+        let persisted = try JSONDecoder().decode(ClaudeMappedUsage.self, from: JSONEncoder().encode(fresh))
+        XCTAssertNil(persisted.liveQuotaAccountKey)
     }
 
     func testPinnedLoginChangeDuringProfileDoesNotSendUsageOrSaveQuota() async throws {

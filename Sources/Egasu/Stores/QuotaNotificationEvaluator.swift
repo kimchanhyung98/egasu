@@ -7,11 +7,18 @@ import Foundation
 final class QuotaNotificationEvaluator {
     typealias Post = @MainActor (String, String, String, String, @MainActor () -> Bool) async -> Bool
 
+    struct RecoveryReading: Equatable {
+        let account: String
+        let isExhausted: Bool
+    }
+
     /// store가 이미 resolve한 이번 pass의 enabled·bounded·visible metric 하나
     struct Metric {
         let key: String
         let providerID: String
         let data: WidgetData
+        var recoveryReading: RecoveryReading? = nil
+        var isRecoveryCurrent: @MainActor () -> Bool = { true }
     }
 
     private var notificationState: [String: NotificationState] = [:]
@@ -55,7 +62,7 @@ final class QuotaNotificationEvaluator {
             let windowChange = PaceNotificationLogic.windowChange(
                 from: previous, used: data.used, resetsAt: data.resetsAt, period: period, now: now)
             let resetAdvanced = data.hasData && windowChange != .unchanged
-            let result = PaceNotificationLogic.transitions(
+            var result = PaceNotificationLogic.transitions(
                 state: state,
                 severity: data.severity,
                 used: data.used,
@@ -66,6 +73,18 @@ final class QuotaNotificationEvaluator {
                 previous: previous,
                 now: now
             )
+            // 같은 계정의 직접 관측만 비교. 조회 실패·추정값·타이머 경과는 회복 신호에서 제외.
+            if !isOn(.quotaRecovered) {
+                result.newState.exhaustedAccount = nil
+            } else if let reading = metric.recoveryReading {
+                if reading.isExhausted {
+                    result.newState.exhaustedAccount = reading.account
+                } else if previous.exhaustedAccount == reading.account {
+                    result.fire.append(.quotaRecovered)
+                } else {
+                    result.newState.exhaustedAccount = nil
+                }
+            }
             if !result.fire.isEmpty || resetAdvanced || Self.isPositiveResetMovement(resetDelta) {
                 AppLog.debug(.notifications, "decision \(key): metric=\(data.title) state=\(Self.notificationStateDescription(state)) bucket=\(Self.bucketDescription(currentBucket)) previousBucket=\(Self.bucketDescription(previous.previousBucket)) remaining=\(Self.percentDescription(data.remainingFraction)) reset=\(Self.dateDescription(data.resetsAt)) previousReset=\(Self.dateDescription(previous.resetsAt)) resetDelta=\(Self.resetDeltaDescription(resetDelta)) resetReason=\(Self.resetReasonDescription(delta: resetDelta, advanced: resetAdvanced)) primed=\(previous.primed) previousSeverity=\(Self.severityDescription(previous.previousSeverity)) severity=\(Self.severityDescription(data.severity)) firedBefore=\(Self.milestoneDescription(previous.firedMilestones)) fire=\(Self.milestoneDescription(result.fire)) newBucket=\(Self.bucketDescription(result.newState.previousBucket)) newFired=\(Self.milestoneDescription(result.newState.firedMilestones)) on=\(Self.milestoneDescription(PaceMilestone.allCases.filter(isOn)))")
             }
@@ -79,17 +98,22 @@ final class QuotaNotificationEvaluator {
                     next.firedMilestones.insert(milestone)
                     continue
                 }
-                let delivered = isOn(milestone) && isProviderEnabled(metric.providerID)
-                    ? await deliver(milestone, data: data, providerID: metric.providerID,
-                                    providerName: providerName, isCurrent: {
-                                        self.generationsByProvider[metric.providerID, default: 0] == boundGeneration
-                                            && isOn(milestone) && isProviderEnabled(metric.providerID)
-                                    }, post: post)
+                let delivered =
+                    isOn(milestone) && isProviderEnabled(metric.providerID)
+                    ? await deliver(
+                        milestone, data: data, providerID: metric.providerID,
+                        providerName: providerName,
+                        isCurrent: {
+                            self.generationsByProvider[metric.providerID, default: 0] == boundGeneration
+                                && isOn(milestone) && isProviderEnabled(metric.providerID)
+                                && (milestone != .quotaRecovered || metric.isRecoveryCurrent())
+                        }, post: post)
                     : false
                 guard generationsByProvider[metric.providerID, default: 0] == boundGeneration else {
                     continue metricLoop
                 }
                 if delivered {
+                    if milestone == .quotaRecovered { next.exhaustedAccount = nil }
                     if milestone.isPace { paceDelivered = true }
                     if milestone.isLevel { levelDelivered = true }
                     next.firedMilestones.insert(milestone)

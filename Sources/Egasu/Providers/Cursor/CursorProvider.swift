@@ -475,7 +475,14 @@ final class CursorProvider: ProviderRuntime {
     private func snapshot(
         _ mapped: CursorMappedUsage, observedAt: Date, accessToken: String
     ) async -> ProviderSnapshot {
-        let quotaObservedAt = hasSoftLimitQuota(in: mapped.lines) ? observedAt : nil
+        // 회복 알림은 청구 주기가 없는 구독 한도도 사용. 소프트 한도는 관측을 투영할 때 주기를 별도 검사.
+        let hasSubscriptionQuota = widgetDescriptors.contains { descriptor in
+            !descriptor.softLimitWindows.isEmpty
+                && mapped.lines.contains { line in
+                    guard case .progress(let label, _, _, _, _, _, _) = line else { return false }
+                    return label == descriptor.metricLabel
+                }
+        }
         var lines = mapped.lines
         let usageHistory = await appendSpendLines(to: &lines, accessToken: accessToken)
         var snapshot = ProviderSnapshot.make(
@@ -487,9 +494,10 @@ final class CursorProvider: ProviderRuntime {
             warning: usageHistory == nil ? "Cursor usage history could not be refreshed. Try again later." : nil,
             isDegraded: refreshIsDegraded ? true : nil,
             incompleteQuotaWindows: mapped.incompleteQuotaWindows.isEmpty ? nil : mapped.incompleteQuotaWindows,
-            liveQuotaObservedAt: quotaObservedAt
+            liveQuotaObservedAt: hasSubscriptionQuota ? observedAt : nil
         )
         snapshot.producedByIdentityKey = CursorUsageClient.session(from: accessToken)?.userID
+        snapshot.liveQuotaAccountKey = snapshot.producedByIdentityKey
         return snapshot
     }
 }

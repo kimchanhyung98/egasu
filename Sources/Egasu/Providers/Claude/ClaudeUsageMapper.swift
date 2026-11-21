@@ -8,8 +8,15 @@ struct ClaudeMappedUsage: Equatable, Sendable, Codable {
     var warningPresentation: LocalizedMessage?
     var hasIncompleteWeeklyQuota: Bool?
     var liveQuotaObservedAt: Date?
+    /// 이번 HTTP 응답의 계정. 디스크에 보관한 last-good 사용량에서는 제외.
+    var liveQuotaAccountKey: String?
     var quotaObservedAt: Date?
     var retryAfter: Date?
+
+    private enum CodingKeys: String, CodingKey {
+        case plan, lines, warning, warningPresentation, hasIncompleteWeeklyQuota, liveQuotaObservedAt, quotaObservedAt,
+            retryAfter
+    }
 }
 
 enum ClaudeUsageMapper {

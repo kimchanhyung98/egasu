@@ -334,6 +334,7 @@ final class CodexProvider: ProviderRuntime {
             }
             try authStore.validateAccountIdentity(live.auth)
         }
+        let binding = CodexResetClaimBinding(authState: authState)
         return ProviderSnapshot.make(
             provider: provider,
             plan: mapped.plan,
@@ -345,7 +346,8 @@ final class CodexProvider: ProviderRuntime {
             isDegraded: refreshIsDegraded ? true : nil,
             incompleteQuotaWindows: mapped.incompleteQuotaWindows.isEmpty ? nil : mapped.incompleteQuotaWindows,
             liveQuotaObservedAt: quota.observedAt,
-            codexResetClaimBinding: CodexResetClaimBinding(authState: authState)
+            liveQuotaAccountKey: binding?.verifiedAccountKey,
+            codexResetClaimBinding: binding
         )
     }
 
