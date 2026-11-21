@@ -111,14 +111,16 @@ export function priorityBoard(state: PreviewState) {
   const warnings = ranked.filter((line) => line.group === 'runningOut');
   const hasShownLimits = lines.some((line) => reportsLimit(line.row));
   const hasReportedLimits = enabledCards.some((card) => cardRows(card).some(reportsLimit));
+  const pinned = lines.filter((line) => line.pinned);
   return {
-    pinned: lines.filter((line) => line.pinned),
+    pinned,
     runningOut: warnings.filter((line) => !line.pinned),
     useItOrLoseIt: ranked.filter((line) => line.group === 'useItOrLoseIt' && !line.pinned),
     usedUp: ranked.filter((line) => line.group === 'usedUp' && !line.pinned),
     pending,
     allClear: !pending.length && !warnings.length && hasShownLimits,
     noLimits: !pending.length && !hasReportedLimits,
+    hiddenLimits: !pending.length && !pinned.length && !hasShownLimits && hasReportedLimits,
   };
 }
 
