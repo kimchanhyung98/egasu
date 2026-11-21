@@ -285,6 +285,24 @@ final class ClaudeAccountIsolationTests: XCTestCase {
         ])
     }
 
+    func testUnsavedScopeLossDoesNotRetryTheConsumedRefreshGrant() async {
+        let original = credentials(access: "old", refresh: "refresh", plan: "pro", expiresAt: 1)
+        let keychain = IsolationFailingKeychain(value: original)
+        let fixture = makeFixture(files: FakeFiles(), keychain: keychain) { request in
+            XCTAssertEqual(request.url.path, "/v1/oauth/token")
+            let body = #"{"access_token":"new","refresh_token":"rotated","scope":"user:inference"}"#
+            return HTTPResponse(statusCode: 200, headers: [:], body: Data(body.utf8))
+        }
+
+        let snapshot = await fixture.provider.refresh()
+
+        XCTAssertEqual(fixture.http.requests.count, 1)
+        XCTAssertEqual(keychain.value, original)
+        XCTAssertEqual(snapshot.isDegraded, true)
+        XCTAssertEqual(snapshot.authenticationIssue, .signInNeeded)
+        XCTAssertEqual(snapshot.warning, ClaudeUsageMapper.missingProfileScopeWarning)
+    }
+
     func testReloginAfterPersistenceFailureDoesNotDegradeNewLoginSnapshot() async {
         let diagnostics = DiagnosticEventRecorder()
         let accountB = credentials(access: "account-b", refresh: "refresh-b", plan: "max")
