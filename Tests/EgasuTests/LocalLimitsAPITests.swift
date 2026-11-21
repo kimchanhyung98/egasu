@@ -9,6 +9,17 @@ final class LocalLimitsAPITests: XCTestCase {
         try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(data)) as? [String: Any])
     }
 
+    @MainActor
+    private func exportedResources(_ runtime: any ProviderRuntime, line: MetricLine) throws -> [String: [String: Any]] {
+        let id = runtime.provider.id
+        let snapshot = ProviderSnapshot.make(provider: runtime.provider, plan: nil, lines: [line], refreshedAt: fetchedAt)
+        let state = LocalUsageAPI.State(enabledOrderedIDs: [id], knownIDs: [id], snapshots: [id: snapshot],
+                                        limitDescriptors: [id: runtime.widgetDescriptors], generatedAt: generatedAt)
+        let root = try json(LocalUsageAPI.respond(method: "GET", path: "/v1/limits", state: state).body)
+        let providers = try XCTUnwrap(root["providers"] as? [String: [String: Any]])
+        return try XCTUnwrap(providers[id]?["resources"] as? [String: [String: Any]])
+    }
+
     func testClaudeExpiryTracksLastQuotaObservationDespiteLocalRefreshAndCooldown() throws {
         let snapshot = ProviderSnapshot(
             providerID: "claude@work", displayName: "Claude", lines: [], refreshedAt: generatedAt,
@@ -31,6 +42,17 @@ final class LocalLimitsAPITests: XCTestCase {
         state.snapshots["claude@work"]?.quotaObservedAt = nil
         state.generatedAt = generatedAt
         XCTAssertEqual(try encoded()["stale"] as? Bool, true)
+    }
+
+    @MainActor
+    func testExportsBusinessCreditsWithoutFlex() throws {
+        let provider = CodexProvider()
+        let line = MetricLine.progress(label: "Individual Credits", used: 898.386, limit: 2500,
+                                       format: .count(suffix: "credits"))
+        let resources = try exportedResources(provider, line: line)
+        XCTAssertEqual(resources["individualCredits"]?["used"] as? Double, 898.386)
+        XCTAssertEqual(resources["individualCredits"]?["unit"] as? String, "credits")
+        XCTAssertNil(resources["credits"])
     }
 
     func testLimitsEnvelopeCarriesRawScalarsAndFreshnessWithoutUIPresentation() throws {
@@ -228,6 +250,17 @@ final class LocalLimitsAPITests: XCTestCase {
     }
 
     @MainActor
+    func testOpenCodeExportsOnlyTheReportedCurrencyOrPercentResource() throws {
+        let provider = OpenCodeProvider()
+        let measured = try exportedResources(provider, line: .progress(label: "Weekly", used: 20, limit: 100, format: .percent))
+        XCTAssertEqual(measured["goWeekly"]?["unit"] as? String, "percent")
+        XCTAssertNil(measured["weekly"])
+        let estimated = try exportedResources(provider, line: .progress(label: "Weekly", used: 6, limit: 30, format: .dollars))
+        XCTAssertEqual(estimated["weekly"]?["estimated"] as? Bool, true)
+        XCTAssertNil(estimated["goWeekly"])
+    }
+
+    @MainActor
     func testEveryProviderDeclaresTheApprovedPublicResourceKeys() {
         let defaults = UserDefaults(suiteName: "LocalLimitsAPITests.\(UUID().uuidString)")!
         let registry = WidgetRegistry.from(ProviderCatalog.make(defaults: defaults))
@@ -238,7 +271,7 @@ final class LocalLimitsAPITests: XCTestCase {
             "claude": ["session", "weekly", "sonnet", "fable", "extraUsage"],
             "codex": [
                 "session", "weekly", "monthly", "spark", "sparkWeekly", "sparkMonthly", "credits", "creditValue",
-                "rateLimitResets"
+                "rateLimitResets", "individualCredits"
             ],
             "cursor": ["totalUsage", "autoUsage", "apiUsage", "onDemand", "requests", "credits"],
             "antigravity": ["geminiSession", "geminiWeekly", "nonGeminiSession", "nonGeminiWeekly", "argonWeekly"],
@@ -247,7 +280,7 @@ final class LocalLimitsAPITests: XCTestCase {
             "grok": ["weekly", "monthly"],
             "kimi": ["session", "weekly", "totalUsage", "extraUsage", "extraUsageBalance"],
             "kiro": ["credits"],
-            "opencode": ["session", "weekly", "monthly"],
+            "opencode": ["session", "weekly", "monthly", "goSession", "goWeekly", "goMonthly"],
             "openrouter": ["credits", "balance", "keyLimit"],
             "zai": ["session", "weekly", "monthly", "webSearches"]
         ]

@@ -71,7 +71,7 @@ enum LocalLimitsAPI {
             var resources: [String: WireResource] = [:]
             for descriptor in descriptors {
                 guard let line = snapshot.line(label: descriptor.metricLabel) else { continue }
-                for resource in descriptor.limitResources {
+                for resource in descriptor.limitResources where resource.matches(line) {
                     if let value = WireResource(resource: resource, line: line) {
                         resources[resource.key] = value
                     }

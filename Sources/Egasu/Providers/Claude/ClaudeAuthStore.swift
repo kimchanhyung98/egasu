@@ -101,7 +101,7 @@ struct ClaudeAuthStore: Sendable {
         var stored = orderedStoredCandidates(sharedRoute: route)
         let identity = usageAccountIdentity(sharedRoute: route)
         // 홈 메타데이터는 우선 사용되는 로그인만 식별. 별도 파일의 폴백 토큰까지 같은 계정으로 추정 금지.
-        if let index = stored.firstIndex(where: { $0.hasUsableAccessToken && liveUsageAvailability($0) == .available }) {
+        if let index = stored.firstIndex(where: \.hasUsableAccessToken) {
             stored[index].accountIdentityKey = identity
         }
         var desktopStatus: ClaudeDesktopCredentialStatus = .notChecked
@@ -128,8 +128,10 @@ struct ClaudeAuthStore: Sendable {
             }
         }
 
-        let candidates = applyingEnvironmentToken(to: stored)
-        return ClaudeCredentialLoad(candidates: candidates, desktopStatus: desktopStatus)
+        return ClaudeCredentialLoad(
+            candidates: refreshCandidates(from: stored), desktopStatus: desktopStatus,
+            storedCandidates: stored
+        )
     }
 
     func loadCredentialCandidates() -> [ClaudeCredentialState] {
@@ -155,15 +157,14 @@ struct ClaudeAuthStore: Sendable {
         }
     }
 
-    private func applyingEnvironmentToken(to stored: [ClaudeCredentialState]) -> [ClaudeCredentialState] {
+    private func refreshCandidates(from stored: [ClaudeCredentialState]) -> [ClaudeCredentialState] {
+        let liveCapable = stored.filter { liveUsageAvailability($0) == .available }
         // ambient env 토큰은 DEFAULT 로그인 소유 — scoped 카드 상속 금지(계정 간 토큰 누출).
-        guard case .standard = scope else { return stored }
-        guard let envAccessToken = envText("CLAUDE_CODE_OAUTH_TOKEN") else {
-            return stored
+        guard case .standard = scope, let envAccessToken = envText("CLAUDE_CODE_OAUTH_TOKEN") else {
+            return liveCapable + stored.filter { liveUsageAvailability($0) != .available }
         }
         // 명시적 `CLAUDE_CODE_OAUTH_TOKEN`은 inference 전용(usage endpoint 403) — 라이브 usage 가능한
         // 저장 로그인을 우선, env 토큰은 후순위 inference 전용 폴백. 저장 로그인 부재 시 유일 후보.
-        let liveCapable = stored.filter { liveUsageAvailability($0) == .available }
         // plan 메타데이터는 실제 우선되는 credential에서 차용, source는 `.environment`로 정직하게 표기 —
         // 진단 로그가 실제 source를 가리키고 `save()`가 env 토큰을 keychain에 쓰지 않도록.
         let base = liveCapable.first ?? stored.first
@@ -190,7 +191,7 @@ struct ClaudeAuthStore: Sendable {
             forceDesktopFallback: forceDesktopFallback, allowAccountInteraction: allowAccountInteraction
         )
         if let error = load.credentialError { throw error }
-        return ClaudeCredentialGeneration(load.candidates)
+        return load.generation
     }
 
     final class ManagedRotation: Sendable {
@@ -248,7 +249,7 @@ struct ClaudeAuthStore: Sendable {
         defer { AccountCredentialMutationLock.release(family: "claude") }
         let current = loadCredentialSet(allowAccountInteraction: allowAccountInteraction)
         if let error = current.credentialError { throw error }
-        guard ClaudeCredentialGeneration(current.candidates) == expected,
+        guard current.generation == expected,
             let saved = current.candidates.first(where: { $0.source == state.source }),
             let sourceText = saved.sourceText,
             var document = ProviderParse.jsonObjectWithHexFallback(sourceText),
@@ -256,6 +257,7 @@ struct ClaudeAuthStore: Sendable {
         else { return false }
 
         // 같은 저장소에서 다시 읽은 원문에 회전한 값만 적용 — MCP 인증과 CLI 확장 필드 보존.
+        if state.oauth.scopes != saved.oauth.scopes { oauth["scopes"] = state.oauth.scopes }
         if state.oauth.accessToken != saved.oauth.accessToken { oauth["accessToken"] = state.oauth.accessToken }
         if state.oauth.refreshToken != saved.oauth.refreshToken { oauth["refreshToken"] = state.oauth.refreshToken }
         if state.oauth.expiresAt != saved.oauth.expiresAt { oauth["expiresAt"] = state.oauth.expiresAt }

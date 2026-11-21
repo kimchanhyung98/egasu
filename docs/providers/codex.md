@@ -2,6 +2,15 @@
 
 Codex CLI 로그인으로 ChatGPT/Codex 구독 한도를 추적하고, Codex 로그인 없이 작동하는 선택적 공개 Reset Watch 예측 제공.
 
+Business 계정이 개인 크레딧 상한과 사용량 또는 잔여량을 제공하면 일반 월간 한도 아래에 개인 크레딧 한도 표시.
+계정별로 표시 위치 변경과 우선순위 고정 가능.
+CLI와 로컬 HTTP API의 `individualCredits`에 사용량·상한·잔여량 제공.
+개인 지출 상한은 소프트 한도의 구독 사용량 검사에서 제외.
+소수 크레딧 유지.
+Flex 잔액과 별도이며, 서버가 기간 길이를 보내지 않으면 초기화 시각만 제공.
+
+![Codex Business 계정의 주간, 월간, 개인 크레딧 한도](/docs/assets/codex-business-individual-credits.png)
+
 ## 추적 항목
 
 | 지표 | 의미 |
@@ -9,6 +18,7 @@ Codex CLI 로그인으로 ChatGPT/Codex 구독 한도를 추적하고, Codex 로
 | Session | 5시간 순환 기간 사용량 |
 | Weekly | 7일 기간 사용량 |
 | Monthly | 계정 응답에 월간 기간이 명시된 경우의 사용량 |
+| Individual Credits | Business 계정에 설정된 개인 크레딧 상한과 사용량 |
 | Spark / Spark Weekly / Spark Monthly | GPT-5.3-Codex-Spark 모델의 5시간·주간·월간 한도 중 계정 응답에 있는 기간 |
 | Reset Watch | 확률과 시각으로 표시하는 전역 재설정 예측 — 선택적이며 기본값은 꺼짐(아래 참조) |
 | Rate Limit Resets | 온디맨드 속도 제한 재설정 크레딧 — 개수로 표시(예: `2 available`)하고 가장 빠른 만료를 색상 점으로 표시하며, 값에 마우스를 올리면 크레딧별 만료 타임라인 제공 |

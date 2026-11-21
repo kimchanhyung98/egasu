@@ -81,6 +81,7 @@ export const settingGroups: SettingGroup[] = [
     { id: condition.notify, label: `${condition.label}, Receive Alerts`, control: { kind: 'toggle', on: false } },
   ]) },
   { id: 'notifications', title: 'Other Notifications', tab: 'Alerts', rows: [
+    { id: 'quotaRecovered', label: 'Quota Available Again', control: { kind: 'toggle', on: false }, info: 'Notify when fresh Claude, Codex, or Cursor usage confirms the same account has quota again' },
     { id: 'codexResetWatch', label: 'Codex Reset Watch', control: { kind: 'toggle', on: false }, info: 'Alert when Reset Watch expects Codex limits to reset soon' },
   ] },
   { id: 'privacy', title: 'Privacy', tab: 'Advanced', rows: [

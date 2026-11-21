@@ -35,6 +35,24 @@ final class ProviderSnapshotCacheTests: XCTestCase {
         XCTAssertNil(cliCache.snapshot(providerID: "claude@work"))
     }
 
+    func testNewSessionIgnoresOpenCodeUntilItWritesItsOwnReading() {
+        let (defaults, suite) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let now = Date()
+        let old = ProviderSnapshotCache(userDefaults: defaults)
+        old.store(snapshot("opencode", used: 90, now: now))
+        old.store(snapshot("codex", used: 20, now: now))
+
+        let current = ProviderSnapshotCache(userDefaults: defaults, allowsPersistedFreshness: true)
+        XCTAssertEqual(Set(current.loadSnapshots(providerIDs: ["opencode", "codex"]).keys), ["codex"])
+        XCTAssertNil(current.snapshot(providerID: "opencode"))
+        XCTAssertNotNil(current.snapshot(providerID: "codex"))
+        let reading = snapshot("opencode", used: 10, now: now)
+        current.store(reading)
+        XCTAssertEqual(current.snapshot(providerID: "opencode"), reading)
+        XCTAssertEqual(current.loadSnapshots(providerIDs: ["opencode"])["opencode"], reading)
+    }
+
     func testCooldownAndLocalRefreshDoNotExtendQuotaFreshness() {
         let (defaults, suite) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }

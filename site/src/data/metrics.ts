@@ -16,6 +16,7 @@ const declared: Record<string, Array<[string, string]>> = {
     ['codex.session', 'Session'],
     ['codex.weekly', 'Weekly'],
     ['codex.monthly', 'Monthly'],
+    ['codex.individualCredits', 'Individual Credits'],
     ['codex.trend', 'Usage Trend'],
     ['codex.resetWatch', 'Reset Watch'],
     ['codex.rateLimitResets', 'Rate Limit Resets'],

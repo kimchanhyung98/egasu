@@ -116,11 +116,10 @@ final class ClaudeProvider: ProviderRuntime {
                 allowAccountInteraction: allowDesktopInteraction
             )
         }
-        let storedCandidates = credentialLoad.candidates
         if let error = credentialLoad.credentialError {
             return ProviderSnapshot.error(provider: provider, error: error)
         }
-        let candidates = storedCandidates.filter {
+        let candidates = credentialLoad.candidates.filter {
             $0.hasUsableAccessToken && (!forceDesktopFallback || $0.source == .desktop)
         }
         if forceDesktopFallback {
@@ -175,7 +174,7 @@ final class ClaudeProvider: ProviderRuntime {
         // 비-auth 에러(rate limit, transport)는 즉시 표면화 — 실제 장애를 재시도로 가리지 않음.
         var lastFallbackError: ClaudeAuthError?
         var rejectedGrant: ClaudeUsageStateStore.AuthenticationFailure?
-        var credentialGeneration = ClaudeCredentialGeneration(storedCandidates)
+        var credentialGeneration = credentialLoad.generation
         for state in candidates {
             // environment 토큰은 subscription usage 조회 불가 — spend 전용 폴백이 거짓 성공이 되기 전에 Desktop 시도.
             if !forceDesktopFallback,
@@ -196,6 +195,7 @@ final class ClaudeProvider: ProviderRuntime {
                     credentialGeneration: &credentialGeneration,
                     rejectedGrant: &rejectedGrant,
                     fallbackWarning: desktopFallbackWarning,
+                    canReloadCredentials: credentialReloadsRemaining > 0,
                     requestedAt: requestedAt
                 )
                 AppLog.info(LogTag.plugin("claude"), "refresh end (\(Int(Date().timeIntervalSince(start) * 1000))ms)")
@@ -241,6 +241,7 @@ final class ClaudeProvider: ProviderRuntime {
         credentialGeneration: inout ClaudeCredentialGeneration,
         rejectedGrant: inout ClaudeUsageStateStore.AuthenticationFailure?,
         fallbackWarning: ClaudeAuthError?,
+        canReloadCredentials: Bool,
         requestedAt: Date
     ) async throws -> ProviderSnapshot {
         var state = initialState
@@ -252,30 +253,28 @@ final class ClaudeProvider: ProviderRuntime {
             lines: []
         )
 
-        var warning: String?
-        var warningPresentation: [LocalizedMessage] = []
+        var availability = authStore.liveUsageAvailability(state)
+        if availability == .available {
+            do {
+                mapped = try await fetchLiveUsage(
+                    state: &state,
+                    credentialGeneration: &credentialGeneration,
+                    rejectedGrant: &rejectedGrant,
+                    requestedAt: requestedAt
+                )
+            } catch let change as ProfileScopeRemoved {
+                if change.persisted && canReloadCredentials { throw ClaudeAuthError.credentialsChanged }
+                availability = .missingProfileScope
+            }
+        }
+        var warning = mapped.warning
+        var warningPresentation = mapped.warningPresentation.map { [$0] } ?? []
         var authenticationIssue: ProviderAuthenticationIssue?
-        switch authStore.liveUsageAvailability(state) {
-        case .available:
-            mapped = try await fetchLiveUsage(
-                state: &state,
-                credentialGeneration: &credentialGeneration,
-                rejectedGrant: &rejectedGrant,
-                requestedAt: requestedAt
-            )
-            // rate-limited notice는 mapped usage에 실어 header 삼각형까지 전달 — badge/note 라인이 레이아웃에 없어도 표시.
-            warning = mapped.warning
-            warningPresentation = mapped.warningPresentation.map { [$0] } ?? []
-        case .missingProfileScope:
-            // `user:profile` scope 없는 로그인(`claude setup-token` 계열) — session/weekly 바를 조용히
-            // 비우는 대신 로그 + header 경고로 재로그인 안내; 로컬 로그 spend 타일은 영향 없음.
-            AppLog.warn(LogTag.plugin("claude"), "live usage unavailable: credential lacks the user:profile scope (inference-only token); re-login with `claude` to restore session/weekly limits")
+        if availability == .missingProfileScope {
+            AppLog.warn(LogTag.plugin("claude"), "live usage unavailable: credential lacks the user:profile scope")
             warning = ClaudeUsageMapper.missingProfileScopeWarning
             warningPresentation = [.init(ClaudeUsageMapper.missingProfileScopeWarning)]
             authenticationIssue = .signInNeeded
-        case .inferenceOnlyToken:
-            // 명시적 CLAUDE_CODE_OAUTH_TOKEN은 설계상 inference 전용 — 조회·안내 대상 아님, spend 타일은 유지.
-            break
         }
         if let fallbackWarning, authenticationIssue == nil || fallbackWarning == .desktopPermissionRequired {
             warning = fallbackWarning.localizedDescription
@@ -322,6 +321,7 @@ final class ClaudeProvider: ProviderRuntime {
             isDegraded: refreshIsDegraded ? true : nil,
             incompleteQuotaWindows: mapped.hasIncompleteWeeklyQuota == true ? [.weekly] : nil,
             liveQuotaObservedAt: mapped.liveQuotaObservedAt,
+            liveQuotaAccountKey: mapped.liveQuotaAccountKey,
             quotaObservedAt: mapped.quotaObservedAt,
             usageRetryAfter: mapped.retryAfter
         )

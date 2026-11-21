@@ -27,8 +27,10 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
 ## 지원 프로바이더
 
 - **[Claude](/docs/providers/claude.md)** — 세션·주간·모델별 한도, 추가 사용량, 로컬 기록의 일별 지출·토큰.
+  OAuth 갱신은 기존 로그인 권한 범위 유지.
 - **[Codex](/docs/providers/codex.md)** — 기본·Spark 풀의 세션·주간·월간 한도, 추가 사용 및 한도 재설정 크레딧, 로컬 기록의 일별 지출·토큰.
-- **[Cursor](/docs/providers/cursor.md)** — 전체·Auto·API 사용량, 요청·크레딧, 추가 사용량, 서버 보고 기반 일별 추가 과금·토큰.
+- **[Cursor](/docs/providers/cursor.md)** — 일반 요금제의 전체·Auto·API 사용량, 통합 계정의 주간 공유 한도·선불 잔액·월간 추가 사용액, 서버 보고 기반 지출·토큰.
+  요금제 조회에 실패해도 청구 정보에서 통합 계정이 확인되면 통합 지표 표시.
   이력 조회 실패 시 같은 계정으로 확인한 마지막 정상 이력 유지.
 - **[Antigravity](/docs/providers/antigravity.md)** — Gemini 풀과 Claude 등 다른 모델 풀의 5시간·주간 한도, 계정별 Argon 주간 한도와 로컬 사용 이력.
 - **[Copilot](/docs/providers/copilot.md)** — AI 크레딧, 추가 사용량, 조직 사용량·청구액, 채팅·코드 완성 할당량.
@@ -38,7 +40,7 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
   세션 사용량이 0%여도 서버가 보고한 초기화 시각 표시.
   미충전 지갑의 금액도 0으로 표시.
 - **[Kiro](/docs/providers/kiro.md)** — 코딩 크레딧과 구독 요금제.
-- **[OpenCode](/docs/providers/opencode.md)** — Go의 세션·주간·월간 한도 추정치, Console과 Go의 로컬 지출·토큰.
+- **[OpenCode](/docs/providers/opencode.md)** — Go 서버의 세션·주간·월간 사용률, Console과 Go의 로컬 지출·토큰.
   과거 Zen 기록도 Console 집계에 포함.
 - **[OpenRouter](/docs/providers/openrouter.md)** — 크레딧 잔액과 일간·주간·월간 지출.
 - **[Z.ai](/docs/providers/zai.md)** — GLM Coding Plan의 세션·주간·월간 할당량과 웹 검색 한도.
@@ -62,6 +64,7 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
   설정 → 알림에서 네 조건의 **우선순위 표시**를 모두 끄면 대시보드에 전체 사용량만 표시.
 - **[All Usage](/docs/dashboard.md#all-usage).** 등록 계정별 사용량·초기화 시각·사용 속도 표시.
   Minimal은 프로바이더별 계정 묶음, Cards는 계정별 독립 카드.
+  Codex Business 개인 크레딧 한도는 일반 월간 한도 아래에 표시.
   행 우클릭으로 지표 숨기기·Priority 고정·새로 고침·Accounts 관리 연결.
   [프로바이더 섹션 공유 이미지](/docs/dashboard.md#공유)는 표시 중인 모든 계정과 지표 순서를 반영.
 - **[계정 전환](/docs/cli.md#계정).** Claude·Codex의 기본 인증 저장소를 쓰는 새 CLI 세션에 선택한 로그인 적용.
@@ -76,7 +79,8 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
   전송 예약 후 한도 관측값이 바뀌면 메시지를 생략하고 예약 횟수 유지.
   계정·풀·기간별 전송 상한과 기록은 앱 재시작 뒤에도 유지.
 - **[알림](/docs/settings.md#alerts).** 잔량 부족·빠른 소진·기간 종료 전 남은 할당량과 Codex Reset Watch 통지.
-  다섯 조건을 개별 선택하며 기본값은 꺼짐.
+  모든 알림은 개별 선택하며 기본값은 꺼짐.
+  계정이 확인된 실측 한도가 소진 후 회복되면 선택적으로 통지.
   기간 종료 전 잔량 알림은 한도별로 한 기간에 한 번 통지.
 - **[전역 단축키](/docs/settings.md#general).** Settings → General에서 지정한 키 조합으로 패널 열기·닫기.
 - **[계정 관리](/docs/accounts.md).** Accounts에서 계정 추가·전환·재로그인, API 키와 계정별 지표 표시·순서 관리.

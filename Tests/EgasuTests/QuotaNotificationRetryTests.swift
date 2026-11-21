@@ -44,13 +44,38 @@ final class QuotaNotificationRetryTests: XCTestCase {
         }
     }
 
+    func testRecoveryNeedsExhaustionAndFreshReadingFromSameAccount() async {
+        let evaluator = QuotaNotificationEvaluator()
+        var delivered: [String] = []
+        let post: QuotaNotificationEvaluator.Post = { id, _, _, _, current in
+            guard current() else { return false }
+            delivered.append(id)
+            return true
+        }
+        for (used, account) in [
+            (0.0, "a"), (100, "a"), (0, nil), (0, "b"), (100, "b"),
+            (50, nil), (50, "b"), (45, "b")
+        ] as [(Double, String?)] {
+            await evaluate(evaluator, used: used, enabled: [.quotaRecovered], account: account, post: post)
+        }
+        XCTAssertEqual(delivered, ["codex.quotaRecovered"])
+        await evaluate(evaluator, used: 100, enabled: [.quotaRecovered], account: "b", post: post)
+        evaluator.reset(providerIDs: ["codex"])
+        await evaluate(evaluator, used: 0, enabled: [.quotaRecovered], account: "b", post: post)
+        XCTAssertEqual(delivered.count, 1)
+    }
+
     private func evaluate(
-        _ evaluator: QuotaNotificationEvaluator, used: Double, enabled: Set<PaceMilestone>,
+        _ evaluator: QuotaNotificationEvaluator, used: Double, enabled: Set<PaceMilestone>, account: String? = nil,
         post: QuotaNotificationEvaluator.Post
     ) async {
         let data = WidgetData(title: "Weekly", icon: .providerMark("codex"), kind: .percent, used: used, limit: 100)
         await evaluator.evaluate(
-            metrics: [.init(key: "codex.weekly", providerID: "codex", data: data)],
+            metrics: [
+                .init(
+                    key: "codex.weekly", providerID: "codex", data: data,
+                    recoveryReading: account.map { .init(account: $0, isExhausted: used >= 100) })
+            ],
             isOn: { enabled.contains($0) }, now: now, providerName: { $0 }, post: post
         )
     }

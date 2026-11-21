@@ -144,24 +144,27 @@ test('Soft Limit validates percentages, mirrors its guide, and keeps forecast me
   await expect(threshold).toHaveValue('95');
 });
 
-test('Reset Watch notifications can be enabled without quota notifications', async ({ page }) => {
-  await openHome(page);
-  await allUsage(page);
-  await openSettings(page);
-  const app = page.locator('[data-mock]');
-  await app.locator('button[data-settings-tab="Alerts"]').click();
-  const setting = app.getByRole('switch', { name: 'Codex Reset Watch', exact: true });
-  await expect(setting).toHaveAttribute('aria-checked', 'false');
-  await setting.click();
-  await expect(app.getByRole('button', { name: 'Allow Notifications', exact: true })).toBeVisible();
-  for (const name of ['Warning, Receive Alerts', 'Critical, Receive Alerts', 'Burning Fast, Receive Alerts', 'Use It or Lose It, Receive Alerts']) {
-    await expect(app.getByRole('switch', { name, exact: true })).toHaveAttribute('aria-checked', 'false');
-  }
-  await page.reload();
-  await openSettings(page);
-  await app.locator('button[data-settings-tab="Alerts"]').click();
-  await expect(setting).toHaveAttribute('aria-checked', 'true');
-});
+for (const name of ['Quota Available Again', 'Codex Reset Watch']) {
+  test(`${name} enables notifications independently of other alerts`, async ({ page }) => {
+    await openHome(page);
+    await allUsage(page);
+    await openSettings(page);
+    const app = page.locator('[data-mock]');
+    await app.locator('button[data-settings-tab="Alerts"]').click();
+    const setting = app.getByRole('switch', { name, exact: true });
+    await expect(setting).toHaveAttribute('aria-checked', 'false');
+    await setting.click();
+    await expect(app.getByRole('button', { name: 'Allow Notifications', exact: true })).toBeVisible();
+    const other = name === 'Quota Available Again' ? 'Codex Reset Watch' : 'Quota Available Again';
+    for (const name of [other, 'Warning, Receive Alerts', 'Critical, Receive Alerts', 'Burning Fast, Receive Alerts', 'Use It or Lose It, Receive Alerts']) {
+      await expect(app.getByRole('switch', { name, exact: true })).toHaveAttribute('aria-checked', 'false');
+    }
+    await page.reload();
+    await openSettings(page);
+    await app.locator('button[data-settings-tab="Alerts"]').click();
+    await expect(setting).toHaveAttribute('aria-checked', 'true');
+  });
+}
 
 test('unused allowance reminders preserve their choice without enabling other alerts', async ({ page }) => {
   await openHome(page);

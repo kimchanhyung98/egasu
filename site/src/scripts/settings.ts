@@ -11,9 +11,9 @@ let render = (): void => {};
 let notify = (_mock: HTMLElement, _message: string): void => {};
 let verifyingTerminalHelper = false;
 const pending = new WeakMap<HTMLElement, { family: string; id: string; button: HTMLElement }>();
+const notificationPreferences = ['warningNotification', 'criticalNotification', 'closeToRunningOut', 'useItOrLoseItNotification', 'quotaRecovered', 'codexResetWatch'];
 const appOnlyPreferences = new Set([
-  'launchAtLogin', 'warningNotification', 'criticalNotification', 'closeToRunningOut', 'useItOrLoseItNotification',
-  'shareAnonymousUsage', 'updateAutomatically', 'betaUpdates', 'logLevel', 'codexResetWatch',
+  'launchAtLogin', ...notificationPreferences, 'shareAnonymousUsage', 'updateAutomatically', 'betaUpdates', 'logLevel',
 ]);
 
 function report(error: unknown, message: string): void {
@@ -225,7 +225,7 @@ export function applySettingsToMock(mock: HTMLElement): void {
   const hour12 = new Intl.DateTimeFormat(undefined, { hour: 'numeric' }).resolvedOptions().hour12 === true;
   mock.querySelectorAll<HTMLElement>('[data-preview-time]').forEach((element) => { element.textContent = previewTime(element.dataset.previewTime!, preferences.timeFormat, hour12); });
   mock.querySelector<HTMLElement>('[data-icloud-preview]')!.hidden = !preferences.syncAcrossMacs;
-  mock.querySelector<HTMLElement>('[data-notification-permission]')!.hidden = !['warningNotification', 'criticalNotification', 'closeToRunningOut', 'useItOrLoseItNotification', 'codexResetWatch'].some((id) => preferences[id]);
+  mock.querySelector<HTMLElement>('[data-notification-permission]')!.hidden = !notificationPreferences.some((id) => preferences[id]);
   const spend = mock.querySelector<HTMLElement>('.am-spend-card');
   if (spend) spend.hidden = preferences.showTotalSpend === false;
 }

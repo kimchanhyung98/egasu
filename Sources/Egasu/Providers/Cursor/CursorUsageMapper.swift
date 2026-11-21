@@ -446,7 +446,7 @@ enum CursorUsageMapper {
         ))
     }
 
-    private static func billingCycle(from usage: [String: Any]) -> BillingCycle {
+    static func billingCycle(from usage: [String: Any]) -> BillingCycle {
         let cycleStart = ProviderParse.number(usage["billingCycleStart"])
         let cycleEnd = ProviderParse.number(usage["billingCycleEnd"])
         let end = cycleEnd.map { Date(timeIntervalSince1970: $0 / 1000) }
@@ -459,7 +459,7 @@ enum CursorUsageMapper {
         return BillingCycle(resetsAt: end, periodDurationMs: Int((cycleEnd - cycleStart).rounded()))
     }
 
-    private static func planLabel(_ value: String?) -> String? {
+    static func planLabel(_ value: String?) -> String? {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }

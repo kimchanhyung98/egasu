@@ -81,6 +81,7 @@ final class CodexWeeklyTimerProviderTests: XCTestCase {
         let observation = try XCTUnwrap(fixture.provider.weeklyTimerObservation)
         XCTAssertEqual(observation.usedPercent, 0)
         XCTAssertEqual(observation.observedAt, snapshot.liveQuotaObservedAt)
+        XCTAssertEqual(snapshot.liveQuotaAccountKey, observation.accountKey)
         XCTAssertTrue(snapshot.isDegraded == true, "Reset-credit failure must preserve a valid weekly quota")
 
         fixture.http.response = HTTPResponse(statusCode: 503, headers: [:], body: Data())

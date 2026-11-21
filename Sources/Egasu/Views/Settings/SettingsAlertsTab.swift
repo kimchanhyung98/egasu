@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Alerts 탭 — 경고 기준·Priority 표시 조건, 사용량 알림 4종, Codex Reset Watch.
+/// Alerts 탭 — 경고 기준·Priority 표시 조건, 사용량 알림, Codex Reset Watch.
 /// 알림을 하나라도 켰는데 macOS 권한이 없으면 마지막 행에 안내와 권한 버튼.
 struct SettingsAlertsTab: View {
     @Environment(NotificationSettingsStore.self) private var notificationSettings
@@ -27,6 +27,10 @@ struct SettingsAlertsTab: View {
         }
         SettingsAlertConditionsSection(display: display, notifications: notifications)
         Section {
+            Toggle(isOn: $notifications.quotaRecovered) {
+                SettingsTitle(
+                    title: PaceMilestone.quotaRecovered.settingLabel, info: PaceMilestone.quotaRecovered.tooltip)
+            }
             Toggle(isOn: $notifications.codexResetWatch) {
                 SettingsTitle(
                     title: CodexResetWatchNotificationEvaluator.settingLabel,

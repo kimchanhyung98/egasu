@@ -68,6 +68,53 @@ final class CursorUsageHistoryRecoveryTests: XCTestCase {
         XCTAssertNotNil(snapshot.line(label: "Total usage"))
     }
 
+    func testMergedBillingDiscardsOldAccountWhenLoginChangesDuringHistoryRead() async throws {
+        try await assertAccountChangeDiscardsResponse(merged: true)
+    }
+
+    func testLegacyBillingDiscardsOldAccountWhenLoginChangesDuringHistoryRead() async throws {
+        try await assertAccountChangeDiscardsResponse(merged: false)
+    }
+
+    private func assertAccountChangeDiscardsResponse(merged: Bool) async throws {
+        let sqlite = CursorRecoverySQLite(accessToken: try token(identity: "old-login"))
+        let nextToken = try token(identity: "new-login")
+        let http = RoutingHTTPClient { request in
+            let json: String
+            switch request.url.lastPathComponent {
+            case "GetCurrentPeriodUsage": json = #"{"planUsage":{"totalPercentUsed":23}}"#
+            case "GetPlanInfo": json = merged ? #"{"isMerged":true,"planInfo":{"planName":"ultra"}}"# : #"{"planInfo":{"planName":"pro"}}"#
+            case "GetComplatCreditBalance": json = #"{"usdRemainingCents":"10000"}"#
+            case "usage-status": json = #"{"monthlyUsage":{"limitCents":200,"usedCents":100}}"#
+            case "get-filtered-usage-events":
+                sqlite.setToken(nextToken)
+                json = #"{"totalUsageEventsCount":0}"#
+            default: return HTTPResponse(statusCode: 404, headers: [:], body: Data())
+            }
+            return HTTPResponse(statusCode: 200, headers: [:], body: Data(json.utf8))
+        }
+        let provider = CursorProvider(
+            authStore: CursorAuthStore(sqlite: sqlite, keychain: FakeKeychain()),
+            usageClient: CursorUsageClient(http: http), pricing: { TestPricing.bundled })
+        let snapshot = await provider.refresh()
+        XCTAssertEqual(snapshot.errorPresentation, UserFacingErrors.presentation(CursorAuthError.credentialsChanged))
+        XCTAssertEqual(snapshot.producedByIdentityKey, "new-login")
+        for label in ["Total usage", "Credits", "On-demand"] { XCTAssertNil(snapshot.line(label: label)) }
+    }
+
+    func testLiveQuotaWithoutBillingCycleCanNotifyWithoutProvidingASoftLimit() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.defaults.removePersistentDomain(forName: fixture.suite) }
+        _ = await fixture.store.refresh(providerID: "cursor", force: true)
+        let snapshot = try XCTUnwrap(fixture.store.localSnapshots["cursor"])
+        XCTAssertEqual(snapshot.liveQuotaAccountKey, "history-fixture")
+        XCTAssertEqual(snapshot.liveQuotaObservedAt, fixture.clock.now)
+        XCTAssertNil(
+            SoftLimitObservation.project(
+                snapshot: snapshot, descriptors: CursorProvider().widgetDescriptors, window: .all,
+                now: fixture.clock.now))
+    }
+
     func testAccountChangeDoesNotReusePreviousHistory() async throws {
         let fixture = try makeFixture()
         defer { fixture.defaults.removePersistentDomain(forName: fixture.suite) }
@@ -157,6 +204,7 @@ final class CursorUsageHistoryRecoveryTests: XCTestCase {
         XCTAssertEqual(switched, .refreshed)
         XCTAssertNil(fixture.store.providerErrors["cursor"])
         XCTAssertEqual(fixture.store.snapshots["cursor"]?.producedByIdentityKey, "new-login")
+        XCTAssertEqual(fixture.store.snapshots["cursor"]?.liveQuotaAccountKey, "new-login")
     }
 
     func testWaitingBatchDoesNotShowAQueuedCursorRefreshForItsFreshAccountCache() async throws {

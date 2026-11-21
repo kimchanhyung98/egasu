@@ -48,6 +48,9 @@ test('Settings matches native control names within each tab', () => {
   assert.ok(resetWatchLabel);
   assert.match(alerts,
     /Toggle\(isOn:\s*\$notifications\.codexResetWatch\)\s*\{\s*SettingsTitle\(\s*title:\s*CodexResetWatchNotificationEvaluator\.settingLabel\b/);
+  const recoveryLabel = englishSource('Support/PaceNotificationLogic.swift').match(/case \.quotaRecovered: return "([^"]+)"/)?.[1];
+  assert.ok(recoveryLabel);
+  assert.match(alerts, /title: PaceMilestone\.quotaRecovered\.settingLabel/);
   const tokscale = englishSource('Views/Settings/TokscaleSettingsSection.swift');
   assert.match(tokscale, /Text\(\s*"Usage Sync"\s*\)/);
   assert.match(tokscale, /Button\(\s*"Sync"\s*\)\s*\{\s*store\.startSubmit\(\)/);
@@ -55,7 +58,7 @@ test('Settings matches native control names within each tab', () => {
     const native = controlsIn(`Settings${tab}Tab`).concat(sectionsByTab[tab].flatMap(controlsIn))
       .filter((label) => !(tab === 'General' && label === 'iCloud Sync'));
     if (tab === 'Alerts') {
-      native.push(resetWatchLabel, ...conditions.flatMap(([, name]) => [
+      native.push(recoveryLabel, resetWatchLabel, ...conditions.flatMap(([, name]) => [
         `${name}, Show in Priority`, `${name}, Receive Alerts`,
       ]));
     }
@@ -89,7 +92,7 @@ test('Alerts, Soft Limit, and Tokscale expose their preview controls', () => {
       showUseItOrLoseIt: 'toggle',
       useItOrLoseItNotification: 'toggle',
     } },
-    notifications: { tab: 'Alerts', rows: { codexResetWatch: 'toggle' } },
+    notifications: { tab: 'Alerts', rows: { quotaRecovered: 'toggle', codexResetWatch: 'toggle' } },
     softLimit: { tab: 'Labs', rows: { softLimitEnabled: 'toggle', softLimitWindow: 'picker', softLimitThreshold: 'number', softLimitCommands: 'action' } },
     tokscale: { tab: 'Advanced', rows: { usageSync: 'action' } },
   };
