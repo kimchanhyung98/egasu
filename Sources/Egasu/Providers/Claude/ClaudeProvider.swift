@@ -106,6 +106,7 @@ final class ClaudeProvider: ProviderRuntime {
         credentialReloadsRemaining: Int,
         forceDesktopFallback: Bool,
         previousFallbackError: ClaudeAuthError?,
+        restrictedFallbackGeneration: ClaudeCredentialGeneration? = nil,
         requestedAt: Date
     ) async -> ProviderSnapshot {
         let allowDesktopInteraction = ProviderRefreshContext.isManual
@@ -119,10 +120,31 @@ final class ClaudeProvider: ProviderRuntime {
         if let error = credentialLoad.credentialError {
             return ProviderSnapshot.error(provider: provider, error: error)
         }
-        let candidates = credentialLoad.candidates.filter {
-            $0.hasUsableAccessToken && (!forceDesktopFallback || $0.source == .desktop)
+        let usable = credentialLoad.candidates.filter(\.hasUsableAccessToken)
+        let candidates: [ClaudeCredentialState]
+        if let expected = restrictedFallbackGeneration {
+            // Desktop 후보 추가와 별개로 CLI 로그인이 교체되면 일반 출처 우선순위부터 재확인.
+            if credentialLoad.generation.candidates.filter({ $0.source != .desktop }) != expected.candidates {
+                guard credentialReloadsRemaining > 0 else {
+                    return .error(provider: provider, error: ClaudeAuthError.credentialsChanged)
+                }
+                refreshIsDegraded = false
+                return await refresh(
+                    credentialReloadsRemaining: credentialReloadsRemaining - 1, forceDesktopFallback: false,
+                    previousFallbackError: nil, requestedAt: requestedAt)
+            }
+            // 같은 홈 계정을 확인할 수 있는 Desktop만 사용하고, 실패 시 권한 안내와 로컬 기록 유지.
+            let homeIdentity = credentialLoad.generation.candidates.first { $0.source != .desktop }?.accountIdentityKey
+            candidates = usable.filter { state in
+                if state.source != .desktop { return authStore.liveUsageAvailability(state) == .missingProfileScope }
+                guard let homeIdentity else { return false }
+                guard let desktopIdentity = state.accountIdentityKey else { return true }
+                return desktopIdentity == homeIdentity || desktopIdentity.hasPrefix(homeIdentity + "|")
+            }
+        } else {
+            candidates = usable.filter { !forceDesktopFallback || $0.source == .desktop }
         }
-        if forceDesktopFallback {
+        if forceDesktopFallback && restrictedFallbackGeneration == nil {
             switch credentialLoad.desktopStatus {
             case .permissionRequired:
                 return ProviderSnapshot.error(provider: provider, error: ClaudeAuthError.desktopPermissionRequired)
@@ -176,16 +198,18 @@ final class ClaudeProvider: ProviderRuntime {
         var rejectedGrant: ClaudeUsageStateStore.AuthenticationFailure?
         var credentialGeneration = credentialLoad.generation
         for state in candidates {
-            // environment 토큰은 subscription usage 조회 불가 — spend 전용 폴백이 거짓 성공이 되기 전에 Desktop 시도.
+            // 한도 조회가 불가능한 후보를 반환하기 전에 허용된 Desktop 로그인 확인.
             if !forceDesktopFallback,
                lastFallbackError != nil,
                credentialLoad.desktopStatus == .notChecked,
-               authStore.liveUsageAvailability(state) == .inferenceOnlyToken
+                authStore.liveUsageAvailability(state) != .available
             {
                 return await refresh(
                     credentialReloadsRemaining: credentialReloadsRemaining,
                     forceDesktopFallback: true,
                     previousFallbackError: lastFallbackError,
+                    restrictedFallbackGeneration: authStore.liveUsageAvailability(state) == .missingProfileScope
+                        ? credentialGeneration : nil,
                     requestedAt: requestedAt
                 )
             }
@@ -206,10 +230,14 @@ final class ClaudeProvider: ProviderRuntime {
                 refreshIsDegraded = false
                 return await refresh(
                     credentialReloadsRemaining: credentialReloadsRemaining - 1,
-                    forceDesktopFallback: forceDesktopFallback,
-                    previousFallbackError: previousFallbackError,
+                    forceDesktopFallback: forceDesktopFallback && restrictedFallbackGeneration == nil,
+                    previousFallbackError: restrictedFallbackGeneration == nil ? previousFallbackError : nil,
                     requestedAt: requestedAt
                 )
+            } catch ClaudeUsageStateStore.StoreError.identityUnavailable
+                where restrictedFallbackGeneration != nil && state.source == .desktop
+            {
+                continue
             } catch let error as ClaudeAuthError where error.allowsAuthFallback {
                 AppLog.info(LogTag.auth("claude"), "\(state.source.label) authentication failed; falling back to next source if any")
                 lastFallbackError = error
