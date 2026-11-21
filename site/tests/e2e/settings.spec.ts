@@ -73,7 +73,9 @@ test('pinned-only guidance is beside the setting when the saved pin cannot show'
   await app.getByRole('tab', { name: 'Display', exact: true }).click();
   await expect(app.locator('[data-menu-bar-preview]')).toHaveText('◉');
   const row = app.locator('.am-item').filter({ has: page.getByRole('button', { name: 'Menu Bar Items', exact: true }) });
-  await expect(row.getByRole('button', { name: 'Pin a metric in All Usage to show it in the menu bar.', exact: true })).toBeVisible();
+  await expect(row.getByRole('button', {
+    name: 'Choose Priority or Pinned Only, then pin metrics in All Usage to show them in the menu bar.', exact: true,
+  })).toBeVisible();
 });
 
 test('menu bar preview applies pinned selection and filters text values in Bars mode', async ({ page }) => {

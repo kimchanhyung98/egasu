@@ -149,7 +149,7 @@
 "App Icon Only" = "앱 아이콘만";
 "Max Items In Menu Bar" = "메뉴 막대 최대 항목";
 "Menu Bar Items" = "메뉴 막대 표시 항목";
-"Pin a metric in All Usage to show it in the menu bar." = "전체 사용량에서 지표를 고정하면 메뉴 막대에 표시됩니다.";
+"Choose Priority or Pinned Only, then pin metrics in All Usage to show them in the menu bar." = "메뉴 막대에 표시하려면 ‘우선순위’ 또는 ‘고정한 지표만’을 선택하고 전체 사용량에서 지표를 고정하세요.";
 "Pinned Only" = "고정한 지표만";
 "Show Extra Indicators" = "추가 표시";
 "Up to %d" = "최대 %d개";
