@@ -39,7 +39,8 @@ struct SettingsLabsTab: View {
             let estimate =
                 reading.state == .unknown && estimateExpiry != nil
                 ? descriptors.compactMap { descriptor -> Double? in
-                    guard descriptor.limitResources.contains(where: { $0.kind == .consumption && $0.estimated }) else {
+                    guard let line = container.dataStore.localSnapshots[cardID]?.line(label: descriptor.metricLabel),
+                          descriptor.limitResources.contains(where: { $0.kind == .consumption && $0.estimated && $0.matches(line) }) else {
                         return nil
                     }
                     let data = container.dataStore.data(for: descriptor)

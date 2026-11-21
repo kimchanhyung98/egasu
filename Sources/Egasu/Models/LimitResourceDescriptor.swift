@@ -20,6 +20,14 @@ struct LimitResourceDescriptor: Hashable, Sendable {
     let unit: String
     let source: Source
     var estimated = false
+    var progressFormat: ProgressFormat? = nil
+
+    /// 같은 화면 행에 표시하는 서버 실측과 로컬 추정치는 서로 다른 API 리소스로 공개.
+    func matches(_ line: MetricLine) -> Bool {
+        guard let progressFormat else { return true }
+        guard case .progress(_, _, _, let format, _, _, _) = line else { return false }
+        return format == progressFormat
+    }
 }
 
 extension WidgetDescriptor {
@@ -29,7 +37,7 @@ extension WidgetDescriptor {
         kind: LimitResourceDescriptor.Kind = .consumption,
         unit: String,
         source: LimitResourceDescriptor.Source = .progress,
-        estimated: Bool = false
+        estimated: Bool = false, progressFormat: ProgressFormat? = nil
     ) -> WidgetDescriptor {
         var copy = self
         copy.limitResources.append(LimitResourceDescriptor(
@@ -37,7 +45,7 @@ extension WidgetDescriptor {
             kind: kind,
             unit: unit,
             source: source,
-            estimated: estimated
+            estimated: estimated, progressFormat: progressFormat
         ))
         return copy
     }

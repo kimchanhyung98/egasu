@@ -59,7 +59,8 @@ export const settingGroups: SettingGroup[] = [
   { id: 'menuBar', title: 'Menu Bar Icons', tab: 'Display', rows: [
     { id: 'iconStyle', label: 'Icon Style', control: { kind: 'picker', value: 'Text', options: ['Text', 'Bars'] } },
     { id: 'menuBarLimit', label: 'Max Items In Menu Bar', control: { kind: 'picker', value: 'Up to 3', options: ['App Icon Only', 'Up to 1', 'Up to 2', 'Up to 3', 'Up to 4', 'Up to 5'] } },
-    { id: 'menuBarItems', label: 'Menu Bar Items', control: { kind: 'picker', value: 'Running Out', options: ['Running Out', 'Priority', 'Pinned Only'] } },
+    { id: 'menuBarItems', label: 'Menu Bar Items', info: 'Pin a metric in All Usage to show it in the menu bar.',
+      control: { kind: 'picker', value: 'Running Out', options: ['Running Out', 'Priority', 'Pinned Only'] } },
     { id: 'menuBarExtras', label: 'Show Extra Indicators', control: { kind: 'toggle', on: true }, info: 'Show the +N count and update indicator in the menu bar' },
   ] },
   { id: 'layout', title: 'Appearance', tab: 'Display', rows: [
@@ -80,6 +81,7 @@ export const settingGroups: SettingGroup[] = [
     { id: condition.notify, label: `${condition.label}, Receive Alerts`, control: { kind: 'toggle', on: false } },
   ]) },
   { id: 'notifications', title: 'Other Notifications', tab: 'Alerts', rows: [
+    { id: 'quotaRecovered', label: 'Quota Available Again', control: { kind: 'toggle', on: false }, info: 'Notify when fresh Claude, Codex, or Cursor usage confirms the same account has quota again' },
     { id: 'codexResetWatch', label: 'Codex Reset Watch', control: { kind: 'toggle', on: false }, info: 'Alert when Reset Watch expects Codex limits to reset soon' },
   ] },
   { id: 'privacy', title: 'Privacy', tab: 'Advanced', rows: [

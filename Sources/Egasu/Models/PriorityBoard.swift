@@ -146,6 +146,8 @@ struct PriorityBoard {
     /// 초기화 전 사용 목록이 시간에 따라 바뀌는 다음 시각.
     let nextUseItOrLoseItChange: Date?
 
+    var offersAllUsage: Bool { summary == .noReportedLimits || (summary == .allClear && pinned.isEmpty) }
+
     /// 새 읽기 없이도 기간이 지나며 순위가 바뀌거나 빠른 소진이 풀릴 수 있음 — 30초 재계산 필요 여부.
     static func requiresRankingClock(for items: [PriorityItem], at now: Date) -> Bool {
         if items.contains(where: { if case .burningFast = $0.reason { true } else { false } }) { return true }

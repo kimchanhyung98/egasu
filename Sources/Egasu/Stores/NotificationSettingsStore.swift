@@ -32,6 +32,10 @@ final class NotificationSettingsStore {
         didSet { defaults.set(useItOrLoseIt, forKey: PaceMilestone.useItOrLoseIt.settingKey) }
     }
 
+    var quotaRecovered: Bool {
+        didSet { defaults.set(quotaRecovered, forKey: PaceMilestone.quotaRecovered.settingKey) }
+    }
+
     var codexResetWatch: Bool {
         didSet {
             guard oldValue != codexResetWatch else { return }
@@ -46,11 +50,13 @@ final class NotificationSettingsStore {
         self.warning = defaults.bool(forKey: PaceMilestone.warning.settingKey, default: false)
         self.closeToRunningOut = defaults.bool(forKey: PaceMilestone.closeToRunningOut.settingKey, default: false)
         self.useItOrLoseIt = defaults.bool(forKey: PaceMilestone.useItOrLoseIt.settingKey, default: false)
+        self.quotaRecovered = defaults.bool(forKey: PaceMilestone.quotaRecovered.settingKey)
         self.codexResetWatch = defaults.bool(forKey: Self.codexResetWatchKey, default: false)
     }
 
     func isOn(_ milestone: PaceMilestone) -> Bool {
         switch milestone {
+        case .quotaRecovered: quotaRecovered
         case .critical: critical
         case .warning: warning
         case .closeToRunningOut: closeToRunningOut

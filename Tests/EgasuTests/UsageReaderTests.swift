@@ -133,7 +133,7 @@ final class UsageReaderTests: XCTestCase {
         XCTAssertEqual(provider.refreshCount, 0)
     }
 
-    func testPreflightSkipsOpenCodeEstimatesAndRefreshesMixedProvider() async throws {
+    func testPreflightChecksOpenCodeForLiveUsageAndIgnoresMissingMeasurements() async throws {
         let defaults = defaults()
         enableSoftLimit(defaults)
         let openCode = StubProvider(id: "opencode")
@@ -153,7 +153,7 @@ final class UsageReaderTests: XCTestCase {
         let reached = try await reader.checkSoftLimit(cardID: "stub")
 
         XCTAssertEqual(ignored, .unknown)
-        XCTAssertEqual(openCode.refreshCount, 0)
+        XCTAssertEqual(openCode.refreshCount, 1)
         XCTAssertEqual(reached, .reached)
         XCTAssertEqual(mixed.refreshCount, 1)
     }
@@ -416,6 +416,26 @@ final class UsageReaderTests: XCTestCase {
         XCTAssertNotNil((object["providers"] as? [String: Any])?["stub"])
         XCTAssertEqual(provider.refreshCount, 0)
         XCTAssertTrue(result.warnings.isEmpty)
+    }
+
+    func testOpenCodeReadRechecksCurrentLoginEvenWithinCacheTTL() async throws {
+        let defaults = defaults()
+        ProviderEnablementStore(defaults: defaults).setEnabled(true, for: "opencode")
+        let provider = StubProvider(id: "opencode")
+        let cache = ProviderSnapshotCache(userDefaults: defaults)
+        cache.store(await provider.refresh())
+        provider.used = 84
+        let reader = UsageReader(userDefaults: defaults, providers: [provider])
+        let result = try await reader.read(providerID: "opencode")
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: result.data) as? [String: Any])
+        let cards = try XCTUnwrap(root["providers"] as? [String: [String: Any]])
+        let resources = try XCTUnwrap(cards["opencode"]?["resources"] as? [String: [String: Any]])
+        XCTAssertEqual(resources["weekly"]?["used"] as? Double, 84)
+        provider.refreshError = "OpenCode sign-in changed."
+        let failed = try await reader.read()
+        let failedRoot = try XCTUnwrap(JSONSerialization.jsonObject(with: failed.data) as? [String: Any])
+        XCTAssertNil((failedRoot["providers"] as? [String: Any])?["opencode"])
+        XCTAssertEqual(provider.refreshCount, 3)
     }
 
     func testUnresolvedClaudeIdentityRejectsFreshPersistedCacheBeforeReturning() async throws {

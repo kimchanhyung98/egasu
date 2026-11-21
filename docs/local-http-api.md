@@ -135,7 +135,7 @@ Antigravity는 잔여 비율에서 계산하므로 `used`·`remaining`이 정수
 | 프로바이더 | 리소스 키 |
 | --- | --- |
 | Claude | `session`, `weekly`, `sonnet`, `fable`, `extraUsage` |
-| Codex | `session`, `weekly`, `monthly`, `spark`, `sparkWeekly`, `sparkMonthly`, `credits`, `creditValue`, `rateLimitResets` |
+| Codex | `session`, `weekly`, `monthly`, `spark`, `sparkWeekly`, `sparkMonthly`, `credits`, `creditValue`, `individualCredits`, `rateLimitResets` |
 | Cursor | `totalUsage`, `autoUsage`, `apiUsage`, `onDemand`, `requests`, `credits` |
 | Antigravity | `geminiSession`, `geminiWeekly`, `nonGeminiSession`, `nonGeminiWeekly`, `argonWeekly` |
 | Copilot | `premiumCredits`, `extraUsage`, `orgCredits`, `orgSpend`, `chat`, `completions` |
@@ -143,7 +143,7 @@ Antigravity는 잔여 비율에서 계산하므로 `used`·`remaining`이 정수
 | Grok | `weekly`, `monthly` |
 | Kimi | `session`, `weekly`, `totalUsage`, `extraUsage`, `extraUsageBalance` |
 | Kiro | `credits` |
-| OpenCode | `session`, `weekly`, `monthly` |
+| OpenCode | 계정 실측(%) `goSession`, `goWeekly`, `goMonthly`. 로컬 추정(USD) `session`, `weekly`, `monthly` |
 | OpenRouter | `credits`, `balance`, `keyLimit` |
 | Z.ai | `session`, `weekly`, `monthly`, `webSearches` |
 

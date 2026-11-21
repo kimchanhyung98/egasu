@@ -32,6 +32,12 @@ struct CodexResetClaimBinding: Hashable, Sendable {
         }
     }
 
+    /// 액세스 토큰에서 검증한 계정만 사용. 자격 증명 사본의 지문은 계정 간 비교에서 제외.
+    var verifiedAccountKey: String? {
+        guard case .account(let key) = identity else { return nil }
+        return key
+    }
+
     func matches(_ authState: CodexAuthState) -> Bool {
         Self(authState: authState) == self
     }

@@ -15,7 +15,8 @@ enum ProviderCatalog {
         codexAccountBinding: CodexAccountBinding? = nil,
         claudeManagedSwitchActive: Bool = false,
         allowsClaudeDesktopFallback: Bool = true,
-        kimiTerminalEnvironment: (any EnvironmentReading)? = nil
+        kimiTerminalEnvironment: (any EnvironmentReading)? = nil,
+        openCodeEnvironment: any EnvironmentReading = ProcessEnvironmentReader()
     ) -> [ProviderRuntime] {
         // 기본 provider 순서: 기존 3개 먼저, 나머지는 display name 알파벳순. account 카드는 family 기본 카드 바로 뒤.
         var runtimes: [ProviderRuntime] = []
@@ -61,7 +62,13 @@ enum ProviderCatalog {
             GrokProvider(),
             KimiProvider(terminalEnvironment: kimiTerminalEnvironment),
             KiroProvider(),
-            OpenCodeProvider(),
+            OpenCodeProvider(
+                authStore: OpenCodeAuthStore(environment: openCodeEnvironment),
+                usageScanner: OpenCodeUsageScanner(databasePaths: {
+                    try OpenCodePaths.databaseFiles(environment: openCodeEnvironment,
+                                                    homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
+                })
+            ),
             OpenRouterProvider(),
             ZAIProvider()
         ]

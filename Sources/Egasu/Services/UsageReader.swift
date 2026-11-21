@@ -174,8 +174,15 @@ public struct UsageReader {
     }
 
     /// CLI 시작 검사에는 현재 터미널이 넘긴 값만 사용. 셸 재실행이나 저장한 환경으로 보충하지 않음.
-    private struct InheritedTerminalEnvironment: EnvironmentReading {
-        let variables = ProcessInfo.processInfo.environment
+    struct InheritedTerminalEnvironment: EnvironmentReading {
+        var variables = ProcessInfo.processInfo.environment
+
+        /// OpenCode 명령은 egasu 전용 데이터 디렉터리 대신 터미널의 XDG 경로에서 로그인 조회.
+        func openCodeScope(preflight: Bool) -> Self {
+            var scoped = self
+            if preflight { scoped.variables.removeValue(forKey: "OPENCODE_DATA_DIR") }
+            return scoped
+        }
 
         func value(for key: String) -> String? { variables[key]?.nilIfEmpty }
     }
@@ -226,7 +233,8 @@ public struct UsageReader {
                 codexAccountBinding: accountAssembly.codexDefaultAccountBinding,
                 claudeManagedSwitchActive: accountAssembly.claudeManagedSwitchActive,
                 allowsClaudeDesktopFallback: preflightCardID != "claude",
-                kimiTerminalEnvironment: preflightCardID == "kimi" ? InheritedTerminalEnvironment() : nil
+                kimiTerminalEnvironment: preflightCardID == "kimi" ? InheritedTerminalEnvironment() : nil,
+                openCodeEnvironment: InheritedTerminalEnvironment().openCodeScope(preflight: preflightCardID == "opencode")
             )
         let observer = DefaultAccountObserver(
             pinsClaudeSharedHome: accountAssembly.claudeManagedSwitchActive,
@@ -268,7 +276,7 @@ public struct UsageReader {
         // 사전 검사에서 계정 확인 전 조회된 결과와 무효화는 현재 검사 메모리에만 유지.
         var cache = ProviderSnapshotCache(
             userDefaults: defaults, allowsPersistedFreshness: trustsPersistedFreshness,
-            persistsWrites: preflightCardID == nil)
+            persistsWrites: preflightCardID == nil, ignoresPersistedSnapshotsFor: ["opencode"])
         if let preflight, let snapshot = cache.snapshot(providerID: preflight.cardID) {
             let now = Date()
             let observation = SoftLimitObservation.project(
@@ -277,7 +285,8 @@ public struct UsageReader {
             let state = observation?.quotaState(thresholdPercent: preflight.threshold, at: now) ?? .unknown
             if state == .unknown {
                 cache = ProviderSnapshotCache(
-                    userDefaults: defaults, allowsPersistedFreshness: false, persistsWrites: false)
+                    userDefaults: defaults, allowsPersistedFreshness: false, persistsWrites: false,
+                    ignoresPersistedSnapshotsFor: ["opencode"])
             }
         }
         let allProviderIDs = registry.providers.map(\.id)

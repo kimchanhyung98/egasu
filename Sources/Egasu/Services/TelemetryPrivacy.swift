@@ -8,7 +8,7 @@ enum TelemetryPrivacy {
     ]
     private static let metricNames: Set<String> = [
         "session", "weekly", "monthly", "daily", "today", "week", "month", "trend", "extra",
-        "fable", "sonnet", "credits", "balance", "webSearches", "premium", "orgCredits", "orgSpend",
+        "fable", "sonnet", "credits", "individualCredits", "balance", "webSearches", "premium", "orgCredits", "orgSpend",
         "chat", "completions", "payAsYouGo", "auto", "api", "plan", "resets", "resetWatch",
         "sonnetThinking", "gptOss", "geminiPro", "geminiFlash", "geminiWeekly", "claude", "claudeWeekly", "argonWeekly",
         "rateLimitResets", "spark", "sparkWeekly", "sparkMonthly", "usage", "onDemand", "requests", "yesterday",

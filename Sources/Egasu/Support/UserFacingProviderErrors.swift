@@ -353,10 +353,15 @@ extension ZAIUsageError: UserPresentableError {
 extension OpenCodeUsageError: UserPresentableError {
     var presentationMessage: LocalizedMessage {
         switch self {
+        case .credentialsChanged: .init("OpenCode sign-in changed during refresh. Refresh this account and try again.")
         case .notLoggedIn:
             .init("OpenCode not detected. Log in with OpenCode Go or use OpenCode locally first.")
         case .credentialsUnreadable:
             .init("Couldn't read OpenCode's auth.json. Check its file permissions or log into OpenCode Go again.")
+        case .requestFailed(let status):
+            .init("Usage request failed (HTTP %@). Try again later.", [String(status)])
+        case .invalidResponse:
+            .init("Usage response invalid. Try again later.")
         case .databaseUnreadable:
             .init("Couldn't read OpenCode's local database. Quit OpenCode and refresh, or check the data directory's permissions.")
         }

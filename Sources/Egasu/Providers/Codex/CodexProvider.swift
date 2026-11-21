@@ -51,6 +51,9 @@ final class CodexProvider: ProviderRuntime {
             .percent(id: "\(provider.id).monthly", provider: provider, title: "Monthly")
                 .supportingSoftLimit(.monthly)
                 .exportingLimit("monthly", unit: "percent"),
+            .boundedCount(id: "\(provider.id).individualCredits", provider: provider, title: "Individual Credits",
+                          limit: 1, suffix: "credits")
+                .exportingLimit("individualCredits", unit: "credits"),
             .usageTrend(provider: provider)
                 .exportingHistory(
                     scope: .machineLocal,
@@ -331,6 +334,7 @@ final class CodexProvider: ProviderRuntime {
             }
             try authStore.validateAccountIdentity(live.auth)
         }
+        let binding = CodexResetClaimBinding(authState: authState)
         return ProviderSnapshot.make(
             provider: provider,
             plan: mapped.plan,
@@ -342,7 +346,8 @@ final class CodexProvider: ProviderRuntime {
             isDegraded: refreshIsDegraded ? true : nil,
             incompleteQuotaWindows: mapped.incompleteQuotaWindows.isEmpty ? nil : mapped.incompleteQuotaWindows,
             liveQuotaObservedAt: quota.observedAt,
-            codexResetClaimBinding: CodexResetClaimBinding(authState: authState)
+            liveQuotaAccountKey: binding?.verifiedAccountKey,
+            codexResetClaimBinding: binding
         )
     }
 

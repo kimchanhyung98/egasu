@@ -59,7 +59,10 @@ struct DashboardContentView: View {
             switch popover.dashboardTab {
             case .priority:
                 if container.dashboardAccounts().isEmpty {
-                    hiddenMetricsNotice
+                    VStack(spacing: 4) {
+                        hiddenMetricsNotice
+                        ViewAllUsageButton { popover.dashboardTab = .allUsage }
+                    }
                 } else {
                     PriorityDashboardView()
                 }
@@ -96,5 +99,15 @@ struct DashboardContentView: View {
     /// 켜진 프로바이더가 하나라도 있는지 — 없으면 계정 추가 빈 상태.
     private var hasEnabledProvider: Bool {
         layout.registry.providers.contains { container.enablement.isEnabled($0.id) }
+    }
+}
+
+struct ViewAllUsageButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(L10n.dashboard("View All Usage"), action: action)
+            .buttonStyle(.link)
+            .font(.system(size: 12))
     }
 }

@@ -1,6 +1,6 @@
 import Foundation
 
-/// 사용량 알림 네 종류 — 조건별 설정과 관측 상태로 중복 방지·재알림 제어.
+/// 사용량 알림 — 조건별 설정과 관측 상태로 중복 방지·재알림 제어.
 /// Critical·Warning은 Priority 기준(남은 양), Burning Fast는 속도, Use It or Lose It은 초기화 직전 남은 양.
 enum PaceMilestone: String, CaseIterable, Hashable, Sendable {
     /// 기존 Almost Out·Cutting It Close의 저장 키를 유지하여 알림 설정 보존.
@@ -8,6 +8,7 @@ enum PaceMilestone: String, CaseIterable, Hashable, Sendable {
     case warning = "healthyToClose"
     case closeToRunningOut
     case useItOrLoseIt
+    case quotaRecovered
 }
 
 extension PaceMilestone {
@@ -25,6 +26,7 @@ extension PaceMilestone {
         case .critical: return L10n.metrics("Critical")
         case .warning: return L10n.metrics("Warning")
         case .closeToRunningOut: return L10n.dashboard("Burning Fast")
+        case .quotaRecovered: return L10n.metrics("Quota Available Again")
         case .useItOrLoseIt: return L10n.metrics("Use It or Lose It")
         }
     }
@@ -37,6 +39,9 @@ extension PaceMilestone {
         case .critical: return L10n.metrics("Alert when a limit drops critically low")
         case .warning: return L10n.metrics("Alert when a limit requires your attention")
         case .closeToRunningOut: return L10n.metrics("A limit may run out before its reset")
+        case .quotaRecovered:
+            return L10n.metrics(
+                "Notify when fresh Claude, Codex, or Cursor usage confirms the same account has quota again")
         case .useItOrLoseIt: return L10n.metrics("Over 50% left a day before its reset")
         }
     }
@@ -47,6 +52,7 @@ extension PaceMilestone {
         case .critical: return L10n.metrics("%lld%% or less left for this window.", limits.critical)
         case .warning: return L10n.metrics("%lld%% or less left for this window.", limits.warning)
         case .closeToRunningOut: return L10n.metrics("May run out before the limit resets.")
+        case .quotaRecovered: return L10n.metrics("This quota is available again.")
         case .useItOrLoseIt: return L10n.metrics("Over 50% left, resets in under 24 hours.")
         }
     }
@@ -69,6 +75,7 @@ struct NotificationState: Equatable, Sendable {
     var firedMilestones: Set<PaceMilestone> = []
     var previousBucket: PaceBucket = .untracked
     var previousSeverity: WidgetData.MeterSeverity = .normal
+    var exhaustedAccount: String?
     var positiveUsageObservedAt: Date?
     /// 사용량이 먼저 0으로 돌아온 관측 — 이후 확인한 주기의 시작과 종료를 비교.
     struct Recovery: Equatable, Sendable {

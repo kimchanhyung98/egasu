@@ -29,12 +29,15 @@ test('Priority distinguishes hidden limits from providers with no reported limit
   assert.ok(!dashboardLines(state).some((line) => line.row.kind === 'bounded'));
   assert.equal(priorityBoard(state).allClear, false);
   assert.equal(priorityBoard(state).noLimits, false);
+  assert.equal(priorityBoard(state).hiddenLimits, true);
 
   for (const provider of state.enabledProviders) state = setProviderEnabled(state, provider, false);
   assert.equal(priorityBoard(state).noLimits, true);
+  assert.equal(priorityBoard(state).hiddenLimits, false);
   const pending = priorityBoard(setProviderEnabled(state, 'cursor', true));
   assert.deepEqual(pending.pending, ['cursor']);
   assert.equal(pending.noLimits, false);
+  assert.equal(pending.hiddenLimits, false);
 });
 
 test('hiding a metric unpins only that account while shared settings survive switching', () => {

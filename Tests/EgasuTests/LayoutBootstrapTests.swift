@@ -75,7 +75,7 @@ final class LayoutBootstrapTests: XCTestCase {
         let layout = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
 
         for (card, weekly, monthly) in [
-            ("codex", "weekly", "monthly"), ("codex", "sparkWeekly", "sparkMonthly"),
+            ("codex", "weekly", "monthly"), ("codex", "monthly", "individualCredits"), ("codex", "sparkWeekly", "sparkMonthly"),
             ("grok", "weekly", "monthly"), ("zai", "weekly", "monthly")
         ] {
             let ids = AppContainer.dashboardMetricDescriptors(for: card, in: layout).map(\.id)
@@ -102,34 +102,36 @@ final class LayoutBootstrapTests: XCTestCase {
 
         let layout = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
         XCTAssertEqual(
-            Array(layout.metricOrder(for: "codex").prefix(6)),
+            Array(layout.metricOrder(for: "codex").prefix(7)),
             [
                 "codex.sparkWeekly", "codex.sparkMonthly", "codex.trend", "codex.weekly", "codex.monthly",
-                "codex.session"
+                "codex.individualCredits", "codex.session"
             ])
         XCTAssertEqual(
-            Array(layout.metricOrder(for: card).prefix(6)),
-            ["weekly", "monthly", "session", "sparkWeekly", "sparkMonthly", "credits"].map { "\(card).\($0)" })
+            Array(layout.metricOrder(for: card).prefix(7)),
+            ["weekly", "monthly", "individualCredits", "session", "sparkWeekly", "sparkMonthly", "credits"].map { "\(card).\($0)" })
         XCTAssertEqual(
             Array(layout.metricOrder(for: "grok").prefix(4)),
             ["grok.weekly", "grok.monthly", "grok.today", "grok.payAsYouGo"])
         XCTAssertEqual(
             Array(layout.metricOrder(for: "zai").prefix(3)), ["zai.weekly", "zai.webSearches", "zai.monthly"])
         XCTAssertEqual(
-            AppContainer.dashboardMetricDescriptors(for: card, in: layout).prefix(4).map(\.id),
-            ["weekly", "monthly", "sparkWeekly", "sparkMonthly"].map { "\(card).\($0)" })
+            AppContainer.dashboardMetricDescriptors(for: card, in: layout).prefix(5).map(\.id),
+            ["weekly", "monthly", "individualCredits", "sparkWeekly", "sparkMonthly"].map { "\(card).\($0)" })
         XCTAssertTrue(layout.reorderMetric(dragged: "\(card).monthly", target: "\(card).credits", in: card))
         layout.setMetricEnabled("codex.monthly", false)
+        layout.setMetric("\(card).individualCredits", pinned: true)
 
         let reloaded = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
         XCTAssertEqual(
-            Array(reloaded.metricOrder(for: card).prefix(6)),
-            ["weekly", "session", "sparkWeekly", "sparkMonthly", "credits", "monthly"].map { "\(card).\($0)" })
+            Array(reloaded.metricOrder(for: card).prefix(7)),
+            ["weekly", "individualCredits", "session", "sparkWeekly", "sparkMonthly", "credits", "monthly"].map { "\(card).\($0)" })
         XCTAssertFalse(reloaded.isMetricEnabled("codex.monthly"))
         XCTAssertFalse(reloaded.isMetricEnabled("\(card).session"))
         XCTAssertFalse(reloaded.isMetricEnabled("grok.payAsYouGo"))
         XCTAssertTrue(reloaded.isMetricEnabled("\(card).monthly"))
-        XCTAssertEqual(reloaded.priorityPinIDs, ["codex.weekly", "\(card).sparkWeekly"])
+        XCTAssertEqual(reloaded.priorityPinIDs, ["codex.weekly", "\(card).sparkWeekly", "\(card).individualCredits"])
+        XCTAssertFalse(reloaded.isMetricPinned("codex.individualCredits"))
     }
 
     func testLegacyOnDemandWeeklyKeepsItsNewMonthlyMetricOnEveryCard() {
@@ -148,7 +150,7 @@ final class LayoutBootstrapTests: XCTestCase {
         for id in ["codex", card] {
             XCTAssertEqual(
                 AppContainer.dashboardMetricDescriptors(for: id, in: layout).map(\.id),
-                ["sparkWeekly", "sparkMonthly", "weekly", "monthly"].map { "\(id).\($0)" })
+                ["sparkWeekly", "sparkMonthly", "weekly", "monthly", "individualCredits"].map { "\(id).\($0)" })
             XCTAssertFalse(layout.isMetricEnabled("\(id).credits"))
         }
         XCTAssertFalse(persistence.hasOnDemandState)
@@ -175,10 +177,10 @@ final class LayoutBootstrapTests: XCTestCase {
 
         XCTAssertEqual(
             AppContainer.dashboardMetricDescriptors(for: "codex", in: layout).prefix(4).map(\.id),
-            ["codex.weekly", "codex.monthly", "codex.trend", "codex.credits"])
+            ["codex.weekly", "codex.monthly", "codex.individualCredits", "codex.trend"])
         XCTAssertEqual(
             AppContainer.dashboardMetricDescriptors(for: personal, in: layout).prefix(3).map(\.id),
-            ["weekly", "monthly", "credits"].map { "\(personal).\($0)" })
+            ["weekly", "monthly", "individualCredits"].map { "\(personal).\($0)" })
     }
 
     private func makeDefaultSet() -> LayoutDefaultSet {

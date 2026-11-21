@@ -52,8 +52,8 @@ struct SoftLimitObservation: Equatable, Sendable {
         var hasInvalidReading = snapshot.incompleteQuotaWindows?.contains(where: window.includes) == true
         for descriptor in descriptors where descriptor.providerID == snapshot.providerID {
             guard descriptor.softLimitWindows.contains(where: window.includes),
-                descriptor.limitResources.contains(where: { $0.kind == .consumption && !$0.estimated }),
                 let line = snapshot.line(label: descriptor.metricLabel),
+                descriptor.limitResources.contains(where: { $0.kind == .consumption && !$0.estimated && $0.matches(line) }),
                 case let .progress(_, used, limit, _, resetsAt, duration, _) = line
             else { continue }
             guard descriptor.supportsSoftLimit(window, periodDurationMs: duration) else {

@@ -335,3 +335,5 @@
 "Check access to your shell settings and Claude login files, then restart egasu." = "Check access to your shell settings and Claude login files, then restart egasu.";
 "Another egasu process is updating the shared Claude login. Wait for it to finish, then try again." = "Another egasu process is updating the shared Claude login. Wait for it to finish, then try again.";
 "Unlock your Keychain and restart egasu. Allow access to the Claude login if macOS asks." = "Unlock your Keychain and restart egasu. Allow access to the Claude login if macOS asks.";
+
+"OpenCode sign-in changed during refresh. Refresh this account and try again." = "OpenCode sign-in changed during refresh. Refresh this account and try again.";

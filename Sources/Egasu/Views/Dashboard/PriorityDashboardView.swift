@@ -74,6 +74,7 @@ struct PriorityBoardList: View {
         case .allClear, .listed:
             VStack(alignment: .leading, spacing: PanelMetrics.margin) {
                 if !board.attention.isEmpty || board.showsClearRow { attentionSection }
+                if board.offersAllUsage { allUsageButton }
                 if !board.useItOrLoseIt.isEmpty { useItOrLoseItSection }
                 if !board.notices.isEmpty { accountNotices }
             }
@@ -84,9 +85,7 @@ struct PriorityBoardList: View {
     @ViewBuilder
     private var allUsageButton: some View {
         if let onShowAllUsage {
-            Button(L10n.dashboard("View All Usage"), action: onShowAllUsage)
-                .buttonStyle(.link)
-                .font(.system(size: 12))
+            ViewAllUsageButton(action: onShowAllUsage)
         }
     }
 
