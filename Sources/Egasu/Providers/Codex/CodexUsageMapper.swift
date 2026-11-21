@@ -79,6 +79,7 @@ enum CodexUsageMapper {
 
         // Spark는 기본 계정 한도와 별도로 모델별 한도를 제공.
         lines.append(contentsOf: sparkLines(body: body, now: now, incompleteWindows: &incompleteWindows))
+        if let line = individualCreditLimit(body, now: now) { lines.append(line) }
 
         // On-demand reset credit은 Credits 앞에 표시 — count는 raw 전달(menu-bar tile과 동일 숫자), 각 credit의 expiry는 `expiriesAt`로 hover tooltip에 노출.
         if let resets = readResetCredits(body: body, resetCredits: resetCredits) {
@@ -96,6 +97,24 @@ enum CodexUsageMapper {
         // "no usage data" badge는 `CodexProvider.probe`가 스캔된 spend line *뒤에* 추가 — 빈 live 응답의 badge가 Today/Yesterday와 공존 불가.
         return CodexMappedUsage(
             plan: formatCodexPlan(body["plan_type"]), lines: lines, incompleteQuotaWindows: incompleteWindows)
+    }
+
+    /// 워크스페이스의 개인 크레딧 상한. Flex 잔액·일반 rate limit과 별개.
+    private static func individualCreditLimit(_ body: [String: Any], now: Date) -> MetricLine? {
+        guard let control = body["spend_control"] as? [String: Any],
+              let quota = control["individual_limit"] as? [String: Any],
+              quota["unit"] as? String == "credit",
+              let limit = ProviderParse.number(quota["limit"]), limit > 0 else { return nil }
+        let used: Double
+        if let reported = ProviderParse.number(quota["used"]), reported >= 0 {
+            used = reported
+        } else if let remaining = ProviderParse.number(quota["remaining"]), (0...limit).contains(remaining) {
+            used = limit - remaining
+        } else {
+            return nil
+        }
+        return .progress(label: "Individual Credits", used: used, limit: limit, format: .count(suffix: "credits"),
+                         resetsAt: resetDate(quota, now: now), periodDurationMs: readPeriodMs(quota))
     }
 
     private static func progress(

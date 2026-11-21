@@ -461,7 +461,7 @@ final class LayoutStoreTests: XCTestCase {
         XCTAssertEqual(
             store.orderedSupportedMetrics(for: "codex").map(\.id),
             [
-                "codex.session", "codex.weekly", "codex.monthly", "codex.trend", "codex.resetWatch",
+                "codex.session", "codex.weekly", "codex.monthly", "codex.individualCredits", "codex.trend", "codex.resetWatch",
                 "codex.rateLimitResets", "codex.spark", "codex.sparkWeekly", "codex.sparkMonthly", "codex.credits",
                 "codex.today", "codex.yesterday", "codex.last30"
             ])
