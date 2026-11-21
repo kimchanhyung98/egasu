@@ -42,6 +42,11 @@ enum MetricFormatter {
         }
     }
 
+    static func utilization(_ fraction: Double) -> String {
+        fraction.formatted(
+            .percent.precision(.fractionLength(0)).rounded(rule: .toNearestOrAwayFromZero).locale(locale))
+    }
+
     /// 단위 라벨이 붙은 값(예: "772 credits"). token·dollar·percent 값은 의도적으로 라벨 없이 bare 렌더("56.9M", "$4.08", "95%").
     static func string(for value: MetricValue, style: Style) -> String {
         let text = number(value.number, kind: value.kind, style: style)

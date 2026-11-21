@@ -21,11 +21,28 @@ struct DashboardRowModel: Equatable {
     /// 카드형 한도 행의 전체 값·초기화 설명 — 한 줄 격자는 기존 축약 표기 유지.
     var cardValue: String?
     var cardReset: String?
+    var limitSummary: String?
 
     /// 소진되어 그릴 막대가 없는 한도 — 행 50% 불투명.
     var isFaded: Bool {
         guard case .bar(let fill, _, _, _, let isUsedUp) = mark else { return false }
         return isUsedUp && fill == 0
+    }
+}
+
+extension DashboardLine {
+    func dashboardRow(now: Date = Date()) -> DashboardRowModel {
+        var row = data.dashboardRow(now: now)
+        guard ProviderAccountID.canonicalMetricID(id) == "codex.individualCredits",
+            case .bar = row.mark, let limit = data.limit, limit > 0
+        else { return row }
+
+        let percent = MetricFormatter.utilization(data.displayedValue / limit)
+        let usage = MetricFormatter.usageValue(percent, word: data.displayMode == .used ? "used" : "left")
+        let count = MetricFormatter.number(limit, kind: .count, style: .full)
+        let allowance = MetricFormatter.labelledValue(count, label: "credits")
+        row.limitSummary = L10n.metrics("%@ · Limit %@", usage, allowance)
+        return row
     }
 }
 
