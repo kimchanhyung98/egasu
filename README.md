@@ -27,6 +27,7 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
 ## 지원 프로바이더
 
 - **[Claude](/docs/providers/claude.md)** — 세션·주간·모델별 한도, 추가 사용량, 로컬 기록의 일별 지출·토큰.
+  OAuth 갱신은 기존 로그인 권한 범위 유지.
 - **[Codex](/docs/providers/codex.md)** — 기본·Spark 풀의 세션·주간·월간 한도, 추가 사용 및 한도 재설정 크레딧, 로컬 기록의 일별 지출·토큰.
 - **[Cursor](/docs/providers/cursor.md)** — 전체·Auto·API 사용량, 요청·크레딧, 추가 사용량, 서버 보고 기반 일별 추가 과금·토큰.
   이력 조회 실패 시 같은 계정으로 확인한 마지막 정상 이력 유지.
