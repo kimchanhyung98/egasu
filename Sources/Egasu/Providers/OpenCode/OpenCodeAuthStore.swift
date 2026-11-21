@@ -25,9 +25,12 @@ struct OpenCodeAuthStore: Sendable {
         OpenCodePaths.authFilePath(dataDirectory: dataDirectory)
     }
 
-    /// auth.json의 opencode-go 항목에서 유효한 API 키 조회.
+    /// 명시한 Go 전용 키 우선, 없으면 auth.json의 opencode-go 항목 사용.
     /// 파일이나 키가 없으면 nil 반환. 파일 읽기나 JSON 해석 실패는 인증 저장소 오류로 전달.
     func goAPIKey() throws -> String? {
+        if let key = environment.value(for: "OPENCODE_GO_API_KEY")?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+            return key
+        }
         let text: String?
         do {
             text = try files.readTextIfPresent(authFilePath)
@@ -41,6 +44,7 @@ struct OpenCodeAuthStore: Sendable {
             throw OpenCodeUsageError.credentialsUnreadable(detail: "stage=decode category=decoding")
         }
         guard let entry = object["opencode-go"] as? [String: Any],
+              entry["type"] == nil || entry["type"] as? String == "api",
               let key = entry["key"] as? String
         else { return nil }
         return key.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty

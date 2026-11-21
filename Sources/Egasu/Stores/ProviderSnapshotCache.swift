@@ -28,6 +28,8 @@ struct ProviderSnapshotCache {
     private let ttl: TimeInterval?
     /// timestamp-only freshness opt-in — 메뉴바 앱은 launch당 1회 refresh를 강제하지만 one-shot reader에는 세션 개념이 없음.
     private let allowsPersistedFreshness: Bool
+    /// CLI가 현재 키의 계정을 확인할 수 없는 프로바이더는 이전 실행의 캐시를 사용하지 않음.
+    private let ignoresPersistedSnapshotsFor: Set<String>
     private let persistsWrites: Bool
     private let now: () -> Date
     private let encoder: JSONEncoder
@@ -41,12 +43,14 @@ struct ProviderSnapshotCache {
         ttl: TimeInterval? = nil,
         allowsPersistedFreshness: Bool = false,
         persistsWrites: Bool = true,
+        ignoresPersistedSnapshotsFor: Set<String> = [],
         now: @escaping () -> Date = Date.init
     ) {
         self.userDefaults = userDefaults
         self.storageKey = storageKey
         self.ttl = ttl
         self.allowsPersistedFreshness = allowsPersistedFreshness
+        self.ignoresPersistedSnapshotsFor = ignoresPersistedSnapshotsFor
         self.persistsWrites = persistsWrites
         self.now = now
         let encoder = JSONEncoder()
@@ -62,13 +66,18 @@ struct ProviderSnapshotCache {
     func loadSnapshots(providerIDs: [String]) -> [String: ProviderSnapshot] {
         let providerIDSet = Set(providerIDs)
         let loaded = loadPayload().snapshots.filter { providerID, _ in
-            providerIDSet.contains(providerID)
+            providerIDSet.contains(providerID) && canReadSnapshot(providerID)
         }
         AppLog.debug(.cache, "loaded \(loaded.count) snapshots from disk")
         return loaded
     }
 
+    private func canReadSnapshot(_ providerID: String) -> Bool {
+        !ignoresPersistedSnapshotsFor.contains(providerID) || sessionWrites.withLock { $0.contains(providerID) }
+    }
+
     func snapshot(providerID: String) -> ProviderSnapshot? {
+        guard canReadSnapshot(providerID) else { return nil }
         let snapshot = loadPayload().snapshots[providerID]
         guard let snapshot else { return nil }
         // freshness는 이중 조건: 이 세션에 쓰였고 AND TTL 이내 — 이전 세션 blob은 즉시 paint용일 뿐

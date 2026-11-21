@@ -230,13 +230,3 @@ enum ClaudeUsageMapper {
     }
 
 }
-
-private enum HTTPDateFormatter {
-    static func date(from value: String) -> Date? {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss zzz"
-        return formatter.date(from: value)
-    }
-}

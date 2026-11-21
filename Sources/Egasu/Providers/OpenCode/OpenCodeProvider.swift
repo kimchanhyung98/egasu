@@ -3,6 +3,9 @@ import Foundation
 /// OpenCode provider의 typed failure — telemetry가 안정된 category로 그룹화 (`ErrorCategory.swift` 참고).
 enum OpenCodeUsageError: Error, LocalizedError, Equatable {
     case notLoggedIn
+    case requestFailed(Int)
+    case invalidResponse
+    case credentialsChanged
     /// 인증 파일 읽기·해석 실패. detail에는 고정된 단계와 오류 코드만 저장.
     case credentialsUnreadable(detail: String)
     /// 디스크에 database가 있으나 이번 refresh에서 하나도 읽지 못한 상태.
@@ -11,6 +14,9 @@ enum OpenCodeUsageError: Error, LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
+        case .credentialsChanged: return "OpenCode sign-in changed during refresh. Refresh this account and try again."
+        case .requestFailed(let status): return ProviderUsageErrorText.requestFailed(statusCode: status)
+        case .invalidResponse: return ProviderUsageErrorText.invalidResponse
         case .notLoggedIn:
             return "OpenCode not detected. Log in with OpenCode Go or use OpenCode locally first."
         case .credentialsUnreadable:
@@ -21,8 +27,7 @@ enum OpenCodeUsageError: Error, LocalizedError, Equatable {
     }
 }
 
-/// OpenCode-hosted 사용량(Go 구독 + Zen pay-as-you-go gateway)을 로컬 SQLite 로그에서 추적.
-/// cookie·network 불필요 (`OpenCodeUsageScanner` 참고) — 카드는 Go plan cap 달러 meter + local spend tile + usage trend 표시.
+/// Go 구독 한도는 서버에서, Go·Console 지출 이력은 로컬 원장에서 조회.
 @MainActor
 final class OpenCodeProvider: ProviderRuntime {
     let provider = Provider(
@@ -34,6 +39,7 @@ final class OpenCodeProvider: ProviderRuntime {
         ]
     )
 
+    let http: any HTTPClient
     let authStore: OpenCodeAuthStore
     let usageScanner: OpenCodeUsageScanner
     let sharedUsage: UsageCollectionCoordinator
@@ -46,11 +52,13 @@ final class OpenCodeProvider: ProviderRuntime {
     private var loggedAuthReadFailure = false
 
     init(
+        http: any HTTPClient = URLSessionHTTPClient(sendsCookies: false),
         authStore: OpenCodeAuthStore = OpenCodeAuthStore(),
         usageScanner: OpenCodeUsageScanner = OpenCodeUsageScanner(),
         sharedUsage: UsageCollectionCoordinator = .shared,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
+        self.http = http
         self.authStore = authStore
         self.usageScanner = usageScanner
         self.sharedUsage = sharedUsage
@@ -58,17 +66,20 @@ final class OpenCodeProvider: ProviderRuntime {
     }
 
     var widgetDescriptors: [WidgetDescriptor] {
-        // Go 한도는 로컬 `opencode-go` 사용액에서 계산.
+        // 같은 기간은 고정·숨김 설정을 공유하고, 실측(%)과 로컬 추정(USD)은 API 키로 구분.
         // 지출·사용 추이는 OpenCode 로컬 DB와 공유 도구의 기록을 합산.
         [
             .boundedDollars(id: "opencode.session", provider: provider, title: "Session", limit: OpenCodeUsageMapper.sessionCap)
-                .exportingLimit("session", unit: "usd", estimated: true),
+                .exportingLimit("session", unit: "usd", estimated: true, progressFormat: .dollars)
+                .exportingLimit("goSession", unit: "percent", progressFormat: .percent),
             .boundedDollars(id: "opencode.weekly", provider: provider, title: "Weekly", limit: OpenCodeUsageMapper.weeklyCap)
                 .supportingSoftLimit(.weekly)
-                .exportingLimit("weekly", unit: "usd", estimated: true),
+                .exportingLimit("weekly", unit: "usd", estimated: true, progressFormat: .dollars)
+                .exportingLimit("goWeekly", unit: "percent", progressFormat: .percent),
             .boundedDollars(id: "opencode.monthly", provider: provider, title: "Monthly", limit: OpenCodeUsageMapper.monthlyCap)
-            .supportingSoftLimit(.monthly)
-                .exportingLimit("monthly", unit: "usd", estimated: true),
+                .supportingSoftLimit(.monthly)
+                .exportingLimit("monthly", unit: "usd", estimated: true, progressFormat: .dollars)
+                .exportingLimit("goMonthly", unit: "percent", progressFormat: .percent),
             .usageTrend(provider: provider)
                 .exportingHistory(
                     scope: .machineLocal,
@@ -96,11 +107,11 @@ final class OpenCodeProvider: ProviderRuntime {
         // 자정에 집계 기간이 달라지지 않도록 조회 시작 시각을 모든 지표에 적용.
         let refreshedAt = now()
 
-        // Go 인증 파일을 읽지 못해도 사용 이력은 조회하고, 결과가 비면 인증 오류 표시.
-        var hasGoKey = false
+        // 인증 파일을 읽지 못하면 경고를 표시하고 접근 가능한 사용 이력은 계속 조회.
+        var goKey: String?
         var authReadError: OpenCodeUsageError?
         do {
-            hasGoKey = try await loadOffMainActor { [authStore] in try authStore.goAPIKey() != nil }
+            goKey = try await loadOffMainActor { [authStore] in try authStore.goAPIKey() }
             loggedAuthReadFailure = false
         } catch let error as OpenCodeUsageError {
             authReadError = error
@@ -112,10 +123,27 @@ final class OpenCodeProvider: ProviderRuntime {
             authReadError = .credentialsUnreadable(detail: AppLog.errorDetails(error))
         }
 
+        var live: OpenCodeGoQuota?
+        var observedAt: Date?
+        var quotaError: Error?
+        if let goKey {
+            do {
+                live = try await OpenCodeGoQuota.fetch(key: goKey, http: http, now: now)
+                observedAt = now()
+                if live?.isIncomplete == true { quotaError = OpenCodeUsageError.invalidResponse }
+            } catch {
+                quotaError = error
+            }
+            if let quotaError {
+                AppDiagnostics.record(.providerRefresh, result: .degraded, providerID: provider.id,
+                                      error: quotaError, localContext: "Go subscription usage unavailable or incomplete")
+            }
+        }
+
         let scan: OpenCodeUsageScan?
         var nativeScanError: Error?
         do {
-            scan = try await usageScanner.scan(now: refreshedAt, hasGoKey: hasGoKey)
+            scan = try await usageScanner.scan(now: refreshedAt, hasGoKey: false)
         } catch {
             if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled {
                 return ProviderSnapshot.error(provider: provider, error: CancellationError())
@@ -126,56 +154,52 @@ final class OpenCodeProvider: ProviderRuntime {
 
         let sharedScan = await sharedUsage.scan(providerID: provider.id, now: refreshedAt, pricing: .empty, allowEstimates: false)
         guard !Task.isCancelled else { return ProviderSnapshot.error(provider: provider, error: CancellationError()) }
-        if let nativeScanError, sharedScan?.usageHistory?.series.daily.isEmpty != false {
-            return ProviderSnapshot.error(provider: provider, error: nativeScanError)
+        if let goKey {
+            do {
+                guard try await loadOffMainActor({ [authStore] in try authStore.goAPIKey() }) == goKey else {
+                    return .error(provider: provider, error: OpenCodeUsageError.credentialsChanged)
+                }
+            } catch { return .error(provider: provider, error: error) }
         }
-        guard let logScan = DailyUsageAccumulator.merged([scan?.logScan, sharedScan]) else {
-            // 디스크에 OpenCode database가 전혀 없는 경우
-            if hasGoKey {
-                // Go 키만 있을 때 로컬 추정 한도의 사용량을 0으로 표시. 활성 구독·세부 등급은 미확인.
-                let windows = OpenCodeGoWindowMath.compute(costs: [], anchorMs: nil, now: refreshedAt)
-                return ProviderSnapshot.make(
-                    provider: provider, plan: "Go",
-                    lines: OpenCodeUsageMapper.meterLines(windows), refreshedAt: refreshedAt
-                )
-            }
-            return ProviderSnapshot.error(
-                provider: provider, error: authReadError ?? OpenCodeUsageError.notLoggedIn
-            )
+        let logScan = DailyUsageAccumulator.merged([scan?.logScan, sharedScan])
+        if live == nil, let nativeScanError, sharedScan?.usageHistory?.series.daily.isEmpty != false {
+            return .error(provider: provider, error: nativeScanError)
+        }
+        if live == nil, logScan == nil {
+            return .error(provider: provider, error: quotaError ?? authReadError ?? OpenCodeUsageError.notLoggedIn)
         }
 
-        var lines: [MetricLine] = []
-        let goWindows = scan?.goWindows ?? (hasGoKey && nativeScanError == nil
-            ? OpenCodeGoWindowMath.compute(costs: [], anchorMs: nil, now: refreshedAt) : nil)
-        if let windows = goWindows {
-            lines.append(contentsOf: OpenCodeUsageMapper.meterLines(windows))
+        var lines = live?.lines ?? []
+        if live == nil, let windows = scan?.goWindows {
+            lines += OpenCodeUsageMapper.meterLines(windows)
         }
-        SpendTileMapper.appendTokenUsage(
-            logScan.series, to: &lines, now: refreshedAt,
-            estimated: false,
-            estimatedDays: Set(scan?.logScan.series.daily.filter { $0.costUSD != nil }.map(\.date) ?? []),
-            unknownModelsByDay: logScan.unknownModelsByDay,
-            modelUsage: logScan.modelUsage,
-            modelSourceNote: sourceNote
-        )
-        SpendTileMapper.appendUsageTrend(logScan.series, to: &lines, now: refreshedAt, note: sourceNote)
+        if let logScan {
+            SpendTileMapper.appendTokenUsage(
+                logScan.series, to: &lines, now: refreshedAt,
+                estimated: false,
+                estimatedDays: Set(scan?.logScan.series.daily.filter { $0.costUSD != nil }.map(\.date) ?? []),
+                unknownModelsByDay: logScan.unknownModelsByDay,
+                modelUsage: logScan.modelUsage,
+                modelSourceNote: sourceNote
+            )
+            SpendTileMapper.appendUsageTrend(logScan.series, to: &lines, now: refreshedAt, note: sourceNote)
+        }
         MetricLine.appendNoDataIfNeeded(&lines)
 
-        // `goWindows`는 현재 Go 신호(key 또는 최근 spend)일 때만 존재, stale anchor로는 생기지 않음 — plan badge의 정직한 근거
-        let plan: String? = goWindows != nil ? "Go" : nil
-        let warningError: Error? = nativeScanError ?? (scan == nil && logScan.series.daily.isEmpty ? authReadError : nil)
-        let warningPresentations = (warningError.map { [UserFacingErrors.presentation($0)] } ?? [])
-            + (logScan.readWarning.map { [.init($0)] } ?? [])
+        let plan: String? = live != nil || scan?.goWindows != nil ? "Go" : nil
+        let errors: [Error] = [quotaError, nativeScanError, authReadError].compactMap { $0 }
+        let warningPresentations = errors.map(UserFacingErrors.presentation) + (logScan?.readWarning.map { [.init($0)] } ?? [])
+        let warning = (errors.map(\.localizedDescription) + [logScan?.readWarning].compactMap { $0 }).joined(separator: " ")
         return ProviderSnapshot.make(
             provider: provider,
             plan: plan,
             lines: lines,
             refreshedAt: refreshedAt,
-            usageHistory: logScan.usageHistory,
-            warning: [warningError?.localizedDescription, logScan.readWarning]
-                .compactMap { $0 }.joined(separator: " ").nilIfEmpty,
+            usageHistory: logScan?.usageHistory,
+            warning: warning.nilIfEmpty,
             warningPresentation: warningPresentations.isEmpty ? nil : warningPresentations,
-            isDegraded: warningError == nil ? nil : true
+            isDegraded: errors.isEmpty ? nil : true,
+            incompleteQuotaWindows: live?.missingWindows, liveQuotaObservedAt: observedAt, quotaObservedAt: observedAt
         )
     }
 }

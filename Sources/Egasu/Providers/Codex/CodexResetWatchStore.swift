@@ -325,18 +325,8 @@ actor CodexResetWatchStore {
         if let seconds = TimeInterval(raw), seconds.isFinite, seconds >= 0 {
             return min(seconds, maximumRetryAge)
         }
-        guard let date = ResetWatchHTTPDateFormatter.date(from: raw) else { return nil }
+        guard let date = HTTPDateFormatter.date(from: raw) else { return nil }
         return min(max(0, date.timeIntervalSince(now)), maximumRetryAge)
-    }
-}
-
-private enum ResetWatchHTTPDateFormatter {
-    static func date(from value: String) -> Date? {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss zzz"
-        return formatter.date(from: value)
     }
 }
 

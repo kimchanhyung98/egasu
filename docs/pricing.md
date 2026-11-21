@@ -100,7 +100,8 @@
 - Kiro 추가 크레딧은 $0.04/크레딧.
   구독 포함 크레딧의 단가나 실제 청구액을 뜻하지 않음.
 - OpenCode의 Go 키만으로 Go·Go Plus·Go Teams 판별 불가.
-  앱의 이전 5시간·주간·월간 Go 미터는 현행 모델별 한도와 다르며, [OpenCode 지원 범위](/docs/providers/opencode.md) 참조.
+  서버의 세션·주간·월간 사용률을 우선 표시.
+  실측값이 없으면 로컬 원장의 지출로 추정하며, 모델별 잔여량은 산출하지 않음. [OpenCode 지원 범위](/docs/providers/opencode.md)
 - OpenRouter는 모델 추론 요금에 플랫폼 수수료를 중복 가산하지 않음.
   `is_free_tier`만으로 Standard·Business·Enterprise 판별 불가.
 - Z.ai 판매 페이지에는 Lite $12.60·Pro $56·Max $117.60의 할인 금액도 표시.
