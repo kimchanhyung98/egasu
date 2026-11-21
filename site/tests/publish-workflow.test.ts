@@ -62,15 +62,28 @@ function publicationFixture() {
 const snapshot = '게시된 피드 기준값 기록';
 const verify = '게시 전후 피드 불변 확인';
 
-test('Site CI 컨테이너와 테스트 패키지의 Playwright 버전 일치', () => {
+test('Site CI는 잠금 파일의 Playwright 버전으로 컨테이너 선택', () => {
   const workflow = readFileSync(new URL('../../.github/workflows/site.yml', import.meta.url), 'utf8');
-  const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   const lock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
-  const imageVersion = workflow.match(/^\s*image: mcr\.microsoft\.com\/playwright:v([^\s]+)-noble\s*$/m)?.[1];
-
-  assert.equal(imageVersion, manifest.devDependencies['@playwright/test']);
-  assert.equal(imageVersion, lock.packages['node_modules/@playwright/test'].version);
-  assert.equal(imageVersion, lock.packages['node_modules/playwright-core'].version);
+  const temp = mkdtempSync(join(tmpdir(), 'egasu-playwright-version-'));
+  const output = join(temp, 'output');
+  try {
+    const result = spawnSync('bash', ['-e', '-c', workflowStep('Playwright 버전 확인', 'site.yml')], {
+      cwd: new URL('../../', import.meta.url), env: { ...process.env, GITHUB_OUTPUT: output }, encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(output, 'utf8').trim(), `version=${lock.packages['node_modules/@playwright/test'].version}`);
+    const [prepare, verify] = workflow.split('\n  verify:\n');
+    assert.ok(prepare.includes('ref: ${{ inputs.ref || github.sha }}'));
+    assert.ok(prepare.includes('source_sha: ${{ steps.checkout.outputs.commit }}'));
+    assert.ok(verify.includes('ref: ${{ needs.playwright.outputs.source_sha }}'));
+    assert.ok(workflow.includes('image: mcr.microsoft.com/playwright:v${{ needs.playwright.outputs.version }}-noble'));
+    assert.ok(workflow.includes('\ncache-mode: none\n'));
+    assert.ok(prepare.includes('\nconcurrency:\n  group: site-ci-${{ github.workflow }}-${{ inputs.ref || github.ref }}\n  cancel-in-progress: true\n'));
+    assert.ok(!verify.includes('\n    concurrency:'));
+    assert.ok(verify.includes('package-manager-cache: false'));
+    assert.ok(!verify.includes('cache: npm'));
+  } finally { rmSync(temp, { recursive: true, force: true }); }
 });
 
 test('피드 두 개와 도메인을 보존하는 사이트 갱신 허용', () => {

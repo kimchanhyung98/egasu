@@ -37,21 +37,37 @@ struct ProxyConfig: Equatable, Sendable {
     /// proxy.enabled가 true이고 유효한 socks5·http·https URL일 때만 설정 생성 — 나머지는 nil.
     static func load(text: String?) -> ProxyConfig? {
         guard let text,
-              let data = text.data(using: .utf8),
-              let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let proxy = root["proxy"] as? [String: Any],
-              proxy["enabled"] as? Bool == true,
-              let urlString = proxy["url"] as? String,
-              let url = URL(string: urlString),
-              let schemeRaw = url.scheme?.lowercased(),
-              let scheme = Scheme(rawValue: schemeRaw),
-              let host = url.host(), !host.isEmpty
+            let data = text.data(using: .utf8),
+            let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+            let proxy = root["proxy"] as? [String: Any],
+            proxy["enabled"] as? Bool == true
         else { return nil }
 
+        guard let urlString = proxy["url"] as? String,
+            let url = URL(string: urlString),
+            let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+            let schemeRaw = url.scheme?.lowercased(),
+            let scheme = Scheme(rawValue: schemeRaw),
+            let host = url.host(), !host.isEmpty
+        else {
+            AppLog.warn(.config, "invalid proxy URL in configuration")
+            return nil
+        }
+
+        let port: UInt16
+        if let range = components.rangeOfPort, !range.isEmpty, let address = components.string {
+            guard let parsed = UInt16(address[range]), parsed > 0 else {
+                AppLog.warn(.config, "invalid proxy port in configuration")
+                return nil
+            }
+            port = parsed
+        } else {
+            port = scheme.defaultPort
+        }
         return ProxyConfig(
             scheme: scheme,
             host: host,
-            port: url.port.flatMap { UInt16(exactly: $0) } ?? scheme.defaultPort,
+            port: port,
             username: url.user(percentEncoded: false),
             password: url.password(percentEncoded: false)
         )

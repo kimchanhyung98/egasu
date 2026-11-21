@@ -265,6 +265,17 @@ final class ReleaseVersionScriptTests: XCTestCase {
         )
     }
 
+    func testDevelopmentAndReleaseBundlesIncludeSpotlightSearchNames() throws {
+        for script in ["script/build_and_run.sh", "script/release.sh"] {
+            let source = try String(contentsOf: Self.repositoryRoot.appendingPathComponent(script), encoding: .utf8)
+            let start = try XCTUnwrap(source.range(of: "<<PLIST\n"), script).upperBound
+            let end = try XCTUnwrap(source[start...].range(of: "\nPLIST\n"), script).lowerBound
+            let plist = try PropertyListSerialization.propertyList(from: Data(source[start..<end].utf8), format: nil)
+            let aliases = try XCTUnwrap((plist as? [String: Any])?["CFBundleAlternateNames"] as? [String], script)
+            XCTAssertTrue(Set(["openusage", "usage"]).isSubset(of: Set(aliases.map { $0.lowercased() })), script)
+        }
+    }
+
     /// `[[ ... =~ <pattern> ]]` 한 줄에서 pattern 추출.
     private static func tagPattern(in source: String) -> String? {
         guard let line = source.split(separator: "\n").first(where: { $0.contains("=~ ^v") }),
