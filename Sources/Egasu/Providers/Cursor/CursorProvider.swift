@@ -149,7 +149,14 @@ final class CursorProvider: ProviderRuntime {
         if let isMerged = plan.isMerged {
             mergedAccountID = isMerged ? identity : nil
         }
-        if plan.isMerged == true || (identity != nil && identity == mergedAccountID) {
+        let isKnownMerged = plan.isMerged == true || (identity != nil && identity == mergedAccountID)
+        let stripeBilling: (balanceCents: Double, isMerged: Bool)? = if plan.isMerged == nil, !isKnownMerged {
+            await fetchStripeBilling(accessToken: currentToken)
+        } else {
+            nil
+        }
+        if isKnownMerged || stripeBilling?.isMerged == true {
+            mergedAccountID = identity
             let mapped = try await mergedUsage(usage, planName: plan.name, token: currentToken)
             let result = await snapshot(mapped, observedAt: usageObservedAt, accessToken: currentToken)
             // 여러 청구 요청 사이 외부 로그인 전환 가능. 같은 계정의 토큰 회전은 허용.
@@ -196,7 +203,11 @@ final class CursorProvider: ProviderRuntime {
         }
 
         let creditGrants = await fetchCreditGrants(accessToken: currentToken)
-        let stripeBalanceCents = await fetchStripeBalanceCents(accessToken: currentToken)
+        let stripeBalanceCents = if let stripeBilling {
+            stripeBilling.balanceCents
+        } else {
+            await fetchStripeBilling(accessToken: currentToken).balanceCents
+        }
         let mapped = try CursorUsageMapper.mapUsage(
             usage: usage,
             planName: planName,

@@ -161,7 +161,7 @@ final class DashboardSnapshotTests: XCTestCase {
         )
     }
 
-    private func render<V: View>(_ view: V, appearance: ColorScheme, name: String? = nil) throws -> NSImage {
+    func render<V: View>(_ view: V, appearance: ColorScheme, name: String? = nil) throws -> NSImage {
         let framed =
             view
             .frame(width: PanelMetrics.width - PanelMetrics.margin * 2)

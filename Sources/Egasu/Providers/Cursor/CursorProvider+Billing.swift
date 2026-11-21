@@ -107,7 +107,7 @@ extension CursorProvider {
         return body
     }
 
-    func fetchStripeBalanceCents(accessToken: String) async -> Double {
+    func fetchStripeBilling(accessToken: String) async -> (balanceCents: Double, isMerged: Bool) {
         guard
             let body = await fetchOptionalJSONObject(
                 label: "prepaid-balance", operation: .cursorBalance,
@@ -115,15 +115,16 @@ extension CursorProvider {
                     try await self.usageClient.fetchStripeBalance(accessToken: accessToken)
                 })
         else {
-            return 0
+            return (0, false)
         }
+        let isMerged = (body["planAccess"] as? [String: Any])?["isMerged"] as? Bool == true
         guard ProviderParse.number(body["customerBalance"]) != nil else {
             noteDegraded(
                 .cursorBalance, category: .decoding,
                 localContext: "optional prepaid-balance response contained invalid balance metadata")
-            return 0
+            return (0, isMerged)
         }
         AppDiagnostics.record(.cursorBalance, result: .success, providerID: provider.id)
-        return CursorUsageMapper.stripeBalanceCents(from: body)
+        return (CursorUsageMapper.stripeBalanceCents(from: body), isMerged)
     }
 }
