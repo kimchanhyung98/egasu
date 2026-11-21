@@ -1,7 +1,7 @@
 import { accountFamilies } from './accounts.ts';
 import { settingGroups } from './settings.ts';
 import { providers } from './providers.ts';
-import { metricKey, providerMetrics } from './metrics.ts';
+import { metricKey, providerMetrics, type MetricRow } from './metrics.ts';
 
 export interface PreviewState {
   preferences: Record<string, string | boolean>;
@@ -124,6 +124,11 @@ export function setMetric(state: PreviewState, id: string, accountID: string, ac
   return { ...state, hiddenMetrics: [...hidden], pinnedMetrics: [...pinned] };
 }
 
+function interleavePrivateOrder(rows: MetricRow[], order: string[]): string[] {
+  let index = 0;
+  return rows.map((row) => row.shared ? row.id : order[index++]);
+}
+
 export function orderedMetrics(state: PreviewState, family: string, accountID: string) {
   const rows = providerMetrics[family].rows;
   const shared = rows.filter((row) => row.shared).map((row) => row.id);
@@ -134,8 +139,7 @@ export function orderedMetrics(state: PreviewState, family: string, accountID: s
     slots = [...saved, ...slots.filter((id) => !saved.includes(id))];
   } else if (saved) {
     const ordered = [...saved, ...own.filter((id) => !saved.includes(id))];
-    let index = 0;
-    slots = rows.map((row) => row.shared ? row.id : ordered[index++]);
+    slots = interleavePrivateOrder(rows, ordered);
   }
   const common = state.metricOrder[`${family}:shared`] ?? shared;
   const sharedOrder = [...common, ...shared.filter((id) => !common.includes(id))];
@@ -237,10 +241,11 @@ export function restorePreviewState(value: unknown): PreviewState {
     }
     const legacyPrivate = scope !== 'shared' && !order.some((id) => rows.find((row) => row.id === id)!.shared);
     const missing = legacyPrivate ? rows.filter((row) => !row.shared).map((row) => row.id) : valid;
-    const merged = [...order, ...missing.filter((id) => !order.includes(id))];
+    let merged = [...order, ...missing.filter((id) => !order.includes(id))];
     const credits = 'codex.individualCredits';
     if (merged.includes(credits) && !order.includes(credits)) {
       merged.splice(merged.indexOf(credits), 1);
+      if (legacyPrivate) merged = interleavePrivateOrder(rows.filter((row) => row.id !== credits), merged);
       merged.splice(merged.indexOf('codex.monthly') + 1, 0, credits);
     }
     state.metricOrder[key] = merged;

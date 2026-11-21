@@ -37,6 +37,15 @@ test('legacy private-only order keeps the declared common slots', () => {
   const restored = restorePreviewState(JSON.parse(JSON.stringify(state)));
   assert.deepEqual(ids(restored, a).slice(0, 6), ['codex.weekly', 'codex.session', 'codex.monthly', 'codex.individualCredits', 'codex.trend', 'codex.resetWatch']);
 });
+test('legacy private order restores common slots before inserting credits after a moved monthly limit', () => {
+  const state = initialPreviewState();
+  state.metricOrder['codex:' + a] = ['codex.session', 'codex.weekly', 'codex.spark', 'codex.monthly'];
+  const restored = restorePreviewState(state);
+  assert.deepEqual(ids(restored, a).slice(0, 7), [
+    'codex.session', 'codex.weekly', 'codex.spark', 'codex.trend', 'codex.resetWatch', 'codex.monthly', 'codex.individualCredits',
+  ]);
+  assert.deepEqual(ids(restorePreviewState(restored), a), ids(restored, a));
+});
 test('a newly available Codex credit limit follows monthly once and keeps its own saved position', () => {
   const state = initialPreviewState();
   const original = ids(state, a).filter((id) => id !== 'codex.individualCredits' && id !== 'codex.monthly');
