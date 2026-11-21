@@ -77,20 +77,33 @@ final class CursorProvider: ProviderRuntime {
 
     private var refreshIsDegraded = false
     private var historyRetryAfter: Date?
+    private var mergedAccountID: String?
     private var historySessionID: String?
     private var refreshedKeychainToken: (source: CursorAuthState, accessToken: String)?
 
     func refresh() async -> ProviderSnapshot {
         refreshIsDegraded = false
-        guard let state = await loadOffMainActor({ [authStore] in authStore.loadAuthState() }) else {
+        guard var state = await loadOffMainActor({ [authStore] in authStore.loadAuthState() }) else {
             refreshedKeychainToken = nil
             historyRetryAfter = nil
             historySessionID = nil
+            mergedAccountID = nil
             return ProviderSnapshot.error(provider: provider, error: CursorAuthError.notLoggedIn)
         }
 
         do {
-            return try await probe(authState: state)
+            let result = try await probe(authState: &state)
+            // 여러 청구 요청 사이 외부 로그인 전환 가능. 같은 계정의 토큰 회전은 허용.
+            guard let latest = await loadOffMainActor({ [authStore] in authStore.loadAuthState() }) else {
+                throw CursorAuthError.credentialsChanged
+            }
+            if latest != state {
+                guard let identity = result.producedByIdentityKey, let token = latest.accessToken,
+                    CursorUsageClient.session(from: token)?.userID == identity else {
+                    throw CursorAuthError.credentialsChanged
+                }
+            }
+            return result
         } catch {
             if error is CursorAuthError { refreshedKeychainToken = nil }
             var failure = ProviderSnapshot.error(provider: provider, error: error)
@@ -101,8 +114,7 @@ final class CursorProvider: ProviderRuntime {
         }
     }
 
-    private func probe(authState initialState: CursorAuthState) async throws -> ProviderSnapshot {
-        var authState = initialState
+    private func probe(authState: inout CursorAuthState) async throws -> ProviderSnapshot {
         if refreshedKeychainToken?.source != authState { refreshedKeychainToken = nil }
         var accessToken = refreshedKeychainToken?.accessToken
             ?? authState.accessToken?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
@@ -142,11 +154,27 @@ final class CursorProvider: ProviderRuntime {
         // 저장 실패 시 원본 비교용 state와 이번 요청의 live token을 분리.
         let currentToken = fetchedUsage.accessToken
 
-        let (planName, planInfoUnavailable) = await fetchPlanName(accessToken: currentToken)
+        let identity = CursorUsageClient.session(from: currentToken)?.userID
+        let plan = await fetchPlanInfo(accessToken: currentToken)
+        if let isMerged = plan.isMerged {
+            mergedAccountID = isMerged ? identity : nil
+        }
+        let isKnownMerged = plan.isMerged == true || (identity != nil && identity == mergedAccountID)
+        let stripeBilling: (balanceCents: Double, isMerged: Bool)? = if plan.isMerged == nil, !isKnownMerged {
+            await fetchStripeBilling(accessToken: currentToken)
+        } else {
+            nil
+        }
+        if isKnownMerged || stripeBilling?.isMerged == true {
+            mergedAccountID = identity
+            let mapped = try await mergedUsage(usage, planName: plan.name, token: currentToken)
+            return await snapshot(mapped, observedAt: usageObservedAt, accessToken: currentToken)
+        }
+        let planName = plan.name
         let fallback = CursorUsageMapper.shouldUseRequestBasedFallback(
             usage: usage,
             planName: planName,
-            planInfoUnavailable: planInfoUnavailable
+            planInfoUnavailable: plan.name == nil
         )
         if fallback.shouldFallback {
             let (summary, observedAt) = try await usageSummaryAndRequestResult(
@@ -174,7 +202,11 @@ final class CursorProvider: ProviderRuntime {
         }
 
         let creditGrants = await fetchCreditGrants(accessToken: currentToken)
-        let stripeBalanceCents = await fetchStripeBalanceCents(accessToken: currentToken)
+        let stripeBalanceCents = if let stripeBilling {
+            stripeBilling.balanceCents
+        } else {
+            await fetchStripeBilling(accessToken: currentToken).balanceCents
+        }
         let mapped = try CursorUsageMapper.mapUsage(
             usage: usage,
             planName: planName,
@@ -325,11 +357,11 @@ final class CursorProvider: ProviderRuntime {
         return (accessToken, persisted)
     }
 
-    private func fetchPlanName(accessToken: String) async -> (String?, Bool) {
+    private func fetchPlanInfo(accessToken: String) async -> (name: String?, isMerged: Bool?) {
         guard let body = await fetchOptionalJSONObject(label: "plan", operation: .cursorPlan, request: {
             try await self.usageClient.fetchPlan(accessToken: accessToken)
         }) else {
-            return (nil, true)
+            return (nil, nil)
         }
         guard let planInfo = body["planInfo"] as? [String: Any],
               let planName = (planInfo["planName"] as? String)?
@@ -337,49 +369,14 @@ final class CursorProvider: ProviderRuntime {
                 .nilIfEmpty
         else {
             noteDegraded(.cursorPlan, category: .decoding, localContext: "optional plan response contained invalid plan metadata")
-            return (nil, true)
+            return (nil, body["isMerged"] as? Bool)
         }
         AppDiagnostics.record(.cursorPlan, result: .success, providerID: provider.id)
-        return (planName, false)
-    }
-
-    private func fetchCreditGrants(accessToken: String) async -> [String: Any]? {
-        guard let body = await fetchOptionalJSONObject(label: "credit-grants", operation: .cursorCredits, request: {
-            try await self.usageClient.fetchCredits(accessToken: accessToken)
-        }) else {
-            return nil
-        }
-        guard let hasCreditGrants = body["hasCreditGrants"] as? Bool else {
-            noteDegraded(.cursorCredits, category: .decoding, localContext: "optional credit-grants response contained invalid grant metadata")
-            return nil
-        }
-        if hasCreditGrants {
-            guard let totalCents = ProviderParse.number(body["totalCents"]), totalCents > 0,
-                  let usedCents = ProviderParse.number(body["usedCents"]), usedCents >= 0 else {
-                noteDegraded(.cursorCredits, category: .decoding, localContext: "optional credit-grants response contained invalid grant metadata")
-                return nil
-            }
-        }
-        AppDiagnostics.record(.cursorCredits, result: .success, providerID: provider.id)
-        return body
-    }
-
-    private func fetchStripeBalanceCents(accessToken: String) async -> Double {
-        guard let body = await fetchOptionalJSONObject(label: "prepaid-balance", operation: .cursorBalance, request: {
-            try await self.usageClient.fetchStripeBalance(accessToken: accessToken)
-        }) else {
-            return 0
-        }
-        guard ProviderParse.number(body["customerBalance"]) != nil else {
-            noteDegraded(.cursorBalance, category: .decoding, localContext: "optional prepaid-balance response contained invalid balance metadata")
-            return 0
-        }
-        AppDiagnostics.record(.cursorBalance, result: .success, providerID: provider.id)
-        return CursorUsageMapper.stripeBalanceCents(from: body)
+        return (planName, body["isMerged"] as? Bool ?? false)
     }
 
     /// optional endpoint는 사용 가능한 primary snapshot을 보강할 뿐 provider 전체를 실패시키지 않음. boundary 처리를 한곳에 모아 transport·준비·status·schema 실패가 고정된 credential-free 진단으로 노출.
-    private func fetchOptionalJSONObject(
+    func fetchOptionalJSONObject(
         label: String,
         operation: DiagnosticOperation,
         request: () async throws -> HTTPResponse?
@@ -465,7 +462,7 @@ final class CursorProvider: ProviderRuntime {
         CursorPlanUsageFacts(usage: usage).shouldTryGenericRequestFallback
     }
 
-    private func noteDegraded(
+    func noteDegraded(
         _ operation: DiagnosticOperation,
         category: ErrorCategory? = nil,
         error: Error? = nil,

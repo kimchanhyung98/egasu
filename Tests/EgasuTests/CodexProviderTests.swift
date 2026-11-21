@@ -105,6 +105,26 @@ final class CodexAuthStoreTests: XCTestCase {
 }
 
 final class CodexUsageMapperTests: XCTestCase {
+    func testBusinessIndividualCreditsKeepPrecisionWhenGeneralQuotaIsNull() throws {
+        func mapped(_ quota: String) throws -> [MetricLine] {
+            let body = Data(#"{"rate_limit":null,"spend_control":{"individual_limit":\#(quota)}}"#.utf8)
+            return try CodexUsageMapper.mapUsageResponse(.init(statusCode: 200, headers: [:], body: body)).lines
+        }
+        let reading = try mapped(#"{"unit":"credit","limit":"2500","used":"898.3861949443817","used_percent":36,"reset_at":1796083200}"#)
+        guard case .progress(_, let used, let limit, let format, let reset, let duration, _) = reading.first else {
+            return XCTFail("Missing individual credit allowance")
+        }
+        XCTAssertEqual(used, 898.3861949443817)
+        XCTAssertEqual(limit, 2_500)
+        XCTAssertEqual(format, .count(suffix: "credits"))
+        XCTAssertEqual(reset, Date(timeIntervalSince1970: 1_796_083_200))
+        XCTAssertNil(duration)
+        for quota in ["null", #"{"unit":"usd","limit":100,"used":10}"#, #"{"unit":"credit","limit":0,"used":0}"#,
+                      #"{"unit":"credit","limit":2500,"used":"invalid"}"#] {
+            XCTAssertTrue(try mapped(quota).isEmpty)
+        }
+    }
+
     func testMalformedAbsoluteResetKeepsValidWeeklyRelativeReset() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let body = Data(

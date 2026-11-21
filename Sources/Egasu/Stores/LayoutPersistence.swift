@@ -130,7 +130,7 @@ final class LayoutPersistence {
                     .filter { !ProviderAccountID.isSharedMetric($0.id) }.map(\.id)
                 let savedIDs = nextOrder[cardID] ?? []
                 var personalIDs = LayoutOrdering.normalizedMetricIDs(
-                    savedIDs, validIDs: LayoutOrdering.deferringMonthlyMetrics(defaultIDs) + savedIDs
+                    savedIDs, validIDs: LayoutOrdering.deferringAnchoredMetrics(defaultIDs) + savedIDs
                 ).makeIterator()
                 nextOrder[cardID] = ids.compactMap { id in
                     ProviderAccountID.isSharedMetric(id) ? id : personalIDs.next()

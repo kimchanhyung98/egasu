@@ -29,7 +29,8 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
 - **[Claude](/docs/providers/claude.md)** — 세션·주간·모델별 한도, 추가 사용량, 로컬 기록의 일별 지출·토큰.
   OAuth 갱신은 기존 로그인 권한 범위 유지.
 - **[Codex](/docs/providers/codex.md)** — 기본·Spark 풀의 세션·주간·월간 한도, 추가 사용 및 한도 재설정 크레딧, 로컬 기록의 일별 지출·토큰.
-- **[Cursor](/docs/providers/cursor.md)** — 전체·Auto·API 사용량, 요청·크레딧, 추가 사용량, 서버 보고 기반 일별 추가 과금·토큰.
+- **[Cursor](/docs/providers/cursor.md)** — 일반 요금제의 전체·Auto·API 사용량, 통합 계정의 주간 공유 한도·선불 잔액·월간 추가 사용액, 서버 보고 기반 지출·토큰.
+  요금제 조회에 실패해도 청구 정보에서 통합 계정이 확인되면 통합 지표 표시.
   이력 조회 실패 시 같은 계정으로 확인한 마지막 정상 이력 유지.
 - **[Antigravity](/docs/providers/antigravity.md)** — Gemini 풀과 Claude 등 다른 모델 풀의 5시간·주간 한도, 계정별 Argon 주간 한도와 로컬 사용 이력.
 - **[Copilot](/docs/providers/copilot.md)** — AI 크레딧, 추가 사용량, 조직 사용량·청구액, 채팅·코드 완성 할당량.
@@ -61,6 +62,7 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
   설정 → 알림에서 네 조건의 **우선순위 표시**를 모두 끄면 대시보드에 전체 사용량만 표시.
 - **[All Usage](/docs/dashboard.md#all-usage).** 등록 계정별 사용량·초기화 시각·사용 속도 표시.
   Minimal은 프로바이더별 계정 묶음, Cards는 계정별 독립 카드.
+  Codex Business 개인 크레딧 한도는 일반 월간 한도 아래에 표시.
   행 우클릭으로 지표 숨기기·Priority 고정·새로 고침·Accounts 관리 연결.
   [프로바이더 섹션 공유 이미지](/docs/dashboard.md#공유)는 표시 중인 모든 계정과 지표 순서를 반영.
 - **[계정 전환](/docs/cli.md#계정).** Claude·Codex의 기본 인증 저장소를 쓰는 새 CLI 세션에 선택한 로그인 적용.

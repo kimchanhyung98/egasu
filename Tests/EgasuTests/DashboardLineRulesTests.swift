@@ -353,7 +353,7 @@ final class DashboardLineRulesTests: XCTestCase {
         XCTAssertFalse(AppContainer.hidesMetric("codex@ab12cd34.weekly", onCard: "codex@ab12cd34"))
         XCTAssertTrue(
             AppContainer.hidesMetric("claude@profile-work.last30", onCard: "claude@profile-work"), "공통 이력은 한 곳만 표시")
-        for suffix in ["session", "monthly", "spark", "sparkWeekly", "sparkMonthly", "credits", "rateLimitResets"] {
+        for suffix in ["session", "monthly", "individualCredits", "spark", "sparkWeekly", "sparkMonthly", "credits", "rateLimitResets"] {
             XCTAssertFalse(AppContainer.hidesMetric("codex@ab12cd34.\(suffix)", onCard: "codex@ab12cd34"))
         }
         XCTAssertFalse(

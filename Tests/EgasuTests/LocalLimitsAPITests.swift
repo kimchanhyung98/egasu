@@ -44,6 +44,17 @@ final class LocalLimitsAPITests: XCTestCase {
         XCTAssertEqual(try encoded()["stale"] as? Bool, true)
     }
 
+    @MainActor
+    func testExportsBusinessCreditsWithoutFlex() throws {
+        let provider = CodexProvider()
+        let line = MetricLine.progress(label: "Individual Credits", used: 898.386, limit: 2500,
+                                       format: .count(suffix: "credits"))
+        let resources = try exportedResources(provider, line: line)
+        XCTAssertEqual(resources["individualCredits"]?["used"] as? Double, 898.386)
+        XCTAssertEqual(resources["individualCredits"]?["unit"] as? String, "credits")
+        XCTAssertNil(resources["credits"])
+    }
+
     func testLimitsEnvelopeCarriesRawScalarsAndFreshnessWithoutUIPresentation() throws {
         let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
         let session = WidgetDescriptor.percent(id: "codex.session", provider: provider, title: "Session")
@@ -260,7 +271,7 @@ final class LocalLimitsAPITests: XCTestCase {
             "claude": ["session", "weekly", "sonnet", "fable", "extraUsage"],
             "codex": [
                 "session", "weekly", "monthly", "spark", "sparkWeekly", "sparkMonthly", "credits", "creditValue",
-                "rateLimitResets"
+                "rateLimitResets", "individualCredits"
             ],
             "cursor": ["totalUsage", "autoUsage", "apiUsage", "onDemand", "requests", "credits"],
             "antigravity": ["geminiSession", "geminiWeekly", "nonGeminiSession", "nonGeminiWeekly", "argonWeekly"],

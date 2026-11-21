@@ -5,7 +5,7 @@ const ids = (state: PreviewState, account: string) => orderedMetrics(state, 'cod
 const a = 'account-1', b = 'account-2';
 test('default order follows the interleaved provider declaration', () => {
   assert.deepEqual(ids(initialPreviewState(), a), [
-    'codex.session', 'codex.weekly', 'codex.monthly', 'codex.trend', 'codex.resetWatch', 'codex.rateLimitResets',
+    'codex.session', 'codex.weekly', 'codex.monthly', 'codex.individualCredits', 'codex.trend', 'codex.resetWatch', 'codex.rateLimitResets',
     'codex.spark', 'codex.sparkWeekly', 'codex.sparkMonthly', 'codex.credits', 'codex.today', 'codex.yesterday', 'codex.last30',
   ]);
 });
@@ -35,7 +35,25 @@ test('legacy private-only order keeps the declared common slots', () => {
   const state = initialPreviewState();
   state.metricOrder['codex:' + a] = ['codex.weekly', 'codex.session'];
   const restored = restorePreviewState(JSON.parse(JSON.stringify(state)));
-  assert.deepEqual(ids(restored, a).slice(0, 5), ['codex.weekly', 'codex.session', 'codex.monthly', 'codex.trend', 'codex.resetWatch']);
+  assert.deepEqual(ids(restored, a).slice(0, 6), ['codex.weekly', 'codex.session', 'codex.monthly', 'codex.individualCredits', 'codex.trend', 'codex.resetWatch']);
+});
+test('legacy private order restores common slots before inserting credits after a moved monthly limit', () => {
+  const state = initialPreviewState();
+  state.metricOrder['codex:' + a] = ['codex.session', 'codex.weekly', 'codex.spark', 'codex.monthly'];
+  const restored = restorePreviewState(state);
+  assert.deepEqual(ids(restored, a).slice(0, 7), [
+    'codex.session', 'codex.weekly', 'codex.spark', 'codex.trend', 'codex.resetWatch', 'codex.monthly', 'codex.individualCredits',
+  ]);
+  assert.deepEqual(ids(restorePreviewState(restored), a), ids(restored, a));
+});
+test('a newly available Codex credit limit follows monthly once and keeps its own saved position', () => {
+  const state = initialPreviewState();
+  const original = ids(state, a).filter((id) => id !== 'codex.individualCredits' && id !== 'codex.monthly');
+  state.metricOrder['codex:' + a] = [...original, 'codex.monthly'];
+  const migrated = restorePreviewState(state);
+  assert.deepEqual(ids(migrated, a).slice(-2), ['codex.monthly', 'codex.individualCredits']);
+  const reordered = moveMetric(migrated, 'codex', a, 'codex.individualCredits', 'codex.session');
+  assert.deepEqual(ids(restorePreviewState(reordered), a), ids(reordered, a));
 });
 test('restore rejects an unknown account scope and duplicate or foreign metrics', () => {
   const invalid: Array<[string, string[]]> = [['codex:unknown', ['codex.weekly']], ['codex:' + a, ['codex.weekly', 'codex.weekly']], ['codex:' + a, ['claude.session']], ['codex:shared', ['codex.weekly']]];
