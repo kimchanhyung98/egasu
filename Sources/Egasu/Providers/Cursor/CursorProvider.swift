@@ -83,7 +83,7 @@ final class CursorProvider: ProviderRuntime {
 
     func refresh() async -> ProviderSnapshot {
         refreshIsDegraded = false
-        guard let state = await loadOffMainActor({ [authStore] in authStore.loadAuthState() }) else {
+        guard var state = await loadOffMainActor({ [authStore] in authStore.loadAuthState() }) else {
             refreshedKeychainToken = nil
             historyRetryAfter = nil
             historySessionID = nil
@@ -92,7 +92,18 @@ final class CursorProvider: ProviderRuntime {
         }
 
         do {
-            return try await probe(authState: state)
+            let result = try await probe(authState: &state)
+            // 여러 청구 요청 사이 외부 로그인 전환 가능. 같은 계정의 토큰 회전은 허용.
+            guard let latest = await loadOffMainActor({ [authStore] in authStore.loadAuthState() }) else {
+                throw CursorAuthError.credentialsChanged
+            }
+            if latest != state {
+                guard let identity = result.producedByIdentityKey, let token = latest.accessToken,
+                    CursorUsageClient.session(from: token)?.userID == identity else {
+                    throw CursorAuthError.credentialsChanged
+                }
+            }
+            return result
         } catch {
             if error is CursorAuthError { refreshedKeychainToken = nil }
             var failure = ProviderSnapshot.error(provider: provider, error: error)
@@ -103,8 +114,7 @@ final class CursorProvider: ProviderRuntime {
         }
     }
 
-    private func probe(authState initialState: CursorAuthState) async throws -> ProviderSnapshot {
-        var authState = initialState
+    private func probe(authState: inout CursorAuthState) async throws -> ProviderSnapshot {
         if refreshedKeychainToken?.source != authState { refreshedKeychainToken = nil }
         var accessToken = refreshedKeychainToken?.accessToken
             ?? authState.accessToken?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
@@ -158,18 +168,7 @@ final class CursorProvider: ProviderRuntime {
         if isKnownMerged || stripeBilling?.isMerged == true {
             mergedAccountID = identity
             let mapped = try await mergedUsage(usage, planName: plan.name, token: currentToken)
-            let result = await snapshot(mapped, observedAt: usageObservedAt, accessToken: currentToken)
-            // 여러 청구 요청 사이 외부 로그인 전환 가능. 같은 계정의 토큰 회전은 허용.
-            guard let latest = await loadOffMainActor({ [authStore] in authStore.loadAuthState() }) else {
-                throw CursorAuthError.credentialsChanged
-            }
-            if latest != authState {
-                guard let identity, let token = latest.accessToken,
-                    CursorUsageClient.session(from: token)?.userID == identity else {
-                    throw CursorAuthError.credentialsChanged
-                }
-            }
-            return result
+            return await snapshot(mapped, observedAt: usageObservedAt, accessToken: currentToken)
         }
         let planName = plan.name
         let fallback = CursorUsageMapper.shouldUseRequestBasedFallback(

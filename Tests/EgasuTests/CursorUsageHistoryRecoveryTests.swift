@@ -69,13 +69,21 @@ final class CursorUsageHistoryRecoveryTests: XCTestCase {
     }
 
     func testMergedBillingDiscardsOldAccountWhenLoginChangesDuringHistoryRead() async throws {
+        try await assertAccountChangeDiscardsResponse(merged: true)
+    }
+
+    func testLegacyBillingDiscardsOldAccountWhenLoginChangesDuringHistoryRead() async throws {
+        try await assertAccountChangeDiscardsResponse(merged: false)
+    }
+
+    private func assertAccountChangeDiscardsResponse(merged: Bool) async throws {
         let sqlite = CursorRecoverySQLite(accessToken: try token(identity: "old-login"))
         let nextToken = try token(identity: "new-login")
         let http = RoutingHTTPClient { request in
             let json: String
             switch request.url.lastPathComponent {
             case "GetCurrentPeriodUsage": json = #"{"planUsage":{"totalPercentUsed":23}}"#
-            case "GetPlanInfo": json = #"{"isMerged":true,"planInfo":{"planName":"ultra"}}"#
+            case "GetPlanInfo": json = merged ? #"{"isMerged":true,"planInfo":{"planName":"ultra"}}"# : #"{"planInfo":{"planName":"pro"}}"#
             case "GetComplatCreditBalance": json = #"{"usdRemainingCents":"10000"}"#
             case "usage-status": json = #"{"monthlyUsage":{"limitCents":200,"usedCents":100}}"#
             case "get-filtered-usage-events":
