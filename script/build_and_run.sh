@@ -175,6 +175,8 @@ cat >"$INFO_PLIST" <<PLIST
   <string>$APP_DISPLAY</string>
   <key>CFBundleDisplayName</key>
   <string>$APP_DISPLAY</string>
+  <key>CFBundleAlternateNames</key>
+  <array><string>OpenUsage</string><string>Usage</string></array>
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleLocalizations</key>

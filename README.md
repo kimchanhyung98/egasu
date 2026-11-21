@@ -16,7 +16,9 @@ DMG 하나로 Apple Silicon과 Intel Mac 모두 지원.
 
 1. 정식 버전은 [최신 정식 릴리스](https://github.com/kimchanhyung98/egasu/releases/latest)의 **Latest** 항목에서, 베타 버전은 [전체 릴리스](https://github.com/kimchanhyung98/egasu/releases)의 **Pre-release** 항목에서 DMG 다운로드.
 2. DMG에서 앱을 응용 프로그램 폴더로 드래그.
-3. 응용 프로그램 폴더에서 앱 실행.
+3. 응용 프로그램 폴더에서 egasu 실행.
+
+Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
 
 설치한 앱에서 베타 업데이트를 받으려면 **설정 → 일반 → 업데이트 → 베타 업데이트** 켜기.
 영어 화면에서는 **Settings → General → Updates → Beta Updates** 선택.
