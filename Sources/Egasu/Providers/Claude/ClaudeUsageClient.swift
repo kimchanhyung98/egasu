@@ -4,11 +4,13 @@ struct ClaudeRefreshResponse: Decodable, Hashable, Sendable {
     var accessToken: String
     var refreshToken: String?
     var expiresIn: Double?
+    var scope: String?
 
     enum CodingKeys: String, CodingKey {
         case accessToken = "access_token"
         case refreshToken = "refresh_token"
         case expiresIn = "expires_in"
+        case scope
     }
 }
 
@@ -50,7 +52,6 @@ enum ClaudeUsageError: Error, LocalizedError, Equatable, Codable {
 
 struct ClaudeUsageClient: Sendable {
     static let profileTimeout: TimeInterval = 10
-    private static let scopes = "user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload"
 
     var httpClient: HTTPClient
 
@@ -58,13 +59,16 @@ struct ClaudeUsageClient: Sendable {
         self.httpClient = httpClient
     }
 
-    func refreshToken(_ refreshToken: String, config: ClaudeOAuthConfig) async throws -> HTTPResponse {
-        let body: [String: Any] = [
+    func refreshToken(
+        _ refreshToken: String, scopes: [String]? = nil, config: ClaudeOAuthConfig
+    ) async throws -> HTTPResponse {
+        var body: [String: Any] = [
             "grant_type": "refresh_token",
             "refresh_token": refreshToken,
-            "client_id": config.clientID,
-            "scope": Self.scopes
+            "client_id": config.clientID
         ]
+        // 저장된 권한만 요청. 범위가 없는 기존 로그인은 최초 승인 범위를 서버에서 유지.
+        if let scopes, !scopes.isEmpty { body["scope"] = scopes.joined(separator: " ") }
         let bodyData = try JSONSerialization.data(withJSONObject: body)
         return try await httpClient.send(
             HTTPRequest(
