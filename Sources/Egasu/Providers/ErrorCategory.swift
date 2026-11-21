@@ -321,9 +321,12 @@ extension CopilotUsageError: CategorizedError {
 extension OpenCodeUsageError: CategorizedError {
     var errorCategory: ErrorCategory {
         switch self {
+        case .credentialsChanged: .other
         case .notLoggedIn: .notLoggedIn
         case .credentialsUnreadable: .credentialAccess
         case .databaseUnreadable: .storage
+        case .requestFailed(let status): ErrorCategory.http(status)
+        case .invalidResponse: .decoding
         }
     }
 }

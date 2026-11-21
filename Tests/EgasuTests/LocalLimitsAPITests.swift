@@ -250,6 +250,17 @@ final class LocalLimitsAPITests: XCTestCase {
     }
 
     @MainActor
+    func testOpenCodeExportsOnlyTheReportedCurrencyOrPercentResource() throws {
+        let provider = OpenCodeProvider()
+        let measured = try exportedResources(provider, line: .progress(label: "Weekly", used: 20, limit: 100, format: .percent))
+        XCTAssertEqual(measured["goWeekly"]?["unit"] as? String, "percent")
+        XCTAssertNil(measured["weekly"])
+        let estimated = try exportedResources(provider, line: .progress(label: "Weekly", used: 6, limit: 30, format: .dollars))
+        XCTAssertEqual(estimated["weekly"]?["estimated"] as? Bool, true)
+        XCTAssertNil(estimated["goWeekly"])
+    }
+
+    @MainActor
     func testEveryProviderDeclaresTheApprovedPublicResourceKeys() {
         let defaults = UserDefaults(suiteName: "LocalLimitsAPITests.\(UUID().uuidString)")!
         let registry = WidgetRegistry.from(ProviderCatalog.make(defaults: defaults))
@@ -269,7 +280,7 @@ final class LocalLimitsAPITests: XCTestCase {
             "grok": ["weekly", "monthly"],
             "kimi": ["session", "weekly", "totalUsage", "extraUsage", "extraUsageBalance"],
             "kiro": ["credits"],
-            "opencode": ["session", "weekly", "monthly"],
+            "opencode": ["session", "weekly", "monthly", "goSession", "goWeekly", "goMonthly"],
             "openrouter": ["credits", "balance", "keyLimit"],
             "zai": ["session", "weekly", "monthly", "webSearches"]
         ]

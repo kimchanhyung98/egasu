@@ -40,7 +40,7 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
   세션 사용량이 0%여도 서버가 보고한 초기화 시각 표시.
   미충전 지갑의 금액도 0으로 표시.
 - **[Kiro](/docs/providers/kiro.md)** — 코딩 크레딧과 구독 요금제.
-- **[OpenCode](/docs/providers/opencode.md)** — Go의 세션·주간·월간 한도 추정치, Console과 Go의 로컬 지출·토큰.
+- **[OpenCode](/docs/providers/opencode.md)** — Go 서버의 세션·주간·월간 사용률, Console과 Go의 로컬 지출·토큰.
   과거 Zen 기록도 Console 집계에 포함.
 - **[OpenRouter](/docs/providers/openrouter.md)** — 크레딧 잔액과 일간·주간·월간 지출.
 - **[Z.ai](/docs/providers/zai.md)** — GLM Coding Plan의 세션·주간·월간 할당량과 웹 검색 한도.
