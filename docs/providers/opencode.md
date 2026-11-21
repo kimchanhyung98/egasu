@@ -27,8 +27,14 @@ Soft Limit 사전 검사는 서버에서 확인한 주간·월간 값만 사용.
 ## 인증 정보 출처
 
 평소처럼 OpenCode 사용.
-`OPENCODE_GO_API_KEY` 환경 변수에 Go 전용 키를 지정하면 로컬 OpenCode 로그인 없이 계정 사용률 조회 가능.
-변수를 지정하지 않으면 로컬 데이터 디렉터리의 `auth.json`에서 Go 키 확인.
+egasu가 Go 사용량을 조회할 때 다음 순서로 인증 정보 확인.
+
+1. `OPENCODE_AUTH_CONTENT`가 유효한 JSON이면 해당 값에서 `opencode-go` 키 확인.
+2. 변수가 없거나 JSON 해석에 실패하면 로컬 데이터 디렉터리의 `auth.json`에서 확인.
+3. 선택된 인증에 사용 가능한 Go 키가 없으면 `OPENCODE_GO_API_KEY` 사용.
+
+프로젝트의 `provider.options.apiKey`나 플러그인이 다른 키를 지정하면 OpenCode가 사용하는 계정과 egasu가 조회하는 계정이 다를 수 있음.
+앱과 CLI는 실행할 때마다 위 순서로 선택한 키로 계정 한도 조회.
 사용액과 토큰 수는 SQLite 로그에서 계산.
 egasu가 OpenCode 데이터 디렉터리를 다음 순서로 결정:
 

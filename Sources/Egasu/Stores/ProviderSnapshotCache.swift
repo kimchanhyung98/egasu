@@ -28,7 +28,7 @@ struct ProviderSnapshotCache {
     private let ttl: TimeInterval?
     /// timestamp-only freshness opt-in — 메뉴바 앱은 launch당 1회 refresh를 강제하지만 one-shot reader에는 세션 개념이 없음.
     private let allowsPersistedFreshness: Bool
-    /// CLI가 현재 키의 계정을 확인할 수 없는 프로바이더는 이전 실행의 캐시를 사용하지 않음.
+    /// 현재 키의 계정을 확인할 수 없는 프로바이더는 이전 실행의 캐시를 사용하지 않음.
     private let ignoresPersistedSnapshotsFor: Set<String>
     private let persistsWrites: Bool
     private let now: () -> Date
@@ -43,7 +43,7 @@ struct ProviderSnapshotCache {
         ttl: TimeInterval? = nil,
         allowsPersistedFreshness: Bool = false,
         persistsWrites: Bool = true,
-        ignoresPersistedSnapshotsFor: Set<String> = [],
+        ignoresPersistedSnapshotsFor: Set<String> = ["opencode"],
         now: @escaping () -> Date = Date.init
     ) {
         self.userDefaults = userDefaults

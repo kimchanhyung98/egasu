@@ -31,6 +31,24 @@ final class OpenCodeProviderTests: XCTestCase {
         XCTAssertNil(try other.goAPIKey())
     }
 
+    func testGoAuthContentReplacesFileBeforeApplyingEnvironmentKey() throws {
+        func resolved(_ content: String, file: String = #"{"opencode-go":{"type":"api","key":"file"}}"#) throws -> String? {
+            let store = OpenCodeAuthStore(
+                files: FakeFiles(["/oc/auth.json": file]),
+                environment: FakeEnvironment([
+                    "OPENCODE_DATA_DIR": "/oc", "OPENCODE_GO_API_KEY": "environment", "OPENCODE_AUTH_CONTENT": content
+                ]))
+            return try store.goAPIKey()
+        }
+        XCTAssertEqual(try resolved(#"{"opencode-go":{"type":"api","key":"content"}}"#, file: "{"), "content")
+        let missingType = #"{"opencode-go":{"key":"untyped"}}"#
+        XCTAssertEqual(try resolved(missingType), "environment")
+        XCTAssertEqual(try resolved("", file: missingType), "environment")
+        XCTAssertEqual(try resolved("{}"), "environment")
+        XCTAssertEqual(try resolved("{"), "file")
+        XCTAssertEqual(try resolved("{", file: "{"), "environment")
+    }
+
     func testOpenCodePreflightUsesTerminalKeyAndXDGLoginWithoutReadingShellOverrides() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let data = directory.appendingPathComponent("opencode")
@@ -45,7 +63,7 @@ final class OpenCodeProviderTests: XCTestCase {
             let providers = ProviderCatalog.make(openCodeEnvironment: terminal.openCodeScope(preflight: true))
             return try XCTUnwrap(providers.compactMap { $0 as? OpenCodeProvider }.first)
         }
-        XCTAssertEqual(try runtime().authStore.goAPIKey(), "terminal")
+        XCTAssertEqual(try runtime().authStore.goAPIKey(), "sk-test")
         terminal.variables.removeValue(forKey: "OPENCODE_GO_API_KEY")
         XCTAssertEqual(try runtime().authStore.goAPIKey(), "sk-test")
         XCTAssertEqual(try runtime().usageScanner.databasePaths(), [data.appendingPathComponent("opencode.db").path])

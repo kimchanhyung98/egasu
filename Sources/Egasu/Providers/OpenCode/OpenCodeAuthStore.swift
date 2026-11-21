@@ -25,12 +25,26 @@ struct OpenCodeAuthStore: Sendable {
         OpenCodePaths.authFilePath(dataDirectory: dataDirectory)
     }
 
-    /// 명시한 Go 전용 키 우선, 없으면 auth.json의 opencode-go 항목 사용.
-    /// 파일이나 키가 없으면 nil 반환. 파일 읽기나 JSON 해석 실패는 인증 저장소 오류로 전달.
+    /// 유효한 환경 인증 JSON은 파일을 대체. 선택한 인증의 Go API 키가 개별 환경 변수보다 우선.
     func goAPIKey() throws -> String? {
-        if let key = environment.value(for: "OPENCODE_GO_API_KEY")?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
-            return key
+        let environmentKey = environment.value(for: "OPENCODE_GO_API_KEY")?
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        if let content = environment.value(for: "OPENCODE_AUTH_CONTENT"), !content.isEmpty {
+            if let parsed = try? JSONSerialization.jsonObject(with: Data(content.utf8), options: .fragmentsAllowed) {
+                return Self.goKey(in: parsed) ?? environmentKey
+            }
+            AppLog.warn(LogTag.plugin("opencode"), "OPENCODE_AUTH_CONTENT invalid stage=decode category=decoding")
         }
+        do {
+            return try fileGoKey() ?? environmentKey
+        } catch OpenCodeUsageError.credentialsUnreadable(let detail) {
+            guard let environmentKey else { throw OpenCodeUsageError.credentialsUnreadable(detail: detail) }
+            AppLog.warn(LogTag.plugin("opencode"), "auth.json unreadable: \(detail)")
+            return environmentKey
+        }
+    }
+
+    private func fileGoKey() throws -> String? {
         let text: String?
         do {
             text = try files.readTextIfPresent(authFilePath)
@@ -38,14 +52,16 @@ struct OpenCodeAuthStore: Sendable {
             throw OpenCodeUsageError.credentialsUnreadable(detail: "stage=read \(AppLog.errorDetails(error))")
         }
         guard let text else { return nil }
-        guard let data = text.data(using: .utf8),
-              let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-        else {
+        guard let object = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] else {
             throw OpenCodeUsageError.credentialsUnreadable(detail: "stage=decode category=decoding")
         }
-        guard let entry = object["opencode-go"] as? [String: Any],
-              entry["type"] == nil || entry["type"] as? String == "api",
-              let key = entry["key"] as? String
+        return Self.goKey(in: object)
+    }
+
+    private static func goKey(in object: Any) -> String? {
+        guard let entries = object as? [String: Any], let entry = entries["opencode-go"] as? [String: Any],
+            entry["type"] as? String == "api",
+            let key = entry["key"] as? String
         else { return nil }
         return key.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
     }

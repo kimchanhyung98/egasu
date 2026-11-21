@@ -16,7 +16,8 @@ egasu codex --force   # 공유 프로바이더 엔진으로 새로 고침 후 �
 
 CLI와 앱은 프로바이더 조회·인증·가격 계산·캐시 처리를 공유.
 일반 조회는 일반 사용량 5분·Claude 15분 이내의 스냅샷을 재사용하고, 없거나 오래된 것만 새로 고침.
-OpenCode는 현재 터미널의 Go 키 또는 `auth.json`으로 조회하며 이전 실행의 계정 한도 캐시는 재사용하지 않음.
+OpenCode는 현재 터미널의 `OPENCODE_AUTH_CONTENT` 또는 `auth.json`에서 Go 키를 확인하고, 키가 없으면 `OPENCODE_GO_API_KEY`로 조회.
+이전 실행에서 저장한 OpenCode 한도는 앱과 CLI 모두 재조회.
 Claude 계정 신원을 확인할 수 없으면 유효 기간 안의 캐시도 재사용하지 않고 새 조회의 확인 실패를 표시.
 `--force`는 캐시 유효 기간과 관계없이 새 조회를 요청하고 성공한 결과를 같은 캐시에 기록.
 Claude의 계정별 429 대기 상태는 앱과 공유하며 `--force`로도 우회 불가.
@@ -37,7 +38,7 @@ CLI는 앱이 만든 계정 인증용 Keychain 항목의 존재 여부만 확인
 앱의 Language 선택과 관계없이 CLI의 JSON 필드·지표 ID·단위·오류 원문은 기존 계약 유지.
 사용자 계정명은 입력한 원문으로 출력.
 
-OpenCode Go의 주간·월간 Soft Limit 사전 검사는 해당 계정의 서버 응답을 사용.
+OpenCode Go의 주간·월간 Soft Limit 사전 검사는 [Go 키 선택 순서](/docs/providers/opencode.md#인증-정보-출처)에 따라 조회한 서버 응답을 사용.
 로컬 지출 추정치만 있으면 판정은 `unknown`.
 
 ## 소프트 한도 확인
