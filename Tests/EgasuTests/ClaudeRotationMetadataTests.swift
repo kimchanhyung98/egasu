@@ -62,6 +62,58 @@ final class ClaudeRotationMetadataTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testFileFallbackAfterKeychainScopeLossVerifiesAccountBeforeSavingUsage() async throws {
+        for useEnvironmentToken in [false, true] {
+            for fileAccount in ["account-a", "account-b"] {
+                let path = "/fixture/claude"
+                var environment = ["CLAUDE_CONFIG_DIR": path]
+                if useEnvironmentToken { environment["CLAUDE_CODE_OAUTH_TOKEN"] = "environment" }
+                let files = FakeFiles([
+                    "\(path)/.claude.json": claudeUsageTestIdentity("account-a"),
+                    "\(path)/.credentials.json":
+                        #"{"claudeAiOauth":{"accessToken":"file-token","scopes":["user:profile"]}}"#
+                ])
+                let keychain = ServiceKeychain()
+                let auth = ClaudeAuthStore(
+                    environment: FakeEnvironment(environment), files: files, keychain: keychain,
+                    allowsDesktopFallback: false)
+                let service = try XCTUnwrap(auth.keychainServiceCandidates().first)
+                keychain.currentUserValues[service] = """
+                    {"claudeAiOauth":{"accessToken":"cli","refreshToken":"refresh","expiresAt":1,"scopes":["user:profile"]}}
+                    """
+                let http = RoutingHTTPClient { request in
+                    let body: String
+                    switch request.url.path {
+                    case "/v1/oauth/token":
+                        body = #"{"access_token":"fresh","refresh_token":"rotated","scope":"user:inference"}"#
+                    case "/api/oauth/profile":
+                        XCTAssertEqual(request.headers["Authorization"], "Bearer file-token")
+                        body = #"{"account":{"uuid":"\#(fileAccount)"},"organization":{"uuid":"test-org"}}"#
+                    default:
+                        XCTAssertEqual(request.headers["Authorization"], "Bearer file-token")
+                        body = #"{"five_hour":{"utilization":42}}"#
+                    }
+                    return HTTPResponse(statusCode: 200, headers: [:], body: Data(body.utf8))
+                }
+                let usageStore = isolatedClaudeUsageStore()
+                let runtime = ClaudeProvider(
+                    authStore: auth, usageClient: ClaudeUsageClient(httpClient: http), usageStateStore: usageStore,
+                    logUsageScanner: ClaudeLogFixture.scanner(home: nil), includeSharedUsage: false,
+                    pricing: { TestPricing.bundled })
+
+                let snapshot = await runtime.refresh()
+
+                let matches = fileAccount == "account-a"
+                let expectedRequests = ["/v1/oauth/token", "/api/oauth/profile"] + (matches ? ["/api/oauth/usage"] : [])
+                XCTAssertEqual(http.requests.map(\.url.path), expectedRequests)
+                XCTAssertEqual(snapshot.line(label: "Session") != nil, matches)
+                let lease = try await usageStore.acquire(accountKey: "account-a|test-org", usageURL: auth.oauthConfig().usageURL)
+                XCTAssertEqual(try lease.read().lastGood != nil, matches)
+            }
+        }
+    }
+
     func testRotationPreservesConcurrentMCPAndOAuthMetadataChanges() throws {
         let service = "Claude Code-credentials"
         let keychain = ServiceKeychain(currentUserValues: [service: credential])

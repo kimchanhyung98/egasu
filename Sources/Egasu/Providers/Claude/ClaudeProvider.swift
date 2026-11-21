@@ -116,11 +116,10 @@ final class ClaudeProvider: ProviderRuntime {
                 allowAccountInteraction: allowDesktopInteraction
             )
         }
-        let storedCandidates = credentialLoad.candidates
         if let error = credentialLoad.credentialError {
             return ProviderSnapshot.error(provider: provider, error: error)
         }
-        let candidates = storedCandidates.filter {
+        let candidates = credentialLoad.candidates.filter {
             $0.hasUsableAccessToken && (!forceDesktopFallback || $0.source == .desktop)
         }
         if forceDesktopFallback {
@@ -175,7 +174,7 @@ final class ClaudeProvider: ProviderRuntime {
         // 비-auth 에러(rate limit, transport)는 즉시 표면화 — 실제 장애를 재시도로 가리지 않음.
         var lastFallbackError: ClaudeAuthError?
         var rejectedGrant: ClaudeUsageStateStore.AuthenticationFailure?
-        var credentialGeneration = ClaudeCredentialGeneration(storedCandidates)
+        var credentialGeneration = credentialLoad.generation
         for state in candidates {
             // environment 토큰은 subscription usage 조회 불가 — spend 전용 폴백이 거짓 성공이 되기 전에 Desktop 시도.
             if !forceDesktopFallback,
