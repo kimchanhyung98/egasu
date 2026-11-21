@@ -149,7 +149,7 @@
 "App Icon Only" = "アプリアイコンのみ";
 "Max Items In Menu Bar" = "メニューバーの最大項目数";
 "Menu Bar Items" = "メニューバーの表示項目";
-"Pin a metric in All Usage to show it in the menu bar." = "「すべての使用量」で指標をピン留めすると、メニューバーに表示されます。";
+"Choose Priority or Pinned Only, then pin metrics in All Usage to show them in the menu bar." = "「優先」または「ピン留めのみ」を選び、「すべての使用量」で指標をピン留めすると、メニューバーに表示されます。";
 "Pinned Only" = "ピン留めのみ";
 "Show Extra Indicators" = "追加表示";
 "Up to %d" = "最大%d個";

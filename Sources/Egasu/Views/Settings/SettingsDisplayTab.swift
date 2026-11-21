@@ -20,7 +20,8 @@ struct SettingsDisplayTab: View {
             SettingsPicker(
                 L10n.settings("Menu Bar Items"), selection: $display.menuBarSelection,
                 options: MenuBarSelection.allCases,
-                info: L10n.settings("Pin a metric in All Usage to show it in the menu bar.")
+                info: L10n.settings(
+                    "Choose Priority or Pinned Only, then pin metrics in All Usage to show them in the menu bar.")
             ) { $0.label }
             .disabled(display.menuBarLimit == .iconOnly)
             Toggle(isOn: $display.showsMenuBarExtras) {
