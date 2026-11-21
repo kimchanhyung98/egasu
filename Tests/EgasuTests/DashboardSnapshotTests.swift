@@ -5,7 +5,7 @@ import XCTest
 /// All Usage의 행·계정·언어·표시 방식 렌더 검증.
 @MainActor
 final class DashboardSnapshotTests: XCTestCase {
-    private let now = Date()
+    let now = Date()
 
     func testReducedMotionDetailUsesParentScopedDismissalWithoutAnimation() {
         let controller = ReducedMotionPopoverController(isPresented: .constant(false))
@@ -145,7 +145,7 @@ final class DashboardSnapshotTests: XCTestCase {
         return DashboardFamily(id: "codex", provider: provider, displayName: "Codex", accounts: [first, secondAccount])
     }
 
-    private func meter(_ title: String, used: Double, resetIn: TimeInterval, period: Int = 7 * 86_400_000) -> WidgetData
+    func meter(_ title: String, used: Double, resetIn: TimeInterval, period: Int = 7 * 86_400_000) -> WidgetData
     {
         var data = WidgetData(title: title, icon: .providerMark("codex"), kind: .percent, used: used, limit: 100)
         data.resetsAt = now.addingTimeInterval(resetIn)
@@ -153,7 +153,7 @@ final class DashboardSnapshotTests: XCTestCase {
         return data
     }
 
-    private func line(_ id: String, _ data: WidgetData) -> DashboardLine {
+    func line(_ id: String, _ data: WidgetData) -> DashboardLine {
         DashboardLine(
             descriptor: WidgetDescriptor(
                 id: id, providerID: ProviderAccountID.providerID(ofMetric: id), metricLabel: data.title, sample: data),
@@ -161,7 +161,7 @@ final class DashboardSnapshotTests: XCTestCase {
         )
     }
 
-    private func render<V: View>(_ view: V, appearance: ColorScheme, name: String? = nil) throws -> NSImage {
+    func render<V: View>(_ view: V, appearance: ColorScheme, name: String? = nil) throws -> NSImage {
         let framed =
             view
             .frame(width: PanelMetrics.width - PanelMetrics.margin * 2)
@@ -179,7 +179,7 @@ final class DashboardSnapshotTests: XCTestCase {
         return try XCTUnwrap(image.cgImage(forProposedRect: &rect, context: nil, hints: nil))
     }
 
-    private func export(_ image: NSImage, name: String) throws {
+    func export(_ image: NSImage, name: String) throws {
         guard let folder = ProcessInfo.processInfo.environment["EGASU_DASHBOARD_SNAPSHOTS"] else { return }
         let url = URL(fileURLWithPath: folder, isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -258,34 +258,6 @@ final class DashboardSnapshotTests: XCTestCase {
                 let reduced = try render(PriorityBoardList(board: without(section), now: now), appearance: appearance)
                 XCTAssertGreaterThanOrEqual(image.size.height - reduced.size.height, 28, "\(appearance): \(section)")
             }
-        }
-    }
-
-    func testAllClearPriorityRendersAllUsageLinkWithoutPins() throws {
-        let account = DashboardAccount(
-            provider: MockData.codex, providerName: "Codex", name: nil,
-            lines: [line("codex.weekly", meter("Weekly", used: 10, resetIn: 3 * 86_400))])
-        let board = PriorityBoard.make(accounts: [account], now: now)
-        XCTAssertEqual(board.summary, .allClear)
-        try L10n.withLanguage(.english) {
-            let content = PriorityBoardList(board: board, now: now, onShowAllUsage: {})
-                .padding(PanelMetrics.margin)
-                .frame(width: PanelMetrics.width - PanelMetrics.margin * 2)
-                .background(Theme.panelBody)
-                .environment(\.colorScheme, .light)
-            let host = NSHostingView(rootView: content)
-            let window = NSWindow(contentRect: .zero, styleMask: .borderless, backing: .buffered, defer: false)
-            window.isReleasedWhenClosed = false
-            window.appearance = NSAppearance(named: .aqua)
-            window.contentView = host
-            window.setContentSize(host.fittingSize)
-            defer { window.close() }
-            let image = NSImage(size: host.bounds.size)
-            image.addRepresentation(try settingsBitmap(in: host))
-            try export(image, name: "priority-all-clear-light")
-            let shareImage = try render(
-                PriorityBoardList(board: board, now: now).padding(PanelMetrics.margin), appearance: .light)
-            XCTAssertGreaterThan(image.size.height, shareImage.size.height)
         }
     }
 
