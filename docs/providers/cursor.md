@@ -91,6 +91,7 @@ Cursor가 활성화돼 있으면 실행 시, 활성화 시, 5분마다, 대시�
 
 ## 내부 동작
 
+통합 계정의 선불 잔액은 `api2.cursor.sh/aiserver.v1.DashboardService/GetComplatCreditBalance`, 월간 추가 사용액은 `cursor.com/api/dashboard/v2/usage-status?scope=user`에서 조회.
 `api2.cursor.sh`의 Connect RPC(대시보드 사용량), Enterprise/팀 계정용 `cursor.com/api/usage`와 `cursor.com/api/usage-summary`의 두 REST 응답을 조합하는 대체 경로, `cursor.com/api/auth/stripe`의 Stripe 잔액, `cursor.com/api/dashboard/get-filtered-usage-events`의 페이지별 사용 이벤트.
 대체 경로는 포함 요청 허용량과 구조화된 백분율 및 사용자 단위 온디맨드 지출을 결합하며, 어느 REST 응답도 단독으로 전체 계정 스냅샷으로 취급하지 않음.
 기본 대시보드 사용량 요청은 401/403 후 토큰을 갱신해 한 번 재시도하며, 다른 대체 응답을 사용할 수 있으면 선택적 엔드포인트 실패를 치명적 오류로 처리하지 않고 진단 로그에 기록.
