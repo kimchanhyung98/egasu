@@ -139,6 +139,7 @@ jobs:
 
       - name: 게시 이력에서 빌드 번호 선택
         env:
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
           # 과거 태그의 앱을 재게시해도 실행 중인 워크플로와 같은 피드 도구 사용.
@@ -148,6 +149,14 @@ jobs:
             cp feed/appcast.xml "$previous"
           else
             printf '<rss><channel/></rss>\n' > "$previous"
+          fi
+          tags="$RUNNER_TEMP/commit-tags"
+          git tag --points-at HEAD --list 'v[0-9]*' > "$tags"
+          if grep -Fxv "v$VERSION" "$tags" >/dev/null; then
+            # DMG만 공개된 다른 태그의 번호는 피드 복구까지 예약.
+            releases="$RUNNER_TEMP/github-releases.json"
+            gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$releases"
+            python3 "$RUNNER_TEMP/release_appcast.py" check-peers "$previous" "$VERSION" "$tags" "$releases"
           fi
           count="$(git rev-list --count HEAD)"
           build="$(python3 "$RUNNER_TEMP/release_appcast.py" build "$previous" "$count" "$VERSION")"

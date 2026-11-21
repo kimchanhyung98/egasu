@@ -1,5 +1,6 @@
 """Sparkle 게시 피드에 기록된 빌드 번호 선택과 새 피드 검증."""
 
+import json
 import sys
 import xml.etree.ElementTree as ET
 from collections import Counter
@@ -53,6 +54,20 @@ def published_release(previous, version):
                key=lambda item: parts(item.build), default=None)
 
 
+def check_public_peers(previous, version, tags, release_pages):
+    if published_release(previous, version):
+        return
+    missing = set(tags) - {f"v{version}"} - {f"v{row.version}" for row in previous}
+    for page in release_pages:
+        for release in page:
+            tag = release["tag_name"]
+            if tag not in missing or release["draft"]:
+                continue
+            dmg_names = {f"{name}-{tag[1:]}.dmg" for name in ("egasu", "OpenUsage")}
+            if any(asset["state"] == "uploaded" and asset["name"] in dmg_names for asset in release["assets"]):
+                raise SystemExit(f"Public DMG for {tag} is missing from the appcast. Rerun {tag} first.")
+
+
 def select_build(previous, count, version):
     published = published_release(previous, version)
     if published:
@@ -95,6 +110,10 @@ if __name__ == "__main__":
     if command == "build":
         count, version = args
         print(select_build(previous, int(count), version))
+    elif command == "check-peers":
+        version, tag_path, releases_path = args
+        with open(tag_path) as tags, open(releases_path) as releases:
+            check_public_peers(previous, version, tags.read().splitlines(), json.load(releases))
     elif command == "verify":
         current, build, version, channel, url = args
         print(verify(previous, read_feed(current), build, version, channel, url))

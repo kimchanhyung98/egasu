@@ -14,9 +14,14 @@ function step(file: string, name: string) {
   const lines = workflow(file).split('\n');
   const start = lines.indexOf(`      - name: ${name}`);
   assert.notEqual(start, -1);
-  assert.equal(lines[start + 1], '        run: |');
+  let run = start + 1;
+  if (lines[run] === '        env:') {
+    run++;
+    while (lines[run]?.startsWith('          ')) run++;
+  }
+  assert.equal(lines[run], '        run: |');
   const body: string[] = [];
-  for (const line of lines.slice(start + 2)) {
+  for (const line of lines.slice(run + 1)) {
     if (line && !line.startsWith('          ')) break;
     body.push(line.slice(10));
   }
@@ -53,6 +58,7 @@ function fixture() {
   const checkout = join(root, 'checkout');
   mkdirSync(join(remote, 'script'), { recursive: true });
   copyFileSync(new URL('../../script/version.sh', import.meta.url), join(remote, 'script/version.sh'));
+  copyFileSync(new URL('../../script/release_appcast.py', import.meta.url), join(remote, 'script/release_appcast.py'));
   const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
   function git(cwd: string, ...args: string[]) {
     const result = spawnSync('git', args, { cwd, env, encoding: 'utf8', timeout: 5000 });
@@ -197,6 +203,54 @@ test('main·PR의 사이트 변경은 게시 없이 Site CI에서 검증', () =>
     assert.equal(filters.some(pattern => matchesGlob('docs/settings.md', pattern)), false);
   }
   assert.doesNotMatch(workflow('site.yml'), /peaceiris\/actions-gh-pages|actions\/deploy-pages/);
+});
+
+test('같은 커밋의 DMG만 공개된 경우 원래 태그 복구 후 승격', () => {
+  const f = fixture();
+  const beta = '1.2.4-beta.1';
+  const stable = '1.2.4';
+  const release = (version: string, name = `egasu-${version}.dmg`, state = 'uploaded', draft = false) =>
+    ({ tag_name: `v${version}`, draft, assets: [{ name, state }] });
+  const envFile = join(f.root, 'github-env');
+  function run(version: string) {
+    writeFileSync(envFile, '');
+    return f.run('release.yml', '게시 이력에서 빌드 번호 선택', {
+      VERSION: version, RUNNER_TEMP: f.root, GITHUB_REPOSITORY: 'fixture/project',
+      GITHUB_SHA: f.git(f.checkout, 'rev-parse', 'HEAD'), GITHUB_ENV: envFile,
+      PATH: `${f.root}:${process.env.PATH}`,
+    });
+  }
+  function build(version: string, expected: string) {
+    const result = run(version);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(envFile, 'utf8'), `EGASU_BUILD=${expected}\nOPENUSAGE_BUILD=${expected}\n`);
+  }
+  try {
+    f.git(f.checkout, 'tag', `v${stable}`);
+    const results = join(f.root, 'releases-fixture.json');
+    writeFileSync(join(f.root, 'gh'), '#!/bin/sh\n' +
+      '[ "$*" = "api --paginate --slurp repos/fixture/project/releases?per_page=100" ] || exit 22\n' +
+      'cat "$RUNNER_TEMP/releases-fixture.json"\n', { mode: 0o755 });
+    assert.notEqual(run(stable).status, 0);
+    writeFileSync(results, JSON.stringify([[release('1.2.0'), release(beta, 'notes.txt'),
+      release(beta, `egasu-${beta}.dmg`, 'starter'), release(beta, `egasu-${beta}.dmg`, 'uploaded', true)]]));
+    build(stable, '1');
+    for (const name of [`egasu-${beta}.dmg`, `OpenUsage-${beta}.dmg`]) {
+      writeFileSync(results, JSON.stringify([[], [release(beta, name)]]));
+      const blocked = run(stable);
+      assert.notEqual(blocked.status, 0);
+      assert.match(blocked.stderr, /Rerun v1\.2\.4-beta\.1 first/);
+      assert.equal(readFileSync(envFile, 'utf8'), '');
+    }
+    build(beta, '1');
+    mkdirSync(join(f.checkout, 'feed'));
+    writeFileSync(join(f.checkout, 'feed/appcast.xml'), '<rss xmlns:s="http://www.andymatuschak.org/xml-namespaces/sparkle">' +
+      `<channel><item><s:version>1</s:version><s:shortVersionString>${beta}</s:shortVersionString>` +
+      '<s:channel>beta</s:channel><enclosure/></item></channel></rss>');
+    build(stable, '1.1');
+    writeFileSync(results, JSON.stringify([[release(stable)]]));
+    build(beta, '1');
+  } finally { f.cleanup(); }
 });
 
 test('같은 커밋의 정식 승격 시 버전·채널·서명·이전 항목 보존', () => {

@@ -20,6 +20,7 @@ Sparkle `appcast.xml`은 `gh-pages`에 기록한 뒤 Pages로 배포.
 예를 들어 `v0.10.0-beta.1`의 `CFBundleShortVersionString`은 `0.10.0-beta.1`.
 `CFBundleVersion`은 Git 커밋 수이며 같은 커밋에서 후속 버전을 게시하면 점과 순번 추가(예: `1899.1`).
 같은 버전의 재게시에는 appcast에 기록된 번호 재사용.
+같은 커밋의 다른 태그에 DMG만 공개되었으면 해당 태그의 릴리스 워크플로를 재실행해 appcast 복구 후 다음 태그 게시.
 
 ## Cutting a release
 
