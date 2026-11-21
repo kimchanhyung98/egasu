@@ -78,6 +78,9 @@ test('Site CI는 잠금 파일의 Playwright 버전으로 컨테이너 선택', 
     assert.ok(prepare.includes('source_sha: ${{ steps.checkout.outputs.commit }}'));
     assert.ok(verify.includes('ref: ${{ needs.playwright.outputs.source_sha }}'));
     assert.ok(workflow.includes('image: mcr.microsoft.com/playwright:v${{ needs.playwright.outputs.version }}-noble'));
+    assert.ok(workflow.includes('\ncache-mode: none\n'));
+    assert.ok(prepare.includes('\nconcurrency:\n  group: site-ci-${{ github.workflow }}-${{ inputs.ref || github.ref }}\n  cancel-in-progress: true\n'));
+    assert.ok(!verify.includes('\n    concurrency:'));
     assert.ok(verify.includes('package-manager-cache: false'));
     assert.ok(!verify.includes('cache: npm'));
   } finally { rmSync(temp, { recursive: true, force: true }); }
