@@ -98,6 +98,10 @@ struct ClaudeAuthStore: Sendable {
         } catch {
             return ClaudeCredentialLoad(candidates: [], desktopStatus: .notChecked, credentialError: error)
         }
+        let desktopAllowed = scope == .standard && allowsDesktopFallback
+        // 강제 폴백은 Desktop 권한 응답 뒤의 CLI 로그인과 홈 신원을 같은 세대에 반영.
+        let forcedDesktop =
+            desktopAllowed && forceDesktopFallback ? desktop.load(allowInteraction: allowDesktopInteraction) : nil
         var stored = orderedStoredCandidates(sharedRoute: route)
         let identity = usageAccountIdentity(sharedRoute: route)
         // 홈 메타데이터는 우선 사용되는 로그인만 식별. 별도 파일의 폴백 토큰까지 같은 계정으로 추정 금지.
@@ -106,7 +110,6 @@ struct ClaudeAuthStore: Sendable {
         }
         var desktopStatus: ClaudeDesktopCredentialStatus = .notChecked
         // CLI 로그인이 source of truth, Desktop은 폴백 전용 — `.configDir` 카드는 Desktop 미조회(다른 카드의 로그인).
-        let desktopAllowed = scope == .standard && allowsDesktopFallback
         if forceDesktopFallback, !desktopAllowed {
             // 안전한 Desktop 후보 없음을 알려 원래 CLI auth 에러 보존 — generic "not logged in" 변환 방지.
             desktopStatus = .notFound
@@ -115,7 +118,7 @@ struct ClaudeAuthStore: Sendable {
             $0.hasUsableAccessToken && liveUsageAvailability($0) == .available
         }
         if desktopAllowed, forceDesktopFallback || !hasUsableCLILogin {
-            let result = desktop.load(allowInteraction: allowDesktopInteraction)
+            let result = forcedDesktop ?? desktop.load(allowInteraction: allowDesktopInteraction)
             desktopStatus = result.status
             if let oauth = result.oauth {
                 stored.insert(ClaudeCredentialState(

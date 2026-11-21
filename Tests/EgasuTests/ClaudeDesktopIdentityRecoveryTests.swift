@@ -52,9 +52,12 @@ extension ClaudeDesktopAuthStoreTests {
         let account = "11111111-1111-4111-8111-111111111111"
         let other = "22222222-2222-4222-8222-222222222222"
         let now = now
-        for switchDuringDesktop in [false, true] {
+        enum SwitchPoint: Sendable {
+            case fileResponse, desktopKeyRead, desktopResponse
+        }
+        for switchPoint in [SwitchPoint.fileResponse, .desktopKeyRead, .desktopResponse] {
             let fixture = try makeFixture(
-                activeOrganization: organization, activeAccountUUID: switchDuringDesktop ? account : other,
+                activeOrganization: organization, activeAccountUUID: switchPoint == .desktopResponse ? account : other,
                 v2: [cacheKey(organization: organization): tokenEntry("desktop", expiresIn: 3_600)])
             fixture.files.files["/tmp/claude/.claude.json"] = """
                 {"oauthAccount":{"accountUuid":"\(account)","organizationUuid":"\(organization)"}}
@@ -63,10 +66,13 @@ extension ClaudeDesktopAuthStoreTests {
                 #"{"claudeAiOauth":{"accessToken":"file","scopes":["user:profile"]}}"#
             let keychain = FakeKeychain(#"{"claudeAiOauth":{"accessToken":"restricted","scopes":["user:inference"]}}"#)
             let fresh = #"{"claudeAiOauth":{"accessToken":"new-cli","scopes":["user:profile"]}}"#
+            if switchPoint == .desktopKeyRead {
+                fixture.keyReader.onRead = { keychain.value = fresh }
+            }
             let http = RoutingHTTPClient { request in
                 switch request.headers["Authorization"] {
                 case "Bearer file":
-                    if !switchDuringDesktop { keychain.value = fresh }
+                    if switchPoint == .fileResponse { keychain.value = fresh }
                     return HTTPResponse(statusCode: 401, headers: [:], body: Data())
                 case "Bearer desktop":
                     keychain.value = fresh
@@ -88,7 +94,8 @@ extension ClaudeDesktopAuthStoreTests {
 
             let snapshot = await provider.refresh()
 
-            let expected = ["Bearer file"] + (switchDuringDesktop ? ["Bearer desktop"] : []) + ["Bearer new-cli"]
+            let expected =
+                ["Bearer file"] + (switchPoint == .desktopResponse ? ["Bearer desktop"] : []) + ["Bearer new-cli"]
             XCTAssertEqual(http.requests.compactMap { $0.headers["Authorization"] }, expected)
             XCTAssertEqual(
                 snapshot.line(label: "Session"),
