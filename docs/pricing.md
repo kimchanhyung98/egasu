@@ -153,6 +153,10 @@ CLI의 Carbon Low·Medium·High와 Hydrogen Low·Medium·High·XHigh는 각각 �
 2. **LiteLLM** — 커뮤니티가 관리하는 `model_prices_and_context_window.json`으로, API 가격이 매겨진 모델 대부분을 포함.
 3. **models.dev** — LiteLLM이 놓친 모델(예: 갓 출시된 모델이나 일부 틈새 모델)을 채우는 보완 출처.
 
+LiteLLM과 models.dev의 단가는 유한한 비음수의 JSON 숫자만 사용.
+입력이나 출력 단가가 유효하지 않은 모델은 해당 가격표에서 건너뛰고 나머지 모델은 유지.
+유효하지 않은 선택 요율은 해당 필드가 없을 때와 같은 기본값 적용.
+
 앱은 세 출처의 스냅샷을 함께 넣어 배포하므로 오프라인에서도, 첫 실행에서도 가격 계산이 동작.
 운영 앱은 실행 중 마지막 성공 후 한 시간이 지나면 각 출처를 다시 확인하고(ETag 재검증), `~/Library/Application Support/egasu/pricing/`에 캐시.
 표준 개발 빌드는 `egasu.dev`, 그 외 설정 도메인은 `egasu.suite.<해시>`를 `egasu` 대신 사용.
