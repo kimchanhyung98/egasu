@@ -168,7 +168,8 @@ Bearer 접두사는 추가하지 않음.
 - **"Couldn't read the saved API key"** — 설정 파일 권한을 확인하고 필요하면 계정 추가 시 새 키 입력.
 - **"No Z.ai API key"** — Accounts의 **Add New Account**에서 Z.ai 키 추가, 또는 계정 상세에서 **Add API Key…** 선택.
   환경 변수를 사용하면 위 설정 절차에 따라 앱 재실행.
-- **"Z.ai API key invalid"** — 키 거부(401/403).
+- **"Z.ai API key invalid"** — 국제 서비스 `api.z.ai`에서 키 거부(401/403).
+  중국 BigModel과 Z.ai는 별도 서비스이므로 Z.ai에서 발급한 키 확인.
   [Z.ai 콘솔](https://z.ai/manage-apikey/apikey-list)에서 다시 생성.
 - **"No active GLM Coding Plan"**(이름 옆 황색 안내) — 키는 유효하지만 계정에 GLM Coding Plan이 없어 측정할 항목이 없는 상태.
   [z.ai/subscribe](https://z.ai/subscribe)에서 구독하면 요금제 활성화 후 사용량 표시.
