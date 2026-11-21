@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 대시보드 헤더 공용 스크린샷 복사 버튼. 복사 성공 시 체크마크 피드백 후 복귀.
+/// 복사 성공 시 체크마크를 잠시 표시하는 버튼.
 /// `action`이 false 반환 시 피드백 생략.
 struct CopyFeedbackButton: View {
     let accessibilityLabel: String
@@ -30,7 +30,7 @@ struct CopyFeedbackButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // 음수 padding으로 28pt 히트 영역을 두면서 헤더의 16pt 레이아웃 슬롯 유지
+        // 28pt 클릭 영역을 두고 음수 여백으로 배치 크기를 16pt로 줄임.
         .padding(-6)
         .opacity(isRevealed || copied ? 1 : 0)
         .allowsHitTesting(isRevealed || copied)

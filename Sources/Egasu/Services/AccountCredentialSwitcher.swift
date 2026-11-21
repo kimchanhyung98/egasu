@@ -28,35 +28,38 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
             case .incompleteClaudeAuthentication:
                 "Claude sign-in has not finished updating its account state. Finish signing in and try again."
             case .conflictingClaudeAuthentication:
-                "Claude sign-ins in different locations conflict. Open Settings → Accounts → Manage Claude Account, then choose Sign In Again."
+                "Claude sign-ins in different locations conflict. Open Accounts, open the Claude account, then choose Sign In Again."
             case .switchVerificationFailed(let label):
                 "Switching to \(label) could not be verified. Check the selected account and try again."
             case .switchRecoveryRequired:
-                "Claude account switch recovery is required. Open Settings → Accounts → Manage Claude Account, then choose the Use Claude option for the account you want to use."
+                "Claude account switch recovery is required. Open Accounts, open the Claude account you want to use, then choose Use Claude."
             case .selectionSaveFailed:
                 "egasu couldn't save the selected account. The recovery record was kept. Try again."
             }
         }
     }
 
-    private let keychain: KeychainAccessing
+    let keychain: KeychainAccessing
     private let fileManager: FileManager
-    private let environment: EnvironmentReading
-    private let homeDirectory: URL
+    let environment: EnvironmentReading
+    let homeDirectory: URL
     private let workspace: AccountSignInWorkspace
+    private let claudeUsageClient: ClaudeUsageClient
 
     init(
         keychain: KeychainAccessing = SecurityKeychainAccessor(),
         fileManager: FileManager = .default,
         environment: EnvironmentReading = ProcessEnvironmentReader(),
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
-        workspace: AccountSignInWorkspace = AccountSignInWorkspace()
+        workspace: AccountSignInWorkspace = AccountSignInWorkspace(),
+        httpClient: HTTPClient = URLSessionHTTPClient()
     ) {
         self.keychain = keychain
         self.fileManager = fileManager
         self.environment = environment
         self.homeDirectory = homeDirectory.resolvingSymlinksInPath().standardizedFileURL
         self.workspace = workspace
+        self.claudeUsageClient = ClaudeUsageClient(httpClient: httpClient)
     }
 
     // MARK: - Shared Runtime Home
@@ -75,23 +78,26 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
         AccountSwitchJournal(path: workspace.baseDirectory.appendingPathComponent("claude-switch.json").path)
     }
 
-    /// 전환 복구의 세대 비교 — 모든 공유 인증 사본을 읽고 읽기 실패를 부재로 바꾸지 않음.
-    func readClaudeSwitchState() throws -> AccountSwitchJournal.SharedState {
+    /// 이전 전환 기록은 세 곳의 원문 지문, 새 기록은 실제 CLI 로그인 출처의 OAuth 지문으로 비교.
+    func readClaudeSwitchState(legacyRecord: Bool = false, allowInteraction: Bool = true) throws
+        -> AccountSwitchJournal.SharedState
+    {
+        if !legacyRecord { return try sharedClaudeLogin(allowInteraction: allowInteraction).state }
         let home = sharedHomePath(family: "claude")
         let services = [
             ClaudeAuthStore.scopedKeychainServiceName(forConfigDirLiteral: home, environment: environment),
             ClaudeAuthStore.baseKeychainServiceName(environment: environment)
         ]
         var credentials = try services.map { service in
-            try keychain.readGenericPasswordForCurrentUser(service: service)
-                ?? keychain.readGenericPassword(service: service)
+            try keychain.readGenericPasswordForCurrentUser(service: service, allowInteraction: allowInteraction)
+                ?? keychain.readGenericPassword(service: service, allowInteraction: allowInteraction)
         }
         credentials.append(try readTextIfPresent(URL(fileURLWithPath: home).appendingPathComponent(".credentials.json")))
         let stateURLs = [
             homeDirectory.appendingPathComponent(".claude.json"),
             URL(fileURLWithPath: home).appendingPathComponent(".claude.json")
         ]
-        let accounts = try stateURLs.map { try claudeOAuthAccount(inFirstOf: [$0]) }
+        let accounts = try stateURLs.map { try claudeOAuthAccount(at: $0) }
         let credential = credentials.compactMap { $0 }.first(where: isUsableClaudeCredential) ?? ""
         let identities = accounts.map {
             identity(of: .init(credential: credential, claudeOAuthAccount: $0), family: "claude")?.identityKey
@@ -99,135 +105,98 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
         return .init(credentials: credentials, accounts: accounts, identities: identities)
     }
 
-    /// 선택된 Claude의 터미널 준비 상태용 scoped credential + 내부 state 쌍.
-    /// 영구 snapshot 교체와 달리 쓰기 세대 검증 없이 현재 CLI가 사용할 로그인만 확인.
-    func readSharedClaudeAuthenticationForReadiness() throws -> AccountCredentialVault.Entry? {
-        try sharedClaudeAuthentication()?.entry
+    /// 선택된 Claude의 터미널 준비 상태용 기본 인증과 루트 계정 정보.
+    /// 프로필 API 호출 없이 현재 CLI가 사용할 로그인만 확인 — 영구 저장본 교체와 구분.
+    func readSharedClaudeAuthenticationForReadiness(allowInteraction: Bool = false) throws -> AccountCredentialVault.Entry? {
+        try sharedClaudeAuthentication(allowInteraction: allowInteraction)
     }
 
-    /// snapshot 교체용 Claude 로그인 — state가 새 credential을 반영한 완료 상태일 때만 반환.
-    /// 정규화 여부도 같은 관찰에서 결정 — 후속 읽기에서 발견한 새 충돌을 덮어쓰기 근거로 사용 금지.
+    struct VerifiedClaudeExternalAuthentication: Sendable {
+        let observed: AccountCredentialVault.Entry
+        let baseline: AccountCredentialVault.Entry?
+        let snapshot: AccountCredentialVault.Entry
+        let identityKey: String
+        let sourceID: String
+    }
+
+    func claudeProfile(
+        for accessToken: String, timeout: TimeInterval = ClaudeUsageClient.profileTimeout
+    ) async throws -> ClaudeProfileResponse {
+        let config = try ClaudeAuthStore(environment: environment).oauthConfig()
+        let response = try await claudeUsageClient.fetchProfile(
+            accessToken: accessToken, config: config, timeout: timeout)
+        try ProviderAuthRetry.requireSuccess(
+            response, authExpired: ClaudeAuthError.tokenExpired, requestFailed: ClaudeUsageError.requestFailed
+        )
+        return try JSONDecoder().decode(ClaudeProfileResponse.self, from: response.body)
+    }
+
+    /// CLI 인증은 그대로 두고 변경된 토큰의 계정·조직을 확인한 뒤 egasu 저장본에 반영.
     func readSharedClaudeExternalAuthentication(
-        comparedTo previousSnapshot: AccountCredentialVault.Entry?
-    ) throws -> (entry: AccountCredentialVault.Entry, requiresNormalization: Bool)? {
-        guard let observed = try sharedClaudeAuthentication() else { return nil }
-        let authentication = (
-            entry: observed.entry,
-            requiresNormalization: try claudeSharedNormalizationRequired(for: observed)
-        )
-        guard observed.entry != previousSnapshot else { return authentication }
-        if let previousSnapshot,
-           sameClaudeCredentialChain(previousSnapshot, observed.entry) {
-            return authentication
-        }
-        guard let credentialModifiedAt = observed.credentialModifiedAt,
-              let stateModifiedAt = observed.stateModifiedAt,
-              stateModifiedAt >= credentialModifiedAt
-        else {
-            AppLog.error(.auth, "shared Claude account state predates its credential; preserving the managed snapshot")
-            throw Error.incompleteClaudeAuthentication
-        }
-        return authentication
-    }
-
-    private func sameClaudeCredentialChain(
-        _ previous: AccountCredentialVault.Entry,
-        _ observed: AccountCredentialVault.Entry
-    ) -> Bool {
-        guard identity(of: previous, family: "claude")?.identityKey
-                == identity(of: observed, family: "claude")?.identityKey,
-              let previousRefreshToken = ClaudeAuthStore.parseCredentials(previous.credential)?
-                .claudeAiOauth?.refreshToken?.nilIfEmpty,
-              let observedRefreshToken = ClaudeAuthStore.parseCredentials(observed.credential)?
-                .claudeAiOauth?.refreshToken?.nilIfEmpty
-        else {
-            return false
-        }
-        return previousRefreshToken == observedRefreshToken
-    }
-
-    private struct SharedClaudeAuthentication {
-        var entry: AccountCredentialVault.Entry
-        var credentialModifiedAt: Date?
-        var stateModifiedAt: Date?
-    }
-
-    private func sharedClaudeAuthentication() throws -> SharedClaudeAuthentication? {
-        let home = sharedHomePath(family: "claude")
-        var service = ClaudeAuthStore.scopedKeychainServiceName(
-            forConfigDirLiteral: home,
-            environment: environment
-        )
-        var stateURL = URL(fileURLWithPath: home).appendingPathComponent(".claude.json")
-        var stored = try claudeKeychainCredential(service: service)
-        if stored == nil {
-            // 관리형 home의 scoped credential 부재는 로그아웃 — 이전 base 인증으로 복원 금지.
-            guard !fileManager.fileExists(atPath: stateURL.path) else { return nil }
-            // 최초 등록 전 plain 로그인만 base credential + 루트 state에서 수용.
-            service = ClaudeAuthStore.baseKeychainServiceName(environment: environment)
-            stateURL = homeDirectory.appendingPathComponent(".claude.json")
-            stored = try claudeKeychainCredential(service: service)
-        }
-        guard let stored, isUsableClaudeCredential(stored.value),
-              let account = try claudeOAuthAccount(inFirstOf: [stateURL])
+        comparedTo previousSnapshot: AccountCredentialVault.Entry?, allowInteraction: Bool
+    ) async throws -> VerifiedClaudeExternalAuthentication? {
+        let state = try readClaudeSwitchState(allowInteraction: allowInteraction)
+        guard let login = state.credentials[0], isUsableClaudeCredential(login),
+            let expectedIdentity = state.identities[0], let sourceID = state.sourceID
         else { return nil }
-        return SharedClaudeAuthentication(
-            entry: .init(credential: stored.value, claudeOAuthAccount: account),
-            credentialModifiedAt: try stored.isCurrentUser
-                ? keychain.genericPasswordModificationDateForCurrentUser(service: service)
-                : keychain.genericPasswordModificationDate(service: service),
-            stateModifiedAt: try modificationDateIfPresent(stateURL)
-        )
+        let observed = AccountCredentialVault.Entry(credential: login, claudeOAuthAccount: state.accounts[0])
+        if observed == previousSnapshot, expectedIdentity.contains("|") {
+            return .init(
+                observed: observed, baseline: previousSnapshot, snapshot: observed, identityKey: expectedIdentity,
+                sourceID: sourceID
+            )
+        }
+        guard let token = ClaudeAuthStore.parseCredentials(observed.credential)?.claudeAiOauth?.accessToken?.nilIfEmpty
+        else { return nil }
+        let profile = try await claudeProfile(for: token)
+        let verifiedIdentity = try profile.accountIdentityKey()
+        let comparableIdentity =
+            expectedIdentity.contains("|")
+            ? verifiedIdentity : String(verifiedIdentity.prefix { $0 != "|" })
+        guard comparableIdentity == expectedIdentity else {
+            throw AccountCredentialImporter.ImportError.verificationFailed(family: "claude")
+        }
+        try Task.checkCancellation()
+        var snapshot = observed
+        if !expectedIdentity.contains("|") {
+            guard let account = observed.claudeOAuthAccount,
+                var fields = try JSONSerialization.jsonObject(with: Data(account.utf8)) as? [String: Any]
+            else { throw AccountCredentialImporter.ImportError.verificationFailed(family: "claude") }
+            fields["organizationUuid"] = profile.organization.uuid.trimmingCharacters(in: .whitespacesAndNewlines)
+            snapshot.claudeOAuthAccount = String(
+                decoding: try JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]), as: UTF8.self
+            )
+        }
+        guard try readClaudeSwitchState(allowInteraction: allowInteraction) == state else {
+            throw ClaudeAuthError.credentialsChanged
+        }
+        return .init(
+            observed: observed, baseline: previousSnapshot, snapshot: snapshot, identityKey: verifiedIdentity,
+            sourceID: sourceID)
     }
 
-    private func claudeKeychainCredential(service: String) throws -> (value: String, isCurrentUser: Bool)? {
-        if let value = try keychain.readGenericPasswordForCurrentUser(service: service) {
-            return (value, true)
-        }
-        guard let value = try keychain.readGenericPassword(service: service) else { return nil }
-        return (value, false)
+    private func sharedClaudeAuthentication(allowInteraction: Bool = true) throws -> AccountCredentialVault.Entry? {
+        try sharedClaudeAuthentication(in: readClaudeSwitchState(allowInteraction: allowInteraction))
     }
 
-    /// 충돌한 기본 로그인은 scoped 인증·state보다 모두 오래됐을 때만 자동 정규화 허용.
-    private func claudeSharedNormalizationRequired(for observed: SharedClaudeAuthentication) throws -> Bool {
-        let rootState = homeDirectory.appendingPathComponent(".claude.json")
-        guard let rootAccount = try claudeOAuthAccount(inFirstOf: [rootState]) else { return false }
-        guard let rootIdentity = identity(
-            of: .init(credential: observed.entry.credential, claudeOAuthAccount: rootAccount), family: "claude"
-        )?.identityKey,
-        let observedIdentity = identity(of: observed.entry, family: "claude")?.identityKey else {
-            AppLog.error(.auth, "Claude sign-in identity is unresolved; preserving all authentication")
-            throw Error.conflictingClaudeAuthentication
-        }
-        guard rootIdentity != observedIdentity else { return false }
-
-        var conflictingDates = [try modificationDateIfPresent(rootState)]
-        let baseService = ClaudeAuthStore.baseKeychainServiceName(environment: environment)
-        if let base = try claudeKeychainCredential(service: baseService), base.value != observed.entry.credential {
-            conflictingDates.append(try base.isCurrentUser
-                ? keychain.genericPasswordModificationDateForCurrentUser(service: baseService)
-                : keychain.genericPasswordModificationDate(service: baseService))
-        }
-        guard let credentialDate = observed.credentialModifiedAt,
-              let stateDate = observed.stateModifiedAt,
-              conflictingDates.allSatisfy({ date in
-                  date.map { $0 < min(credentialDate, stateDate) } ?? false
-              })
-        else {
-            AppLog.error(.auth, "conflicting Claude sign-in is newer or its write order is unknown; preserving all authentication")
-            throw Error.conflictingClaudeAuthentication
-        }
-        return true
+    func sharedClaudeAuthentication(in state: AccountSwitchJournal.SharedState) -> AccountCredentialVault.Entry? {
+        guard let credential = state.credentials[0], isUsableClaudeCredential(credential) else { return nil }
+        return .init(credential: credential, claudeOAuthAccount: state.accounts[0])
     }
 
-    /// 한 home의 인증 read (Shared Runtime Home·Sign-In Workspace·legacy profile home).
-    /// Claude는 scoped Keychain credential 우선(macOS의 source of truth) 후 credential 파일, Codex는 `auth.json`만.
+    /// 공유 홈·로그인 작업 공간·구형 프로필 홈의 인증 읽기.
+    /// Claude 공유 홈은 CLI의 인증 출처와 짝이 맞는 계정 정보, 작업 공간은 홈별 인증 사용. Codex는 auth.json만 사용.
     func readAuthentication(family: String, home: String) throws -> AccountCredentialVault.Entry? {
         switch family {
         case "claude":
+            if canonicalPath(home) == canonicalPath(sharedHomePath(family: "claude")) {
+                return try sharedClaudeAuthentication()
+            }
             guard let credential = readClaudeCredential(home: home) else { return nil }
-            let oauthAccount = try claudeOAuthAccount(inFirstOf: claudeStateReadURLs(for: home))
-            return AccountCredentialVault.Entry(credential: credential, claudeOAuthAccount: oauthAccount)
+            let oauthAccount = try claudeOAuthAccount(
+                at: URL(fileURLWithPath: home).appendingPathComponent(".claude.json"))
+            return .init(
+                credential: try ClaudeAccountLoginCredentials.loginOnly(credential), claudeOAuthAccount: oauthAccount)
         case "codex":
             let url = URL(fileURLWithPath: home).appendingPathComponent("auth.json")
             guard let text = try readTextIfPresent(url),
@@ -241,19 +210,17 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
     }
 
     /// entry의 인증만 Shared Runtime Home에 적용 — 그 외 일체 불변.
-    /// Claude: scoped/base Keychain credential + `.credentials.json` + state 파일에 `oauthAccount` 키만 merge(다른 키 보존). Codex: `auth.json` 원자적 교체.
-    func applySharedAuthentication(_ entry: AccountCredentialVault.Entry, family: String) throws {
+    func applySharedAuthentication(
+        _ entry: AccountCredentialVault.Entry, family: String,
+        expectedClaudeState: AccountSwitchJournal.SharedState? = nil, allowInteraction: Bool = true
+    ) throws {
         AccountCredentialMutationLock.acquire(family: family)
         defer { AccountCredentialMutationLock.release(family: family) }
         let home = sharedHomePath(family: family)
         switch family {
         case "claude":
-            try writeClaudeCredential(entry.credential, home: home)
-            if let oauthAccount = entry.claudeOAuthAccount {
-                for url in claudeStateWriteURLs(for: home) {
-                    try mergeClaudeOAuthAccount(oauthAccount, at: url)
-                }
-            }
+            try AccountCredentialMutationLock.requireIdleClaudeRotation()
+            try applySharedClaudeLogin(entry, expecting: expectedClaudeState, allowInteraction: allowInteraction)
         case "codex":
             try writePrivateFile(
                 entry.credential,
@@ -267,29 +234,62 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
     // MARK: - Snapshot and workspace
 
     func loadSnapshot(for profile: AccountProfile, allowInteraction: Bool = false) throws -> AccountCredentialVault.Entry? {
-        try AccountCredentialVault(keychain: keychain).load(profile: profile, allowInteraction: allowInteraction)
+        guard
+            var entry = try AccountCredentialVault(keychain: keychain).load(
+                profile: profile, allowInteraction: allowInteraction)
+        else {
+            return nil
+        }
+        if profile.family == "claude" {
+            entry.credential = try ClaudeAccountLoginCredentials.loginOnly(entry.credential)
+        }
+        return entry
     }
 
     func saveSnapshot(_ entry: AccountCredentialVault.Entry, for profile: AccountProfile) throws {
-        try AccountCredentialVault(keychain: keychain).save(entry, profile: profile)
+        var snapshot = entry
+        if profile.family == "claude" {
+            snapshot.credential = try ClaudeAccountLoginCredentials.loginOnly(entry.credential)
+        }
+        try AccountCredentialVault(keychain: keychain).save(snapshot, profile: profile)
     }
 
     /// entry를 profile의 Sign-In Workspace에 미러링 — 이후 공식 re-login이 최신 credential에서 시작. 일반 세션 home 사용 금지.
-    func writeWorkspaceAuthentication(_ entry: AccountCredentialVault.Entry, for profile: AccountProfile) throws {
+    func writeWorkspaceAuthentication(
+        _ entry: AccountCredentialVault.Entry, for profile: AccountProfile, allowInteraction: Bool = true
+    ) throws {
         AccountCredentialMutationLock.acquire(family: profile.family)
         defer { AccountCredentialMutationLock.release(family: profile.family) }
         let directory = try workspace.prepare(family: profile.family, profileID: profile.id)
         switch profile.family {
         case "claude":
+            let url = directory.appendingPathComponent(".credentials.json")
+            let existingFile: String?
+            do {
+                let bytes = try LocalTextFileAccessor.readRegularFile(url)
+                guard let text = String(data: bytes, encoding: .utf8) else {
+                    throw CocoaError(.fileReadInapplicableStringEncoding)
+                }
+                existingFile = text
+            } catch let error as POSIXError where error.code == .ENOENT {
+                existingFile = nil
+            } catch let error as POSIXError where error.code == .ELOOP {
+                throw AccountSignInWorkspace.WorkspaceError.symlinkedComponent(url.path)
+            }
+            let fileCredential = try ClaudeAccountLoginCredentials.replacingLogin(
+                in: existingFile, with: entry.credential)
+            let service = ClaudeAuthStore.scopedKeychainServiceName(
+                forConfigDirLiteral: directory.path, environment: environment)
+            let existing = try keychain.readGenericPasswordForCurrentUser(
+                service: service, allowInteraction: allowInteraction)
+            let keychainCredential = try ClaudeAccountLoginCredentials.replacingLogin(
+                in: existing, with: entry.credential)
             try keychain.writeCLISharedPassword(
-                service: ClaudeAuthStore.scopedKeychainServiceName(
-                    forConfigDirLiteral: directory.path,
-                    environment: environment
-                ),
-                value: entry.credential,
+                service: service,
+                value: keychainCredential,
                 forCurrentUser: true
             )
-            try writePrivateFile(entry.credential, to: directory.appendingPathComponent(".credentials.json"))
+            try writePrivateFile(fileCredential, to: url)
             if let oauthAccount = entry.claudeOAuthAccount {
                 try mergeClaudeOAuthAccount(oauthAccount, at: directory.appendingPathComponent(".claude.json"))
             }
@@ -329,19 +329,15 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
             forConfigDirLiteral: home,
             environment: environment
         )
-        var services = [scopedService]
-        if canonicalPath(home) == canonicalPath(sharedHomePath(family: "claude")) {
-            services.append(ClaudeAuthStore.baseKeychainServiceName(environment: environment))
+        if let value = try? keychain.readGenericPasswordForCurrentUser(service: scopedService),
+            isUsableClaudeCredential(value)
+        {
+            return value
         }
-        for service in services {
-            if let value = try? keychain.readGenericPasswordForCurrentUser(service: service),
-               isUsableClaudeCredential(value) {
-                return value
-            }
-            if let value = try? keychain.readGenericPassword(service: service),
-               isUsableClaudeCredential(value) {
-                return value
-            }
+        if let value = try? keychain.readGenericPassword(service: scopedService),
+            isUsableClaudeCredential(value)
+        {
+            return value
         }
         let fileURL = URL(fileURLWithPath: home).appendingPathComponent(".credentials.json")
         if let value = try? readTextIfPresent(fileURL), isUsableClaudeCredential(value) {
@@ -350,66 +346,15 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
         return nil
     }
 
-    private func writeClaudeCredential(_ credential: String, home: String) throws {
-        try keychain.writeCLISharedPassword(
-            service: ClaudeAuthStore.scopedKeychainServiceName(
-                forConfigDirLiteral: home,
-                environment: environment
-            ),
-            value: credential,
-            forCurrentUser: true
-        )
-        try keychain.writeCLISharedPassword(
-            service: ClaudeAuthStore.baseKeychainServiceName(environment: environment),
-            value: credential,
-            forCurrentUser: true
-        )
-        try writePrivateFile(
-            credential,
-            to: URL(fileURLWithPath: home).appendingPathComponent(".credentials.json")
-        )
-    }
-
-    /// Claude가 shared home 계정을 기록하는 위치 — `~/.claude` 옆 기본 state 우선(plain `claude` 실행), 다음 home 내부 state(wrapper의 명시적 `CLAUDE_CONFIG_DIR` 실행).
-    /// custom home(workspace·legacy profile home)은 자체 state만 보유.
-    private func claudeStateReadURLs(for home: String) -> [URL] {
-        let local = URL(fileURLWithPath: home).appendingPathComponent(".claude.json")
-        if canonicalPath(home) == canonicalPath(sharedHomePath(family: "claude")) {
-            return [homeDirectory.appendingPathComponent(".claude.json"), local]
+    func claudeOAuthAccount(at url: URL) throws -> String? {
+        guard let text = try readTextIfPresent(url) else { return nil }
+        guard let state = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] else {
+            throw Error.invalidClaudeState(url)
         }
-        return [local]
-    }
-
-    private func claudeStateWriteURLs(for home: String) -> [URL] {
-        claudeStateReadURLs(for: home)
-    }
-
-    /// 계정을 기록한 첫 state 파일의 `oauthAccount`.
-    /// 두 state 파일이 서로 다른 계정 기록 시 identity 모호 — `nil` 반환으로 보존·import 중단, credential과 잘못된 계정의 결합 방지.
-    private func claudeOAuthAccount(inFirstOf urls: [URL]) throws -> String? {
-        var accounts: [String] = []
-        for url in urls {
-            guard let text = try readTextIfPresent(url) else { continue }
-            guard let state = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else {
-                throw Error.invalidClaudeState(url)
-            }
-            guard let account = state["oauthAccount"] else { continue }
-            let data = try JSONSerialization.data(withJSONObject: account, options: [.sortedKeys])
-            accounts.append(String(decoding: data, as: UTF8.self))
-        }
-        guard let first = accounts.first else { return nil }
-        let identityOf: (String) -> String? = { json in
-            (try? JSONDecoder().decode(
-                DefaultAccountObserver.ClaudeStateFile.OAuthAccount.self,
-                from: Data(json.utf8)
-            )).flatMap(DefaultAccountObserver.claudeIdentityKey)
-        }
-        let identities = Set(accounts.compactMap(identityOf))
-        guard identities.count <= 1 else {
-            AppLog.warn(.auth, "claude state files name different accounts; treating the home's identity as unresolved")
-            return nil
-        }
-        return first
+        guard let value = state["oauthAccount"], !(value is NSNull) else { return nil }
+        guard let account = value as? [String: Any] else { throw Error.invalidClaudeState(url) }
+        return String(
+            decoding: try JSONSerialization.data(withJSONObject: account, options: [.sortedKeys]), as: UTF8.self)
     }
 
     /// workspace sign-in이 만든 provider-scoped 로그인 credential 삭제.
@@ -426,20 +371,52 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
     }
 
     /// Claude state 파일에 `oauthAccount` 키만 merge, 다른 키 전부 보존 — 파일 부재 시 onboarding-complete 최소 state 생성으로 first-run 재생 방지.
-    private func mergeClaudeOAuthAccount(_ account: String, at url: URL) throws {
-        let oauthAccount = try JSONSerialization.jsonObject(with: Data(account.utf8))
+    func mergeClaudeOAuthAccount(
+        _ account: String?, at url: URL, removeCreatedState: Bool = false, expecting previousAccount: String? = nil
+    ) throws {
+        let oauthAccount = try account.map { try JSONSerialization.jsonObject(with: Data($0.utf8)) }
+        let before =
+            previousAccount == nil
+            ? try readTextIfPresent(url).map { Data($0.utf8) }
+            : try LocalTextFileAccessor.readRegularFile(url)
         var state: [String: Any] = [:]
-        if let text = try readTextIfPresent(url) {
-            guard let parsed = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else {
+        if let before {
+            guard let parsed = try JSONSerialization.jsonObject(with: before) as? [String: Any] else {
                 throw Error.invalidClaudeState(url)
             }
             state = parsed
         } else {
+            guard account != nil else { return }
             state["hasCompletedOnboarding"] = true
         }
+        if let previousAccount {
+            guard let current = state["oauthAccount"] as? [String: Any],
+                try JSONSerialization.data(withJSONObject: current, options: [.sortedKeys])
+                    == Data(previousAccount.utf8)
+            else { throw ClaudeAuthError.credentialsChanged }
+        }
         state["oauthAccount"] = oauthAccount
+        if removeCreatedState, account == nil, state.count == 1, state["hasCompletedOnboarding"] as? Bool == true {
+            try fileManager.removeItem(at: url)
+            return
+        }
         let data = try JSONSerialization.data(withJSONObject: state, options: [.sortedKeys])
-        try writePrivateData(data, to: url)
+        if previousAccount != nil, let before {
+            let files = LocalTextFileAccessor()
+            let replacement = url.deletingLastPathComponent()
+                .appendingPathComponent(url.lastPathComponent + "." + UUID().uuidString + ".egasu-recovery")
+            try files.writeText(replacement.path, String(decoding: data, as: UTF8.self))
+            var exchanged = false
+            defer { if !exchanged { try? files.remove(replacement.path) } }
+            try LocalTextFileAccessor.exchangeFiles(replacement, with: url)
+            exchanged = true
+            guard
+                try LocalTextFileAccessor.verifyExchangedFile(
+                    at: replacement, target: url, expected: before, updated: data)
+            else { throw ClaudeAuthError.credentialsChanged }
+        } else {
+            try writePrivateData(data, to: url)
+        }
     }
 
     // MARK: - Files
@@ -449,12 +426,7 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
         return try String(contentsOf: url, encoding: .utf8)
     }
 
-    private func modificationDateIfPresent(_ url: URL) throws -> Date? {
-        guard fileManager.fileExists(atPath: url.path) else { return nil }
-        return try fileManager.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
-    }
-
-    private func writePrivateFile(_ text: String, to url: URL) throws {
+    func writePrivateFile(_ text: String, to url: URL) throws {
         try writePrivateData(Data(text.utf8), to: url)
     }
 

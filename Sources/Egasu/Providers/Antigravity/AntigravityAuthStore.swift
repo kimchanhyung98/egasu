@@ -13,7 +13,7 @@ struct AntigravityAuthStore: Sendable {
     static let keychainService = "gemini"
     static let keychainAccount = "antigravity"
     /// 갱신된 access token의 자체 cache — Google OAuth refresh를 매 cycle 대신 token 수명당 ~1회로 축소. Antigravity의 keychain 항목에는 절대 쓰지 않음.
-    static let cachePath = "~/Library/Application Support/OpenUsage/antigravity/auth.json"
+    static let cachePath = "~/Library/Application Support/\(StorageNamespace.current.name)/antigravity/auth.json"
     /// 남은 수명이 이 값 미만인 token은 만료로 취급 (바로 refresh).
     static let refreshBuffer: TimeInterval = 60
 
@@ -111,7 +111,7 @@ struct AntigravityAuthStore: Sendable {
             try files.writeText(Self.cachePath, String(decoding: data, as: UTF8.self))
         } catch {
             // 갱신된 token은 이번 세션에 유효 — cache 실패는 다음 cycle에 다시 refresh할 뿐. live fetch를 실패시키지 않고 크게 로그.
-            AppLog.warn(LogTag.auth("antigravity"), "failed to cache refreshed token: \(error.localizedDescription)")
+            AppLog.warn(LogTag.auth("antigravity"), "failed to cache refreshed token: \(AppLog.errorDetails(error))")
         }
     }
 

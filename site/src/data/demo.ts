@@ -1,9 +1,7 @@
 // 앱 재현 그래픽의 데모 입력값과 파생 규칙.
 // 원칙 — 손으로 적는 것은 앱이 실제로 받는 입력뿐이고, 화면에 보이는 문자열은 전부 여기서 계산.
 // 라벨을 직접 적으면 상태가 늘어날 때마다 어긋남.
-import { providerMetrics } from './metrics';
-import { providers } from './providers';
-import { cards } from './dashboard';
+import { cards } from './dashboard.ts';
 
 // ---------- 포맷터. 전부 en_US 고정 — 앱이 로케일과 무관하게 en_US로 찍음 ----------
 
@@ -39,6 +37,8 @@ export interface BoundedRow {
   label: string;
   used: number;
   limit: number;
+  periodHours: number;
+  estimated?: boolean;
   /** 리셋 주기 중 지난 비율 0~1. pace 눈금 위치이자 소진 투영의 입력. */
   elapsed: number;
   /** behind일 때 보여 줄 소진 예상 시각. 시각은 파생할 수 없어 입력. */
@@ -103,23 +103,23 @@ export function boundedView(r: BoundedRow, mode: 'used' | 'left') {
   // 값이 없으면 mode와 무관하게 em dash + 빈 트랙. tick -1은 "눈금 없음".
   if (r.noData) return { headline: '—', fill: 0, tick: -1, opposite: '' };
   const shown = mode === 'left' ? Math.max(0, r.limit - r.used) : r.used;
-  const pct = Math.round((shown / r.limit) * 100);
+  const pct = Math.min(100, Math.max(0, Math.round((shown / r.limit) * 100)));
   if (r.notStarted) return { headline: `${pct}% ${mode === 'left' ? 'left' : 'used'}`, fill: pct, tick: -1, opposite: '' };
   return {
-    headline: `${Math.round(shown)}% ${mode === 'left' ? 'left' : 'used'}`,
+    headline: `${pct}% ${mode === 'left' ? 'left' : 'used'}`,
     /** 막대 채움 — mode에 따라 반전됨. 색은 반전되지 않음. */
     fill: pct,
     /** pace 눈금 — mode에 따라 미러링됨. */
     tick: Math.round((mode === 'left' ? 1 - r.elapsed : r.elapsed) * 100),
     /** 반대 mode 문구. 앱은 hover tooltip으로 보여 줌. */
-    opposite: `${Math.round(mode === 'left' ? r.used : r.limit - r.used)}% ${mode === 'left' ? 'used' : 'left'}`,
+    opposite: `${100 - pct}% ${mode === 'left' ? 'used' : 'left'}`,
   };
 }
 
 export const appVersion = '1.0.0';
 
-export type { QuickLink, Card } from './dashboard';
-export { cards } from './dashboard';
+export type { QuickLink, Card } from './dashboard.ts';
+export { cards } from './dashboard.ts';
 
 // ---------- Total Spend 카드 ----------
 
@@ -243,30 +243,13 @@ export function spendView(period: SpendPeriodId, metric: SpendMetricId): SpendVi
 
 // ---------- 메뉴 막대 스트립 ----------
 
-// 별표된 지표만 올라감. 기본은 provider마다 Weekly 하나.
+// 기본 Running Out 선택의 공개 한도 예시. Used Up는 제외.
 const stripGroups = cards.filter((card) => card.provider === 'claude' || card.provider === 'codex').map((card) => ({
   icon: card.icon,
-  fractions: card.always.flatMap((row) => row.kind === 'bounded' && providerMetrics[card.provider].alwaysVisible.some((metric) => metric.starred && metric.title === row.label) ? [row.used / row.limit] : []),
+  fractions: card.always.flatMap((row) => row.kind === 'bounded' && row.used / row.limit >= 0.7 && row.used < row.limit ? [row.used / row.limit] : []),
 }));
 
 export const strip = {
   text: stripGroups.map((group) => ({ icon: group.icon, values: group.fractions.map((fraction) => `${Math.round(fraction * 100)}%`) })),
   bars: stripGroups.flatMap((group) => group.fractions),
 };
-
-// ---------- Customize L1 ----------
-
-// 부제의 metrics 수는 켜진 수가 아니라 provider가 가진 전체 지표 수 —
-// LayoutStore+Customization.metricCount = registry.descriptors(for:).count.
-// metrics.ts의 선언 목록에서 세므로 지표가 늘면 목록과 수가 같이 움직임.
-// 앱은 항상 복수형 "N metrics"로 찍고 단수 분기가 없음(ProviderListRow.swift:31).
-// 켜짐 여부는 최초 실행 시 Mac에서 발견된 도구에 따라 정해지는 사용자 상태(ProviderEnablementStore).
-// 여기서는 앱 실제 화면과 같은 조합(Claude·Codex·Antigravity)을 씀.
-const enabledProviders = new Set(['claude', 'codex', 'antigravity']);
-
-export const customize = providers.map((p) => ({
-  id: p.id,
-  name: p.name,
-  on: enabledProviders.has(p.id),
-  metrics: providerMetrics[p.id].count,
-}));

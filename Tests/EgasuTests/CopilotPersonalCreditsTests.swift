@@ -81,7 +81,12 @@ final class CopilotPersonalCreditsProviderTests: XCTestCase {
             orgHTTP: organizationHTTP(), defaults: defaults
         )
         let cache = ProviderSnapshotCache(userDefaults: defaults)
-        let store = WidgetDataStore(registry: .from([provider]), providers: [provider], cache: cache, defaults: defaults)
+        let settings = SoftLimitSettingsStore(defaults: defaults, labsAvailable: true)
+        settings.enabled = true
+        let store = WidgetDataStore(
+            registry: .from([provider]), providers: [provider], cache: cache, defaults: defaults,
+            softLimitSettings: { settings }
+        )
 
         _ = await store.refresh(providerID: "copilot", force: true)
         let snapshot = try XCTUnwrap(store.localSnapshots["copilot"])
@@ -109,7 +114,8 @@ final class CopilotPersonalCreditsProviderTests: XCTestCase {
         XCTAssertFalse(widget.valueText.contains("%"))
         XCTAssertFalse(widget.menuBarValue.contains("%"))
         XCTAssertEqual(widget.selectedValues.first?.number, 2111.125)
-        XCTAssertNil(descriptor.softLimitWindow)
+        XCTAssertEqual(descriptor.softLimitWindows, [.monthly])
+        XCTAssertNil(widget.softLimitMarkerFraction)
     }
 
     func testPersonalCountSurvivesMissingOrganizationPermissions() async throws {

@@ -236,19 +236,48 @@ final class LocalLimitsAPITests: XCTestCase {
         }
         let expected: [String: Set<String>] = [
             "claude": ["session", "weekly", "sonnet", "fable", "extraUsage"],
-            "codex": ["session", "weekly", "spark", "sparkWeekly", "credits", "creditValue", "rateLimitResets"],
+            "codex": [
+                "session", "weekly", "monthly", "spark", "sparkWeekly", "sparkMonthly", "credits", "creditValue",
+                "rateLimitResets"
+            ],
             "cursor": ["totalUsage", "autoUsage", "apiUsage", "onDemand", "requests", "credits"],
-            "antigravity": ["geminiSession", "geminiWeekly", "nonGeminiSession", "nonGeminiWeekly"],
+            "antigravity": ["geminiSession", "geminiWeekly", "nonGeminiSession", "nonGeminiWeekly", "argonWeekly"],
             "copilot": ["premiumCredits", "extraUsage", "orgCredits", "orgSpend", "chat", "completions"],
             "devin": ["daily", "weekly", "extraUsageBalance"],
-            "grok": ["weekly"],
-            "kimi": ["session", "weekly"],
+            "grok": ["weekly", "monthly"],
+            "kimi": ["session", "weekly", "totalUsage", "extraUsage", "extraUsageBalance"],
             "kiro": ["credits"],
             "opencode": ["session", "weekly", "monthly"],
             "openrouter": ["credits", "balance", "keyLimit"],
-            "zai": ["session", "weekly", "webSearches"]
+            "zai": ["session", "weekly", "monthly", "webSearches"]
         ]
 
         XCTAssertEqual(actual, expected)
+    }
+
+    @MainActor
+    func testKimiExportsMonthlyTotalWithoutSeparateCodeContribution() throws {
+        let provider = KimiProvider()
+        let mapped = try KimiUsageMapper.map([
+            "usages": ["limit_month_total": ["used_ratio": 0.25], "limit_month_code": ["used_ratio": 0.15]]
+        ])
+        let snapshot = ProviderSnapshot(
+            providerID: "kimi", displayName: "Kimi", lines: mapped.lines, refreshedAt: fetchedAt
+        )
+        let state = LocalUsageAPI.State(
+            enabledOrderedIDs: ["kimi"], knownIDs: ["kimi"], snapshots: ["kimi": snapshot],
+            limitDescriptors: ["kimi": provider.widgetDescriptors], generatedAt: generatedAt
+        )
+
+        let root = try json(LocalUsageAPI.respond(method: "GET", path: "/v1/limits/kimi", state: state).body)
+        let kimi = try XCTUnwrap((root["providers"] as? [String: Any])?["kimi"] as? [String: Any])
+        let resources = try XCTUnwrap(kimi["resources"] as? [String: Any])
+        let total = try XCTUnwrap(resources["totalUsage"] as? [String: Any])
+
+        XCTAssertEqual(Set(resources.keys), ["totalUsage"])
+        XCTAssertEqual(total["unit"] as? String, "percent")
+        XCTAssertEqual(total["used"] as? Double, 25)
+        XCTAssertEqual(total["limit"] as? Double, 100)
+        XCTAssertEqual(total["remaining"] as? Double, 75)
     }
 }

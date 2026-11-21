@@ -1,16 +1,16 @@
 import AppKit
 import os
 
-/// refresh loop의 패스 사이 대기: interval sleep + enabled-provider 변경 시 조기 wake.
-/// 구독은 `init`에서 동기 설치 — loop 첫 패스 전. `.bufferingNewest(1)` stream이라 대기자 없을 때의 wake도 보존,
-/// burst는 한 번의 pending wake로 병합 — 패스 도중 변경 무유실.
+/// 갱신 순회 사이 대기 — 주기 만료, 활성 프로바이더·갱신 일정·시계 변경, 절전 해제 시 반환.
+/// 첫 순회 전 동기 구독 — `.bufferingNewest(1)`로 대기자 없는 동안의 신호도 보존.
+/// 연속 신호는 대기 중인 신호 하나로 병합하여 순회 중 변경도 다음 순회에 반영.
 @MainActor
 final class RefreshWakeSignal {
     private let stream: AsyncStream<Void>
     private let continuation: AsyncStream<Void>.Continuation
     private let center: NotificationCenter
     private let clockChanged = OSAllocatedUnfairLock<TimeInterval?>(initialState: nil)
-    /// nonisolated `deinit`의 observer 해제용 `nonisolated(unsafe)` — init 후 불변, `NotificationCenter`는 thread-safe 문서화.
+    /// 비격리 `deinit`에서 관찰자를 해제할 수 있도록 불변 토큰을 `nonisolated(unsafe)`로 공유.
     private nonisolated(unsafe) let observer: NSObjectProtocol
     private nonisolated(unsafe) let scheduleObserver: NSObjectProtocol
     private nonisolated(unsafe) let wakeObserver: NSObjectProtocol
@@ -24,7 +24,7 @@ final class RefreshWakeSignal {
         self.stream = stream
         self.continuation = continuation
         self.center = center
-        // 동기 등록 — init 반환 후 post되는 notification 무유실. continuation은 `Sendable`이라 어느 context에서든 yield 안전.
+        // 동기 등록으로 초기화 직후 알림도 수신 — Sendable인 continuation은 모든 실행 문맥에서 전달 가능.
         self.observer = center.addObserver(forName: name, object: nil, queue: nil) { _ in
             continuation.yield()
         }
@@ -51,7 +51,7 @@ final class RefreshWakeSignal {
         continuation.finish()
     }
 
-    /// 일반 wake와 병합되어도 마지막 시계 변경의 단조 시각은 다음 순회까지 보존.
+    /// 일반 깨우기 신호와 병합되어도 마지막 시계 변경의 단조 시각은 다음 순회까지 보존.
     func consumeClockChange() -> TimeInterval? {
         clockChanged.withLock { changed in
             defer { changed = nil }
@@ -59,8 +59,8 @@ final class RefreshWakeSignal {
         }
     }
 
-    /// wake(버퍼된 것 포함) 또는 `timeout` 중 먼저 오는 쪽에 반환; task cancel 시에도 즉시 반환.
-    /// timeout과 wake race 시 패자는 buffer 잔류 — 추가 패스는 전부 cache hit로 무해. 소비자는 refresh loop 단일·순차 한정.
+    /// 보관된 신호·새 신호·시간 제한 중 먼저 도착하면 반환 — 작업 취소 시에도 즉시 반환.
+    /// 신호와 시간 제한이 겹치면 남은 신호는 다음 대기에서 소비 가능. 소비자는 순차 갱신 루프 하나로 제한.
     func waitForWake(timeout: TimeInterval) async {
         let timer = Task { [continuation] in
             try? await Task.sleep(for: .seconds(timeout))

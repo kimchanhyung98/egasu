@@ -340,11 +340,10 @@ final class OpenAIPricingReviewTests: XCTestCase {
             "gpt-5.4-mini", "gpt-5.4-mini-high", "openai/gpt-5.4-mini-high-20260929",
             "GPT-5.4-MINI", "openai/GPT-5.4-MINI-high-2026-09-29",
         ]
-        let csv =
-            "Date,Model,Max Mode,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens,Cost\n"
-            + models.map { "2026-09-30T00:00:00Z,\($0),No,0,1000000,0,0,Included" }.joined(separator: "\n")
-        let rows = try CursorUsageCSV.parse(csv: csv, pricing: pricing).rows
-        let now = try XCTUnwrap(rows.first?.date)
+        let now = try XCTUnwrap(EgasuISO8601.date(from: "2026-09-30T00:00:00Z"))
+        let rows = models.map {
+            CursorUsageEvent(date: now, model: $0, tokens: TokenBreakdown(input: 1_000_000), costUSD: 0.75)
+        }
         var lines: [MetricLine] = []
         _ = CursorUsageMapper.appendSpendLines(rows: rows, now: now, pricing: pricing, to: &lines)
 

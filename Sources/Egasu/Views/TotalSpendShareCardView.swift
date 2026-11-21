@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Total Spend 카드 공유 액션용 오프스크린 PNG — `ShareCardView`의 집계판.
+/// Total Spend 공유용 PNG — 공통 링을 별도 이미지로 렌더링.
 /// 본문은 `TotalSpendRingContent` 재사용으로 팝오버 표시와 동일한 링·범례 보장.
 struct TotalSpendShareCardView: View {
     let total: TotalSpend
@@ -12,12 +12,15 @@ struct TotalSpendShareCardView: View {
     }
 
     var body: some View {
-        ShareCardChrome(appearance: appearance) {
-            headerRow
-            DashboardMetricCard {
+        ShareCardFrame(appearance: appearance) {
+            VStack(alignment: .leading, spacing: DashboardGrid.headerGap) {
+                headerRow
+                    .padding(.horizontal, DashboardGrid.cardPadding)
+                    .frame(height: DashboardGrid.headerHeight)
                 TotalSpendRingContent(projection: projection)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
+                    .padding(DashboardGrid.cardPadding)
+                    .frame(maxWidth: .infinity)
+                    .cardSurface()
             }
         }
     }
@@ -25,7 +28,7 @@ struct TotalSpendShareCardView: View {
     private var headerRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(metric.title)
-                .font(.system(size: 15, weight: .semibold))
+                .font(DashboardGrid.headerFont)
                 .foregroundStyle(.primary)
             Text(L10n.metrics(total.period.rawValue))
                 .font(.system(size: 12))

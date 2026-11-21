@@ -40,13 +40,26 @@ enum ProviderAccountID {
         metricID.firstIndex(of: ".").map { String(metricID[..<$0]) } ?? metricID
     }
 
-    /// metric id를 family 기준으로 축약 — `claude@profile-x.trend` → `claude.trend`.
-    /// layout 설정(활성 metric·순서·caret 소속·pin)의 유일한 저장 key: 한 family의 카드는 설정 1벌을 공유하고,
-    /// 카드별 id는 렌더 시점에만 존재.
+    /// 카드 지표 ID를 프로바이더 기준으로 축약 — claude@profile-x.trend는 claude.trend.
+    /// 기본 지표·기존 별표·확장 영역 비교와 프로바이더 공통 지표 저장에 사용.
     static func canonicalMetricID(_ metricID: String) -> String {
         guard let dot = metricID.firstIndex(of: "."), metricID[..<dot].contains("@") else { return metricID }
         return family(of: String(metricID[..<dot])) + metricID[dot...]
     }
+
+    /// 계정에 귀속되지 않는 로컬 이력·공개 예측 — 프로바이더마다 설정 하나만 저장.
+    static func isSharedMetric(_ metricID: String) -> Bool {
+        sharedMetricIDs.contains(canonicalMetricID(metricID))
+    }
+
+    static func isSharedMetricAlias(_ metricID: String) -> Bool {
+        isSharedMetric(metricID) && isAccountCard(providerID(ofMetric: metricID))
+    }
+
+    private static let sharedMetricIDs: Set<String> = [
+        "claude.trend", "claude.today", "claude.yesterday", "claude.last30",
+        "codex.trend", "codex.today", "codex.yesterday", "codex.last30", "codex.resetWatch"
+    ]
 }
 
 /// account가 로그인돼 있는 한 곳. "Default"는 source의 badge(`holdsDefaultSource`)일 뿐 key가 아님 —
@@ -113,7 +126,7 @@ struct ProviderAccountRecord: Codable, Equatable, Sendable {
 @MainActor
 @Observable
 final class ProviderAccountsStore {
-    static let storageKey = "openusage.providerAccounts.v1"
+    nonisolated static let storageKey = "openusage.providerAccounts.v1"
 
     private let defaults: UserDefaults
     private(set) var records: [ProviderAccountRecord]

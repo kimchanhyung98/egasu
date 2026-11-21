@@ -85,3 +85,45 @@
 "You have no rate limit resets" = "利用できる上限リセットはありません";
 "Your usage doesn't need a reset yet" = "使用量をリセットする必要はまだありません";
 "peak %@" = "最大 %@";
+
+"Burning Fast" = "急速な消費";
+"Current usage unavailable." = "現在の使用量を取得できません。";
+
+"All Usage" = "すべての使用量";
+"Open Accounts to choose what to show." = "アカウントで表示する項目を選択してください。";
+"Priority" = "優先";
+"Report an Issue…" = "問題を報告…";
+
+"Add an Account" = "アカウントを追加";
+"Edit Account…" = "アカウントを編集…";
+"Every metric is hidden. Turn them back on in Accounts." = "すべての指標が非表示です。アカウントで再表示してください。";
+"Manage Accounts…" = "アカウントを管理…";
+"Pin" = "固定";
+"Refresh" = "更新";
+"Rename" = "名前を変更";
+"Unpin" = "固定を解除";
+"Waiting for Usage" = "使用量を待っています";
+"a reset expires within 48 hours" = "48時間以内に期限切れのリセットあり";
+"a reset expires within 7 days" = "7日以内に期限切れのリセットあり";
+"egasu shows the AI tools you're signed in to on this Mac. Add an account to track more, even several of the same provider." = "egasuはこのMacでサインインしているAIツールを表示します。アカウントを追加すると、同じプロバイダーの複数のアカウントも追跡できます。";
+
+"No usage to show. Check visible metrics in Accounts." = "表示する使用量がありません。アカウントで表示する指標を確認してください。";
+
+"%d days, %@ to %@, peak %@." = "%2$@から%3$@までの%1$d日間、最大%4$@。";
+
+"%lld more" = "他%lld件";
+"No Matching Limits" = "表示条件に一致する上限なし";
+"Fix" = "対処";
+"Needs Attention" = "要確認";
+"No Reported Limits" = "報告された上限なし";
+"Out in %@" = "%@で上限到達";
+"Pinned" = "ピン留め";
+"Running Out" = "残りわずか";
+"Use It or Lose It" = "リセット前に使用";
+"Used Up" = "使い切り";
+"View All Usage" = "すべての使用量を表示";
+
+"Copy Priority Screenshot" = "優先のスクリーンショットをコピー";
+"Monitor Your AI Subscriptions" = "AIサブスクリプションをひと目で";
+"Show details" = "詳細を表示";
+"Switch to %@" = "%@に切り替え";

@@ -157,7 +157,7 @@ html:not(.js) .tour-caption {
   position: absolute;
   right: 14px;
   top: 34px;
-  width: 320px;
+  width: 340px;
   visibility: hidden;
   opacity: 0;
   transform: translateY(-6px);

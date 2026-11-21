@@ -3,12 +3,16 @@ import Foundation
 /// 원격으로 보낼 작업명은 고정 enum만 허용 — 함수명·계정·입력 문자열로 생성 금지.
 enum DiagnosticOperation: String, Codable, CaseIterable, Sendable {
     case appRestart = "app_restart"
+    case storageMigration = "storage_migration"
     case providerRefresh = "provider_refresh"
     case historyScan = "history_scan"
     case credentialRefresh = "credential_refresh"
+    case credentialRead = "credential_read"
     case credentialSave = "credential_save"
+    case credentialRemove = "credential_remove"
     case accountAdd = "account_add"
     case accountSwitch = "account_switch"
+    case accountRollback = "account_rollback"
     case accountSignIn = "account_sign_in"
     case accountRemove = "account_remove"
     case accountReconcile = "account_reconcile"
@@ -50,11 +54,12 @@ enum DiagnosticOperation: String, Codable, CaseIterable, Sendable {
     /// 계정별 성공을 다른 계정의 복구로 오인하지 않도록, 계정 비종속 작업만 복구 추적.
     var tracksRecovery: Bool {
         switch self {
-        case .providerRefresh, .historyScan, .credentialRefresh, .credentialSave,
-             .accountAdd, .accountSwitch, .accountSignIn, .accountRemove, .accountReconcile, .accountBinding,
-             .resetClaim, .postClaimRefresh, .weeklyTimer, .resetCreditFetch,
-             .cursorPlan, .cursorCredits, .cursorBalance, .cursorSummary, .cursorFallback,
-             .iCloudIdentity, .localAPIRequest, .appRestart:
+        case .providerRefresh, .historyScan, .credentialRefresh, .credentialRead, .credentialSave, .credentialRemove,
+            .accountAdd, .accountSwitch, .accountRollback, .accountSignIn, .accountRemove, .accountReconcile,
+            .accountBinding,
+            .resetClaim, .postClaimRefresh, .weeklyTimer, .resetCreditFetch,
+            .cursorPlan, .cursorCredits, .cursorBalance, .cursorSummary, .cursorFallback,
+            .iCloudIdentity, .localAPIRequest, .appRestart, .storageMigration:
             false
         case .iCloudRead, .iCloudWrite, .iCloudDelete,
              .tokscaleCheck, .tokscaleInstall, .tokscaleLogin, .tokscaleSubmit,
@@ -68,10 +73,12 @@ enum DiagnosticOperation: String, Codable, CaseIterable, Sendable {
 
     var feature: String {
         switch self {
-        case .appRestart: "lifecycle"
+        case .appRestart, .storageMigration: "lifecycle"
         case .providerRefresh, .historyScan, .resetCreditFetch, .cursorPlan, .cursorCredits, .cursorBalance, .cursorSummary, .cursorFallback: "usage"
-        case .credentialRefresh, .credentialSave: "authentication"
-        case .accountAdd, .accountSwitch, .accountSignIn, .accountRemove, .accountReconcile, .accountBinding: "accounts"
+        case .credentialRefresh, .credentialRead, .credentialSave, .credentialRemove: "authentication"
+        case .accountAdd, .accountSwitch, .accountRollback, .accountSignIn, .accountRemove, .accountReconcile,
+            .accountBinding:
+            "accounts"
         case .iCloudRead, .iCloudWrite, .iCloudDelete, .iCloudIdentity: "icloud"
         case .tokscaleCheck, .tokscaleInstall, .tokscaleLogin, .tokscaleSubmit: "tokscale"
         case .resetWatchFetch, .resetVoteFetch: "reset_watch"
@@ -163,12 +170,13 @@ enum AppDiagnostics {
 
     private static func log(_ event: DiagnosticEvent, error: Error?, context: String?) {
         guard event.result == .failure || event.result == .degraded else { return }
-        var message = "operation=\(event.operation.rawValue) result=\(event.result.rawValue) category=\(event.category?.rawValue ?? "other")"
-        if let context { message += " context=\(context)" }
+        var message = "operation=\(event.operation.rawValue) result=\(event.result.rawValue)"
         if let error {
-            let error = error as NSError
-            message += " error_domain=\(error.domain) error_code=\(error.code)"
+            message += " " + AppLog.errorDetails(error, category: event.category)
+        } else {
+            message += " category=\(event.category?.rawValue ?? "other")"
         }
+        if let context { message += " context=\(context)" }
         let tag: String
         if let provider = event.provider {
             tag = event.operation.feature == "authentication" ? LogTag.auth(provider) : LogTag.plugin(provider)

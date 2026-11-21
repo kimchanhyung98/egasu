@@ -4,6 +4,7 @@ extension WidgetDataStore {
     func accountStatus(for providerID: String?, localState: AccountSignInProbe.State?) -> AccountStatus {
         switch localState {
         case .needsSignIn: return .signInNeeded()
+        case .routeUnavailable(let message): return .refreshFailed(message)
         case .readFailed(let message):
             let knownStatus = refreshedAccountStatus(for: providerID)
             return knownStatus.canSwitch ? .refreshFailed(message) : knownStatus

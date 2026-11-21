@@ -1,12 +1,10 @@
 ---
 // Total Spend 카드. Views/TotalSpendCard.swift + Views/RingSectorShape.swift.
 // 도넛: 지름 104, 내반경비 0.618, 조각 간극 1.6(바깥 호 길이), 모서리 3, 12시 시작 시계방향, 최소 조각 2.5%.
-// 카드 제목은 지표 이름 자체 — 앱에 "Total Spend"라는 문자열은 없음.
+// 안쪽 원과 범례의 값으로 지표 전환.
 // 기간 3 × 지표 3 = 9개 상태를 전부 그려 두고 하나만 보임. JS 없이도 기본값(Today · Cost)이 나옴.
-import Glyph from './Glyph.astro';
 
 interface Props { uid: string }
-const { uid } = Astro.props;
 import { spendPeriods, spendMetrics, spendView, type SpendPeriodId, type SpendMetricId } from '../../data/demo';
 
 const R = 52;              // 104 / 2
@@ -61,28 +59,7 @@ const states = spendPeriods.flatMap((p) =>
 );
 ---
 
-<div class="am-section am-spend-card">
-  <div class="am-head">
-    <span class="am-head-title">
-      <button type="button" class="am-metric-btn" data-metric-btn aria-haspopup="menu" aria-expanded="false" aria-controls={`${uid}-metric-menu`}>
-        {spendMetrics.map((m) => <b class="am-metric-title" data-metric-label={m.id} hidden={m.id !== 'cost'}>{m.title}</b>)}
-        <Glyph name="chevron-down" class="am-head-chev" />
-      </button>
-    </span>
-    <ul class="am-menu" id={`${uid}-metric-menu`} role="menu" aria-label="Total Spend Metric" hidden>
-      {
-        spendMetrics.map((m) => (
-          <li role="none">
-            <button type="button" role="menuitemradio" aria-checked={m.id === 'cost' ? 'true' : 'false'} data-spend-metric={m.id}>
-              <Glyph name="check" class="am-check" />
-              {m.title}
-            </button>
-          </li>
-        ))
-      }
-    </ul>
-    <span class="am-head-sp"></span>
-  </div>
+<div class="am-section am-spend-card" data-spend-period="today" data-spend-metric="cost">
   <div class="am-card">
     <div class="am-spend">
       <div class="am-seg" role="radiogroup" aria-label="Total Spend Period">
@@ -98,24 +75,24 @@ const states = spendPeriods.flatMap((p) =>
         states.map(({ p, m, v, paths }) => (
           <div class="am-state" data-state={`${p.id}:${m.id}`} hidden={!(p.id === 'today' && m.id === 'cost')}>
             {v.empty ? (
-              <p class="am-empty">{v.empty}</p>
+              <button type="button" class="am-empty" data-cycle-spend>{v.empty}</button>
             ) : (
               <div class="am-ring-wrap">
                 <div class="am-ring">
                   <svg viewBox="0 0 104 104" aria-hidden="true">
                     {v.slices.map((s, i) => <path d={paths[i]} class={`fill-${s.id}`} />)}
                   </svg>
-                  <span class="am-ring-center">
+                  <button type="button" class="am-ring-center" data-cycle-spend aria-label={`${m.title}: ${v.center} ${v.unit}`}>
                     <b>{v.center}</b>
                     <span>{v.unit}</span>
-                  </span>
+                  </button>
                 </div>
                 <div class="am-legend">
                   {v.slices.map((s) => (
                     <div class="am-legend-row">
                       <i class:list={['am-dot', `bg-${s.id}`]} />
                       <span>{s.title}</span>
-                      <span>{s.value}</span>
+                      <button type="button" class="am-legend-value" data-cycle-spend data-spend-provider={s.id} aria-label={`${s.title}, ${m.title}: ${s.value}`}>{s.value}</button>
                     </div>
                   ))}
                 </div>

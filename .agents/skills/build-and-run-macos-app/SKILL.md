@@ -6,8 +6,8 @@ disable-model-invocation: true
 
 # Build And Run macOS App
 
-Create or update the project-local macOS `build_and_run.sh` script, then use
-that script as the default build/run entrypoint.
+egasu에서는 기존 `script/build_and_run.sh`를 기본 빌드·실행 경로로 사용.
+스크립트 생성 예시는 실행 경로가 없는 새 프로젝트에만 적용.
 
 ## Arguments
 
@@ -15,16 +15,19 @@ that script as the default build/run entrypoint.
 - `workspace`: path to `.xcworkspace` (optional)
 - `project`: path to `.xcodeproj` (optional)
 - `product`: SwiftPM executable product name (optional)
-- `mode`: `run`, `debug`, `logs`, `telemetry`, or `verify` (optional, default: `run`)
+- `mode`: `run`, `build`, `logs`, `verify` 중 하나(선택, 기본값 `run`)
 - `app_name`: process/app name to stop before relaunching (optional)
 
 ## Workflow
 
 1. Detect whether the repo uses an Xcode workspace, Xcode project, or SwiftPM package.
 2. If the workspace is not inside git yet, run `git init` at the project root so git-backed editor features unlock.
-3. Create or update `script/build_and_run.sh` so it always stops the current app, builds the macOS target, and launches the fresh result.
+3. 기존 스크립트의 모드와 개발 번들·서명 계약 확인.
+   `build`는 개발 앱 종료·빌드·배치·서명만 수행하며, 나머지 모드는 실행까지 수행.
 4. For SwiftPM, keep raw executable launch only for true CLI tools; for AppKit/SwiftUI GUI apps, create a project-local `.app` bundle and launch it with `/usr/bin/open -n`.
-5. Support optional script flags for `--debug`, `--logs`, `--telemetry`, and `--verify`.
+5. `./script/build_and_run.sh [run|build|logs|verify]` 사용.
+   `--` 접두사와 `debug`·`telemetry` 모드는 미지원.
+   잘못된 모드는 저장소·서명 확인과 앱 종료·빌드 전에 사용법과 종료 코드 2로 거부.
 6. Follow the canonical bootstrap contract in `../build-run-debug/references/build-script.md` for the exact script shape.
 7. Run the script in the requested mode and summarize any build, script, or launch failure.
 
@@ -32,4 +35,9 @@ that script as the default build/run entrypoint.
 
 - Do not initialize a nested git repo inside an existing parent checkout.
 - Keep the no-flag script path simple: kill, build, run.
-- Use `--debug`, `--logs`, `--telemetry`, or `--verify` only when the user asks for those modes.
+- 세부 진단 로그는 `log stream --info` 사용.
+  시작 로그 확인은 별도 터미널에서 스트림을 먼저 시작한 뒤 `run` 실행.
+- `TelemetryRecorder` 이벤트는 가짜 sink·진단 observer·stub transport 테스트로 별도 확인.
+  `log stream`의 진단 로그를 이벤트 전달 증거로 사용하지 않음.
+- 디버거는 개발 앱 PID를 확인한 뒤 `lldb -p <개발 앱 PID>`로 연결.
+- egasu의 기존 실행 스크립트를 새 프로젝트용 예시로 교체하지 않음.

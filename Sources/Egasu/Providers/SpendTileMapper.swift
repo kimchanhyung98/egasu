@@ -1,7 +1,7 @@
 import Foundation
 
 /// 로컬 일별 token/cost 데이터를 공용 Today / Yesterday / Last 30 Days spend 타일로 변환.
-/// 모든 spend 추적 provider가 여기를 거쳐 타일 렌더 통일 — Claude/Codex/Grok은 CLI 로그, Cursor는 CSV export가 공급하고, `DailyUsageSeries`가 provider 중립 per-day carrier.
+/// 모든 spend 추적 provider가 여기를 거쳐 타일 렌더 통일 — Claude/Codex/Grok은 CLI 로그, Cursor는 사용 이벤트가 공급하고, `DailyUsageSeries`가 provider 중립 per-day carrier.
 enum SpendTileMapper {
     /// 세 spend 타일(Today / Yesterday / Last 30 Days) 추가. usage 없는 기간은 타일을 만들지 않아 "No data" — 여기서의 0은 "아직 집계 전"과 구분 불가라 자신 있는 `$0.00 · 0 tokens`는 금지. source 읽기 실패 시에도 호출자가 아무것도 추가하지 않음.
     /// `estimated`는 달러 값의 로컬 추정 마커(ⓘ) 여부. `estimatedDays`가 있으면 기간별 비용 출처로 판정. `unknownModelsByDay`는 `yyyy-MM-dd` day key → 가격 산정 불가 모델 집합 — Today/Yesterday는 자기 날의 집합, Last 30 Days는 window 전체의 합집합.
@@ -15,8 +15,10 @@ enum SpendTileMapper {
         modelUsage: ModelUsageSeries? = nil,
         modelSourceNote: String? = nil
     ) {
+        let calendar = Calendar.current
+        let asOf = calendar.startOfDay(for: now)
         let today = dayKey(from: now)
-        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now).map(dayKey(from:))
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: now).map(dayKey(from:))
 
         if let entry = usage.daily.first(where: { dayKey(fromUsageDate: $0.date) == today }), hasUsage(entry) {
             lines.append(dayUsageLine(label: "Today", entry: entry, estimated: estimatedDays?.contains(today) ?? estimated,
@@ -26,7 +28,8 @@ enum SpendTileMapper {
                                         days: [today],
                                         totalTokens: entry.totalTokens,
                                         totalCostUSD: entry.costUSD,
-                                        sourceNote: modelSourceNote
+                                        sourceNote: modelSourceNote,
+                                        period: ModelUsagePeriod(window: .today, asOf: asOf, calendar: calendar)
                                       )))
         }
         if let entry = usage.daily.first(where: { dayKey(fromUsageDate: $0.date) == yesterday }), hasUsage(entry) {
@@ -37,7 +40,8 @@ enum SpendTileMapper {
                                         days: Set([yesterday].compactMap { $0 }),
                                         totalTokens: entry.totalTokens,
                                         totalCostUSD: entry.costUSD,
-                                        sourceNote: modelSourceNote
+                                        sourceNote: modelSourceNote,
+                                        period: ModelUsagePeriod(window: .yesterday, asOf: asOf, calendar: calendar)
                                       )))
         }
 
@@ -56,7 +60,8 @@ enum SpendTileMapper {
                                     days: Set(usage.daily.compactMap { dayKey(fromUsageDate: $0.date) }),
                                     totalTokens: totalTokens,
                                     totalCostUSD: totalCost,
-                                    sourceNote: modelSourceNote
+                                    sourceNote: modelSourceNote,
+                                    period: ModelUsagePeriod(window: .last30, asOf: asOf, calendar: calendar)
                                  )))
         }
     }
@@ -164,8 +169,6 @@ enum SpendTileMapper {
         return values
     }
 
-    private static let namedModelCap = 5
-
     /// case-fold된 한 이름의 표기들을 추적해 tokens를 가장 많이 실은 표기 선출(동률은 소문자, 다음 알파벳순) — `GLM-5.2`와 `glm-5.2`가 우세한 표기 제목의 한 행으로 병합.
     private struct SpellingVote {
         private var tokensBySpelling: [String: Int] = [:]
@@ -204,13 +207,6 @@ enum SpendTileMapper {
             for variant in entry.variants ?? [ModelUsageVariant(model: name, totalTokens: entry.totalTokens, costUSD: entry.costUSD)] {
                 mergeVariant(variant.model, tokens: variant.totalTokens, costUSD: variant.costUSD)
             }
-        }
-
-        /// 다른 모델을 이 accumulator(Other 행)로 흡수 — 흡수된 모델당 variant 하나, tooltip은 raw effort slug가 아닌 모델명 나열. Other 행 이름은 고정이라 흡수된 표기는 variant line 안에서만 투표.
-        mutating func fold(_ entry: ModelUsageEntry) {
-            tokens += entry.totalTokens
-            cost.add(entry.costUSD)
-            mergeVariant(entry.model, tokens: entry.totalTokens, costUSD: entry.costUSD)
         }
 
         private mutating func addTotals(of entry: ModelUsageEntry, spelledAs name: String) {
@@ -256,11 +252,12 @@ enum SpendTileMapper {
         days: Set<String>,
         totalTokens: Int,
         totalCostUSD: Double?,
-        sourceNote: String?
+        sourceNote: String?,
+        period: ModelUsagePeriod
     ) -> ModelUsageBreakdown? {
         guard let usage, let sourceNote, !days.isEmpty else { return nil }
 
-        // case-fold된 이름이 key — `GLM-5.2`와 `glm-5.2`가 한 행에 모이고, accumulator의 표기 투표가 제목 casing 결정.
+        // 대소문자를 구분하지 않고 같은 모델로 병합. 대표 표기는 토큰 가중치로 결정.
         var byModel: [String: ModelAccumulator] = [:]
         for day in usage.daily where dayKey(fromUsageDate: day.date).map(days.contains) == true {
             for model in day.models where model.totalTokens > 0 || (model.costUSD ?? 0) > 0 {
@@ -271,13 +268,13 @@ enum SpendTileMapper {
 
         let sorted = byModel.map { key, accumulator in accumulator.entry(model: accumulator.displayName ?? key) }
             .sorted(by: modelSortPrecedes)
-        let folded = foldModelList(sorted)
-        guard !folded.isEmpty else { return nil }
+        guard !sorted.isEmpty else { return nil }
         return ModelUsageBreakdown(
             totalTokens: totalTokens,
             totalCostUSD: totalCostUSD,
-            models: folded,
-            sourceNote: sourceNote
+            models: sorted,
+            sourceNote: sourceNote,
+            period: period
         )
     }
 
@@ -292,46 +289,6 @@ enum SpendTileMapper {
         if lhsCost != rhsCost { return lhsCost > rhsCost }
         if lhs.totalTokens != rhs.totalTokens { return lhs.totalTokens > rhs.totalTokens }
         return lhs.model.localizedStandardCompare(rhs.model) == .orderedAscending
-    }
-
-    /// 기간 내 이 비중 미만 모델은 순위와 무관하게 Other로 흡수 — 5% 미만 조각 더미는 노이즈, Other tooltip이 이름은 유지.
-    private static let minVisibleShare = 0.05
-
-    private static func foldModelList(_ entries: [ModelUsageEntry]) -> [ModelUsageEntry] {
-        // threshold는 패널 percent 라벨과 같은 기준 사용(전 모델 priced면 cost 비중, 아니면 token 비중 — `ModelUsageDetail.share`) — 아니면 5%+로 표시될 모델이 접힐 수 있음.
-        let allPriced = entries.allSatisfy { $0.costUSD != nil }
-        let costTotal = entries.reduce(0.0) { $0 + ($1.costUSD ?? 0) }
-        let tokenTotal = entries.reduce(0) { $0 + $1.totalTokens }
-        func share(_ entry: ModelUsageEntry) -> Double {
-            if allPriced, costTotal > 0 { return (entry.costUSD ?? 0) / costTotal }
-            guard tokenTotal > 0 else { return 0 }
-            return Double(entry.totalTokens) / Double(tokenTotal)
-        }
-
-        var visible: [ModelUsageEntry] = []
-        var other = ModelAccumulator()
-        var namedCount = 0
-
-        for entry in entries {
-            // 로그가 모델에 귀속 못 한 tokens(Grok)는 "Unattributed" 행 대신 크기와 무관하게 Other로 — 패널은 회계 장부가 아니라 인사이트.
-            let isUnattributed = entry.model.caseInsensitiveCompare(ModelUsageEntry.unattributedModelName) == .orderedSame
-            if isUnattributed || share(entry) < minVisibleShare {
-                other.fold(entry)
-            } else if entry.costUSD == nil {
-                visible.append(entry)
-                namedCount += 1
-            } else if namedCount < namedModelCap {
-                visible.append(entry)
-                namedCount += 1
-            } else {
-                other.fold(entry)
-            }
-        }
-
-        if other.tokens > 0 || (other.costUSD ?? 0) > 0 {
-            visible.append(other.entry(model: ModelUsageEntry.otherModelName))
-        }
-        return visible
     }
 
     private static func roundToCents(_ value: Double) -> Double {

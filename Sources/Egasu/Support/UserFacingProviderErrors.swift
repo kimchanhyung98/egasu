@@ -12,13 +12,17 @@ extension ClaudeAuthError: UserPresentableError {
         case .desktopCredentialsUnavailable:
             .init("Claude Desktop login couldn't be read. Open Claude Desktop, then try again.")
         case .sessionExpired:
-            .init("Session expired. Run `claude` to log in again.")
+            .init(
+                "Claude could not renew this login. For a saved account, open Accounts and choose Sign In Again. Otherwise, run `claude auth login`."
+            )
         case .tokenExpired:
             .init("Token expired. Run `claude` to log in again.")
         case .credentialsChanged:
             .init("Claude login changed during refresh. Refresh again.")
-        case .invalidOAuthURL(let value):
-            .init("Invalid Claude OAuth URL: %@. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE.", [String(value)])
+        case .rotationInProgress:
+            .init("Claude is renewing a login. Try again when the refresh finishes.")
+        case .invalidOAuthURL:
+            .init("Invalid Claude OAuth URL. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE.")
         }
     }
 }
@@ -121,6 +125,12 @@ extension GrokAuthError: UserPresentableError {
             .init("Grok sign-in changed while refreshing. Refresh again to use the current account.")
         case .credentialReadFailed:
             .init("Grok sign-in could not be read. Check access to the Grok auth file and refresh again.")
+        case .refreshConnectionFailed:
+            .init("Grok sign-in could not be refreshed. Check your connection.")
+        case .refreshRequestFailed(let status):
+            .init("Grok sign-in could not be refreshed (HTTP %@). Try again later.", [String(status)])
+        case .refreshResponseInvalid:
+            .init("Grok returned an invalid token refresh response. Try again later.")
         }
     }
 }
@@ -147,8 +157,16 @@ extension KimiAuthError: UserPresentableError {
             .init("Kimi credentials could not be read. Check the credential file permissions.")
         case .credentialsInvalid:
             .init("Kimi credentials are invalid. Run `kimi` to log in again.")
+        case .credentialsChanged:
+            .init("Kimi sign-in changed while refreshing. Refresh again to use the current account.")
         case .unsupportedConfiguration:
             .init("Custom Kimi API or OAuth hosts are not supported.")
+        case .configurationInvalid:
+            .init("Kimi configuration is invalid. Check config.toml.")
+        case .apiKeyMissing:
+            .init("Kimi API key is missing. Check the CLI provider settings.")
+        case .apiKeyRejected:
+            .init("Kimi API key was rejected. Check the CLI provider settings.")
         case .authExpired, .refreshRejected:
             .init("Kimi session expired. Run `kimi` to log in again.")
         case .refreshResponseInvalid:
@@ -275,7 +293,8 @@ extension OpenRouterAuthError: UserPresentableError {
     var presentationMessage: LocalizedMessage {
         switch self {
         case .missingKey:
-            .init("No OpenRouter API key. Set OPENROUTER_API_KEY or add it to ~/.config/openusage/openrouter.json.")
+            .init(
+                "No OpenRouter API key. Set OPENROUTER_API_KEY or add it to %@.", [OpenRouterAuthStore.configPaths[0]])
         case .invalidKey:
             .init("OpenRouter API key invalid. Check your key at openrouter.ai/keys.")
         case .saveFailed:
@@ -303,9 +322,11 @@ extension ZAIAuthError: UserPresentableError {
     var presentationMessage: LocalizedMessage {
         switch self {
         case .missingKey:
-            .init("No Z.ai API key. Set ZAI_API_KEY or add it to ~/.config/openusage/zai.json.")
+            .init("No Z.ai API key. Set ZAI_API_KEY or add it to %@.", [ZAIAuthStore.configPaths[0]])
         case .invalidKey:
             .init("Z.ai API key invalid. Check your key at z.ai/manage-apikey/apikey-list.")
+        case .credentialsChanged:
+            .init("Z.ai API key changed while refreshing. Refresh again to use the current key.")
         case .saveFailed:
             .init("Couldn't save the Z.ai API key.")
         case .deleteFailed:
@@ -346,11 +367,11 @@ extension CodexWeeklyTimerProviderError: UserPresentableError {
     var presentationMessage: LocalizedMessage {
         switch self {
         case .accountChanged:
-            .init("Weekly timer account changed. Refresh this account and try again.")
+            .init("Usage timer account changed. Refresh this account and try again.")
         case .weeklyQuotaUnavailable:
-            .init("Weekly timer could not verify this account's weekly usage.")
+            .init("Usage timer could not verify this account's quota.")
         case .credentialsChanged:
-            .init("Weekly timer credentials changed. Refresh this account and try again.")
+            .init("Usage timer credentials changed. Refresh this account and try again.")
         }
     }
 }

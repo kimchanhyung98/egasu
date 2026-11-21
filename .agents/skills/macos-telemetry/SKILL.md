@@ -11,6 +11,10 @@ Use this skill to add lightweight app instrumentation that helps debug behavior
 without turning the codebase into a logging landfill. Prefer Apple's unified
 logging APIs and verify the events after a build/run loop.
 
+egasu의 `AppLog`는 통합·파일 진단 로그를 기록.
+`AppDiagnostics`의 로그 기록은 failure·degraded 결과에 한정.
+`TelemetryRecorder`의 sink·PostHog 이벤트는 가짜 sink·진단 observer·stub transport 테스트로 별도 확인.
+
 ## Core Guidelines
 
 - Prefer `Logger` from the `OSLog` framework for structured app logs.
@@ -57,14 +61,17 @@ Use feature-specific categories like `Windowing`, `Commands`, `MenuBar`, `Sideba
 
 3. Build and run the app.
    - Use `macos-build-run-debug` for the build/run loop.
-   - If `script/build_and_run.sh` exists, prefer `./script/build_and_run.sh --telemetry` for live telemetry checks or `./script/build_and_run.sh --logs` for broader process logs.
+   - egasu의 프로세스 로그 확인은 `./script/build_and_run.sh logs` 사용.
+   - `--logs`·`--telemetry` 인자는 미지원.
+   - subsystem/category 필터는 아래 `log stream --info` 명령 사용.
+   - 시작 로그 확인은 별도 터미널에서 스트림을 먼저 시작한 뒤 다른 터미널에서 `./script/build_and_run.sh run` 실행.
    - Exercise the UI or command path that should emit telemetry.
 
 4. Read runtime logs and verify the event fired.
    - Use Console.app with a process/subsystem filter when that is the fastest manual check.
-   - Use `log stream --style compact --predicate 'process == "AppName"'` for live terminal verification.
+   - Use `log stream --info --style compact --predicate 'process == "AppName"'` for live terminal verification.
    - Prefer tighter predicates when you know the subsystem/category:
-     `log stream --style compact --predicate 'subsystem == "com.example.app" && category == "Sidebar"'`
+     `log stream --info --style compact --predicate 'subsystem == "com.example.app" && category == "Sidebar"'`
 
 5. Tighten or remove instrumentation.
    - If the event fires, keep only the logs that remain useful for future debugging.
@@ -82,5 +89,6 @@ Use feature-specific categories like `Windowing`, `Commands`, `MenuBar`, `Sideba
 
 - Do not use `print` as the primary app telemetry mechanism for macOS app code.
 - Do not leave a dense trail of permanent debug logs around every state mutation.
-- Do not claim an event is wired correctly until you have a concrete verification path through Console, `log stream`, or captured process output.
+- `Logger` 계측은 Console·`log stream`·캡처한 프로세스 출력으로 검증.
+  egasu의 `TelemetryRecorder` 이벤트 전달은 위 테스트로 별도 확인하고 진단 로그로 대체하지 않음.
 - If the debugging task is mostly about crash/backtrace analysis rather than action telemetry, switch to `macos-build-run-debug`.

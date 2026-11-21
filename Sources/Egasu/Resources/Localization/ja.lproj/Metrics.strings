@@ -40,6 +40,7 @@
 "Chat" = "チャット";
 "Claude" = "Claude";
 "Claude Weekly" = "Claude 週間";
+"Argon Weekly" = "Argon 週間";
 "Codex Reset Watch" = "Codexリセット予測";
 "Completions" = "コード補完";
 "Cost" = "費用";
@@ -77,10 +78,8 @@
 "M" = "30日";
 "MTok" = "MTok";
 "Monthly" = "月次";
-"No cost data for this period" = "この期間の費用データはありません";
-"No cost-per-token data for this period" = "この期間のトークン単価データはありません";
+"Monthly limit" = "月間の上限";
 "No data" = "データなし";
-"No token data for this period" = "この期間のトークンデータはありません";
 "No usage data" = "使用量データなし";
 "No usage in this period" = "この期間の使用量はありません";
 "Not available" = "利用不可";
@@ -119,6 +118,7 @@
 "Sessions start after you send your first message." = "最初のメッセージを送信すると、セッションが始まります。";
 "Sonnet" = "Sonnet";
 "Spark" = "Spark";
+"Spark Monthly" = "Spark 月次";
 "Spark Weekly" = "Spark 週間";
 "T" = "今日";
 "This Month" = "今月";
@@ -179,3 +179,32 @@
 "From your OpenCode logs and local tools" = "OpenCode のログとローカルツールから収集";
 "From your Grok usage files and logs (estimated)" = "Grok の使用量ファイルとログに基づく値（推定）";
 "From your Grok usage files, logs, and local tools (estimated)" = "Grok の使用量ファイル、ログ、ローカルツールに基づく値（推定）";
+
+"%lld%% or less left for this window." = "この期間の残りが%lld%%以下です。";
+"A limit may run out before its reset" = "リセット前に上限に達しそうなとき";
+"Alert when a limit drops critically low" = "上限が危険なほど少なくなったら通知";
+"Alert when a limit requires your attention" = "上限の確認が必要になったら通知";
+"Critical" = "危険";
+"May run out before the limit resets." = "上限がリセットされる前に使い切る可能性があります。";
+"Over 50% left a day before its reset" = "リセットの1日前に50%以上残っている";
+"Over 50% left, resets in under 24 hours." = "50%以上残っていて、24時間以内にリセットされます。";
+"Use It or Lose It" = "リセット前に使用";
+"Warning" = "警告";
+
+"%lldd" = "%lld日";
+"%lldmo" = "%lldか月";
+"%lldmo %lldd" = "%lldか月 %lld日";
+"%lldy" = "%lld年";
+"%lldy %lldmo" = "%lld年 %lldか月";
+"Soft limit at %lld%%" = "ソフト上限 %lld%%";
+
+"Failed" = "更新失敗";
+
+"%@ didn't report any data for this range." = "%@はこの期間のデータを報告していません。";
+"30 Days Ending %@" = "%@までの30日間";
+"Breakdown Unavailable" = "内訳を取得できません";
+"Copy %@ Usage" = "%@の使用量をコピー";
+"Loading Breakdown…" = "内訳を読み込み中…";
+"Refresh to load the details for this range." = "更新するとこの期間の内訳を読み込みます。";
+"Saved %@" = "%@時点";
+"Top Models" = "上位モデル";

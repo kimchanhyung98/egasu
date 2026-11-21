@@ -98,6 +98,49 @@ final class TelemetrySDKIntegrationTests: XCTestCase {
         }
     }
 
+    func testRollbackFailureReachesSDKWithItsStageAndWithoutLocalErrorDetails() async throws {
+        TelemetryFixtureURLProtocol.reset()
+        let suite = "EgasuTests.RollbackTelemetry.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let store = TelemetryStore(defaults: defaults)
+        store.enabled = true
+        let sink = makeSink(
+            enabled: true, token: "phc_fixture_" + UUID().uuidString.replacingOccurrences(of: "-", with: ""))
+        let recorder = TelemetryRecorder(
+            sink: sink, store: store,
+            snapshot: {
+                TelemetryConfigSnapshot(enabledProviders: ["claude"], enabledMetricIDs: [], pinnedMetricIDs: [])
+            })
+        recorder.startDiagnostics()
+        defer {
+            recorder.stopDiagnostics()
+            sink.setEnabled(false)
+            defaults.removePersistentDomain(forName: suite)
+        }
+
+        AppDiagnostics.record(
+            .accountRollback, result: .failure, category: .storage, providerID: "claude@profile-private",
+            error: NSError(domain: "private@example.invalid", code: 17),
+            localContext: "restore shared login")
+        try await waitForBatch()
+
+        let events = try TelemetryFixtureURLProtocol.events().filter {
+            $0["event"] as? String == "feature_operation_result"
+        }
+        XCTAssertEqual(events.count, 1)
+        let properties = try XCTUnwrap(events.first?["properties"] as? [String: Any])
+        XCTAssertEqual(properties["operation"] as? String, "account_rollback")
+        XCTAssertEqual(properties["result"] as? String, "failure")
+        XCTAssertEqual(properties["error_category"] as? String, "storage")
+        XCTAssertEqual(properties["provider_id"] as? String, "claude")
+        let payload = String(decoding: try JSONSerialization.data(withJSONObject: events), as: UTF8.self)
+        for localDetail in [
+            "profile-private", "private@example.invalid", "restore shared login", "error_domain", "error_code"
+        ] {
+            XCTAssertFalse(payload.contains(localDetail), localDetail)
+        }
+    }
+
     func testRejectedBatchIsNotRetriedAfterOptOutOrRestart() async throws {
         TelemetryFixtureURLProtocol.reset(status: 503)
         let token = "phc_fixture_" + UUID().uuidString.replacingOccurrences(of: "-", with: "")

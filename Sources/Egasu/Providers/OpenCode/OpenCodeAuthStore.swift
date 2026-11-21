@@ -1,7 +1,7 @@
 import Foundation
 
-/// 머신에 이미 있는 OpenCode Go/Zen credential 읽기 — local 전용, network 접근 없음.
-/// `opencode-go` key는 first-run 감지 신호이자 (향후 `/zen/go/v1/usage` API의) Bearer token — 단일 loader로 관리.
+/// 기기에 저장된 OpenCode Go 자격 증명 조회. 네트워크 접근 없음.
+/// `opencode-go` 키로 로컬 로그인 감지와 Go 기간 표시 여부 판단.
 struct OpenCodeAuthStore: Sendable {
     var files: TextFileAccessing
     var environment: EnvironmentReading
@@ -25,21 +25,20 @@ struct OpenCodeAuthStore: Sendable {
         OpenCodePaths.authFilePath(dataDirectory: dataDirectory)
     }
 
-    /// `auth.json`의 비어 있지 않은 `opencode-go` API key, 미로그인 시 `nil`.
-    /// 해당 entry만 읽고 무관한 sibling entry에는 관대 — 이상 값 하나가 유효 key를 가리지 못하게 함.
-    /// 파일이 있는데 읽기·parse 불가면 `credentialsUnreadable` throw — 손상 storage를 logout으로 오인 금지, 파일 부재는 정상 `nil`.
+    /// auth.json의 opencode-go 항목에서 유효한 API 키 조회.
+    /// 파일이나 키가 없으면 nil 반환. 파일 읽기나 JSON 해석 실패는 인증 저장소 오류로 전달.
     func goAPIKey() throws -> String? {
         let text: String?
         do {
             text = try files.readTextIfPresent(authFilePath)
         } catch {
-            throw OpenCodeUsageError.credentialsUnreadable(detail: error.localizedDescription)
+            throw OpenCodeUsageError.credentialsUnreadable(detail: "stage=read \(AppLog.errorDetails(error))")
         }
         guard let text else { return nil }
         guard let data = text.data(using: .utf8),
               let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         else {
-            throw OpenCodeUsageError.credentialsUnreadable(detail: "auth.json is not valid JSON")
+            throw OpenCodeUsageError.credentialsUnreadable(detail: "stage=decode category=decoding")
         }
         guard let entry = object["opencode-go"] as? [String: Any],
               let key = entry["key"] as? String

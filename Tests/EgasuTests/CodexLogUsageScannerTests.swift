@@ -948,7 +948,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
         let scan = await scanner.scan(pricing: pricing)
 
         XCTAssertTrue(scan?.unknownModelsByDay.isEmpty ?? false)
-        XCTAssertEqual(scan?.series.daily.first?.costUSD ?? 0, 0.6, accuracy: 0.000_001)
+        XCTAssertEqual(scan?.series.daily.first?.costUSD ?? 0, 0.8, accuracy: 0.000_001)
     }
 
     func testScanPricesDaybreakRedAsGPT56Cyber() async throws {

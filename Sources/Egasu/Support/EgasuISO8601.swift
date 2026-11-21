@@ -1,7 +1,7 @@
 import Foundation
 
-/// 여러 provider와 local API가 공유하는 ISO-8601 날짜 파싱/포맷.
-/// provider별 timestamp 변형(공백 구분, " UTC" suffix, 가변 fractional 자릿수)을 파싱 전 정규화.
+/// 프로바이더와 로컬 API가 공유하는 ISO 8601 날짜 해석·서식.
+/// 공백 구분·UTC 접미사·다양한 소수 자릿수를 해석 전에 정규화.
 enum EgasuISO8601 {
     static func string(from date: Date) -> String {
         formatter(fractionalSeconds: true).string(from: date)
@@ -13,7 +13,7 @@ enum EgasuISO8601 {
         formatter(fractionalSeconds: false).date(from: normalized)
     }
 
-    /// JavaScript plugin `ctx.util.toIso`의 문자열 정규화와 정렬(Claude `resets_at` 등).
+    /// 공백 구분·UTC 접미사·긴 소수 초를 지원하는 날짜 문자열 정규화.
     private static func normalizeTimestamp(_ raw: String) -> String {
         var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !s.isEmpty else { return s }
@@ -71,7 +71,7 @@ enum EgasuISO8601 {
         return head + frac + tz
     }
 
-    // ISO8601DateFormatter는 생성 비용이 커 두 고정 구성을 1회 생성; 파싱/포맷은 thread-safe라 `nonisolated(unsafe)`로 불변 인스턴스 공유.
+    // 생성 비용을 줄이도록 두 고정 설정의 ISO8601DateFormatter 공유. 생성 후 설정은 변경하지 않음.
     private nonisolated(unsafe) static let fractionalFormatter = makeFormatter(fractionalSeconds: true)
     private nonisolated(unsafe) static let plainFormatter = makeFormatter(fractionalSeconds: false)
 

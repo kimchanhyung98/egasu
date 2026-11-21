@@ -21,6 +21,73 @@ final class KimiUsageScannerTests: XCTestCase {
         XCTAssertEqual(result.invalidRows, 0)
     }
 
+    func testRequestlessOfficialAliasesIncludeEveryMeasuredTokenBucket() throws {
+        let aliases = ["k3", "k3-256k", "k3.1-pro", "k3.1-pro-highspeed"]
+        let rows = aliases.enumerated().map { index, model in
+            usage(alias: "kimi-code/\(model)", scope: index.isMultiple(of: 2) ? "turn" : "session")
+        }
+        let parsed = try KimiUsageScanner.parse(wire(rows))
+        let result = KimiUsageScanner.aggregate([parsed], now: now)
+
+        XCTAssertEqual(parsed.records.map(\.tokens), [190, 190, 190, 190])
+        XCTAssertEqual(parsed.records.compactMap { $0.pricingInput?.model }, aliases)
+        for record in parsed.records {
+            XCTAssertNil(record.pricingInput?.protocolName)
+            XCTAssertNil(record.pricingInput?.thinkingEffort)
+        }
+        XCTAssertEqual(result.series.daily.first?.totalTokens, 760)
+        XCTAssertEqual(result.invalidRows, 0)
+    }
+
+    func testRequestlessUnknownAndNonKimiAliasesAreExcluded() throws {
+        for alias in ["other/k3", "kimi-code/custom", "kimi-code/default", "kimi-code/kimi-k3", "kimi-code/K3"] {
+            let parsed = try KimiUsageScanner.parse(wire([usage(alias: alias)]))
+            XCTAssertTrue(parsed.records.isEmpty, alias)
+        }
+    }
+
+    func testRequestlessUsageRequiresEveryTokenBucketAndNumericValues() throws {
+        for field in ["inputOther", "output", "inputCacheRead", "inputCacheCreation"] {
+            for value: Any? in [nil, -1, 0.5, true, "10", NSNull()] {
+                var row = usage()
+                var tokens = row["usage"] as! [String: Any]
+                tokens[field] = value
+                row["usage"] = tokens
+                let parsed = try KimiUsageScanner.parse(wire([row]))
+                XCTAssertTrue(parsed.records.isEmpty, field)
+                XCTAssertEqual(parsed.invalidRows, 1, field)
+            }
+        }
+    }
+
+    func testEarlierRequestsPreventLaterUsageFromUsingRequestlessAttribution() throws {
+        var otherAgent = request()
+        otherAgent["agentId"] = "other-agent"
+        var incomplete = request()
+        incomplete.removeValue(forKey: "model")
+        for earlier in [request(model: "gpt-4"), request(alias: "other/k3"), otherAgent, incomplete] {
+            let parsed = try KimiUsageScanner.parse(wire([usage(), earlier, usage()]))
+            XCTAssertEqual(parsed.records.map(\.tokens), [190])
+            XCTAssertNotNil(parsed.records.first?.pricingInput)
+        }
+    }
+
+    func testCorruptionBlocksRequestlessAttributionAndPreservesValidPrefixUntilRequestRecovers() throws {
+        for corrupt in ["not-json", "{}", #"{"type":false}"#, #"{"type":"llm.request"}"#] {
+            for hasPrefix in [false, true] {
+                let data =
+                    try wire(hasPrefix ? [usage()] : []) + Data((corrupt + "\n").utf8)
+                    + wire([usage(), request(), usage()])
+                let parsed = try KimiUsageScanner.parse(data)
+
+                XCTAssertEqual(parsed.records.map(\.tokens), hasPrefix ? [190, 190] : [190], corrupt)
+                XCTAssertEqual(parsed.invalidRows, 2, corrupt)
+                if hasPrefix { XCTAssertNotNil(parsed.records.first?.pricingInput) }
+                XCTAssertNotNil(parsed.records.last?.pricingInput)
+            }
+        }
+    }
+
     func testOnlyConfiguredKimiRequestsWithMatchingAgentAndAliasContribute() throws {
         var wrongAgent = usage()
         wrongAgent["agentId"] = "other-agent"
@@ -48,6 +115,44 @@ final class KimiUsageScannerTests: XCTestCase {
 
         XCTAssertEqual(parsed.records.count, 1)
         XCTAssertEqual(parsed.records.first?.tokens, 190)
+    }
+
+    func testForkKeepsRequestlessAttributionBlockedAfterRequestsOrCorruption() throws {
+        let prefixes = [
+            try wire([request()]),
+            try wire([request(model: "gpt-4")]),
+            Data("not-json\n".utf8)
+        ]
+        for prefix in prefixes {
+            let data =
+                try prefix
+                + wire([
+                ["type": "forked", "agentId": "main", "time": epochMilliseconds],
+                    usage(), request(), usage()
+            ])
+            let parsed = try KimiUsageScanner.parse(data)
+
+            XCTAssertEqual(parsed.records.map(\.tokens), [190])
+            XCTAssertEqual(parsed.invalidRows, 1)
+            XCTAssertNotNil(parsed.records.first?.pricingInput)
+        }
+    }
+
+    func testRequestlessForkCountsOnlyUsageAfterTheLatestMarker() throws {
+        var latest = usage()
+        latest["id"] = "after-latest-fork"
+        let parsed = try KimiUsageScanner.parse(wire([
+                usage(),
+            ["type": "forked", "agentId": "main", "time": epochMilliseconds],
+                usage(),
+            ["type": "forked", "agentId": "main", "time": epochMilliseconds],
+                latest
+        ]))
+
+        XCTAssertEqual(parsed.records.map(\.tokens), [190])
+        XCTAssertEqual(parsed.records.map(\.wireEntryID), ["after-latest-fork"])
+        XCTAssertEqual(parsed.invalidRows, 0)
+        XCTAssertNotNil(parsed.records.first?.pricingInput)
     }
 
     func testLocalDateBoundaryIncludesPreviousThirtyDaysAndExcludesFuture() {

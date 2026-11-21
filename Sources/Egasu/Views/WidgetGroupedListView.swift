@@ -1,34 +1,44 @@
+import AppKit
 import SwiftUI
 
-/// Dashboard 본문 — provider별 inset group(System Settings 스타일), 헤더 아래 rounded 카드에 metric 행 배치.
-/// 재정렬은 여기서 직접 가능(metric 행/provider 헤더 drag) — Customize와 동일한 로컬 gesture/geometry helper를
-/// 공유해 system drag/drop 세션 없이 popover 안에서 동작.
+/// All Usage 본문 — 저장된 표시 방식에 따라 미니멀 격자·계정별 카드 전환.
+/// 머리글 드래그 = 프로바이더 순서, 계정 캡션 드래그 = 계정 순서, 행 드래그 = 그 계정의 지표 순서.
 struct WidgetGroupedListView: View {
     @Environment(AppContainer.self) private var container
     @Environment(LayoutStore.self) private var layout
     @Environment(WidgetDataStore.self) private var dataStore
+    @Environment(PopoverState.self) private var popover
+    @Environment(AccountRenameStore.self) private var renaming
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.concealsAccountNames) private var concealsAccountNames
+    let families: [DashboardFamily]
     let reorderSpaceName: String
     @Binding var reorderLift: ReorderLift?
+    @Binding var retainedResetClaims: [String: CodexResetClaimBinding]
 
     @State private var rowFrames: [String: CGRect] = [:]
-    @State private var activeProviderID: String?
     @State private var activeMetricID: String?
+    @State private var activeAccountID: String?
+    @State private var activeFamilyID: String?
     @State private var pendingAccountSwitch: AccountProfile?
     @State private var accountSwitchError: String?
-    @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
-    @AppStorage(DashboardUsageAccountSelection.claudeKey) private var selectedClaudeUsageAccountID = ""
-    @AppStorage(DashboardUsageAccountSelection.codexKey) private var selectedCodexUsageAccountID = ""
+
+    private var layoutStyle: DashboardLayoutStyle { dataStore.displaySettings.dashboardLayout }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: density.sectionSpacing) {
-            ForEach(dashboardGroups) { group in
-                section(group)
+        VStack(alignment: .leading, spacing: DashboardGrid.sectionSpacing) {
+            ForEach(families) { family in
+                section(family)
+                    .contextMenu {
+                        DashboardMenu(sections: DashboardMenus.provider(family, refreshDisabled: refreshBlocked(family.accounts.map(\.id))), perform: perform)
+                    }
+                    .opacity(activeFamilyID == Self.familyFrameID(family.id) ? 0 : 1)
+                    .reorderFrame(id: Self.familyFrameID(family.id), in: .named(reorderSpaceName))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onPreferenceChange(ReorderFramePreferenceKey.self) { rowFrames = $0 }
-        .animation(Motion.spring, value: dashboardGroups.map(\.provider.id))
+        .animation(Motion.spring, value: families.map(\.id))
         .accountSwitchConfirmation(selection: $pendingAccountSwitch, error: $accountSwitchError)
         .alert(
             L10n.dashboard("Couldn't Switch Account"),
@@ -41,7 +51,7 @@ struct WidgetGroupedListView: View {
         }
     }
 
-    /// 전환 확인창이 닫힌 뒤 오류 표시 — 스크롤 위치와 무관하게 확인 가능.
+    /// 전환 확인창이 닫힌 뒤 오류 표시.
     private var isAccountSwitchErrorPresented: Binding<Bool> {
         Binding(
             get: { accountSwitchError != nil && pendingAccountSwitch == nil },
@@ -49,397 +59,240 @@ struct WidgetGroupedListView: View {
         )
     }
 
-    private var dashboardGroups: [ProviderGroup] {
-        container.presentedAccountGroups(selectionByFamily: storedUsageAccountIDs)
-    }
-
-    private let accountFamilies = ["claude", "codex"]
-
-    private func accountFamily(for providerID: String) -> String? {
-        let family = ProviderAccountID.family(of: providerID)
-        return accountFamilies.contains(family) ? family : nil
-    }
-
-    private func accountGroups(for family: String, in groups: [ProviderGroup]) -> [ProviderGroup] {
-        let familyGroups = groups.filter { ProviderAccountID.family(of: $0.provider.id) == family }
-        let byID = Dictionary(uniqueKeysWithValues: familyGroups.map { ($0.provider.id, $0) })
-        return container.orderedAccountCardIDs(familyGroups.map(\.provider.id)).compactMap { byID[$0] }
-    }
-
-    private func selectedAccountID(for family: String) -> String {
-        container.visibleAccountCardID(
-            for: family,
-            among: container.accountCardIDs(for: family, among: layout.displayGroups.map(\.provider.id)),
-            stored: storedUsageAccountID(for: family)
-        ) ?? ""
-    }
-
-    /// `@AppStorage` 값을 읽는 지점 — picker 변경이 dashboard 재계산을 트리거.
-    private var storedUsageAccountIDs: [String: String] {
-        ["claude": selectedClaudeUsageAccountID, "codex": selectedCodexUsageAccountID]
-    }
-
-    private func storedUsageAccountID(for family: String) -> String {
-        storedUsageAccountIDs[family] ?? ""
-    }
-
-    private func selectUsageAccount(_ providerID: String, for family: String) {
-        let selectionID = DashboardUsageAccountSelection.selectionID(
-            for: providerID,
-            family: family,
-            profileID: container.accountProfileID(for: providerID)
-        )
-        switch family {
-        case "claude": selectedClaudeUsageAccountID = selectionID
-        case "codex": selectedCodexUsageAccountID = selectionID
-        default: break
-        }
-    }
-
-    private func section(_ group: ProviderGroup) -> some View {
-        VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
-            header(group)
-            container(group)
-        }
-        .opacity(activeProviderID == group.provider.id ? 0 : 1)
-        .reorderFrame(id: group.provider.id, in: .named(reorderSpaceName))
-    }
-
-    private func header(_ group: ProviderGroup) -> some View {
-        let allGroups = layout.displayGroups
-        let family = accountFamily(for: group.provider.id)
-        let isSeparate = family.map { container.accountCardDisplayMode(for: $0) == .separateCards } ?? false
-        let familyGroups = family.map { self.accountGroups(for: $0, in: allGroups) } ?? []
-        let isAccountFamilyGroup = familyGroups.contains { $0.provider.id == group.provider.id }
-        // 등록 profile 수가 런타임 카드 수를 넘을 수 있음(여러 계정이 공유 home 하나를 쓰는 경우).
-        let accountCount = isAccountFamilyGroup
-            ? max(familyGroups.count, family.map { container.accountProfiles.profiles(family: $0).count } ?? 0)
-            : 0
-        let options = isAccountFamilyGroup && !isSeparate ? familyGroups.map {
-            AccountUsageOption(
-                id: $0.provider.id,
-                title: container.accountOptionTitle(for: $0.provider.id)
+    private func section(_ family: DashboardFamily) -> some View {
+        DashboardProviderSection(family: family, layoutStyle: layoutStyle) { isHovered in
+            DashboardProviderHeader(
+                family: family,
+                serviceIssue: container.providerStatus.status(for: family.provider.id).issue,
+                isRevealed: isHovered,
+                onCopyScreenshot: { shareScreenshot(family.id) },
+                reorderGesture: AnyGesture(familyDragGesture(for: family).map { _ in () })
             )
-        } : []
-        let queued = dataStore.isRefreshQueued(for: group.provider.id)
-        return ProviderSectionHeader(
-            provider: group.provider,
-            displayName: container.accountCardTitle(for: group.provider),
-            plan: dataStore.plan(for: group.provider.id),
-            warning: dataStore.headerNotice(for: group.provider.id),
-            serviceStatus: container.providerStatus.status(for: group.provider.id),
-            refreshing: dataStore.refreshingProviderIDs.contains(group.provider.id) && !queued,
-            queued: queued,
-            staleness: dataStore.stalenessHint(for: group.provider.id),
-            onCopyScreenshot: { shareCard(group) },
-            accountOptions: options,
-            selectedAccountID: isAccountFamilyGroup
-                ? family.map { selectedAccountID(for: $0) }
-                : nil,
-            onSelectAccount: isAccountFamilyGroup ? family.map { family in
-                { providerID in
-                    selectUsageAccount(providerID, for: family)
-                    // 메뉴 바는 `UserDefaults` 선택을 관찰하지 못하므로 명시적으로 알림 — refresh 성패와 무관.
-                    container.noteAccountSelectionChanged()
-                    // periodic refresh가 이 카드를 이미 소유했을 수 있음 — plain `refresh`는 skip되어
-                    // 선택 계정이 다음 주기까지 stale.
-                    Task { await dataStore.refreshAfterAccountSelection(providerID: providerID) }
-                }
-            } : nil,
-            accountCount: isSeparate ? 0 : accountCount
+        } account: { account in
+            accountSection(account, in: family)
+        }
+    }
+
+    private func status(for accountID: String) -> DashboardAccountStatus {
+        let queued = dataStore.isRefreshQueued(for: accountID)
+        let notice = dataStore.headerNotice(for: accountID).map {
+            concealsAccountNames ? L10n.dashboard("Current usage unavailable.") : $0
+        }
+        return DashboardAccountStatus(
+            refreshing: dataStore.refreshingProviderIDs.contains(accountID) && !queued,
+            notice: notice,
+            staleness: dataStore.stalenessHint(for: accountID),
+            onFix: { container.fixAccount(accountID, openAccount: popover.openAccounts) }
         )
-        .padding(.horizontal, 8)
-        .highPriorityGesture(providerDragGesture(for: group), including: isSeparate ? .subviews : .all)
+    }
+
+    private func accountSection(_ account: DashboardAccount, in family: DashboardFamily) -> some View {
+        let accountStatus = status(for: account.id)
+        return VStack(alignment: .leading, spacing: 0) {
+            DashboardAccountCaption(
+                account: dataStore.showsAccountEmails ? account.showingEmail : account,
+                plan: dataStore.plan(for: account.id), status: accountStatus,
+                onToggleName: { dataStore.showsAccountEmails.toggle() }
+            )
+                .highPriorityGesture(accountDragGesture(for: account, in: family), including: family.accounts.count > 1 ? .all : .subviews)
+            rows(of: account, status: accountStatus)
+        }
         .contextMenu {
-            let name = container.displayName(for: group.provider)
-            accountSwitchMenu(providerID: group.provider.id)
-            // provider section 전체 숨김(Customize provider 리스트에서 복구) — per-metric "Hide"의 상위 버전.
-            Button(L10n.dashboard("Hide %@", name)) {
-                container.setProviderEnabled(false, for: group.provider.id)
-            }
-            Divider()
-            Button(L10n.dashboard("Refresh %@", name)) {
-                Task { await container.refresh(providerID: group.provider.id, force: true) }
-            }
-            .disabled(container.accountSwitch.blocksRefresh(for: group.provider.id))
-            Button(L10n.dashboard("Customize…")) {
-                openCustomize(for: group.provider.id)
-            }
-            Divider()
-            Button(L10n.dashboard("Share Screenshot")) { _ = shareCard(group) }
+            DashboardMenu(sections: accountMenu(account, status: accountStatus), perform: perform)
         }
+        .id(account.id)
+        .opacity(activeAccountID == account.id ? 0 : 1)
+        .reorderFrame(id: account.id, in: .named(reorderSpaceName))
     }
 
-    /// provider의 branded share card를 렌더링해 PNG를 clipboard에 복사 — appearance는 popover 자신의
-    /// `colorScheme`을 사용해 화면의 카드와 일치.
-    private func shareCard(_ group: ProviderGroup) -> Bool {
-        ShareCardRenderer.share(
-            group: group,
-            dataStore: dataStore,
-            layout: layout,
-            appearance: colorScheme,
-            displayName: container.accountCardTitle(for: group.provider)
-        )
-    }
-
-    /// 행의 widget + 해석된 descriptor/data 묶음 — `dataStore.data(for:)`를 렌더당 1회만 계산해
-    /// condensing 규칙과 행이 공유. `ForEach` identity는 `PlacedWidget` 기준 유지.
-    private struct ResolvedRow: Identifiable {
-        let widget: PlacedWidget
-        let descriptor: WidgetDescriptor
-        let data: WidgetData
-        var id: PlacedWidget.ID { widget.id }
-    }
-
-    private enum DashboardMetricCardRow: Identifiable {
-        case metric(ResolvedRow)
-        case divider
-        /// provider quick-link 버튼들(#596) — caret과 함께 접히는 expander의 일부.
-        case links([ProviderLink])
-
-        var id: String {
-            switch self {
-            case .metric(let row):
-                "metric:\(row.descriptor.id)"
-            case .divider:
-                "expanded-divider"
-            case .links:
-                "provider-links"
-            }
-        }
-    }
-
-    private func container(_ group: ProviderGroup) -> some View {
-        // 행별 descriptor + data를 렌더당 1회 해석해 condensing 규칙과 행이 재사용.
-        let providerID = group.provider.id
-        let isExpanded = layout.isProviderExpanded(providerID)
-        let alwaysRows = resolvedRows(group.alwaysShownWidgets)
-        let expandedRows = resolvedRows(group.expandedWidgets)
-        // caret이 Always Visible/On Demand를 가르므로 text-row condensing은 caret을 넘지 않음 — 같은 쪽 행끼리만 tighten.
-        let condensedIDs = visibleCondensedTextRowIDs(alwaysRows: alwaysRows, expandedRows: isExpanded ? expandedRows : [])
-        let cardRows = metricCardRows(
-            alwaysRows: alwaysRows,
-            expandedRows: expandedRows,
-            hasExpandedMetrics: group.hasExpandedMetrics,
-            isExpanded: isExpanded,
-            links: group.provider.visibleLinks
-        )
-        // lifted preview와 동일한 card builder — floating chip이 live 카드와 어긋나지 않음.
-        return DashboardMetricCard {
-            // 하나의 안정된 리스트로 drag 중인 행을 caret 경계 너머에서도 유지 — 분리 loop면 `onEnded` 전에
-            // 해체되어 lift overlay가 잔존.
-            ForEach(cardRows) { cardRow in
-                switch cardRow {
-                case .metric(let entry):
-                    row(entry.descriptor, data: entry.data, in: providerID,
-                        condensedTop: condensedIDs.contains(entry.descriptor.id))
-                case .links(let links):
-                    ProviderLinksView(links: links)
-                case .divider:
-                    expandToggle(providerID: providerID, isExpanded: isExpanded)
+    private func rows(of account: DashboardAccount, status: DashboardAccountStatus) -> some View {
+        DashboardLineStack(account: account, layoutStyle: layoutStyle) { line in
+            DashboardLiveRow(
+                line: line,
+                layoutStyle: layoutStyle,
+                providerName: account.providerName,
+                accountStatus: status,
+                savedAt: dataStore.snapshots[account.id]?.refreshedAt,
+                onToggleMeterStyle: { dataStore.meterStyle.toggle() },
+                onToggleResetDisplay: { dataStore.resetDisplayMode.toggle() },
+                retainsResetClaimRow: retainedResetClaims[line.id] != nil,
+                onRetainResetClaimRow: { binding in
+                    if retainedResetClaims[line.id] != binding { retainedResetClaims[line.id] = binding }
                 }
-            }
-        }
-    }
-
-    private func resolvedRows(_ widgets: [PlacedWidget]) -> [ResolvedRow] {
-        widgets.compactMap { widget -> ResolvedRow? in
-            guard let descriptor = layout.descriptor(for: widget) else { return nil }
-            return ResolvedRow(widget: widget, descriptor: descriptor, data: dataStore.data(for: descriptor))
-        }
-    }
-
-    private func metricCardRows(
-        alwaysRows: [ResolvedRow],
-        expandedRows: [ResolvedRow],
-        hasExpandedMetrics: Bool,
-        isExpanded: Bool,
-        links: [ProviderLink]
-    ) -> [DashboardMetricCardRow] {
-        // quick-link 버튼은 접히는 expanded section 안 최하단(#596) — links만 있는 provider도 caret을 얻음.
-        let hasLinks = !links.isEmpty
-        let hasExpandedContent = hasExpandedMetrics || hasLinks
-        return alwaysRows.map(DashboardMetricCardRow.metric)
-            + (hasExpandedContent ? [.divider] : [])
-            + (isExpanded && !expandedRows.isEmpty ? expandedRows.map(DashboardMetricCardRow.metric) : [])
-            + (isExpanded && hasLinks ? [.links(links)] : [])
-    }
-
-    /// 카드 하단 중앙 caret — On Demand metric과 quick link를 펼치고 접음.
-    private func expandToggle(providerID: String, isExpanded: Bool) -> some View {
-        Button {
-            withAnimation(Motion.spring) {
-                _ = layout.setProviderExpanded(!isExpanded, for: providerID)
-            }
-        } label: {
-            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 14, height: 14)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 5)
-            .frame(maxWidth: .infinity)
+            )
+            .opacity(activeMetricID == line.id ? 0 : 1)
+            .highPriorityGesture(metricDragGesture(for: line, in: account))
             .contentShape(Rectangle())
+            .contextMenu {
+                DashboardMenu(
+                    sections: [DashboardMenus.metric(line.id, pinnable: line.descriptor.pinnable, pinned: layout.isMetricPinned(line.id))]
+                        + accountMenu(account, status: status),
+                    perform: perform
+                )
+            }
+            .reorderFrame(id: line.id, in: .named(reorderSpaceName))
         }
-        .buttonStyle(.plain)
-        .reorderFrame(id: expandedDividerID(for: providerID), in: .named(reorderSpaceName))
-        .accessibilityLabel(isExpanded ? L10n.dashboard("Show less") : L10n.dashboard("Show more"))
     }
 
-    private func expandedDividerID(for providerID: String) -> String {
-        "\(providerID)::dashboard-expanded-divider"
-    }
-
-    private func visibleCondensedTextRowIDs(alwaysRows: [ResolvedRow], expandedRows: [ResolvedRow]) -> Set<String> {
-        condensedTextRowIDs(alwaysRows).union(condensedTextRowIDs(expandedRows))
-    }
-
-    /// 이웃 인식 규칙(share-card export와 공유) — 다른 text-only 행 바로 아래의 text-only 행 ID들.
-    /// segment별 호출이라 expand caret을 넘지 않음.
-    private func condensedTextRowIDs(_ rows: [ResolvedRow]) -> Set<String> {
-        let offsets = WidgetData.condensedTextRowOffsets(in: rows.map(\.data))
-        return Set(offsets.map { rows[$0].descriptor.id })
-    }
-
-    private func row(_ descriptor: WidgetDescriptor, data: WidgetData, in providerID: String,
-                     condensedTop: Bool) -> some View {
-        let isActive = activeMetricID == descriptor.id
-        return WidgetRowView(
-            data: data,
-            onToggleResetDisplay: { dataStore.resetDisplayMode.toggle() },
-            onToggleMeterStyle: { dataStore.meterStyle.toggle() },
-            condensedTop: condensedTop
+    private func accountMenu(_ account: DashboardAccount, status: DashboardAccountStatus) -> DashboardMenus.Sections {
+        DashboardMenus.account(
+            account,
+            status: status.menuText,
+            switchTitle: switchTitle(for: account.id),
+            canRename: renaming.canRename(account.id),
+            renameDisabled: concealsAccountNames,
+            refreshDisabled: refreshBlocked([account.id])
         )
-            .contentShape(Rectangle())
-            .opacity(isActive ? 0 : 1)
-            .highPriorityGesture(metricDragGesture(for: descriptor, providerID: providerID))
-            .contextMenu { rowMenu(descriptor, providerID: providerID) }
-            .reorderFrame(id: descriptor.id, in: .named(reorderSpaceName))
     }
 
-    /// 단일 metric의 context menu — 계정 전환, Hide, star, provider refresh, Customize 진입.
-    @ViewBuilder
-    private func rowMenu(_ descriptor: WidgetDescriptor, providerID: String) -> some View {
-        accountSwitchMenu(providerID: providerID)
-        Button(L10n.dashboard("Hide")) {
-            layout.setMetricEnabled(descriptor.id, false)
-        }
-        if descriptor.pinnable {
-            Button(layout.isPinned(descriptor.id) ? L10n.dashboard("Unstar") : L10n.dashboard("Star for menu bar")) {
-                if layout.isPinned(descriptor.id) {
-                    layout.setPinned(false, for: descriptor.id)
-                } else if layout.canPin(descriptor.id) {
-                    layout.setPinned(true, for: descriptor.id)
-                } else {
-                    layout.notePinDenied(descriptor.id)
-                }
-            }
-        }
-        Divider()
-        if let provider = layout.provider(id: providerID) {
-            Button(L10n.dashboard("Refresh %@", container.displayName(for: provider))) {
-                Task { await container.refresh(providerID: providerID, force: true) }
-            }
-            .disabled(container.accountSwitch.blocksRefresh(for: providerID))
-        }
-        Button(L10n.dashboard("Customize…")) {
-            openCustomize(for: providerID)
-        }
-    }
-
-    @ViewBuilder
-    private func accountSwitchMenu(providerID: String) -> some View {
-        if let profile = AccountCardPresentationPlanner.switchProfile(
-            providerID: providerID,
-            mode: container.accountCardDisplayMode(for: ProviderAccountID.family(of: providerID)),
-            profileID: container.accountProfileID(for: providerID),
+    /// 사용 중이 아닌 등록 계정의 "Use {Provider}: {name}" — 전환 진행 중이면 비활성.
+    private func switchTitle(for accountID: String) -> (title: String, profileID: String, isDisabled: Bool)? {
+        guard let profile = AccountCardPresentationPlanner.switchProfile(
+            providerID: accountID, mode: .separateCards,
+            profileID: container.accountProfileID(for: accountID),
             profiles: container.accountProfiles.profiles
-        ) {
-            Button(L10n.dashboard("Use %@: %@", profile.family.capitalized, profile.label)) {
-                guard !container.accountSwitch.isSwitching else { return }
-                pendingAccountSwitch = profile
-            }
-            .disabled(container.accountSwitch.isSwitching
-                || container.accountProfiles.preferredProfileID(family: profile.family) == profile.id)
-            Divider()
-        }
-    }
-
-    /// dashboard에서 해당 provider의 Customize metric(L2)으로 직행 — provider 리스트를 거치지 않음.
-    /// 계정 카드는 family 화면으로 — metric 설정은 provider 단위 1벌이라 카드별 화면이 없음.
-    private func openCustomize(for providerID: String) {
-        withAnimation(Motion.modeSwitch) {
-            layout.customizeProviderID = ProviderAccountID.family(of: providerID)
-            layout.isEditing = true
-        }
-    }
-
-    private func providerDragGesture(for group: ProviderGroup) -> some Gesture {
-        reorderDragGesture(
-            id: group.provider.id,
-            coordinateSpaceName: reorderSpaceName,
-            rowFrames: rowFrames,
-            active: $activeProviderID,
-            lift: $reorderLift,
-            makeLift: { makeProviderLift(for: group, value: $0) },
-            orderedIDs: { dashboardGroups.map(\.provider.id) },
-            reorder: { layout.reorderProvider(dragged: group.provider.id, target: $0) }
+        ), container.accountProfiles.preferredProfileID(family: profile.family) != profile.id else { return nil }
+        let name = AccountNamePrivacy.displayName(
+            profile.label, email: container.accountLoginEmail(for: profile), conceals: concealsAccountNames
         )
+        return (L10n.dashboard("Use %@: %@", profile.family.capitalized, name), profile.id, container.accountSwitch.isSwitching)
     }
 
-    private func metricDragGesture(for descriptor: WidgetDescriptor, providerID: String) -> some Gesture {
+    private func refreshBlocked(_ accountIDs: [String]) -> Bool {
+        accountIDs.contains { container.accountSwitch.blocksRefresh(for: $0) }
+    }
+
+    private func perform(_ command: DashboardCommand) {
+        switch command {
+        case .refresh(let accountIDs):
+            Task {
+                for id in accountIDs where !container.accountSwitch.blocksRefresh(for: id) {
+                    _ = await container.refresh(providerID: id, force: true)
+                }
+            }
+        case .manageAccounts:
+            popover.openAccounts(nil)
+        case .open(let url):
+            NSWorkspace.shared.open(url)
+        case .editAccount(let accountID):
+            popover.openAccounts(accountID)
+        case .setPinned(let metricID, let pinned):
+            withAnimation(Motion.spring) { layout.setMetric(metricID, pinned: pinned) }
+        case .hide(let metricID):
+            withAnimation(Motion.spring) { layout.setMetricEnabled(metricID, false) }
+        case .rename(let accountID):
+            guard !concealsAccountNames else { return }
+            renaming.begin(accountID)
+        case .switchAccount(let profileID):
+            guard !container.accountSwitch.isSwitching else { return }
+            pendingAccountSwitch = container.accountProfiles.profile(id: profileID)
+        }
+    }
+
+    @discardableResult
+    private func shareScreenshot(_ familyID: String) -> Bool {
+        guard
+            let family = container.dashboardFamilies(retainingResetClaims: retainedResetClaims)
+                .first(where: { $0.id == familyID })
+        else { return false }
+        let plans = Dictionary(
+            uniqueKeysWithValues: family.accounts.compactMap { account in
+                dataStore.plan(for: account.id).map { (account.id, $0) }
+            })
+        guard
+            ShareCardRenderer.share(
+                family: family, plans: plans, appearance: colorScheme,
+                blursAccountNames: container.privacy.hideUsageWhileScreenSharing,
+                layoutStyle: layoutStyle
+            )
+        else { return false }
+        popover.shareNotice.present(true)
+        return true
+    }
+
+    // MARK: - Reorder
+
+    private static func familyFrameID(_ familyID: String) -> String { "family:\(familyID)" }
+
+    private func metricDragGesture(for line: DashboardLine, in account: DashboardAccount) -> some Gesture {
         reorderDragGesture(
-            id: descriptor.id,
+            id: line.id,
             coordinateSpaceName: reorderSpaceName,
             rowFrames: rowFrames,
             active: $activeMetricID,
             lift: $reorderLift,
-            makeLift: { makeMetricLift(for: descriptor, value: $0) },
-            orderedIDs: { metricTargetIDs(for: providerID) },
-            reorder: { target in
-                guard let group = dashboardGroups.first(where: { $0.id == providerID }) else { return false }
-                return layout.reorderDashboardMetric(
-                    dragged: descriptor.id,
-                    target: target,
-                    in: group,
-                    dividerID: expandedDividerID(for: providerID)
+            makeLift: { value in
+                let preview = DashboardMetricRow(model: line.data.dashboardRow(), chartPoints: line.data.chartPoints, layoutStyle: layoutStyle, valueTooltip: line.data.isChart ? line.data.chartNote : nil)
+                    .padding(.horizontal, DashboardGrid.cardPadding)
+                    .liftedRowSurface()
+                return ReorderLift.make(id: line.id, payload: .view(AnyView(preview)), value: value, frames: rowFrames)
+            },
+            orderedIDs: { account.lines.map(\.id) },
+            reorder: { layout.reorderMetric(dragged: line.id, target: $0, in: account.id) }
+        )
+    }
+
+    private func accountDragGesture(for account: DashboardAccount, in family: DashboardFamily) -> some Gesture {
+        reorderDragGesture(
+            id: account.id,
+            coordinateSpaceName: reorderSpaceName,
+            rowFrames: rowFrames,
+            active: $activeAccountID,
+            lift: $reorderLift,
+            makeLift: { value in
+                let preview = DashboardAccountRows(
+                    account: dataStore.showsAccountEmails ? account.showingEmail : account, plan: dataStore.plan(for: account.id),
+                    layoutStyle: layoutStyle
                 )
+                    .padding(DashboardGrid.cardPadding)
+                    .liftedRowSurface()
+                return ReorderLift.make(id: account.id, payload: .view(AnyView(preview)), value: value, frames: rowFrames)
+            },
+            orderedIDs: { family.accounts.map(\.id) },
+            reorder: { target in reorderAccount(account.id, onto: target, family: family.id) },
+            shouldHandle: { family.accounts.count > 1 }
+        )
+    }
+
+    /// 같은 프로바이더 안 계정 순서 — 등록 계정 순서 저장소를 그대로 사용.
+    private func reorderAccount(_ dragged: String, onto target: String, family: String) -> Bool {
+        guard let draggedProfile = container.accountProfileID(for: dragged),
+              let targetProfile = container.accountProfileID(for: target) else { return false }
+        return container.accountCardPresentation.reorder(
+            dragged: draggedProfile, target: targetProfile, family: family,
+            profiles: container.accountProfiles.profiles(family: family)
+        )
+    }
+
+    private func familyDragGesture(for family: DashboardFamily) -> some Gesture {
+        let frameID = Self.familyFrameID(family.id)
+        return reorderDragGesture(
+            id: frameID,
+            coordinateSpaceName: reorderSpaceName,
+            rowFrames: rowFrames,
+            active: $activeFamilyID,
+            lift: $reorderLift,
+            makeLift: { value in
+                let plans = Dictionary(uniqueKeysWithValues: family.accounts.compactMap { account in
+                    dataStore.plan(for: account.id).map { (account.id, $0) }
+                })
+                let preview = DashboardProviderSection(family: family, layoutStyle: layoutStyle) { account in
+                    DashboardAccountRows(account: dataStore.showsAccountEmails ? account.showingEmail : account,
+                                         plan: plans[account.id], layoutStyle: layoutStyle)
+                }
+                return ReorderLift.make(id: frameID, payload: .view(AnyView(preview)), value: value, frames: rowFrames)
+            },
+            orderedIDs: {
+                container.dashboardFamilies(retainingResetClaims: retainedResetClaims).map { Self.familyFrameID($0.id) }
+            },
+            reorder: { target in
+                let targetFamilyID = String(target.dropFirst("family:".count))
+                guard let draggedID = family.accounts.first?.id,
+                      let targetID = container.dashboardFamilies(retainingResetClaims: retainedResetClaims)
+                          .first(where: { $0.id == targetFamilyID })?.accounts.first?.id
+                else { return false }
+                return layout.reorderProvider(dragged: draggedID, target: targetID)
             }
-        )
-    }
-
-    private func metricTargetIDs(for providerID: String) -> [String] {
-        guard let group = dashboardGroups.first(where: { $0.provider.id == providerID }) else {
-            return []
-        }
-        return layout.dashboardMetricTargetIDs(in: group, dividerID: expandedDividerID(for: providerID))
-    }
-
-    private func makeProviderLift(for group: ProviderGroup, value: DragGesture.Value) -> ReorderLift? {
-        // floating preview는 카드 표시와 일치 — caret이 열려 있지 않으면 always-shown 행만.
-        let visibleWidgets = layout.isProviderExpanded(group.provider.id) ? group.widgets : group.alwaysShownWidgets
-        let rows = visibleWidgets.compactMap { widget -> WidgetData? in
-            guard let descriptor = layout.descriptor(for: widget) else { return nil }
-            return dataStore.data(for: descriptor)
-        }
-        return ReorderLift.make(
-            id: group.provider.id,
-            payload: .dashboardProvider(
-                provider: group.provider,
-                plan: dataStore.plan(for: group.provider.id),
-                rows: rows
-            ),
-            value: value,
-            frames: rowFrames
-        )
-    }
-
-    private func makeMetricLift(for descriptor: WidgetDescriptor, value: DragGesture.Value) -> ReorderLift? {
-        ReorderLift.make(
-            id: descriptor.id,
-            payload: .dashboardMetric(data: dataStore.data(for: descriptor)),
-            value: value,
-            frames: rowFrames
         )
     }
 }

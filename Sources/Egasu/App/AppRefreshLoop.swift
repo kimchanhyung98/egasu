@@ -51,10 +51,10 @@ enum AppRefreshLoop {
                     async let statusRefresh: Void = providerStatus.refresh(providerIDs: statusProviderIDs)
                     await dataStore.refreshAll(cadence: .regular)
                     guard !Task.isCancelled else { return }
-                    // fetch 없는 순회에서도 시간 경과에 따른 알림·일자 전환 재평가.
+                    // 조회가 없는 순회에서도 시간 경과에 따른 알림·일자 전환 재평가.
                     await dataStore.evaluateNotifications()
                     guard !Task.isCancelled else { return }
-                    // usage 완료부터 heartbeat 대기 — status 지연을 다음 갱신 주기에 더하지 않음.
+                    // 상태 조회 완료를 기다리지 않고 다음 대기 시작. 두 작업이 끝나면 다음 순회 시작.
                     if nextGeneralPassAt <= now() { nextGeneralPassAt = now().addingTimeInterval(interval) }
                     let deadline = dataStore.nextScheduledRefresh(for: .regular, at: now())
                         ?? nextGeneralPassAt

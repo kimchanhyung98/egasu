@@ -58,6 +58,10 @@ test('all tour tabs support keyboard navigation without moving the page', async 
   await first.click();
   await first.focus();
   const y = await page.evaluate(() => scrollY);
+  const mock = tour.locator('[data-tour-mock]');
+  await expect(mock).toHaveAttribute('inert', '');
+  await expect(mock).toHaveAttribute('aria-hidden', 'true');
+  await expect(mock.locator('[data-dashboard-panel="Priority"] [data-line-id][data-provider="antigravity"]')).toHaveCount(0);
   for (const stage of stages) {
     if (stage !== 'menu-bar') await page.keyboard.press('ArrowRight');
     await expect(tour).toHaveAttribute('data-tour-stage', stage);
@@ -65,11 +69,44 @@ test('all tour tabs support keyboard navigation without moving the page', async 
     await expect(tour.locator(`[data-tour-description="${stage}"]`)).toBeVisible();
     await expect(page.locator('#feature-stage')).toHaveAttribute('aria-labelledby', `tab-${stage}`);
     expect(await page.evaluate(() => scrollY)).toBe(y);
+    if (['dashboard', 'statistics', 'reset-watch', 'soft-limit'].includes(stage)) {
+      const allUsage = stage === 'reset-watch' || stage === 'soft-limit';
+      const selected = allUsage ? 'All Usage' : 'Priority';
+      const other = allUsage ? 'Priority' : 'All Usage';
+      const activeTab = mock.locator(`[role="tab"][data-dashboard-tab="${selected}"]`);
+      const inactiveTab = mock.locator(`[role="tab"][data-dashboard-tab="${other}"]`);
+      await expect(activeTab).toHaveAttribute('aria-selected', 'true');
+      await expect(activeTab).toHaveAttribute('tabindex', '0');
+      await expect(inactiveTab).toHaveAttribute('aria-selected', 'false');
+      await expect(inactiveTab).toHaveAttribute('tabindex', '-1');
+      await expect(mock.locator(`[data-dashboard-panel="${selected}"]`)).toBeVisible();
+      await expect(mock.locator(`[data-dashboard-panel="${other}"]`)).toBeHidden();
+      const copy = mock.locator('[data-priority-copy]');
+      if (allUsage) await expect(copy).toBeHidden();
+      else await expect(copy).toBeVisible();
+    }
   }
   await page.keyboard.press('Home');
   await expect(first).toBeFocused();
   await page.keyboard.press('End');
   await expect(tour.locator('[data-tour-tab="integrations"]')).toBeFocused();
+  await expect(tour.locator('[data-tour-terminal]')).toBeVisible();
+});
+
+test('all tour tabs switch on click without moving the page', async ({ page }) => {
+  await openHome(page);
+  const tour = page.locator('[data-feature-tour]');
+  await tour.locator('[data-tour-tab="menu-bar"]').scrollIntoViewIfNeeded();
+  const y = await page.evaluate(() => scrollY);
+  for (const stage of stages) {
+    const tab = tour.locator(`[data-tour-tab="${stage}"]`);
+    await tab.click();
+    await expect(tour).toHaveAttribute('data-tour-stage', stage);
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+    await expect(tour.locator(`[data-tour-description="${stage}"]`)).toBeVisible();
+    await expect(page.locator('#feature-stage')).toHaveAttribute('aria-labelledby', `tab-${stage}`);
+    expect(await page.evaluate(() => scrollY)).toBe(y);
+  }
   await expect(tour.locator('[data-tour-terminal]')).toBeVisible();
 });
 

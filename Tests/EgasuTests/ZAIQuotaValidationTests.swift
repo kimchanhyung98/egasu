@@ -65,15 +65,65 @@ final class ZAIQuotaValidationMapperTests: XCTestCase {
     }
 
     func testMixedCreditTokenAndSearchQuotasKeepSeparateWindows() throws {
-        let body = Data(#"""
-        {"data":{"limits":[
-          {"name":"CREDIT_LIMIT","unit":3,"number":5,"percentage":12},
-          {"type":"TOKENS_LIMIT","unit":6,"number":1,"percentage":34},
-          {"type":"TIME_LIMIT","usage":1000,"currentValue":7}
-        ]}}
-        """#.utf8)
+        let body = Data(
+            #"""
+            {"data":{"limits":[
+              {"name":"CREDIT_LIMIT","unit":3,"number":5,"percentage":12},
+              {"type":"TOKENS_LIMIT","unit":6,"number":1,"percentage":34},
+              {"type":"CREDIT_LIMIT","unit":5,"number":1,"percentage":80},
+              {"type":"TIME_LIMIT","usage":1000,"currentValue":7}
+            ]}}
+            """#.utf8)
 
-        XCTAssertEqual(try ZAIUsageMapper.mapQuota(body).map(\.label), ["Session", "Weekly", "Web Searches"])
+        let lines = try ZAIUsageMapper.mapQuota(body)
+        XCTAssertEqual(lines.map(\.label), ["Session", "Weekly", "Monthly", "Web Searches"])
+        XCTAssertEqual(
+            lines[2],
+            .progress(
+                label: "Monthly", used: 80, limit: 100, format: .percent,
+                periodDurationMs: ZAIUsageMapper.monthlyPeriodMs))
+        XCTAssertEqual(
+            lines[3], .progress(label: "Web Searches", used: 7, limit: 1000, format: .count(suffix: "searches")))
+    }
+
+    func testExplicitMonthInDaysAndWeeklySearchQuotaKeepTheirOwnDurations() throws {
+        let body = Data(
+            #"""
+            {"data":{"limits":[
+              {"type":"CREDIT_LIMIT","unit":5,"number":2,"percentage":99},
+              {"type":"TOKENS_LIMIT","unit":4,"number":31,"percentage":23},
+              {"type":"TIME_LIMIT","unit":6,"number":1,"usage":300,"currentValue":44}
+            ]}}
+            """#.utf8)
+        XCTAssertEqual(
+            try ZAIUsageMapper.mapQuota(body),
+            [
+                .progress(
+                    label: "Monthly", used: 23, limit: 100, format: .percent, periodDurationMs: 31 * MetricPeriod.dayMs),
+                .progress(
+                    label: "Web Searches", used: 44, limit: 300, format: .count(suffix: "searches"),
+                    periodDurationMs: MetricPeriod.weekMs)
+            ])
+    }
+
+    func testMalformedResetIsRejectedForMonthlyCreditAndSearchQuotas() throws {
+        for fields in [
+            #""type":"TOKENS_LIMIT","percentage":95"#,
+            #""type":"TIME_LIMIT","usage":100,"currentValue":95"#
+        ] {
+            for reset in [#""invalid""#, "false", "-1"] {
+                let body = Data(
+                    """
+                    {"limits":[{\(fields),"unit":5,"number":1,"nextResetTime":\(reset)}]}
+                    """.utf8)
+                XCTAssertThrowsError(try ZAIUsageMapper.mapQuota(body)) {
+                    XCTAssertEqual($0 as? ZAIUsageError, .invalidResponse)
+                }
+            }
+            let noReset = Data("{\"limits\":[{\(fields),\"unit\":5,\"number\":1}]}".utf8)
+            let nullReset = Data("{\"limits\":[{\(fields),\"unit\":5,\"number\":1,\"nextResetTime\":null}]}".utf8)
+            XCTAssertEqual(try ZAIUsageMapper.mapQuota(noReset), try ZAIUsageMapper.mapQuota(nullReset))
+        }
     }
 
     func testCreditQuotaRequiresValidPercentageAndWindow() {
@@ -172,12 +222,16 @@ final class ZAIQuotaValidationProviderTests: XCTestCase {
                 guard request.url == ZAIUsageClient.quotaURL else {
                     return HTTPResponse(statusCode: 503, headers: [:], body: Data())
                 }
-                return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"""
-                {"data":{"limits":[
-                  {"type":"CREDIT_LIMIT","unit":3,"number":5,"percentage":0},
-                  {"type":"CREDIT_LIMIT","unit":6,"number":1,"percentage":98}
-                ]}}
-                """#.utf8))
+                    return HTTPResponse(
+                        statusCode: 200, headers: [:],
+                        body: Data(
+                            #"""
+                            {"data":{"limits":[
+                              {"type":"CREDIT_LIMIT","unit":3,"number":5,"percentage":0},
+                              {"type":"CREDIT_LIMIT","unit":6,"number":1,"percentage":98},
+                              {"type":"CREDIT_LIMIT","unit":5,"number":1,"percentage":7}
+                            ]}}
+                            """#.utf8))
             }),
             pricing: { .empty }
         )
@@ -191,7 +245,9 @@ final class ZAIQuotaValidationProviderTests: XCTestCase {
         let providers = try XCTUnwrap(root["providers"] as? [String: Any])
         let zai = try XCTUnwrap(providers["zai"] as? [String: Any])
         let resources = try XCTUnwrap(zai["resources"] as? [String: Any])
-        for (key, used, duration) in [("session", 0.0, 18_000.0), ("weekly", 98.0, 604_800.0)] {
+        for (key, used, duration) in [
+            ("session", 0.0, 18_000.0), ("weekly", 98.0, 604_800.0), ("monthly", 7.0, 2_592_000.0)
+        ] {
             let resource = try XCTUnwrap(resources[key] as? [String: Any])
             XCTAssertEqual(resource["unit"] as? String, "percent")
             XCTAssertEqual(resource["used"] as? Double, used)
@@ -202,9 +258,11 @@ final class ZAIQuotaValidationProviderTests: XCTestCase {
         XCTAssertNil(snapshot.plan)
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertNil(snapshot.authenticationIssue)
-        XCTAssertNil(snapshot.liveQuotaObservedAt)
-        XCTAssertEqual(descriptors.first { $0.id == "zai.session" }?.softLimitWindow, .fiveHours)
-        XCTAssertEqual(descriptors.first { $0.id == "zai.weekly" }?.softLimitWindow, .weekly)
+        XCTAssertNotNil(snapshot.liveQuotaObservedAt)
+        let observation = try XCTUnwrap(provider.usageTimerObservations.first { $0.timerID == "zai.session" })
+        XCTAssertFalse(observation.canStart(at: Date()))
+        XCTAssertEqual(descriptors.first { $0.id == "zai.session" }?.softLimitWindows, [])
+        XCTAssertEqual(descriptors.first { $0.id == "zai.weekly" }?.softLimitWindows, [.weekly])
     }
 
     func testMissingUsageReportsInvalidResponseInsteadOfZeroMeter() async {

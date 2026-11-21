@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-/// 모든 로그 라인 앞에 붙는 grep 친화적 subsystem 태그. raw value가 bracket 텍스트이자 `os.Logger` category.
+/// 파일 로그의 대괄호 태그와 macOS 통합 로그의 category에 같은 이름 사용.
 enum LogTag: String, Sendable {
     case refresh
     case cache
@@ -17,15 +17,14 @@ enum LogTag: String, Sendable {
     case lifecycle
     case notifications
 
-    /// provider별 라인용 `[plugin:<id>]` / `[auth:<id>]` 복합 태그.
-    static func plugin(_ id: String) -> String { "plugin:\(id)" }
-    static func auth(_ id: String) -> String { "auth:\(id)" }
+    /// 계정 카드도 같은 프로바이더 태그로 기록해 파일과 통합 로그에서 계정 식별자 제외.
+    static func plugin(_ id: String) -> String { "plugin:\(ProviderAccountID.family(of: id))" }
+    static func auth(_ id: String) -> String { "auth:\(ProviderAccountID.family(of: id))" }
 }
 
-/// 통합 로깅 파사드 — `LogLevelSetting` 하나가 `os.Logger`와 `LogFile` 두 sink의 공통 level floor.
-/// floor 미달 라인은 메시지 생성·redaction 전에 드롭되고, error(severity 0)는 floor와 무관하게 항상 기록.
-/// `redactLogMessage`는 URL/body를 모름 — URL이나 응답 body를 로그하는 호출부는 `LogRedaction.redactURL`/`bodyPreview`로 선-redaction 필수.
-enum AppLog {
+/// 파일과 macOS 통합 로그에 같은 기록 수준과 민감 정보 마스킹 적용.
+/// HTTP 요청은 호출부에서 진단용 경로만 전달. 헤더와 본문은 제외.
+package enum AppLog {
     private enum Level: Int {
         case error = 0
         case warn = 1
@@ -51,7 +50,7 @@ enum AppLog {
         }
     }
 
-    /// lock으로 보호되는 level floor 캐시(severity 서수) — 어떤 isolation에서도 저렴하게 읽기 가능.
+    /// 여러 스레드에서 읽는 로그 수준을 lock으로 보호.
     private static let levelLock = NSLock()
     private nonisolated(unsafe) static var cachedSeverity = LogLevelSetting.fallback.severity
 
@@ -59,28 +58,29 @@ enum AppLog {
     private static let loggerLock = NSLock()
     private nonisolated(unsafe) static var loggers: [String: Logger] = [:]
 
-    /// file sink. 테스트에서 임시 디렉터리로 주입 가능; production은 공유 `~/Library/Logs/egasu/egasu.log` appender.
+    /// 기본 기록기는 앱 로그와 테스트 로그를 분리하며, 개별 테스트에서 임시 기록기 주입 가능.
     nonisolated(unsafe) static var sink: LogFile = .shared
 
     // MARK: - Lifecycle
 
-    /// 파일 open/trim, level 캐시 seed, 시작 라인 1줄 기록. 다른 subsystem이 로그하기 전 launch 최우선 호출 필요.
+    /// 앱 시작 시 로그 파일을 열고 저장된 기록 수준을 적용.
     static func bootstrap() {
         sink.open()
         reloadLevel()
         let level = LogLevelSetting.current
-        // `$HOME`을 `~`로 축약해 경로가 `redactLogMessage`의 `/Users/...` 마스킹을 통과하도록 함.
+        // 홈 경로를 `~`로 표시해 사용자 이름 노출 방지.
         let displayPath = (LogFile.url.path as NSString).abbreviatingWithTildeInPath
         info(LogTag.config.rawValue,
              "egasu v\(AppInfo.version) starting (level=\(level.rawValue), log=\(displayPath))")
     }
 
-    /// 저장된 level을 캐시로 재적재. Settings picker `.onChange`에서 호출되어 재시작 없이 즉시 반영.
-    static func reloadLevel() {
-        apply(LogLevelSetting.current.severity)
+    /// 앱은 현재 설정, 독립 실행하는 CLI는 설치된 앱의 설정에서 기록 수준을 읽어 적용.
+    package static func reloadLevel(defaults: UserDefaults = .standard) {
+        let level = defaults.enumValue(forKey: LogLevelSetting.key, default: LogLevelSetting.fallback)
+        apply(level.severity)
     }
 
-    /// `UserDefaults`를 우회해 level을 직접 적용하는 테스트용 seam.
+    /// 테스트에서 사용자 설정을 변경하지 않고 기록 수준 지정.
     static func reloadLevel(_ level: LogLevelSetting) {
         apply(level.severity)
     }
@@ -89,6 +89,28 @@ enum AppLog {
         levelLock.lock()
         cachedSeverity = severity
         levelLock.unlock()
+    }
+
+    /// 파일 로그에는 알려진 프로바이더 이름만 기록하고 계정 카드 식별자는 제외.
+    static func providerFamily(_ cardID: String) -> String {
+        TelemetryPrivacy.providerFamily(cardID) ?? "unknown"
+    }
+
+    /// 원문 설명 대신 오류 범주, 고정 domain, 숫자 코드만 로컬 진단에 기록.
+    static func errorDetails(_ error: Error, category: ErrorCategory? = nil) -> String {
+        let nsError = error as NSError
+        let domain: String
+        switch nsError.domain {
+        case NSURLErrorDomain, NSCocoaErrorDomain, NSPOSIXErrorDomain, NSOSStatusErrorDomain, NSMachErrorDomain,
+            "SUSparkleErrorDomain":
+            domain = nsError.domain
+        default:
+            // 임의 NSError domain에는 사용자 입력이 들어갈 수 있어 앱 오류는 선언된 타입 이름만 사용.
+            let errorType = type(of: error)
+            domain = String(reflecting: errorType).hasPrefix("Egasu.") ? String(describing: errorType) : "other"
+        }
+        let category = category ?? ErrorCategory.classify(error)
+        return "category=\(category.rawValue) error_domain=\(domain) error_code=\(nsError.code)"
     }
 
     // MARK: - Public API
@@ -108,7 +130,7 @@ enum AppLog {
     // MARK: - Emit
 
     private static func emit(_ level: Level, _ tag: String, _ message: () -> String) {
-        // floor gate 우선: 미달 라인은 메시지 생성·redaction·sink 없이 드롭, error(severity 0)는 항상 통과.
+        // 기록 대상일 때만 메시지를 생성하고 마스킹. 오류는 모든 수준에서 기록.
         levelLock.lock()
         let floor = cachedSeverity
         levelLock.unlock()

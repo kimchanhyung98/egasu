@@ -16,8 +16,10 @@ Xcode 프로젝트는 없음.
 - `Providers/` — 프로바이더별 폴더 하나씩(Claude, Codex, Cursor, Devin, Grok, OpenCode 등).
 - `Stores/` — UI가 관찰하는 변경 가능한 상태.
 - `Services/` — 공통 인프라(HTTP, 로컬 API, 프로세스 실행).
+- `Usage/` — 로컬 사용 기록 수집과 집계.
+- `Pricing/` — 모델 가격 조회와 토큰 비용 계산.
 - `Support/` — 작은 공통 헬퍼(포맷팅, 파싱, 애니메이션).
-- `Views/` — SwiftUI 화면(대시보드, Customize, 설정, 메뉴 막대 스트립).
+- `Views/` — SwiftUI 화면(대시보드, Accounts, 설정, 메뉴 막대 스트립).
 
 ## 구성 요소 연결
 
@@ -25,6 +27,9 @@ Xcode 프로젝트는 없음.
 시작 시 `ProviderCatalog`의 프로바이더 목록으로 `WidgetRegistry` 구성.
 필요한 스토어를 생성한 뒤 주기적 새로 고침과 로컬 HTTP API 시작.
 구성 요소 사이의 의존성은 여기서 전달해 개별 테스트 지원.
+프로바이더는 조회 결과를 `ProviderSnapshot`으로 반환하고 `ProviderRefreshCoordinator`는 현재 계정의 결과를 확정한 뒤 기록.
+인증 저장·계정 복구 등 개별 작업의 실패는 해당 단계에서 `AppDiagnostics`에 전달.
+메뉴 막대 앱은 공유 동의가 있을 때 `TelemetryRecorder`로 익명 집계. [로깅](/docs/logging.md) 참조.
 갱신·백그라운드 처리에는 `BackgroundWorkQueue` 하나를 공유해 요청 순서대로 실행.
 각 타이머는 예정 시각만 관리하며, 실제 작업이 실행될 때 큐 점유.
 취소된 대기는 제거하고, 시간 초과 작업의 점유는 실제 종료 뒤 해제.
@@ -104,7 +109,9 @@ Settings의 로그인·전환·제거 작업은 같은 계정 확인 처리를 �
 따라서 앱 재시작 없이 카드에 계정 변경 반영.
 등록하지 않은 설정 디렉터리에서 Claude 로그인을 발견하면 다른 로그인이 있다는 사실만 기록.
 이 로그인에 대한 카드나 레지스트리 레코드는 만들지 않음.
-대시보드는 공통 **Usage Cards** 설정에 따라 프로바이더마다 선택 계정 하나 또는 개별 계정 카드 표시.
+All Usage는 등록 계정별 사용량을 프로바이더 아래 표시.
+`AppContainer+DashboardFamilies`가 등록 계정 연결·표시 순서·공통 이력과 조회 상태를 `DashboardFamily`로 조립.
+`DashboardProviderSection`과 `DashboardGrid`는 같은 데이터를 Minimal·Cards 배치로 표시.
 등록 계정이 있는 프로바이더는 등록 계정에 연결되지 않은 실행 인스턴스를 대시보드 표시 대상에서 제외.
 표시 대상에서 제외해도 런타임 카탈로그·인증·CLI·로컬 API는 유지.
 공유 pi 로그는 어느 Claude 로그인이 만들었는지 식별할 수 없음.
@@ -128,16 +135,18 @@ egasu에 등록한 관리형 Claude 계정은 공유 홈의 로그인과 양방�
 
 UI는 관찰 가능한 몇 개의 스토어에서 읽음:
 
-- `WidgetDataStore` — 프로바이더별 최신 스냅샷, 새로 고침, 캐시 관리.
-  이 Mac의 원본 스냅샷과 다른 Mac의 기록을 합친 표시용 스냅샷을 분리.
-  합산 결과를 이 Mac의 새 원본으로 저장하지 않아 중복 집계 방지.
-- `LayoutStore` — 어떤 지표를 표시할지, 프로바이더/지표 순서, 메뉴 막대에 별표한 지표.
-  이 전부를 프로바이더당 한 벌만 저장하므로, 한 프로바이더의 모든 계정 카드가 같은 레이아웃 설정 공유.
-- 계정 표시 설정 — 공통 표시 모드 하나와 프로바이더 계열별 관리형 계정 순서를 인증·레이아웃과 분리해 로컬 저장.
-  순서는 안정적인 관리형 프로필 ID를 사용하므로 이름, 로그인이나 런타임 카드 ID가 바뀌어도 계정 위치 유지.
-  초기 개발 빌드의 계열별 모드는 `openusage.accountCardPresentation.v1`의 `modesByFamily`에 저장.
-  공통 모드를 `openusage.accountCardDisplayMode.v1`에 저장하기 전까지 이전 형식의 값을 읽기 전용 대체 값으로 사용.
-  공통 모드의 저장 키를 분리해 초기 빌드가 계정 순서를 다시 저장해도 공통 모드 유지.
+- `WidgetDataStore` — 화면·로컬 API의 표시 스냅샷, 표시 설정, 알림 입력.
+  조회·캐시·동기화 처리는 아래 사용량 처리 모듈에 위임.
+- `LayoutStore` — 지표 표시·숨김, 프로바이더·지표 순서와 Priority 고정.
+  한도 지표의 표시·순서는 계정별 저장.
+  이력·Reset Watch의 표시·순서·고정은 프로바이더 공통 설정.
+  한도 지표의 Priority 고정은 등록 계정별 설정.
+- `AccountCardPresentationStore` — 프로바이더별 계정 순서를 인증·레이아웃과 분리해 로컬 저장.
+  고정된 관리형 프로필 ID를 사용하므로 계정명, 로그인이나 런타임 카드 ID가 바뀌어도 순서 유지.
+  이전 버전의 계정 표시 방식과 계정 순서는 독립적으로 처리.
+  순서를 저장할 때는 이전 버전에서 읽을 수 있도록 유효한 계열별 모드 값을 보존.
+- `PopoverState` — 대시보드·Accounts·Settings 탐색, 계정 상세·추가 시트와 패널 표시 상태.
+- `AccountRenameStore` — 이름 편집의 초안·저장·취소와 패널 닫기 시 저장.
 - `ProviderEnablementStore` — 사용자가 켜거나 끈 프로바이더.
 - `ProviderStatusStore` — 프로바이더 계열별 공식 서버 상태.
   `AppContainer`에서 공개 상태 전용 HTTP 클라이언트 전달.
@@ -160,6 +169,42 @@ UI는 관찰 가능한 몇 개의 스토어에서 읽음:
   Mac별 기록 파일 하나를 원자적으로 교체하고 동시 접근 조정.
   화면에 기기·오류 상태 제공.
   수명 주기와 실패 테스트를 위해 파일 접근 의존성 주입.
+
+## 사용량 처리 모듈
+
+외부 호출은 `WidgetDataStore`로 유지하고 내부 상태를 역할별 모듈에서 소유.
+각 모듈의 가변 상태는 MainActor에서 처리.
+
+| 모듈 | 소유한 책임 |
+|---|---|
+| `ProviderRefreshCoordinator` | 조회 묶음, 카탈로그·인증 세대, 결과 반영, 자동 제어·텔레메트리 전달 |
+| `ProviderRefreshWork` | 큐 대기, 실제 조회 작업, 시간 초과, 계정 전환 대기 |
+| `ProviderRefreshSchedule` | 다음 조회 시각, 실패 대기, 시계 변경, 타이머 후 정기 조회 |
+| `ProviderSnapshotStore` | 계정별 캐시, 마지막 정상 값, 부분 실패의 로컬 이력, iCloud 합산·내보내기 |
+| `WidgetDataResolver` | 정규화 지표·Reset Watch를 화면 표시 데이터로 변환 |
+
+```mermaid
+flowchart LR
+    UI[WidgetDataStore] --> Refresh[ProviderRefreshCoordinator]
+    Refresh --> Work[ProviderRefreshWork]
+    Refresh --> Schedule[ProviderRefreshSchedule]
+    Work --> Runtime[ProviderRuntime]
+    Refresh --> Snapshots[ProviderSnapshotStore]
+    Snapshots --> Cache[계정별 원본 캐시]
+    Snapshots --> Export[이 Mac의 이력 내보내기]
+    Peer[다른 Mac의 이력] --> Snapshots
+    Snapshots --> Render[표시용 합산]
+    Render --> UI
+    UI --> Resolver[WidgetDataResolver]
+```
+
+큐 대기 후 조회 시작 시점의 카탈로그·인증·API 키 세대 기록.
+결과 반영 전에 같은 연결인지 재확인.
+시간 초과로 호출이 먼저 끝나도 실제 작업이 끝날 때까지 큐 점유 유지.
+계정 전환 대기는 실제 작업과 결과 반영이 모두 끝난 뒤 해제.
+실패 응답에 독립된 로컬 이력이 있으면 이력만 갱신하고 기존 한도·요금제·성공 시각 유지.
+이력만 갱신한 캐시는 정상 한도 조회로 새로 인정하지 않음.
+피어 합산 결과는 표시용으로만 반환하며 캐시·내보내기·새 한도 관측 입력에 사용하지 않음.
 
 ## 새로 고침과 상태 조회
 
@@ -200,7 +245,9 @@ Mac 로컬 소스는 기기별 파일을 합산할 수 있지만, Cursor처럼 �
 
 ## 알림
 
-`NotificationSettingsStore`는 기존 사용량 알림 3종과 Codex Reset Watch의 개별 설정 저장.
+`NotificationSettingsStore`는 사용량 알림 4종과 Codex Reset Watch의 개별 설정 저장.
+`DisplaySettingsStore`는 공통 임계값과 사용 속도 표시 설정 저장.
+`PriorityLimits`의 기본값은 Warning 30%·Critical 10%이며 Priority 데이터 모델과 할당량 알림에서 같은 값 사용.
 Settings의 권한 요청과 거부 안내는 이 스토어의 활성 설정을 함께 확인.
 
 ```mermaid
@@ -213,7 +260,8 @@ flowchart LR
     Watch --> Notifications
 ```
 
-`QuotaNotificationEvaluator`는 계정·지표별 잔량과 사용 속도의 상태 변화 판정.
+`QuotaNotificationEvaluator`는 계정·지표별 잔량, 사용 속도, 기간 종료 전 남은 할당량의 상태 변화 판정.
+권한 확인 대기 중에도 계정 연결·프로바이더 활성화·개별 알림 설정의 현재 상태 재확인.
 할당량 알림의 표시명은 카드에 연결된 등록 계정명을 매번 조회하며, 이름 변경·계정 전환 후에도 현재 매핑 사용.
 등록 계정 연결이 없는 카드는 기존 프로바이더 표시명 유지.
 `CodexResetWatchNotificationEvaluator`는 계정과 무관한 공개 예측·예정 이벤트 판정.
@@ -232,15 +280,31 @@ Reset Watch 평가기의 입력은 조회 결과인 `receive`와 설정 변경�
 
 `AppNotifications.shared.post`는 두 판정 모듈이 공유하는 macOS 알림 진입점.
 권한 요청·재허용 확인, 배너·사운드·그룹화, 오류 기록, 무효 요청 제거와 알림 클릭 처리 담당.
+권한 요청 결과를 재사용하더라도 매 전달 전 시스템의 현재 허용 상태 확인.
 실제 배너 표시와 권한 창은 별도의 앱 실행 검증 대상.
-사용자 설정과 알림 조건은 [알림 설정](/docs/settings.md#알림)과 [Reset Watch 알림](/docs/providers/codex.md#reset-watch-알림) 참조.
+사용자 설정과 알림 조건은 [알림 설정](/docs/settings.md#alerts)과 [Reset Watch 알림](/docs/providers/codex.md#reset-watch-알림) 참조.
 
 ## 계정 표시
 
 프로바이더 순서와 계정 순서는 각각 별도 관리.
-Customize는 레이아웃의 표준 프로바이더 계열 순서, Settings는 계열 내부 관리형 계정 순서 편집.
-표시 계층은 두 순서와 표시 모드를 합성하며, Dashboard와 Share Screenshot은 같은 최종 카드 목록과 제목 사용.
-제품 동작은 [대시보드](/docs/dashboard.md)와 [설정](/docs/settings.md) 참조.
+Accounts는 레이아웃의 프로바이더 계열 순서와 계열 내부 관리형 계정 순서 편집.
+All Usage는 두 순서를 합성해 등록 계정별 행과 현재 계정명 표시.
+메뉴 막대는 모든 표시 계정에서 Running Out·Priority·Pinned Only 중 선택한 [표시 기준](/docs/menu-bar.md#표시-항목)에 따라 지표 선택.
+All Usage의 프로바이더 섹션 공유 이미지는 표시 중인 계정·지표 순서와 해당 탭의 레이아웃 사용.
+제품 동작은 [대시보드](/docs/dashboard.md)와 [계정](/docs/accounts.md) 참조.
+
+## 소프트 한도
+
+프로바이더는 `WidgetDescriptor.supportingSoftLimit`에 해당 구독 한도가 가질 수 있는 주간·월간 기간을 선언.
+같은 지표가 요금제에 따라 기간이 달라지면 두 기간을 선언하고 매퍼가 반환한 실제 주기로 판별.
+월간 전용 응답 필드처럼 기간이 보장되는 지표만 길이가 없는 응답 허용.
+
+베타 업데이트와 소프트 한도가 모두 켜지면 대시보드는 설정과 일치하는 진행 막대에 기준선 표시.
+`SoftLimitObservation`은 계정 카드 하나에서 유효한 실측 지표의 최대 사용률로 도달 여부 판정.
+캐시에서 복원한 오래된 값, 추정 한도와 이미 초기화된 기간은 제어 판단에서 제외.
+`SoftLimitCoordinator`는 새 조회 결과를 받고, 조회 실패나 계정·인증 변경 시 해당 관측을 무효화.
+실행 중 작업의 취소에는 계정과 구독 한도 범위가 검증된 별도 제어 연결 필요.
+[사용자 설정](/docs/settings.md#소프트-한도)과 [CLI의 시작 전 검사](/docs/cli.md#소프트-한도-확인) 참조.
 
 ## 프로세스 실행과 Codex 자동화
 
@@ -250,20 +314,24 @@ Customize는 레이아웃의 표준 프로바이더 계열 순서, Settings는 �
 이미 부모와 분리된 자손의 강제 종료까지 보장하지 않음.
 
 `StreamingProcessRunner`는 비동기 명령의 실시간 출력·출력 상한·취소·소유 프로세스 그룹 정리 담당.
-Codex 주간 타이머는 이 실행기 사용.
+구독 타이머는 이 실행기 사용.
 두 실행기는 반환 방식과 출력·취소 계약이 달라 별도 인터페이스 유지.
 
 `CodexControlConnection`은 직접 소켓·심볼릭 링크 검증과 WebSocket·RPC 연결 수명 관리.
 `CodexSoftLimitAdapter`는 설정 홈에 따라 소켓 경로를 정하고, 이 연결로 활성 대화 조회와 turn 취소 수행.
 제목 생성용 임시 작업은 Adapter에서 제외.
 계정·quota pool 범위를 검증하지 못하는 현재 앱에서는 `SoftLimitCoordinator`가 자동 취소 차단.
-사용자 설정과 지원 범위는 [설정](/docs/settings.md) 참조.
 
-`CodexWeeklyTimerRouter`는 사용 설정된 계정과 조회 결과 연결, `CodexWeeklyTimerCoordinator`는 계정별 전송·검증 조정.
+`UsageTimerRouter`는 사용 설정된 계정과 조회 결과 연결, `UsageTimerCoordinator`는 계정·한도 풀·기간별 전송·검증 조정.
+Codex·Claude·Kimi·Antigravity·Z.ai의 adapter가 프로바이더별 관측·인증 검증·서버 재확인 연결.
+`UsageTimerProviding`은 최신 관측·실행 준비·서버 재확인 연결.
+`UsageTimerAttemptStore`는 계정·풀·기간별 전송 예약·상한을 저장하며 기존 Codex 주간 기록 유지.
 `CodexWeeklyTimerExecutor`는 CLI 설정 검증·임시 인증 작성·메시지 실행·갱신 인증 회수·정리 담당.
 설정 검증 전에 인증 정보를 쓰지 않으며, 검증한 설정 배열을 실제 메시지 실행에도 전달.
 임시 홈의 파일·환경 격리는 `CodexWeeklyTimerWorkspace` 담당.
-전송 조건과 CLI 호환 범위는 [Codex](/docs/providers/codex.md) 참조.
+`UsageTimerCLIExecutor`는 Claude·Kimi·Antigravity·Z.ai의 공식 CLI 실행·임시 환경·작업 폴더 정리 담당.
+실제 프로세스 시작 성공 여부로 전송 예약의 실행 여부 판정.
+전송 조건과 CLI 호환 범위는 [구독 타이머](/docs/refreshing.md#구독-타이머-자동-시작) 참조.
 
 ## Tokscale CLI 경계
 
@@ -387,7 +455,9 @@ Settings 카드는 보관된 출력 표시.
 대시보드 콘텐츠는 키 입력을 받을 수 있는 커스텀 `NSPanel`에 표시.
 패널은 `.nonactivatingPanel` 스타일과 `canBecomeKey = true` 사용.
 열 때 `makeKeyAndOrderFront`를 호출해 앱 전체 활성화 없이 키 입력 대상이 되도록 처리.
-키보드 탐색과 Settings의 단축키 입력도 이 패널에서 처리.
+키보드 탐색, Accounts 이름 입력·시트와 Settings 단축키 입력도 이 패널에서 처리.
+`PanelHeightController`는 현재 화면의 바·본문 높이와 화면의 사용 가능한 영역으로 패널 높이 결정.
+`PopoverScrollView`는 화면별 본문 높이와 스크롤 경계를 전달.
 `App/`이 AppKit 계층을 소유하고 내부에 SwiftUI 뷰 표시.
 
 ## 플랫폼 지원
@@ -396,7 +466,6 @@ egasu는 macOS 15(Sequoia) 이상에서 실행.
 최신 SDK로 빌드하면서 macOS 15도 지원.
 macOS 26(Tahoe)에서 사용하는 Liquid Glass 등 최신 UI API는 이전 버전에서 대응 기능으로 대체.
 공통 컨트롤의 버전 분기는 `Support/LiquidGlassFallbacks.swift`에서 관리.
-특수 효과인 `Support/TooMuchTransparencyEffect.swift`도 별도 버전 분기 사용.
 
 릴리스 빌드(`script/release.sh`)는 유니버설 바이너리(arm64 + x86_64)를 제공하므로, DMG 하나로 Apple Silicon과 Intel Mac 모두에서 네이티브 실행.
 개발 빌드(`script/build_and_run.sh`)는 빌드하는 Mac의 아키텍처만 생성해 빌드 시간 절약.

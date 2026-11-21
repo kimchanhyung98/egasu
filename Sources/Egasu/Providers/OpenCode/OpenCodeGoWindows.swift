@@ -97,7 +97,7 @@ enum OpenCodeGoWindowMath {
         var month = nowComponents.month! // 1부터 시작.
         var start = anchoredMonthStart(year: year, month: month, anchor: anchor)
 
-        // anchor day-of-month가 오늘보다 뒤면 이번 달 anchored start가 미래에 위치 — 실제 live cycle은 지난달 시작
+        // 이번 달의 기준 시작 시각이 미래이면 지난달의 시작 시각 사용.
         if ms(start) > nowMs {
             (year, month) = shiftMonth(year: year, month: month, delta: -1)
             start = anchoredMonthStart(year: year, month: month, anchor: anchor)

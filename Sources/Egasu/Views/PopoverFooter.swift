@@ -1,44 +1,133 @@
+import AppKit
 import SwiftUI
 
-/// 고정 팝오버 푸터 chrome: 앱 정보, 리프레시 상태, 대시보드 액션, 복사 확인.
-/// 슬라이드 중 양쪽 페이지가 같은 푸터를 그리도록 목적지 screen 기준 렌더링.
+/// 화면별 푸터 — 대시보드는 버전·다음 업데이트 + 원형 ⋯ 메뉴, Accounts 목록은 계정 추가 버튼.
+/// 화면 전환 중 각 페이지에 해당 화면의 푸터 표시.
 struct PopoverFooter: View {
     @Environment(AppContainer.self) private var container
+    @Environment(PopoverState.self) private var popover
+    @Environment(WidgetDataStore.self) private var dataStore
+    @Environment(LayoutStore.self) private var layout
+    @Environment(UpdaterController.self) private var updater
+    @Environment(\.colorScheme) private var colorScheme
+    private let screen: PopoverScreen
 
-    let screen: PopoverScreen
-    let layout: LayoutStore
-    let dataStore: WidgetDataStore
-    let horizontalPadding: CGFloat
-    let onHeightChange: (PopoverScreen, CGFloat) -> Void
+    private static let issuesURL = URL(string: "https://github.com/kimchanhyung98/egasu/issues/new/choose")!
+
+    init?(screen: PopoverScreen, accountDetailID: String?) {
+        guard screen == .dashboard || (screen == .accounts && accountDetailID == nil) else { return nil }
+        self.screen = screen
+    }
 
     @ViewBuilder
     var body: some View {
         Group {
-            if screen == .customize {
-                EmptyView()
-            } else {
+            if screen == .dashboard {
                 HStack(alignment: .center, spacing: 8) {
                     footerIdentity
                     Spacer(minLength: 8)
-                    HeaderView(screen: screen)
+                    if popover.dashboardTab == .priority, liveBoard.hasRows { copyPriorityButton }
+                    optionsMenu
                 }
+                .padding(.horizontal, 4)
+            } else {
+                Button {
+                    popover.isAddingAccount = true
+                } label: {
+                    Text(L10n.accounts("Add New Account")).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
             }
         }
-        .padding(.horizontal, horizontalPadding)
-        .padding(.vertical, 12)
+        .frame(minHeight: 26)
+        .padding(.horizontal, PanelMetrics.margin)
+        .padding(.top, DashboardContentView.barGap)
+        .padding(.bottom, PanelMetrics.margin)
         .frame(maxWidth: .infinity)
-        .barGlass()
-        .onGeometryChange(for: CGFloat.self) { proxy in proxy.size.height } action: { height in
-            onHeightChange(screen, height)
-        }
         .overlay(alignment: .top) {
-            if screen == .dashboard, layout.shareConfirmation {
+            if screen == .dashboard, popover.shareNotice.value {
                 shareCopiedPill
                     .offset(y: -34)
             }
         }
-        .animation(Motion.spring, value: layout.shareConfirmation)
-        .animation(Motion.spring, value: layout.shareConfirmationTrigger)
+        .animation(Motion.spring, value: popover.shareNotice.value)
+        .animation(Motion.spring, value: popover.shareNotice.trigger)
+    }
+
+    private var liveBoard: PriorityBoard {
+        dataStore.priorityBoard(
+            accounts: container.dashboardAccounts(), pinned: layout.priorityPinIDs, now: Date(),
+            hidingEmails: true
+        )
+    }
+
+    /// Priority 탭을 이미지로 복사 — 누른 순간의 보드를 읽음.
+    private var copyPriorityButton: some View {
+        Button {
+            guard ShareCardRenderer.copy(PriorityShareCard(
+                board: liveBoard, now: Date(), appearance: colorScheme,
+                blursAccountNames: container.privacy.hideUsageWhileScreenSharing
+            )) else { return }
+            popover.shareNotice.present(true)
+        } label: {
+            Image(systemName: "doc.on.doc")
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 26, height: 26)
+                .background(Theme.controlFill, in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L10n.dashboard("Copy Priority Screenshot"))
+    }
+
+    /// 원형 ⋯ 버튼 뒤 Options 메뉴. Check for Updates…는 항상 표시하고 Sparkle이 확인할 수 없으면 비활성.
+    /// Accounts·Settings 단축키는 라벨 — 메뉴가 닫혀 있으면 `PopoverKeyReader`가 먼저 처리해 이중 발화 없음.
+    /// ⌘Q는 다른 소유자가 없어 메뉴 항목이 직접 처리.
+    private var optionsMenu: some View {
+        Menu {
+            Button { popover.toggle(.accounts) } label: {
+                Label(L10n.common("Accounts"), systemImage: "person.crop.circle")
+            }
+            .keyboardShortcut(.return, modifiers: [])
+
+            Button { popover.toggle(.settings) } label: {
+                Label(L10n.common("Settings"), systemImage: "gearshape")
+            }
+            .keyboardShortcut(",")
+
+            Divider()
+
+            Button { updater.checkForUpdates() } label: {
+                Label(L10n.dashboard("Check for Updates…"), systemImage: "arrow.triangle.2.circlepath")
+            }
+            .disabled(!updater.canCheckForUpdates)
+
+            Divider()
+
+            Link(destination: Self.issuesURL) {
+                Label(L10n.dashboard("Report an Issue…"), systemImage: "ladybug")
+            }
+
+            Button { AboutPanel.present() } label: {
+                Label(L10n.dashboard("About egasu"), systemImage: "info.circle")
+            }
+            Button(role: .destructive) { NSApplication.shared.terminate(nil) } label: {
+                Label(L10n.dashboard("Quit egasu"), systemImage: "power")
+            }
+            .keyboardShortcut("q")
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 26, height: 26)
+                .background(Theme.controlFill, in: Circle())
+                .contentShape(Circle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel(L10n.dashboard("Options"))
     }
 
     private var shareCopiedPill: some View {
@@ -46,24 +135,18 @@ struct PopoverFooter: View {
             systemImage: "checkmark.circle.fill",
             text: L10n.dashboard("Copied to clipboard"),
             tint: Theme.positive,
-            trigger: layout.shareConfirmationTrigger
+            trigger: popover.shareNotice.trigger
         )
     }
 
+    /// 버전 위, 다음 업데이트 카운트다운 아래.
     private var footerIdentity: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("egasu \(AppInfo.version)")
-            if layout.pinLimitNotice != nil {
-                Text(L10n.customize("Up to %lld stars per provider", LayoutStore.maxPinsPerProvider))
-                    .foregroundStyle(Theme.notice)
-                    .denyShake(trigger: layout.pinNoticeShakeTrigger, shakeOnAppear: true)
-            } else {
-                nextUpdateButton
-            }
+            nextUpdateButton
         }
         .font(.caption2)
         .foregroundStyle(.secondary)
-        .animation(Motion.spring, value: layout.pinLimitNotice)
     }
 
     private var nextUpdateButton: some View {
@@ -76,8 +159,7 @@ struct PopoverFooter: View {
                         .monospacedDigit()
                         .contentTransition(.numericText())
                     if isUpdating {
-                        ProgressView()
-                            .controlSize(.mini)
+                        MotionAwareProgressView(controlSize: .mini)
                     }
                 }
             }

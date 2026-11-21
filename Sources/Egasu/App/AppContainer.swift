@@ -33,21 +33,19 @@ final class AppContainer {
     let softLimitCoordinator: SoftLimitCoordinator
     /// Settings opt-in 토글과 앱 종료 flush가 공유하는 일간 rollup.
     let telemetry: TelemetryRecorder
-    /// SwiftUI surface와 AppKit panel이 공유하는 Popover 투명도 단일 상태.
-    let transparency: PopoverTransparencyStore
+    let popover: PopoverState
     /// 캡처 중 strip을 wordmark로 교체하도록 status item updater가 참조.
     let privacy: MenuBarPrivacyStore
-    /// 1회성 onboarding 상태. 신규 설치에서만 `FirstRunSeeder`가 pending 표시 — 기존 설치는 hint 카드 미노출.
-    let onboarding: OnboardingStore
     /// Codex reset credit claim 라우터. 카드별 자체 auth store·usage client 경유 —
     /// 되돌릴 수 없는 claim이 항상 카드가 표시하는 계정의 credential을 사용하도록 보장.
     let codexResetClaim: CodexResetClaimRouter
-    private let codexWeeklyTimer: CodexWeeklyTimerRouter
+    private let usageTimer: UsageTimerRouter
     /// 런치 패스가 reconcile한 account registry. 계정 이름은 여기서 render 시점에 해석.
     let accounts: ProviderAccountsStore
     /// 관리형 launch-profile registry. 런치 account 패스와 Settings 계정 UI가 공유하는 단일 인스턴스.
     let accountProfiles: AccountProfilesStore
     let accountSwitch = AccountSwitchCoordinator()
+    let claudeShellMigrationIssue: LocalizedMessage?
     let accountCardPresentation: AccountCardPresentationStore
     /// 카드 id → 관리형 profile id 매핑. label 편집과 무관하게 안정 — dashboard가 Settings와 같은 profile 선택 가능.
     private var accountProfileIDsByCardID: [String: String]
@@ -55,16 +53,16 @@ final class AppContainer {
     /// 현재 provider catalog를 만든 account 입력 — 동일 입력의 재조립은 in-flight refresh를 무효화하지 않음.
     private var accountAssembly: ProviderAccountAssembly
     /// 온디맨드 credential 재탐지(Customize "Reset All")용으로 보관하는 provider runtime 목록.
-    private var providers: [ProviderRuntime]
+    private(set) var providers: [ProviderRuntime]
     /// 127.0.0.1:6736의 읽기 전용 로컬 usage API (포트 점유 시 조용히 비활성).
     private let localAPI: LocalUsageServer
     /// 주기 refresh와 shared-home 재인증 reconciliation task 수명.
     private let refreshTask = AccountRefreshTaskHolder()
-    private let weeklyTimerCheckTask = AccountRefreshTaskHolder()
+    private let usageTimerCheckTask = AccountRefreshTaskHolder()
     private let workQueue: BackgroundWorkQueue
     /// Codex 인증·usage refresh와 분리된 공개 Reset Watch 조회 주기.
     let resetWatchCoordinator: CodexResetWatchCoordinator
-    private(set) var nextCodexTimerCheckAt: Date?
+    private(set) var nextUsageTimerCheckAt: Date?
     /// Settings·주기·수동 refresh가 같은 외부 Claude 로그인을 동시에 귀속하지 않도록 직렬화.
     private var isReconcilingExternalClaudeAuthentication = false
     @ObservationIgnored private var authenticationReconciliationWaiters: [CheckedContinuation<Void, Never>] = []
@@ -77,7 +75,8 @@ final class AppContainer {
 
     /// `isFreshInstall`은 `SettingsMigrator.migrate()` 실행 전 호출자 캡처 필수 — migrator의 schema stamp가
     /// defaults 도메인을 non-empty로 변경. `AppDelegate` 참고.
-    init(isFreshInstall: Bool = false) {
+    init(isFreshInstall: Bool = false, labsAvailable: Bool, claudeShellMigrationIssue: LocalizedMessage? = nil) {
+        self.claudeShellMigrationIssue = claudeShellMigrationIssue
         let workQueue = BackgroundWorkQueue.shared
         self.workQueue = workQueue
         // login-shell 환경 off-main 선캡처 — Finder/Dock 런치에서도 shell profile의 provider key 해석 가능.
@@ -116,20 +115,33 @@ final class AppContainer {
         let apiKeyProviders = providers.compactMap { $0 as? any APIKeyManaging }
         let enablement = ProviderEnablementStore()
         let notificationSettings = NotificationSettingsStore()
-        let softLimitSettings = SoftLimitSettingsStore()
+        let softLimitSettings = SoftLimitSettingsStore(labsAvailable: labsAvailable)
         let layout = LayoutStore(
             registry: registry,
+            knownCardIDs: enablement.knownIDs.union(enablement.enabledIDs ?? []),
+            profileIDsByCardID: initialProfileIDs,
             isProviderEnabled: { [enablement] in enablement.isEnabled($0) }
         )
+        let displaySettings = DisplaySettingsStore()
+        self.popover = PopoverState(displaySettings: displaySettings)
+        // 이전 메뉴 막대 별표를 Priority 고정으로 1회 이전 — 메뉴 막대는 Priority 모드로 유지.
+        if let migrated = layout.migrateMenuBarStars(isHiddenOnCard: Self.hidesMetric(_:onCard:)) {
+            displaySettings.menuBarSelection = .priority
+            displaySettings.menuBarLimit = MenuBarLimit(count: min(max(migrated, 3), 5))
+            AppLog.info(.config, "menu bar stars migrated to \(migrated) Priority pins")
+        }
+        let snapshotCache = ProviderSnapshotCache()
         let dataStore = WidgetDataStore(
             registry: registry,
             providers: providers,
+            cache: snapshotCache,
             isProviderEnabled: { [enablement] in enablement.isEnabled($0) },
             orderedDescriptors: { [layout] in layout.orderedRenderedDescriptors() },
             notificationSettings: { notificationSettings },
             softLimitSettings: { softLimitSettings },
             providerIdentityKeys: accountAssembly.identityKeysByCard,
             familyTotalHistoryCardIDs: accountAssembly.familyTotalHistoryCardIDs,
+            displaySettings: displaySettings,
             workQueue: workQueue
         )
         // 익명 opt-in telemetry. 상태는 전용 UserDefaults suite에 격리 — 공유 선택과 install id가 앱 설정 변경과 독립.
@@ -150,9 +162,7 @@ final class AppContainer {
                 return TelemetryConfigSnapshot.collapsingAccountCards(
                     enabledProviders: dataStore.knownProviderIDs.filter { enablement.isEnabled($0) },
                     enabledMetricIDs: layout.placed.map(\.descriptorID).filter(providerOn),
-                    pinnedMetricIDs: layout.pinnedMetricIDs.filter(providerOn),
-                    expandedMetricIDs: layout.expandedMetricIDs.filter(providerOn),
-                    menuBarStyle: layout.menuBarStyle.rawValue,
+                    pinnedMetricIDs: layout.priorityPinIDs.filter(providerOn),
                     providerIDForMetric: { layout.registry.descriptor(id: $0)?.providerID }
                 )
             }
@@ -195,12 +205,10 @@ final class AppContainer {
             resetWatchNotifications?.configurationDidChange()
         }
         // 신규 설치는 최소 구성으로 시작 — enabled-provider 목록 seed. 이후 런치에서는 no-op.
-        let onboarding = OnboardingStore()
         self.seedTask = FirstRunSeeder.seedIfNeeded(
             isFreshInstall: isFreshInstall,
             providers: providers,
             enablement: enablement,
-            onboarding: onboarding,
             workQueue: workQueue
         )
         // 업데이트로 추가된 provider도 첫 런치에 동일한 credential 탐지 적용. 처음 보는 provider가 없으면 no-op.
@@ -210,7 +218,6 @@ final class AppContainer {
             workQueue: workQueue
         )
         self.providers = providers
-        self.onboarding = onboarding
         self.registry = registry
         self.enablement = enablement
         self.apiKeyProviders = apiKeyProviders
@@ -220,11 +227,12 @@ final class AppContainer {
             settings: softLimitSettings,
             adapters: [CodexSoftLimitAdapter()],
             isProviderEnabled: { [enablement] in enablement.isEnabled($0) },
+            isQuotaInvalidated: { snapshotCache.isQuotaInvalidated(providerID: $0, observedAt: $1) },
             workQueue: workQueue
         )
         self.softLimitCoordinator = softLimitCoordinator
-        let codexWeeklyTimer = CodexWeeklyTimerRouter(
-            providers: providers.compactMap { $0 as? CodexProvider },
+        let usageTimer = UsageTimerRouter(
+            providers: providers,
             identityKeys: accountAssembly.identityKeysByCard,
             isProviderEnabled: { [enablement] in enablement.isEnabled($0) },
             report: { [weak dataStore] in dataStore?.setAutomationWarning($1, for: $0) },
@@ -233,21 +241,21 @@ final class AppContainer {
             },
             workQueue: workQueue
         )
-        self.codexWeeklyTimer = codexWeeklyTimer
-        dataStore.isRefreshSuspended = { [weak codexWeeklyTimer] in codexWeeklyTimer?.isRunning(providerID: $0) == true }
+        self.usageTimer = usageTimer
+        dataStore.isRefreshSuspended = { [weak usageTimer] in usageTimer?.isRunning(providerID: $0) == true }
         dataStore.onRefreshOutcome = { [weak telemetry, weak softLimitCoordinator] providerID, outcome, category, trigger, degraded in
             telemetry?.record(providerID: providerID, outcome: outcome, category: category, trigger: trigger, degraded: degraded)
             if outcome == .failed { softLimitCoordinator?.invalidate(providerID: providerID) }
         }
         softLimitSettings.onChange = { [weak softLimitCoordinator] in softLimitCoordinator?.settingsDidChange() }
-        dataStore.onQuotaInvalidated = { [weak softLimitCoordinator, weak codexWeeklyTimer] providerIDs in
-            softLimitCoordinator?.settingsDidChange()
-            codexWeeklyTimer?.invalidate(providerIDs: providerIDs)
+        dataStore.onQuotaInvalidated = { [weak softLimitCoordinator, weak usageTimer] providerIDs in
+            softLimitCoordinator?.accountsDidChange(providerIDs)
+            usageTimer?.invalidate(providerIDs: providerIDs)
         }
-        dataStore.onFreshSnapshot = { [weak softLimitCoordinator, weak codexWeeklyTimer] snapshot, descriptors, trigger in
+        dataStore.onFreshSnapshot = { [weak softLimitCoordinator, weak usageTimer] snapshot, descriptors, trigger in
             softLimitCoordinator?.receive(snapshot, descriptors: descriptors)
             Task { [weak softLimitCoordinator] in await softLimitCoordinator?.check(providerID: snapshot.providerID) }
-            codexWeeklyTimer?.receive(snapshot, trigger: trigger)
+            usageTimer?.receive(snapshot, trigger: trigger)
         }
         self.layout = layout
         self.dataStore = dataStore
@@ -268,7 +276,6 @@ final class AppContainer {
             workQueue: workQueue
         )
 
-        self.transparency = PopoverTransparencyStore()
         self.privacy = MenuBarPrivacyStore()
         self.localAPI = LocalUsageServer(state: { [layout, enablement, dataStore] in
             LocalUsageAPI.State(
@@ -284,11 +291,9 @@ final class AppContainer {
         }
         resetWatchCoordinator.observeActivity { [layout, resetWatchNotifications] in
             resetWatchNotifications.configurationDidChange()
-            let notificationsEnabled = resetWatchNotifications.isEnabled()
-            let metricEnabled = layout.orderedRefreshDescriptors().contains {
-                ProviderAccountID.canonicalMetricID($0.id) == "codex.resetWatch"
-            }
-            return metricEnabled || notificationsEnabled
+            return Self.needsResetWatch(
+                layout: layout, notificationsEnabled: resetWatchNotifications.isEnabled()
+            )
         }
         self.refreshTask.task = AppRefreshLoop.start(
             dataStore: dataStore,
@@ -298,15 +303,15 @@ final class AppContainer {
                 dataStore.knownProviderIDs.filter { enablement.isEnabled($0) }
             },
             reconcileAccounts: { [weak self] in
-                _ = await self?.reconcileExternalClaudeAuthenticationAndRefreshCatalog()
+                await self?.reconcileExternalClaudeAuthenticationAndRefreshCatalog()
             }
         )
-        self.weeklyTimerCheckTask.task = CodexWeeklyTimerCheckSchedule.start(
-            scheduleChanged: { [weak self] in self?.nextCodexTimerCheckAt = $0 }
-        ) { [weak codexWeeklyTimer, weak dataStore] in
-            guard let codexWeeklyTimer, let dataStore else { return }
-            AppLog.info(.refresh, "Checking Codex weekly reset times (every 15 minutes)")
-            await CodexWeeklyTimerCheckSchedule.refreshAccounts(codexWeeklyTimer.requestScheduledCheck()) { providerID in
+        self.usageTimerCheckTask.task = UsageTimerCheckSchedule.start(
+            scheduleChanged: { [weak self] in self?.nextUsageTimerCheckAt = $0 }
+        ) { [weak usageTimer, weak dataStore] in
+            guard let usageTimer, let dataStore else { return }
+            AppLog.info(.refresh, "Checking usage timer reset times (every 15 minutes)")
+            await UsageTimerCheckSchedule.refreshAccounts(usageTimer.requestScheduledCheck()) { providerID in
                 await dataStore.refresh(providerID: providerID, force: true, trigger: .weeklyTimerCheck)
             }
         }
@@ -323,14 +328,14 @@ final class AppContainer {
     }
 
     var hasRunningBackgroundProcesses: Bool {
-        tokscaleSync.isRunning || codexWeeklyTimer.hasPendingWork
+        tokscaleSync.isRunning || usageTimer.hasPendingWork
     }
 
     func shutdownBackgroundProcesses() async {
         refreshTask.task?.cancel()
-        weeklyTimerCheckTask.task?.cancel()
+        usageTimerCheckTask.task?.cancel()
         softLimitCoordinator.stop()
-        async let timer: Void = codexWeeklyTimer.shutdown()
+        async let timer: Void = usageTimer.shutdown()
         async let tokscale: Void = tokscaleSync.shutdown()
         _ = await (timer, tokscale)
     }
@@ -345,72 +350,13 @@ final class AppContainer {
 
     /// 관리형 profile 기반 카드의 profile label; 아니면 `nil`.
     func accountProfileLabel(for cardID: String) -> String? {
-        guard let profileID = accountProfileIDsByCardID[cardID] else { return nil }
+        guard let profileID = accountProfileID(for: cardID) else { return nil }
         return accountProfiles.profile(id: profileID)?.label
     }
 
     func accountProfileID(for cardID: String) -> String? {
         accountProfileIDsByCardID[cardID]
-    }
-
-    /// family의 현재 선택된 관리형 profile이 backing하는 표시 카드.
-    func preferredAccountCardID(for family: String, among cardIDs: [String]) -> String? {
-        guard let profileID = accountProfiles.preferredProfileID(family: family) else { return nil }
-        return cardIDs.first { accountProfileIDsByCardID[$0] == profileID }
-    }
-
-    /// family의 표시 카드 — 저장된 선택과 동일 profile 우선, 없으면 Settings 선택·공유 runtime·첫 카드 순.
-    func visibleAccountCardID(for family: String, among cardIDs: [String], stored: String) -> String? {
-        DashboardUsageAccountSelection.visibleCardID(
-            for: family,
-            among: cardIDs,
-            stored: stored,
-            preferredCardID: preferredAccountCardID(for: family, among: cardIDs),
-            profileIDsByCardID: accountProfileIDsByCardID
-        )
-    }
-
-    /// family에 속한 표시 가능 카드 — 등록 계정이 있으면 미등록 로그인 제외.
-    func accountCardIDs(for family: String, among orderedIDs: [String]) -> [String] {
-        orderedAccountCardIDs(orderedIDs).filter { ProviderAccountID.family(of: $0) == family }
-    }
-
-    /// dashboard 계정 선택이 바뀔 때마다 증가 — 선택은 `UserDefaults`에 저장돼 관찰되지 않으므로,
-    /// 메뉴 바 strip이 이 값을 읽어 refresh 성패와 무관하게 선택 계정으로 다시 그림.
-    private(set) var accountSelectionRevision = 0
-
-    func noteAccountSelectionChanged() {
-        accountSelectionRevision &+= 1
-    }
-
-    /// 메뉴 바의 선택 카드 필터 — 대시보드 표시 모드와 무관하게 provider당 카드 1장 유지.
-    func collapsingAccountCards(_ orderedIDs: [String], selectionByFamily: [String: String]) -> [String] {
-        let availableCards = orderedAccountCardIDs(orderedIDs)
-        let availableIDs = Set(availableCards)
-        var visible = orderedIDs.filter { availableIDs.contains($0) }
-        for family in AccountProfilesStore.supportedFamilies {
-            let cards = availableCards.filter { ProviderAccountID.family(of: $0) == family }
-            guard cards.count > 1 else { continue }
-            visible = DashboardUsageAccountSelection.visibleCardIDs(
-                orderedCardIDs: visible,
-                familyCardIDs: Set(cards),
-                selectedCardID: visibleAccountCardID(
-                    for: family,
-                    among: cards,
-                    stored: selectionByFamily[family] ?? ""
-                )
-            )
-        }
-        return visible
-    }
-
-    /// 계정 selector에 표시할 이름 — 규칙은 `DashboardUsageAccountSelection.optionTitle`.
-    func accountOptionTitle(for cardID: String) -> String {
-        DashboardUsageAccountSelection.optionTitle(
-            cardID: cardID,
-            profileLabel: accountProfileLabel(for: cardID),
-            accountName: accounts.resolvedDisplayName(cardID: cardID)
-        )
+            ?? AccountCardPresentationPlanner.snapshotProfileID(for: cardID, profiles: accountProfiles.profiles)
     }
 
     /// 전환 대상의 조회·주간 타이머·재조회와 이미 시작한 인증 반영의 종료 대기.
@@ -421,25 +367,19 @@ final class AppContainer {
         repeat {
             await accountSwitch.waitForRefreshes(providerIDs: providerIDs)
             await dataStore.waitForAccountRefreshes(providerIDs: providerIDs)
-            await codexWeeklyTimer.waitForPendingWork(providerIDs: providerIDs)
+            await usageTimer.waitForPendingWork(providerIDs: providerIDs)
             await dataStore.waitForAccountRefreshes(providerIDs: providerIDs)
         } while accountSwitch.hasPendingRefreshes(providerIDs: providerIDs)
-            || codexWeeklyTimer.hasPendingWork(providerIDs: providerIDs)
+            || usageTimer.hasPendingWork(providerIDs: providerIDs)
     }
 
-    /// Settings 계정 전환 성공 시 dashboard selector를 1회 갱신.
-    /// 메뉴 바 star는 family 설정이라 재지정 불필요 — 표시 값만 선택 카드를 따라감.
-    /// 이후 dashboard picker 변경은 view 전용 — terminal 전환 없음.
-    func syncDashboardUsageAccount(to profile: AccountProfile) async {
-        guard let cardID = DashboardUsageAccountSelection.selectAfterAccountSwitch(
-            family: profile.family,
-            profileID: profile.id,
-            availableCardIDs: registry.providers.map(\.id)
-        ) else {
+
+    func refreshSharedRuntime(afterSwitchingTo profile: AccountProfile) async {
+        guard registry.providers.contains(where: { $0.id == profile.family }) else {
+            AppLog.error(.config, "account switch could not find the shared \(profile.family) usage runtime")
             return
         }
-        noteAccountSelectionChanged()
-        await dataStore.refreshAfterAccountSelection(providerID: cardID)
+        await dataStore.refreshAfterAccountSelection(providerID: profile.family)
     }
 
     /// Settings의 관리형 profile 변경 직후 account 카드 추가/제거 반영.
@@ -453,6 +393,12 @@ final class AppContainer {
             accountProfiles: accountProfiles
         )
         guard assembly != accountAssembly else {
+            popover.reconcileAccountDetail(
+                in: registry,
+                previousProfileIDsByCard: accountProfileIDsByCardID,
+                nextProfileIDsByCard: accountProfileIDsByCardID,
+                registeredProfiles: accountProfiles.profiles
+            )
             return refreshReauthenticatedAccounts(alreadyScheduledCardIDs: addedIDs)
         }
         accountAssembly = assembly
@@ -472,8 +418,14 @@ final class AppContainer {
 
         registry = nextRegistry
         providers = nextProviders
+        layout.replaceRegistry(nextRegistry, profileIDsByCardID: nextProfileIDs)
+        popover.reconcileAccountDetail(
+            in: nextRegistry,
+            previousProfileIDsByCard: accountProfileIDsByCardID,
+            nextProfileIDsByCard: nextProfileIDs,
+            registeredProfiles: accountProfiles.profiles
+        )
         accountProfileIDsByCardID = nextProfileIDs
-        layout.replaceRegistry(nextRegistry)
         dataStore.replaceProviderCatalog(
             registry: nextRegistry,
             providers: nextProviders,
@@ -492,8 +444,8 @@ final class AppContainer {
             providers: nextProviders.compactMap { $0 as? CodexProvider },
             identityKeys: assembly.identityKeysByCard
         )
-        codexWeeklyTimer.reconfigure(
-            providers: nextProviders.compactMap { $0 as? CodexProvider }, identityKeys: assembly.identityKeysByCard
+        usageTimer.reconfigure(
+            providers: nextProviders, identityKeys: assembly.identityKeysByCard
         )
         var refreshes: [String: Task<Void, Never>] = [:]
         for providerID in addedIDs where enablement.isEnabled(providerID) {
@@ -510,11 +462,10 @@ final class AppContainer {
     /// 사용자 새로 고침 — shared-home 재인증과 catalog binding을 먼저 반영한 뒤 usage 조회.
     func refreshAll(force: Bool = false) async {
         guard !isRefreshingAll, !accountSwitch.isSwitching else { return }
-        let switchGeneration = accountSwitch.generation
         isRefreshingAll = true
         defer { isRefreshingAll = false }
         let resetWatchTask = force ? Task { await resetWatchCoordinator.refreshNow() } : nil
-        let reconciliationError = await ProviderRefreshContext.$isManual.withValue(true) {
+        await ProviderRefreshContext.$isManual.withValue(true) {
             await reconcileExternalClaudeAuthenticationAndRefreshCatalog()
         }
         guard !accountSwitch.isSwitching else { return }
@@ -524,9 +475,6 @@ final class AppContainer {
             force: force
         )
         await dataStore.refreshAll(force: force, trigger: .manual)
-        Self.applyExternalClaudeReconciliationError(
-            reconciliationError, to: dataStore, accountSwitch: accountSwitch, startedAt: switchGeneration
-        )
         await statusRefresh
         await resetWatchTask?.value
     }
@@ -534,10 +482,8 @@ final class AppContainer {
     /// 단일 카드 사용자 새로 고침 — Claude managed binding을 먼저 반영.
     func refresh(providerID: String, force: Bool = false) async -> WidgetDataStore.RefreshOutcome {
         guard !accountSwitch.blocksRefresh(for: providerID) else { return .skipped }
-        let switchGeneration = accountSwitch.generation
-        var reconciliationError: String?
         if ProviderAccountID.family(of: providerID) == "claude" {
-            reconciliationError = await ProviderRefreshContext.$isManual.withValue(true) {
+            await ProviderRefreshContext.$isManual.withValue(true) {
                 await reconcileExternalClaudeAuthenticationAndRefreshCatalog()
             }
         }
@@ -548,16 +494,16 @@ final class AppContainer {
             force: force
         )
         let outcome = await dataStore.refresh(providerID: providerID, force: force, trigger: .manual)
-        Self.applyExternalClaudeReconciliationError(
-            reconciliationError, to: dataStore, accountSwitch: accountSwitch, startedAt: switchGeneration
-        )
         await statusRefresh
         return outcome
     }
 
-    @discardableResult
-    private func reconcileExternalClaudeAuthentication() async -> Result<Bool, Error> {
-        guard !accountSwitch.isSwitching, !isReconcilingExternalClaudeAuthentication else { return .success(false) }
+    private func reconcileExternalClaudeAuthentication() async -> Result<Bool, Error>? {
+        while ProviderRefreshContext.isManual && isReconcilingExternalClaudeAuthentication && !Task.isCancelled {
+            await withCheckedContinuation { authenticationReconciliationWaiters.append($0) }
+        }
+        guard !Task.isCancelled, !accountSwitch.isSwitching, !isReconcilingExternalClaudeAuthentication
+        else { return nil }
         isReconcilingExternalClaudeAuthentication = true
         defer {
             isReconcilingExternalClaudeAuthentication = false
@@ -565,9 +511,9 @@ final class AppContainer {
             authenticationReconciliationWaiters.removeAll()
             for waiter in waiters { waiter.resume() }
         }
-        guard let ticket = await workQueue.acquire("accounts:reconcile") else { return .success(false) }
+        guard let ticket = await workQueue.acquire("accounts:reconcile") else { return nil }
         defer { workQueue.finish(ticket) }
-        guard !Task.isCancelled, !accountSwitch.isSwitching else { return .success(false) }
+        guard !Task.isCancelled, !accountSwitch.isSwitching else { return nil }
         do {
             switch try await AccountCredentialImporter()
                 .reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: accountProfiles) {
@@ -588,18 +534,20 @@ final class AppContainer {
         }
     }
 
-    /// 외부 Claude 로그인 반영 — 실패 시 log와 함께 수동 refresh가 카드에 표시할 친화적 메시지 반환.
-    @discardableResult
-    func reconcileExternalClaudeAuthenticationAndRefreshCatalog() async -> String? {
-        switch await reconcileExternalClaudeAuthentication() {
-        case .success(true):
-            refreshAccountCatalog()
-            return nil
-        case .success(false):
-            return nil
+    /// 사용량 조회 결과와 별도로 외부 Claude 로그인 반영 상태 게시.
+    func reconcileExternalClaudeAuthenticationAndRefreshCatalog() async {
+        let generation = accountSwitch.generation
+        guard let result = await reconcileExternalClaudeAuthentication(), !Task.isCancelled else { return }
+        let failure: ProviderRefreshFailure?
+        switch result {
+        case .success(let updated):
+            if updated { refreshAccountCatalog() }
+            failure = nil
         case .failure(let error):
-            return Self.externalClaudeReconciliationMessage(for: error)
+            failure = Self.externalClaudeReconciliationFailure(for: error)
         }
+        Self.applyExternalClaudeReconciliationError(
+            failure, to: dataStore, accountSwitch: accountSwitch, startedAt: generation)
     }
 
     /// account runtime은 한 provider의 대체 view — Customize 마스터 토글은 family 전체 카드를 함께 on/off.
@@ -612,13 +560,6 @@ final class AppContainer {
         } else {
             enablement.setEnabled(enabled, for: providerID)
         }
-    }
-
-    /// Customize "Reset All"의 enablement 절반 — 첫 런치 credential 탐지 재실행.
-    /// `FirstRunSeeder.reseed`에 위임; await 가능한 탐지 task 반환.
-    @discardableResult
-    func reseedEnabledProviders() -> Task<Void, Never> {
-        FirstRunSeeder.reseed(providers: providers, enablement: enablement, workQueue: workQueue)
     }
 
     static func accountProfileIDsByCardID(

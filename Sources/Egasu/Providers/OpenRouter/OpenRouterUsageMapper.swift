@@ -1,14 +1,14 @@
 import Foundation
 
-/// OpenRouter `/credits`·`/key` payload에서 metric line 생성.
-/// endpoint별 독립 매핑 — 한쪽이 실패해도 다른 쪽의 행은 그대로 사용 가능.
+/// OpenRouter `/credits`·`/key` 응답을 공통 지표로 변환.
+/// 응답을 독립 매핑하여 한쪽 실패에도 다른 쪽 지표 유지.
 enum OpenRouterUsageMapper {
-    /// 모든 payload는 `{ "data": { ... } }` 형태로 감싸져 옴.
+    /// 응답의 최상위 `data` 객체 추출.
     static func dataObject(_ body: Data) -> [String: Any]? {
         ProviderParse.jsonObject(body)?["data"] as? [String: Any]
     }
 
-    /// `/credits`에서 Credits meter + Balance 생성 — 유효한 total이 없으면 빈 배열.
+    /// 달러 기준 크레딧 사용량·잔액 생성. 누적 사용액·충전액이 올바르지 않거나 잔액이 유한하지 않으면 빈 배열.
     static func creditsLines(from data: [String: Any]) -> [MetricLine] {
         guard let totalUsage = ProviderParse.number(data["total_usage"]),
               let totalCredits = ProviderParse.number(data["total_credits"]) else { return [] }
@@ -16,7 +16,7 @@ enum OpenRouterUsageMapper {
         guard balance.isFinite else { return [] }
 
         var lines: [MetricLine] = []
-        // Credits meter는 양수 상한일 때만 의미 있음(무충전 계정은 0 보고) — 해당 계정도 Balance는 표시
+        // 충전액이 양수일 때 사용량 지표 추가. 미충전 계정도 잔액 지표 생성.
         if totalCredits > 0 {
             lines.append(.progress(label: "Credits", used: totalUsage, limit: totalCredits, format: .dollars))
         }
@@ -28,14 +28,14 @@ enum OpenRouterUsageMapper {
         return lines
     }
 
-    /// `/key`에서 period spend + per-key cap(선택) 생성, tier는 plan 이름으로 노출.
+    /// 키의 기간별 지출·선택적 상한·요금제 이름 생성.
     static func keyMetrics(
         from data: [String: Any], includePeriodUsage: Bool = true
     ) -> (plan: String?, lines: [MetricLine], hasInvalidKeyLimit: Bool) {
         var lines: [MetricLine] = []
         var hasInvalidKeyLimit = false
 
-        // period spend는 로컬 로그 scan이 아닌 API 직접 값 — 실측 0은 측정된 0으로 유지
+        // API가 보고한 기간 지출 사용. 명시적 0은 유지하고 누락 값은 생략.
         if includePeriodUsage {
             appendSpend(data["usage_daily"], label: "Today", into: &lines)
             appendSpend(data["usage_weekly"], label: "This Week", into: &lines)

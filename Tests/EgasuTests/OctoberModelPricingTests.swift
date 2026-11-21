@@ -130,16 +130,17 @@ final class OctoberModelPricingTests: XCTestCase {
         }
     }
 
-    func testGooglePromotionalRatesAndOfficialRoutingAliases() throws {
+    func testGoogleListRatesAndOfficialRoutingAliases() throws {
         let cases: [(String, Double, Double, Double)] = [
-            ("gemini-4-argon", 2, 0.1, 10),
-            ("gemini-3.8-flash", 0.75, 0.075, 3.75),
-            ("gemini-3.6-flash", 0.75, 0.075, 3.75),
+            ("gemini-4-argon", 4, 0.2, 20),
+            ("gemini-3.8-flash", 1.5, 0.15, 7.5),
+            ("gemini-3.6-flash", 1.5, 0.15, 7.5),
             ("gemini-3.5-flash-lite", 0.3, 0.03, 2.5)
         ]
         for (model, input, read, output) in cases {
             let rates = try XCTUnwrap(pricing.resolve(model: model), model)
             XCTAssertEqual(rates.inputPerMillion, input, model)
+            XCTAssertEqual(rates.cacheWritePerMillion, input, model)
             XCTAssertEqual(rates.cacheReadPerMillion, read, model)
             XCTAssertEqual(rates.outputPerMillion, output, model)
         }

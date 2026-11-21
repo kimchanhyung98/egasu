@@ -3,7 +3,7 @@ import Foundation
 /// family의 공식 로그인 CLI(`claude auth login`, `codex login`)를 한 home(Sign-In Workspace 또는 첫 계정의 Shared Runtime Home)에 고정해 실행.
 /// child는 parent 환경에서 모든 provider auth override 제거 — export된 API 키·token의 로그인 계정 위장 금지. 공식 로그인 전용 — workspace의 일반 세션 시작 금지.
 struct AccountSignInLauncher: Sendable {
-    init() {}
+    var homeDirectory = FileManager.default.homeDirectoryForCurrentUser
 
     /// 존재 시 저장된 subscription 로그인을 override하는 Claude 변수 — 로그인 child에서만 제거, parent shell 불변.
     static let claudeAuthEnvironmentRemovals = [
@@ -35,10 +35,10 @@ struct AccountSignInLauncher: Sendable {
         }
     }
 
-    /// 로그인 child의 환경 — auth override 제거, family home 변수 고정.
+    /// 로그인 자식 프로세스 환경 — 인증 덮어쓰기 변수 제거, home이 nil이면 기본 홈 사용.
     static func loginEnvironment(
         family: String,
-        home: String,
+        home: String?,
         base: [String: String] = ProcessInfo.processInfo.environment
     ) -> [String: String] {
         var environment = base
@@ -60,11 +60,19 @@ struct AccountSignInLauncher: Sendable {
     /// `usesLoginShellPATH`: Finder/Dock launch는 launchd PATH만 상속(`~/.local/bin`·Homebrew·npm prefix 부재) — 실행 파일 해석 전 login-shell PATH 적용.
     func runLogin(
         family: String,
-        home: String,
+        home: String?,
         baseEnvironment: [String: String] = ProcessInfo.processInfo.environment,
         usesLoginShellPATH: Bool = true
     ) async throws -> Int32 {
-        var environment = Self.loginEnvironment(family: family, home: home, base: baseEnvironment)
+        var loginHome = home
+        if family == "claude", home == nil {
+            loginHome = try ClaudeSharedLoginRoute.resolve(
+                homeDirectory: homeDirectory,
+                files: LocalTextFileAccessor(),
+                environment: ProcessEnvironmentReader(processEnvironment: baseEnvironment)
+            ).configDirectory
+        }
+        var environment = Self.loginEnvironment(family: family, home: loginHome, base: baseEnvironment)
         if usesLoginShellPATH,
            let shellPATH = LoginShellEnvironment.shared.value(for: "PATH")?.nilIfEmpty {
             environment["PATH"] = shellPATH

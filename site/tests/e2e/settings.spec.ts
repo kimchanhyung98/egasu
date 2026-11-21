@@ -1,55 +1,84 @@
-import { test, expect, openHome, openSettings, chooseSetting } from './fixtures';
+import { test, expect, openHome, openSettings, chooseSetting, allUsage, accountDetail, openAccounts } from './fixtures';
 
-test('dashboard account selection stays separate from confirmed active-account switching', async ({ page }) => {
+test('Accounts confirms switching and preserves both registered account limits', async ({ page }) => {
   await openHome(page);
   const app = page.locator('[data-mock]');
-  await openSettings(page);
-  await chooseSetting(page, 'Usage Cards', 'Single Card');
-  await app.getByRole('button', { name: 'Back', exact: true }).click();
-  await chooseSetting(page, 'Claude Account', 'Account 2');
-  await expect(app.locator('[data-card="claude-account-2"]')).toBeVisible();
-  await expect(app.locator('[data-card="claude-account-1"]')).toBeHidden();
-  await openSettings(page);
-  await expect(app.getByRole('switch', { name: 'Claude Account 1', exact: true })).toHaveAttribute('aria-checked', 'true');
-  const second = app.getByRole('switch', { name: 'Claude Account 2', exact: true });
+  await accountDetail(page, 'claude', 'account-2');
+  const second = app.locator('[data-scr="account:claude:account-2"] [data-account-switch]');
   await second.click();
-  const dialog = page.getByRole('dialog', { name: 'Switch Account?' });
+  const dialog = app.getByRole('dialog', { name: 'Switch Account?' });
   await expect(dialog).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(dialog).toBeHidden();
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(second).toBeFocused();
   await expect(second).toHaveAttribute('aria-checked', 'false');
   await second.click();
   await dialog.getByRole('button', { name: 'Switch Account', exact: true }).click();
   await expect(second).toHaveAttribute('aria-checked', 'true');
-  await expect(app.getByRole('switch', { name: 'Claude Account 1', exact: true })).toHaveAttribute('aria-checked', 'false');
   await page.reload();
-  await expect(app.locator('[data-card="claude-account-2"]')).toBeVisible();
-  await openSettings(page);
-  await expect(app.getByRole('switch', { name: 'Claude Account 2', exact: true })).toHaveAttribute('aria-checked', 'true');
+  await allUsage(page);
+  for (const accountID of ['account-1', 'account-2']) {
+    const card = app.locator(`[data-card="claude-${accountID}"]`);
+    await expect(card).toBeVisible();
+    await expect(card.locator('[data-row="claude.session"]')).toBeVisible();
+  }
+  await expect(app.locator('[data-card="claude-account-2"]')).toHaveAttribute('data-inactive-account', 'false');
+});
+
+test('reordering accounts updates All Usage and survives a reload', async ({ page }) => {
+  await openHome(page);
+  await openAccounts(page);
+  const app = page.locator('[data-mock]');
+  const accountRows = app.locator('[data-account-list-row][data-provider="claude"]');
+  await app.locator('[data-drag-account="claude:account-2"]').dragTo(app.locator('[data-drag-account="claude:account-1"]'));
+  await expect(accountRows.first()).toHaveAttribute('data-account-id', 'account-2');
+  await expect(accountRows.locator('[data-in-use="claude"]:visible')).toHaveAttribute('data-account-id', 'account-1');
+  await app.getByRole('button', { name: 'Back', exact: true }).click();
+  await page.reload();
+  await allUsage(page);
+  const cards = app.locator('[data-family="claude"] [data-card]');
+  await expect(cards.first()).toHaveAttribute('data-card', 'claude-account-2');
+  await expect(cards.last()).toHaveAttribute('data-card', 'claude-account-1');
 });
 
 test('display settings and separate account cards survive a reload', async ({ page }) => {
   await openHome(page);
   const app = page.locator('[data-mock]');
   await openSettings(page);
-  await chooseSetting(page, 'Usage Cards', 'Separate Cards');
   await chooseSetting(page, 'Theme', 'Dark');
-  await chooseSetting(page, 'Density', 'Default');
+  await chooseSetting(page, 'All Usage Layout', 'Cards');
   await chooseSetting(page, 'Time Format', '12-hour');
   await chooseSetting(page, 'Show Usage As', 'Left');
   await chooseSetting(page, 'Reset Times', 'Countdown');
   await app.getByRole('switch', { name: 'Show Total Spend', exact: true }).click();
   await page.reload();
   await expect(app).toHaveAttribute('data-theme', 'dark');
-  await expect(app).toHaveAttribute('data-density', 'default');
+  await expect(app).toHaveAttribute('data-layout', 'cards');
   await expect(app).toHaveAttribute('data-mode', 'left');
   await expect(app).toHaveAttribute('data-reset', 'relative');
-  await expect(app).toHaveAttribute('data-usage-cards', 'separate');
+  await allUsage(page);
   await expect(app.locator('.am-spend-card')).toBeHidden();
-  await expect(app.locator('[data-provider="claude"] [data-account-title]')).toHaveText(['Claude: Account 1', 'Claude: Account 2']);
+  await expect(app.locator('[data-family="claude"] .am-account-caption [data-account-name]')).toHaveText(['Account 1', 'Account 2']);
   await expect(app.locator('[data-card="claude-account-1"]')).toBeVisible();
   await expect(app.locator('[data-card="claude-account-2"]')).toBeVisible();
+});
+
+test('menu bar preview applies pinned selection and filters text values in Bars mode', async ({ page }) => {
+  await openHome(page);
+  const app = page.locator('[data-mock]');
+  await accountDetail(page, 'claude');
+  const detail = app.locator('[data-scr="account:claude:account-1"]');
+  await detail.locator('[data-pin="claude.today"]').click();
+  await detail.locator('[data-pin="claude.fable"]').click();
+  await app.locator('.am-scr:not([hidden]) .am-back').click();
+  await app.locator('.am-scr:not([hidden]) .am-back').click();
+  await openSettings(page);
+  await chooseSetting(page, 'Menu Bar Items', 'Pinned Only');
+  await expect(app.locator('.am-menu-preview-item')).toHaveCount(2);
+  await chooseSetting(page, 'Icon Style', 'Bars');
+  await expect(app.locator('.am-menu-preview-item')).toHaveCount(1);
+  await expect(app.locator('.am-menu-preview-bar')).toHaveAttribute('aria-label', 'Claude Fable 100%');
+  await chooseSetting(page, 'Max Items In Menu Bar', 'App Icon Only');
+  await expect(app.locator('[data-menu-bar-preview]')).toHaveText('◉');
 });
 
 test('settings saved before the egasu rename are restored and remain editable', async ({ page }) => {
@@ -65,16 +94,17 @@ test('settings saved before the egasu rename are restored and remain editable', 
   const app = page.locator('[data-mock]');
   await expect(app).toHaveAttribute('data-theme', 'dark');
   await expect(app).toHaveAttribute('data-mode', 'left');
+  await allUsage(page);
   await expect(app.locator('[data-card="claude-account-2"]')).toBeVisible();
-  await expect(app.locator('[data-card="claude-account-1"]')).toBeHidden();
+  await expect(app.locator('[data-card="claude-account-1"]')).toBeVisible();
   await openSettings(page);
   await chooseSetting(page, 'Theme', 'Light');
-  await expect(app.getByRole('switch', { name: 'Claude Account 1', exact: true })).toHaveAttribute('aria-checked', 'true');
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('openusage.site.preview.v1')!).preferences))
-    .toMatchObject({ theme: 'Light', showUsageAs: 'Left', usageCards: 'Single Card' });
+    .toMatchObject({ theme: 'Light', showUsageAs: 'Left', allUsageLayout: 'Minimal' });
   await page.reload();
   await expect(app).toHaveAttribute('data-theme', 'light');
   await expect(app).toHaveAttribute('data-mode', 'left');
+  await allUsage(page);
   await expect(app.locator('[data-card="claude-account-2"]')).toBeVisible();
 });
 
@@ -95,7 +125,7 @@ test('invalid saved settings recover with defaults and a visible explanation', a
   const app = page.locator('[data-mock]');
   await expect(app).toHaveAttribute('data-mode', 'used');
   await expect(app.getByRole('status')).toContainText('Saved preview settings could not be loaded');
-  await expect(app.locator('[data-card="claude-account-1"]')).toBeVisible();
+  await expect(app.locator('[data-dashboard-panel="Priority"]')).toBeVisible();
 });
 
 test('blocked storage reports unsaved changes while the current preview still works', async ({ page }) => {
@@ -110,4 +140,67 @@ test('blocked storage reports unsaved changes while the current preview still wo
   await expect(app.getByRole('status')).toContainText('Preview changes could not be saved');
   await page.reload();
   await expect(app).toHaveAttribute('data-theme', 'light');
+});
+
+test('active account switch announces unavailability and keeps focus after switching', async ({ page }) => {
+  await openHome(page);
+  const app = page.locator('[data-mock]');
+  await accountDetail(page, 'claude');
+  const firstDetail = app.locator('[data-scr="account:claude:account-1"]');
+  const first = firstDetail.getByRole('switch', { name: 'Use This Account' });
+  const second = app.locator('[data-scr="account:claude:account-2"] [data-account-switch]');
+  const dialog = app.locator('[data-account-dialog]');
+  await expect(first).toHaveAttribute('aria-disabled', 'true');
+  await expect(first).toHaveJSProperty('disabled', false);
+  await first.press('Enter');
+  await expect(first).toBeFocused();
+  await expect(dialog).toBeHidden();
+
+  await firstDetail.locator('.am-back').click();
+  await app.locator('[data-account-list] .am-open[data-go="account:claude:account-2"]').click();
+  await expect(second).toHaveAttribute('aria-disabled', 'false');
+  await second.click();
+  await dialog.getByRole('button', { name: 'Switch Account', exact: true }).click();
+  await expect(second).toHaveAttribute('aria-checked', 'true');
+  await expect(second).toHaveAttribute('aria-disabled', 'true');
+  await expect(second).toHaveJSProperty('disabled', false);
+  await expect(second).toBeFocused();
+  await expect(firstDetail.locator('[data-account-switch]')).toHaveAttribute('aria-disabled', 'false');
+});
+
+test('dashboard account display describes its localized action while preserving the visible accessible name', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('openusage.site.preview.v1', JSON.stringify({
+    preferences: { language: '한국어' }, activeAccounts: {},
+  })));
+  await openHome(page);
+  await allUsage(page);
+  const app = page.locator('[data-mock]');
+  const cardName = app.locator('[data-card="claude-account-1"] [data-toggle-account-name]');
+  const priorityName = app.locator('[data-priority-key="claude.weekly@account-1"] [data-toggle-account-name]');
+  const showEmails = '대시보드에 예시 이메일 주소를 표시합니다.';
+  const showNames = '대시보드에 계정 이름을 표시합니다.';
+  const masked = 'Privacy Mode에서는 이름과 이메일 주소가 가려집니다.';
+  await expect(cardName).toHaveAccessibleDescription(showEmails);
+  await expect(cardName).toHaveAccessibleName((await cardName.textContent())!.trim());
+  await cardName.press('Enter');
+  await expect(cardName).toHaveAccessibleName('claude.account-1@example.com');
+  await expect(cardName).toHaveAccessibleDescription(showNames);
+  await expect(cardName).toBeFocused();
+
+  await app.locator('button[role="tab"][data-dashboard-tab="Priority"]').click();
+  await expect(priorityName).toHaveAccessibleDescription(showNames);
+  await priorityName.press('Enter');
+  await expect(priorityName).toHaveAccessibleDescription(showEmails);
+  await expect(priorityName).toBeFocused();
+
+  await app.locator('[data-options]').click();
+  await app.locator('.am-optmenu [data-go="settings"]').click();
+  await app.locator('button[data-settings-tab="Advanced"]').click();
+  await app.locator('[data-setting="privacyMode"]').click();
+  await app.locator('[data-scr="settings"] .am-back').click();
+  await expect(priorityName).toHaveAccessibleName('••••@example.com');
+  await expect(priorityName).toHaveAccessibleDescription(masked);
+  await allUsage(page);
+  await expect(cardName).toHaveAccessibleName('••••@example.com');
+  await expect(cardName).toHaveAccessibleDescription(masked);
 });

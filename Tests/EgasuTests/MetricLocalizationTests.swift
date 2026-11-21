@@ -123,7 +123,7 @@ final class MetricLocalizationTests: XCTestCase {
         L10n.withLanguage(.korean) {
             XCTAssertEqual(Formatters.resetRelativeLabel(until: now.addingTimeInterval(3600), now: now), "1시간 후 초기화")
             XCTAssertEqual(Formatters.deadlineLabel("Limit", at: now.addingTimeInterval(3600), mode: .relative, now: now), "1시간 후 한도 도달")
-            XCTAssertEqual(Formatters.compactDuration(4 * 24 * 3600), "4일 0시간")
+            XCTAssertEqual(Formatters.compactDuration(4 * 24 * 3600), "4일")
         }
         L10n.withLanguage(.japanese) {
             XCTAssertEqual(Formatters.resetRelativeLabel(until: now.addingTimeInterval(3600), now: now), "1時間後にリセット")

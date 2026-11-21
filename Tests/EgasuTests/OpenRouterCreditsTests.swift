@@ -191,6 +191,40 @@ final class OpenRouterCreditsProviderTests: XCTestCase {
         XCTAssertEqual(balance["unit"] as? String, "usd")
     }
 
+    func testCreditExhaustionKeepsLevelAlertsWithoutBurningFast() async throws {
+        let suite = "OpenRouterCreditsNotificationsTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = NotificationSettingsStore(defaults: defaults)
+        settings.warning = true
+        settings.critical = true
+        settings.closeToRunningOut = true
+        settings.useItOrLoseIt = true
+        let http = FakeHTTPClient(response: creditsResponse(#"{"total_credits":100,"total_usage":60}"#))
+        let provider = makeProvider(http: http)
+        let descriptor = try XCTUnwrap(provider.widgetDescriptors.first { $0.id == "openrouter.credits" })
+        var posted: [String] = []
+        let store = WidgetDataStore(
+            registry: .from([provider]), providers: [provider],
+            cache: ProviderSnapshotCache(userDefaults: defaults), defaults: defaults,
+            orderedDescriptors: { [descriptor] }, notificationSettings: { settings },
+            postNotification: { id, _, _, _, _ in posted.append(id); return true }
+        )
+        for used in [60, 75, 95, 100, 103] {
+            http.response = creditsResponse("{\"total_credits\":100,\"total_usage\":\(used)}")
+            _ = await store.refresh(providerID: "openrouter", force: true)
+            await store.evaluateNotifications(now: Date())
+            let data = store.data(for: descriptor)
+            XCTAssertTrue(data.hasData)
+            XCTAssertEqual(data.used, Double(used))
+            XCTAssertNil(data.resetsAt)
+            XCTAssertNil(data.periodDurationMs)
+            if used >= 100 { XCTAssertEqual(data.meterState(), .spent) }
+        }
+
+        XCTAssertEqual(posted, ["openrouter.healthyToClose", "openrouter.underTenPercent"])
+    }
+
     private func makeProvider(http: any HTTPClient) -> OpenRouterProvider {
         OpenRouterProvider(
             authStore: OpenRouterAuthStore(files: FakeFiles(), environment: FakeEnvironment(["OPENROUTER_API_KEY": "fixture"])),

@@ -1,8 +1,8 @@
 import Observation
 import ServiceManagement
 
-/// Launch at Login 스위치를 macOS 상태와 동기화
-/// 실패한 rollback을 두 번째 사용자 액션으로 취급하지 않는 규칙
+/// Launch at Login 설정을 macOS 상태와 동기화.
+/// 변경 실패로 원래 값으로 돌아갈 때 추가 사용자 요청으로 처리하지 않음.
 @MainActor
 @Observable
 final class LaunchAtLoginSetting {
@@ -12,6 +12,7 @@ final class LaunchAtLoginSetting {
 
     private(set) var isEnabled: Bool
     private(set) var errorMessage: String?
+    private var failedRequestedValue: Bool?
 
     private let currentStatus: () -> Bool
     private let setSystemEnabled: (Bool) throws -> Void
@@ -31,12 +32,22 @@ final class LaunchAtLoginSetting {
         self.isEnabled = currentStatus()
     }
 
+    /// 시스템 설정에서 바꾼 상태 반영 — Settings에 들어올 때마다.
+    func refreshStatus() {
+        isEnabled = currentStatus()
+        if failedRequestedValue == isEnabled {
+            errorMessage = nil
+            failedRequestedValue = nil
+        }
+    }
+
     func update(to enabled: Bool) {
         guard enabled != isEnabled else { return }
         do {
             try setSystemEnabled(enabled)
             isEnabled = currentStatus()
             errorMessage = nil
+            failedRequestedValue = nil
         } catch {
             AppLog.error(
                 .config,
@@ -44,6 +55,7 @@ final class LaunchAtLoginSetting {
             )
             isEnabled = currentStatus()
             errorMessage = Self.failureMessage
+            failedRequestedValue = enabled
         }
     }
 }

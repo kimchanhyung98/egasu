@@ -6,6 +6,7 @@ struct ClaudeMappedUsage: Equatable, Sendable, Codable {
     /// usage에 동반되는 provider header notice(amber 삼각형 + tooltip) — clean fetch면 `nil`.
     var warning: String?
     var warningPresentation: LocalizedMessage?
+    var hasIncompleteWeeklyQuota: Bool?
     var liveQuotaObservedAt: Date?
     var quotaObservedAt: Date?
     var retryAfter: Date?
@@ -25,17 +26,27 @@ enum ClaudeUsageMapper {
         guard let body = ProviderParse.jsonObject(response.body) else {
             throw ClaudeUsageError.invalidResponse
         }
-
         var lines: [MetricLine] = []
-        appendUsageWindow(body["five_hour"], label: "Session", periodDurationMs: sessionPeriodMs, to: &lines)
-        appendUsageWindow(body["seven_day"], label: "Weekly", periodDurationMs: weeklyPeriodMs, to: &lines)
-        appendUsageWindow(body["seven_day_sonnet"], label: "Sonnet", periodDurationMs: weeklyPeriodMs, to: &lines)
-        appendScopedWeeklyLimit(body["limits"], modelName: "Fable", label: "Fable", to: &lines)
+        guard appendUsageWindow(body["five_hour"], label: "Session", periodDurationMs: sessionPeriodMs, to: &lines),
+            appendUsageWindow(body["seven_day"], label: "Weekly", periodDurationMs: weeklyPeriodMs, to: &lines)
+        else { throw ClaudeUsageError.invalidResponse }
+
+        let sonnetComplete = appendUsageWindow(
+            body["seven_day_sonnet"], label: "Sonnet", periodDurationMs: weeklyPeriodMs, to: &lines)
+        let fableComplete = appendScopedWeeklyLimit(body["limits"], modelName: "Fable", label: "Fable", to: &lines)
         appendExtraUsage(body["extra_usage"], to: &lines)
 
+        let incomplete = !sonnetComplete || !fableComplete
+        let warning = incomplete ? "Some Claude weekly limits are unavailable. Try refreshing again later." : nil
+        if incomplete {
+            AppLog.warn(LogTag.plugin("claude"), "weekly quota response contained an unreadable model limit")
+        }
         return ClaudeMappedUsage(
             plan: formatPlan(subscriptionType: credentials.subscriptionType, rateLimitTier: credentials.rateLimitTier),
-            lines: lines
+            lines: lines,
+            warning: warning,
+            warningPresentation: warning.map { .init($0) },
+            hasIncompleteWeeklyQuota: incomplete ? true : nil
         )
     }
 
@@ -124,44 +135,58 @@ enum ClaudeUsageMapper {
         return "\(base) \(multiplier)"
     }
 
-    private static func appendUsageWindow(_ value: Any?, label: String, periodDurationMs: Int, to lines: inout [MetricLine]) {
+    /// 미제공 한도는 정상 처리하고, 응답에 있는 한도를 읽을 수 없을 때만 false 반환.
+    private static func appendUsageWindow(
+        _ value: Any?, label: String, periodDurationMs: Int?, valueKey: String = "utilization",
+        to lines: inout [MetricLine]
+    ) -> Bool {
+        guard let value, !(value is NSNull) else { return true }
         guard let object = value as? [String: Any],
-              let used = ProviderParse.number(object["utilization"])
-        else {
-            return
-        }
+            let used = ProviderParse.number(object[valueKey]), used >= 0
+        else { return false }
+        let reset = object["resets_at"]
+        let resetsAt = resetDate(reset)
+        if let reset, !(reset is NSNull), resetsAt == nil { return false }
         lines.append(.progress(
-            label: label,
-            used: used,
-            limit: 100,
-            format: .percent,
-            resetsAt: resetDate(object["resets_at"]),
-            periodDurationMs: periodDurationMs
+                label: label, used: used, limit: 100, format: .percent, resetsAt: resetsAt,
+                periodDurationMs: periodDurationMs
         ))
+        return true
     }
 
-    /// `limits` 배열의 model-scoped weekly limit(`kind: "weekly_scoped"`) — legacy top-level
-    /// `seven_day_<model>` 키는 null 회귀, display name으로 행 조회; `percent`는 0–100.
-    private static func appendScopedWeeklyLimit(_ limits: Any?, modelName: String, label: String, to lines: inout [MetricLine]) {
-        guard let array = limits as? [Any] else { return }
-        for entry in array {
-            guard let object = entry as? [String: Any],
-                  object["kind"] as? String == "weekly_scoped",
-                  let scope = object["scope"] as? [String: Any],
-                  let model = scope["model"] as? [String: Any],
-                  model["display_name"] as? String == modelName,
-                  let used = ProviderParse.number(object["percent"])
-            else { continue }
-            lines.append(.progress(
-                label: label,
-                used: used,
-                limit: 100,
-                format: .percent,
-                resetsAt: resetDate(object["resets_at"]),
-                periodDurationMs: weeklyPeriodMs
-            ))
-            return
+    /// 모델별 주간 한도는 limits 배열의 모델 이름과 percent 필드로 식별.
+    private static func appendScopedWeeklyLimit(
+        _ limits: Any?, modelName: String, label: String, to lines: inout [MetricLine]
+    ) -> Bool {
+        guard let limits, !(limits is NSNull) else { return true }
+        guard let entries = limits as? [Any] else { return false }
+        var complete = true
+        var firstMatch: [String: Any]?
+        var hasDuplicate = false
+        for entry in entries {
+            guard let object = entry as? [String: Any] else {
+                complete = false
+                continue
+            }
+            guard object["kind"] as? String == "weekly_scoped" else { continue }
+            guard let scope = object["scope"] as? [String: Any], let model = scope["model"] as? [String: Any],
+                let name = model["display_name"] as? String, !name.isEmpty
+            else {
+                complete = false
+                continue
+            }
+            guard name == modelName else { continue }
+            if firstMatch == nil {
+                firstMatch = object
+            } else {
+                hasDuplicate = true
+            }
         }
+        // 중복된 모델 한도는 첫 값을 표시하되 한도 판정에서는 제외.
+        let usable = appendUsageWindow(
+            firstMatch, label: label, periodDurationMs: hasDuplicate ? nil : weeklyPeriodMs,
+            valueKey: "percent", to: &lines)
+        return complete && usable && !hasDuplicate
     }
 
     private static func appendExtraUsage(_ value: Any?, to lines: inout [MetricLine]) {
@@ -190,12 +215,12 @@ enum ClaudeUsageMapper {
         if let text = (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
            !text.isEmpty,
            let date = EgasuISO8601.date(from: text) {
-            return date
+            return date.timeIntervalSince1970 >= 0 ? date : nil
         }
-        guard let number = ProviderParse.number(value), number.isFinite else {
+        guard let number = ProviderParse.number(value), number.isFinite, number >= 0 else {
             return nil
         }
-        let milliseconds = abs(number) < 1e10 ? number * 1000 : number
+        let milliseconds = number < 1e10 ? number * 1000 : number
         return Date(timeIntervalSince1970: milliseconds / 1000)
     }
 

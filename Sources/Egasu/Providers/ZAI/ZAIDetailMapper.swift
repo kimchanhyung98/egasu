@@ -163,7 +163,7 @@ enum ZAIDetailMapper {
 
     private static func exactRates(_ model: String, pricing: ModelPricing) -> ModelRates? {
         let scoped = "zai/" + model
-        // bare supplement의 GLM 항목은 직영 요율. 외부 catalog는 Z.ai 명시 키만 허용하여 reseller·fuzzy 오가격 방지.
+        // 가격 보충표의 GLM 항목은 직영 요율. 공개 카탈로그는 Z.ai 키의 정확 일치만 사용하여 재판매 요율 혼입 방지.
         return pricing.supplement.pricing[scoped] ?? pricing.supplement.pricing[model]
             ?? pricing.primary.findExact(scoped)?.rates ?? pricing.secondary.findExact(scoped)?.rates
     }

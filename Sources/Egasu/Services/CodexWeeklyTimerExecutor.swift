@@ -16,10 +16,23 @@ protocol CodexWeeklyTimerExecuting {
         auth: CodexAuth,
         canLaunch: @escaping @MainActor () async -> Bool
     ) async -> CodexWeeklyTimerExecutionResult
+    func execute(
+        auth: CodexAuth, model: String?, canLaunch: @escaping @MainActor () async -> Bool
+    ) async -> CodexWeeklyTimerExecutionResult
 }
 
 extension CodexWeeklyTimerExecuting {
     var startupFailureDescription: String? { nil }
+
+    func execute(
+        auth: CodexAuth, model: String?, canLaunch: @escaping @MainActor () async -> Bool
+    ) async -> CodexWeeklyTimerExecutionResult {
+        guard model == nil else {
+            return .init(launched: false, completed: false, updatedAuth: nil,
+                         failureDescription: "Usage timer could not select the requested model.")
+        }
+        return await execute(auth: auth, canLaunch: canLaunch)
+    }
 
     func execute(auth: CodexAuth) async -> CodexWeeklyTimerExecutionResult {
         await execute(auth: auth, canLaunch: { true })
@@ -29,7 +42,7 @@ extension CodexWeeklyTimerExecuting {
 /// 계정 인증을 임시 CLI 홈에만 제공, 모델 답변은 저장·로그·타이머 계산에 사용 금지.
 @MainActor
 final class CodexWeeklyTimerExecutor: CodexWeeklyTimerExecuting {
-    static let prompt = "When does my weekly Codex usage limit reset? Answer briefly without using tools."
+    static let prompt = "Reply with OK. Do not use tools."
     static let configuration = [
         "cli_auth_credentials_store=\"file\"",
         "model_provider=\"openai\"",
@@ -67,7 +80,7 @@ final class CodexWeeklyTimerExecutor: CodexWeeklyTimerExecuting {
         processRunner: any StreamingProcessRunning = StreamingProcessRunner(),
         executableResolver: @escaping @MainActor () -> URL? = CodexWeeklyTimerExecutor.resolveExecutable,
         baseDirectory: URL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsage.CodexWeeklyTimer", isDirectory: true),
+            .appendingPathComponent("\(StorageNamespace.current.name).CodexWeeklyTimer", isDirectory: true),
         timeout: TimeInterval = 60
     ) {
         self.processRunner = processRunner
@@ -86,6 +99,12 @@ final class CodexWeeklyTimerExecutor: CodexWeeklyTimerExecuting {
     func execute(
         auth: CodexAuth,
         canLaunch: @escaping @MainActor () async -> Bool
+    ) async -> CodexWeeklyTimerExecutionResult {
+        await execute(auth: auth, model: nil, canLaunch: canLaunch)
+    }
+
+    func execute(
+        auth: CodexAuth, model: String?, canLaunch: @escaping @MainActor () async -> Bool
     ) async -> CodexWeeklyTimerExecutionResult {
         guard !Task.isCancelled else { return failure("Codex weekly timer message was cancelled.") }
         guard auth.tokens?.accessToken?.isEmpty == false,
@@ -108,7 +127,8 @@ final class CodexWeeklyTimerExecutor: CodexWeeklyTimerExecuting {
         var isolatedAuth = auth
         isolatedAuth.apiKey = nil
         do {
-            let configuration = try await verifyCapabilities(executableURL: executableURL, workspace: workspace)
+            var configuration = try await verifyCapabilities(executableURL: executableURL, workspace: workspace)
+            if let model { configuration.append("model=\"\(model)\"") }
             try workspace.writeAuth(isolatedAuth)
             try Task.checkCancellation()
             result = await runMessage(

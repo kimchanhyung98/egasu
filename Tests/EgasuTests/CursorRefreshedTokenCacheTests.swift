@@ -212,10 +212,10 @@ private final class CursorCacheResponses: @unchecked Sendable {
         case CursorUsageClient.stripeURL:
             body = #"{"customerBalance":0}"#
         default:
-            guard request.url.path == CursorUsageClient.exportCSVURL.path else {
+            guard request.url.path == CursorUsageClient.usageEventsURL.path else {
                 throw URLError(.unsupportedURL)
             }
-            body = "Date,Model,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens\n"
+            body = #"{"totalUsageEventsCount":0}"#
         }
         return HTTPResponse(statusCode: 200, headers: [:], body: Data(body.utf8))
     }

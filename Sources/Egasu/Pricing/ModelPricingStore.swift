@@ -64,8 +64,8 @@ actor ModelPricingStore {
     ]
 
     private static var defaultCacheDirectory: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("OpenUsage/pricing", isDirectory: true)
+        StorageNamespace.current.applicationSupportDirectory()
+            .appendingPathComponent("pricing", isDirectory: true)
     }
 
     private static func bundledResourceData(_ resourceName: String) -> Data? {

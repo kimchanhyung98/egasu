@@ -95,7 +95,7 @@ final class AccountSignInWorkspaceTests: XCTestCase {
     func testPrepareRefusesASymlinkedLegacyStorageDirectory() throws {
         let applicationSupport = try makeApplicationSupport()
         let outside = try makeOutside()
-        let egasu = applicationSupport.appendingPathComponent("OpenUsage")
+        let egasu = applicationSupport.appendingPathComponent(StorageNamespace.current.name)
         try FileManager.default.createSymbolicLink(at: egasu, withDestinationURL: outside)
         let fileManager = ApplicationSupportFileManager(applicationSupport: applicationSupport)
         let workspace = AccountSignInWorkspace(fileManager: fileManager)
@@ -114,7 +114,7 @@ final class AccountSignInWorkspaceTests: XCTestCase {
     func testPrepareRefusesASymlinkedDefaultAccountSignInDirectory() throws {
         let applicationSupport = try makeApplicationSupport()
         let outside = try makeOutside()
-        let egasu = applicationSupport.appendingPathComponent("OpenUsage")
+        let egasu = applicationSupport.appendingPathComponent(StorageNamespace.current.name)
         try FileManager.default.createDirectory(at: egasu, withIntermediateDirectories: true)
         let accountSignIn = egasu.appendingPathComponent("AccountSignIn")
         try FileManager.default.createSymbolicLink(at: accountSignIn, withDestinationURL: outside)

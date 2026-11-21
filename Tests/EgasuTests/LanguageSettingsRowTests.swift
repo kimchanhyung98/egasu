@@ -17,33 +17,68 @@ final class LanguageSettingsRowTests: XCTestCase {
         XCTAssertFalse(text.contains("Restart egasu"), text)
     }
 
-    func testRestartButtonRendersInEveryLanguageAndDensity() async throws {
+    func testRestartButtonRendersInEveryLanguage() async throws {
         let labels: [LanguageSetting: String] = [.english: "Restart Now", .korean: "지금 다시 시작", .japanese: "今すぐ再起動"]
         for language in LanguageSetting.allCases {
-            for density in DensitySetting.allCases {
-                let selection: LanguageSetting = language == .english ? .korean : .english
-                let text = try await recognizedText(selection: selection, activeLanguage: language, density: density)
-                let expected = try XCTUnwrap(labels[language]).filter { !$0.isWhitespace }
-                XCTAssertTrue(text.filter { !$0.isWhitespace }.contains(expected), "\(language)/\(density): \(text)")
-            }
+            let selection: LanguageSetting = language == .english ? .korean : .english
+            let text = try await recognizedText(selection: selection, activeLanguage: language)
+            let expected = try XCTUnwrap(labels[language]).filter { !$0.isWhitespace }
+            XCTAssertTrue(text.filter { !$0.isWhitespace }.contains(expected), "\(language): \(text)")
         }
+    }
+
+    func testFailedRestartSurvivesRowRemountAndClearsOnLanguageChange() async throws {
+        var selection = LanguageSetting.korean
+        var attempts = 0
+        let relauncher = AppRelauncher(
+            scheduleRelaunch: {
+                attempts += 1
+                throw CocoaError(.fileNoSuchFile)
+            },
+            terminate: { XCTFail("The application must stay open when scheduling fails.") }
+        )
+        L10n.withLanguage(.english) { relauncher.restart() }
+
+        for _ in 0..<2 {
+            let text = try await recognizedText(selection: selection, activeLanguage: .english, relauncher: relauncher)
+            let letters = text.filter(\.isLetter).lowercased()
+            XCTAssertTrue(letters.contains("couldntrestartegasuquitandreopentheapp"), text)
+            XCTAssertTrue(text.contains("Restart Now"), text)
+        }
+        let row = LanguageSettingsRow(
+            selection: Binding(get: { selection }, set: { selection = $0 }),
+            activeLanguage: .english,
+            relauncher: relauncher
+        )
+        row.pickerSelection.wrappedValue = .korean
+        XCTAssertNotNil(relauncher.errorMessage)
+
+        row.pickerSelection.wrappedValue = .english
+        XCTAssertEqual(selection, .english)
+        XCTAssertNil(relauncher.errorMessage)
+
+        row.pickerSelection.wrappedValue = .japanese
+        XCTAssertEqual(selection, .japanese)
+        XCTAssertNil(relauncher.errorMessage)
+        XCTAssertEqual(attempts, 1)
     }
 
     private func recognizedText(
         selection: LanguageSetting, activeLanguage: LanguageSetting,
-        density: DensitySetting = .compact
+        relauncher: AppRelauncher = AppRelauncher(scheduleRelaunch: {}, terminate: {})
     ) async throws -> String {
         let suite = "LanguageSettingsRowTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.set(density.rawValue, forKey: DensitySetting.key)
         let image = try L10n.withLanguage(activeLanguage) {
-            let view = LanguageSettingsRow(selection: .constant(selection), activeLanguage: activeLanguage)
-                .frame(width: 292)
-                .padding(14)
-                .background(Color.white)
-                .environment(\.colorScheme, .light)
-                .defaultAppStorage(defaults)
+            let view = LanguageSettingsRow(
+                selection: .constant(selection), activeLanguage: activeLanguage, relauncher: relauncher
+            )
+            .frame(width: 292)
+            .padding(14)
+            .background(Color.white)
+            .environment(\.colorScheme, .light)
+            .defaultAppStorage(defaults)
             let hosting = NSHostingView(rootView: view)
             let window = NSWindow(
                 contentRect: .init(x: 0, y: 0, width: 320, height: 300),
@@ -54,13 +89,21 @@ final class LanguageSettingsRowTests: XCTestCase {
             window.contentView = hosting
             window.setContentSize(hosting.fittingSize)
             hosting.layoutSubtreeIfNeeded()
-            let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+            let bitmap = try XCTUnwrap(
+                NSBitmapImageRep(
+                    bitmapDataPlanes: nil, pixelsWide: Int(ceil(hosting.bounds.width * 2)),
+                    pixelsHigh: Int(ceil(hosting.bounds.height * 2)), bitsPerSample: 8, samplesPerPixel: 4,
+                    hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+            bitmap.size = hosting.bounds.size
             hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
-            if let path = ProcessInfo.processInfo.environment["EGASU_LANGUAGE_RESTART_SCREENSHOTS"] {
+            if relauncher.errorMessage == nil,
+                let path = ProcessInfo.processInfo.environment["EGASU_LANGUAGE_RESTART_SCREENSHOTS"]
+            {
                 let directory = URL(fileURLWithPath: path)
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                 let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
-                try png.write(to: directory.appendingPathComponent("\(activeLanguage.rawValue)-\(density.rawValue)-light-\(selection.rawValue).png"))
+                let name = "\(activeLanguage.rawValue)-light-\(selection.rawValue).png"
+                try png.write(to: directory.appendingPathComponent(name))
             }
             return try XCTUnwrap(bitmap.cgImage)
         }

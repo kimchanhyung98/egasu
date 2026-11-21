@@ -18,6 +18,8 @@ struct WidgetData: Hashable {
     var countSuffix: String?   // 예: "credits"
     var valuePrefix: String?   // 예: forecast의 "~"
     var displayMode: WidgetDisplayMode = .used
+    var priorityLimits: PriorityLimits = .standard
+    var showsPaceMarks = false
     /// 전역 relative/absolute reset 표시 — `WidgetDataStore`가 stamp.
     var resetDisplayMode: ResetDisplayMode = .relative
     /// 전역 "always show pacing" opt-in — `WidgetDataStore`가 stamp.
@@ -25,6 +27,8 @@ struct WidgetData: Hashable {
     var alwaysShowPacing: Bool = false
     /// 사용자 soft-limit 안내선의 사용량 기준 위치 — 대상이 아니거나 설정이 꺼져 있으면 nil.
     var softLimitUsedFraction: Double?
+    /// 이 행의 실측 사용량으로 도달 여부를 확인할 수 있는 마지막 시각(미포함).
+    var softLimitReadingExpiresAt: Date?
     /// quota가 아닌 공개 reset forecast meter — Used/Left·pace·quota 알림 의미에서 분리.
     var forecast: Forecast?
     var resetsAt: Date?
@@ -55,13 +59,15 @@ struct WidgetData: Hashable {
     /// `values` 중 렌더 대상 — descriptor factory가 설정, provider row 하나로 여러 tile 지원.
     var selection: ValueSelection = .all
     /// Today / Yesterday / Last 30 Days spend tile 전용 true — 시간 window 누적이라 all-zero가 "미사용" 의미.
-    /// balance/availability row의 0은 고갈이지 idle 아님 — false 유지로 "No usage in this period" note 제외.
+    /// 잔액·가용량 행의 0은 고갈을 뜻하므로 기간 사용량에서 제외.
     var isUsagePeriod: Bool = false
     /// unbounded count의 menu-bar 값 뒤에 붙는 tray 전용 단위 단어 (예: "2 resets") — bare 값 tile은 nil.
     /// descriptor가 설정 — tile rename에도 suffix 유지 (title 매칭 대체).
     var traySuffix: String?
     /// provider가 미시작 할당량 기간을 알리는 신호 — descriptor에서 실제 row까지 전달.
     var sessionStartSignal: SessionStartSignal?
+    /// 초기화 시각이 없을 때 보조 문구에 한도 주기를 표시할지 여부.
+    var showsPeriodWithoutResetDate = true
     /// Usage Trend row 표시 — true면 view가 값 layout 대신 sparkline 렌더.
     /// `chartPoints`는 일별 point(다른 tile은 빈 배열), `chartNote`는 hover에 표시할 source 문구.
     var isChart: Bool = false
@@ -274,7 +280,7 @@ struct WidgetData: Hashable {
             return resetLabel
         }
         // 정확한 reset 일시 없는 cycle형 metric은 reset 주기 표시.
-        if let periodDurationMs,
+        if showsPeriodWithoutResetDate, let periodDurationMs,
            let duration = Formatters.compactDuration(TimeInterval(periodDurationMs) / 1000) {
             return L10n.metrics("Resets in %@", duration)
         }
@@ -381,17 +387,14 @@ struct WidgetData: Hashable {
     }
 
     /// unbounded row 값(및 expiry 경고 icon)의 hover text — reset-credit row는 per-credit expiry breakdown, 그 외 정확한 figures + source note.
-    /// 축약 없고 note 없는 non-zero row는 nil.
+    /// 세부 내역 없는 0 사용량 기간과, 축약 수치·출처가 없는 행은 nil.
     var unboundedValueTooltip: String? {
         // reset-credit row는 expiry breakdown 우선 — 작은 count라 figures tooltip 없음.
         if let expiry = expiryTooltip { return expiry }
-        if isZeroUsage && isUsagePeriod {
-            return ([L10n.metrics("No usage in this period")] + [unboundedTooltipNote].compactMap { $0 }).joined(separator: "\n")
-        }
+        if isEmptyUsagePeriod { return nil }
         if let figures = unboundedTooltip {
             return ([figures] + [unboundedTooltipNote].compactMap { $0 }).joined(separator: "\n")
         }
-        // "no usage" note는 spend 기간에만 적합 — balance row의 0은 고갈이므로 note 없음.
         return nil
     }
 
@@ -400,11 +403,15 @@ struct WidgetData: Hashable {
     }
 
     /// zero-usage 기간 — 데이터 있고 selected 값 전부 0.
-    /// "no data"·소액 사용과 구분 — figures 대신 "no usage" note 표시 근거.
+    /// 데이터 없음과 0이 아닌 소액 사용을 구분.
     var isZeroUsage: Bool {
         guard hasData else { return false }
         let selected = selectedValues
         return !selected.isEmpty && selected.allSatisfy { $0.number == 0 }
+    }
+
+    var isEmptyUsagePeriod: Bool {
+        isUsagePeriod && !hasModelBreakdown && isZeroUsage && values.allSatisfy { $0.number == 0 }
     }
 
     var resetLabel: String? {
@@ -422,7 +429,7 @@ struct WidgetData: Hashable {
 extension WidgetData {
     /// pacing 입력값 — reset window가 알려진 bounded metric에서만 존재.
     /// nil이면 live pace 판정 생략 — bar는 절대 level band로 fallback.
-    private var paceContext: (limit: Double, resetsAt: Date, period: TimeInterval)? {
+    var paceContext: (limit: Double, resetsAt: Date, period: TimeInterval)? {
         guard hasData, !isForecast, let limit, limit > 0, let resetsAt,
               let periodDurationMs, periodDurationMs > 0 else { return nil }
         return (limit, resetsAt, TimeInterval(periodDurationMs) / 1000)
@@ -574,8 +581,11 @@ extension WidgetData {
 
     /// forecast의 의미상 deadline을 transport/cache freshness보다 우선 적용.
     func presented(at date: Date = Date()) -> WidgetData {
-        guard isForecast, let forecastDeadline, date >= forecastDeadline else { return self }
         var copy = self
+        if let softLimitReadingExpiresAt, date >= softLimitReadingExpiresAt {
+            copy.softLimitReadingExpiresAt = nil
+        }
+        guard isForecast, let forecastDeadline, date >= forecastDeadline else { return copy }
         if forecast?.refreshFailed == true {
             copy.hasData = false
         } else {
@@ -589,9 +599,7 @@ extension WidgetData {
 }
 
 extension WidgetData {
-    /// neighbor 기반 condensing 규칙의 단일 정의 — 한 run 안에서 text-only row(`!isBounded`) 바로 아래의 text-only row offset.
-    /// run은 expand caret을 넘지 않음 — caller가 경계에서 분할해 segment별 scan.
-    /// dashboard는 offset을 descriptor ID로, share-card export는 flat index로 매핑.
+    /// 공유 이미지에서 연속되는 텍스트 지표 사이의 여백을 줄일 행 위치.
     static func condensedTextRowOffsets(in rows: [WidgetData]) -> Set<Int> {
         var offsets = Set<Int>()
         for index in rows.indices.dropFirst() where !rows[index - 1].isBounded && !rows[index].isBounded {

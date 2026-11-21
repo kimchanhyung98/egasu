@@ -26,37 +26,75 @@ final class AntigravityCloudCodeTests: XCTestCase {
     ]}]}
     """
 
-    func testPartialProductionAndDailySummariesMergeAllFourBuckets() async {
+    func testPartialDailyAndProductionSummariesMergeAllFourBuckets() async {
         let routing = makeRouting(production: response(claudeSummary), daily: response(geminiSummary))
 
         let snapshot = await makeProvider(routing).refresh()
 
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Weekly", "Claude", "Claude Weekly"])
-        XCTAssertEqual(snapshot.lines.map(used), [25, 10, 60, 40])
-        XCTAssertEqual(summaryHosts(routing), [productionHost, dailyHost])
+        assertUsed(snapshot.lines, [25, 10, 60, 40])
+        XCTAssertEqual(summaryHosts(routing), [dailyHost, productionHost])
         assertNoLegacyRequests(routing)
     }
 
-    func testCompleteProductionSummarySkipsDaily() async {
-        let routing = makeRouting(production: response(completeSummary), daily: response(#"{"groups":[]}"#))
+    func testCompleteDailySummarySkipsProduction() async {
+        let routing = makeRouting(production: response(#"{"groups":[]}"#), daily: response(completeSummary))
 
         let snapshot = await makeProvider(routing).refresh()
 
         XCTAssertNil(snapshot.errorCategory)
-        XCTAssertEqual(snapshot.lines.map(used), [25, 10, 60, 40])
-        XCTAssertEqual(summaryHosts(routing), [productionHost])
+        assertUsed(snapshot.lines, [25, 10, 60, 40])
+        XCTAssertEqual(summaryHosts(routing), [dailyHost])
         assertNoLegacyRequests(routing)
     }
 
-    func testDuplicateBucketsKeepFirstUsableProductionValuesAndResetTime() async {
-        let production = """
+    func testMalformedReportedArgonIsFilledFromProductionWhenAllSharedBucketsAreValid() async {
+        let daily = completeSummary.replacingOccurrences(
+            of: "\"buckets\":[", with: #""buckets":[{"bucketId":"gemini-argon-wtu-weekly","disabled":"unknown"},"#
+        )
+        let production = #"{"groups":[{"buckets":[{"bucketId":"gemini-argon-wtu-weekly","remainingFraction":0.3}]}]}"#
+        let routing = makeRouting(production: response(production), daily: response(daily))
+        let snapshot = await makeProvider(routing).refresh()
+        XCTAssertEqual(summaryHosts(routing), [dailyHost, productionHost])
+        XCTAssertNil(snapshot.incompleteQuotaWindows)
+        assertUsed(snapshot.lines, [25, 10, 60, 40, 70])
+    }
+
+    func testQuotaSummaryUsesSupportedClientUserAgentToIncludeGemini() async {
+        let complete = response(completeSummary)
+        let claudeOnly = response(claudeSummary)
+        let plan = response(#"{"paidTier":{"name":"Google AI Pro"}}"#)
+        let supportedUserAgents = [
+            "antigravity/hub/2.24.0 (aidev_client; os_type=darwin; arch=arm64)",
+            "antigravity/hub/2.24.0 (aidev_client; os_type=darwin; arch=amd64)"
+        ]
+        let routing = RoutingHTTPClient { request in
+            if request.url.path == AntigravityUsageClient.quotaSummaryPath {
+                let supported = supportedUserAgents.contains(request.headers["User-Agent"] ?? "")
+                return supported ? complete : claudeOnly
+            }
+            if request.url.path == AntigravityUsageClient.loadCodeAssistPath { return plan }
+            return HTTPResponse(statusCode: 404, headers: [:], body: Data())
+        }
+
+        let snapshot = await makeProvider(routing).refresh()
+
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Weekly", "Claude", "Claude Weekly"])
+        assertUsed(snapshot.lines, [25, 10, 60, 40])
+        XCTAssertEqual(summaryHosts(routing), [dailyHost])
+        assertNoLegacyRequests(routing)
+    }
+
+    func testDuplicateBucketsKeepFirstUsableDailyValuesAndResetTime() async {
+        let daily = """
         {"groups":[{"buckets":[
           {"bucketId":"gemini-5h","remainingFraction":0.75,"resetTime":"2026-10-20T09:00:00Z"},
           {"bucketId":"3p-5h","remainingFraction":0.4}
         ]}]}
         """
-        let daily = """
+        let production = """
         {"response":{"groups":[{"buckets":[
           {"bucketId":"gemini-5h","remainingFraction":0.1,"resetTime":"2026-10-20T12:00:00Z"},
           {"bucketId":"gemini-weekly","remainingFraction":0.9},
@@ -69,16 +107,16 @@ final class AntigravityCloudCodeTests: XCTestCase {
         let snapshot = await makeProvider(routing).refresh()
 
         XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Weekly", "Claude", "Claude Weekly"])
-        XCTAssertEqual(snapshot.lines.map(used), [25, 10, 60, 40])
+        assertUsed(snapshot.lines, [25, 10, 60, 40])
         guard case .progress(_, _, _, _, let resetsAt, _, _)? = snapshot.lines.first else {
             return XCTFail("Expected a Gemini session progress line")
         }
         XCTAssertEqual(resetsAt, EgasuISO8601.date(from: "2026-10-20T09:00:00Z"))
-        XCTAssertEqual(summaryHosts(routing), [productionHost, dailyHost])
+        XCTAssertEqual(summaryHosts(routing), [dailyHost, productionHost])
     }
 
-    func testMissingFractionInProductionCanBeFilledFromDaily() async {
-        let production = """
+    func testMissingFractionInDailyCanBeFilledFromProduction() async {
+        let daily = """
         {"groups":[{"buckets":[
           {"bucketId":"gemini-5h","resetTime":"2026-10-20T09:00:00Z"},
           {"bucketId":"gemini-weekly","remainingFraction":"unknown"},
@@ -86,40 +124,42 @@ final class AntigravityCloudCodeTests: XCTestCase {
           {"bucketId":"3p-weekly","remainingFraction":0.6}
         ]}]}
         """
-        let routing = makeRouting(production: response(production), daily: response(geminiSummary))
+        let routing = makeRouting(production: response(geminiSummary), daily: response(daily))
 
         let snapshot = await makeProvider(routing).refresh()
 
         XCTAssertNil(snapshot.errorCategory)
-        XCTAssertEqual(snapshot.lines.map(used), [25, 10, 60, 40])
+        assertUsed(snapshot.lines, [25, 10, 60, 40])
         guard case .progress(_, _, _, _, let resetsAt, _, _)? = snapshot.lines.first else {
             return XCTFail("Expected a Gemini session progress line")
         }
         XCTAssertEqual(resetsAt, EgasuISO8601.date(from: "2026-10-20T09:00:00Z"))
-        XCTAssertEqual(summaryHosts(routing), [productionHost, dailyHost])
+        XCTAssertEqual(summaryHosts(routing), [dailyHost, productionHost])
         assertNoLegacyRequests(routing)
     }
 
-    func testMissingProductionResetTimeCanBeFilledFromDaily() throws {
-        let production = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":0.75}]}]}"#
-        let daily = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":0.1,"resetTime":"2026-10-20T09:00:00Z"}]}]}"#
+    func testMissingDailyResetTimeCanBeFilledFromProduction() throws {
+        let daily = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":0.75}]}]}"#
+        let production = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":0.1,"resetTime":"2026-10-20T09:00:00Z"}]}]}"#
 
-        let lines = try XCTUnwrap(AntigravityUsageMapper.parseQuotaSummaries([production, daily].map { Data($0.utf8) }))
+        let lines = try XCTUnwrap(
+            AntigravityUsageMapper.parseQuotaSummaries([daily, production].map { Data($0.utf8) })?.lines)
 
-        XCTAssertEqual(lines.map(used), [25])
+        assertUsed(lines, [25])
         guard case .progress(_, _, _, _, let resetsAt, _, _)? = lines.first else {
             return XCTFail("Expected a Gemini session progress line")
         }
         XCTAssertEqual(resetsAt, EgasuISO8601.date(from: "2026-10-20T09:00:00Z"))
     }
 
-    func testMalformedProductionFractionKeepsResetTimeWhenDailySuppliesFraction() throws {
-        let production = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":"unknown","resetTime":"2026-10-20T09:00:00Z"}]}]}"#
-        let daily = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":0.75}]}]}"#
+    func testMalformedDailyFractionKeepsResetTimeWhenProductionSuppliesFraction() throws {
+        let daily = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":"unknown","resetTime":"2026-10-20T09:00:00Z"}]}]}"#
+        let production = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":0.75}]}]}"#
 
-        let lines = try XCTUnwrap(AntigravityUsageMapper.parseQuotaSummaries([production, daily].map { Data($0.utf8) }))
+        let lines = try XCTUnwrap(
+            AntigravityUsageMapper.parseQuotaSummaries([daily, production].map { Data($0.utf8) })?.lines)
 
-        XCTAssertEqual(lines.map(used), [25])
+        assertUsed(lines, [25])
         guard case .progress(_, _, _, _, let resetsAt, _, _)? = lines.first else {
             return XCTFail("Expected a Gemini session progress line")
         }
@@ -127,17 +167,18 @@ final class AntigravityCloudCodeTests: XCTestCase {
     }
 
     func testSummaryMergeKeepsFirstValidResetTime() throws {
-        let production = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":0.75,"resetTime":"invalid"}]}]}"#
-        let daily = """
+        let daily = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":0.75,"resetTime":"invalid"}]}]}"#
+        let production = """
         {"groups":[{"buckets":[
           {"bucketId":"gemini-5h","resetTime":"2026-10-20T09:00:00Z"},
           {"bucketId":"gemini-5h","remainingFraction":0.1,"resetTime":"2026-10-20T12:00:00Z"}
         ]}]}
         """
 
-        let lines = try XCTUnwrap(AntigravityUsageMapper.parseQuotaSummaries([production, daily].map { Data($0.utf8) }))
+        let lines = try XCTUnwrap(
+            AntigravityUsageMapper.parseQuotaSummaries([daily, production].map { Data($0.utf8) })?.lines)
 
-        XCTAssertEqual(lines.map(used), [25])
+        assertUsed(lines, [25])
         guard case .progress(_, _, _, _, let resetsAt, _, _)? = lines.first else {
             return XCTFail("Expected a Gemini session progress line")
         }
@@ -145,12 +186,58 @@ final class AntigravityCloudCodeTests: XCTestCase {
     }
 
     func testResetTimesWithoutAnyValidFractionDoNotCreateLine() throws {
-        let production = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":"unknown","resetTime":"2026-10-20T09:00:00Z"}]}]}"#
-        let daily = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","resetTime":"2026-10-20T12:00:00Z"}]}]}"#
+        let daily = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":"unknown","resetTime":"2026-10-20T09:00:00Z"}]}]}"#
+        let production = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","resetTime":"2026-10-20T12:00:00Z"}]}]}"#
 
-        let lines = try XCTUnwrap(AntigravityUsageMapper.parseQuotaSummaries([production, daily].map { Data($0.utf8) }))
+        let lines = try XCTUnwrap(
+            AntigravityUsageMapper.parseQuotaSummaries([daily, production].map { Data($0.utf8) })?.lines)
 
         XCTAssertTrue(lines.isEmpty)
+    }
+
+    func testDailyWinsPerBucketAndProductionFillsOmissions() async {
+        let daily =
+            #"{"groups":[{"buckets":[{"bucketId":"3p-5h","remainingFraction":0.6,"resetTime":"2027-03-02T10:00:00Z"}]}]}"#
+        let production = """
+        {"groups":[{"buckets":[
+          {"bucketId":"gemini-5h","remainingFraction":1,"resetTime":"2027-03-02T19:00:00Z"},
+          {"bucketId":"gemini-weekly","remainingFraction":1,"resetTime":"2027-03-09T00:00:00Z"},
+          {"bucketId":"3p-5h","remainingFraction":0.9,"resetTime":"2027-03-02T19:00:00Z"},
+          {"bucketId":"3p-weekly","remainingFraction":0.8,"resetTime":"2027-03-09T00:00:00Z"}
+        ]}]}
+        """
+        let routing = makeRouting(production: response(production), daily: response(daily))
+
+        let snapshot = await makeProvider(routing).refresh()
+
+        XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Weekly", "Claude", "Claude Weekly"])
+        assertUsed(snapshot.lines, [0, 0, 40, 20])
+        guard case .progress(_, _, _, _, let claudeReset, _, _)? = snapshot.lines.first(where: { $0.label == "Claude" })
+        else {
+            return XCTFail("Expected a Claude progress line")
+        }
+        XCTAssertEqual(claudeReset, EgasuISO8601.date(from: "2027-03-02T10:00:00Z"), "the daily bucket wins")
+        XCTAssertEqual(summaryHosts(routing), [dailyHost, productionHost])
+    }
+
+    func testALightlyUsedDailySessionKeepsItsUnroundedPercent() async throws {
+        let daily = """
+        {"groups":[{"buckets":[
+          {"bucketId":"gemini-5h","remainingFraction":0.99965,"resetTime":"2027-03-02T14:00:00Z"},
+          {"bucketId":"gemini-weekly","remainingFraction":0.9742,"resetTime":"2027-03-08T09:00:00Z"},
+          {"bucketId":"3p-5h","remainingFraction":0.5},
+          {"bucketId":"3p-weekly","remainingFraction":0.4}
+        ]}]}
+        """
+        let routing = makeRouting(production: response(completeSummary), daily: response(daily))
+
+        let snapshot = await makeProvider(routing).refresh()
+
+        let session = try XCTUnwrap(snapshot.lines.first.flatMap(used))
+        XCTAssertEqual(session, 0.035, accuracy: 0.001)
+        XCTAssertGreaterThan(session, 0, "a used session must not round down to an untouched one")
+        XCTAssertEqual(try XCTUnwrap(snapshot.lines.dropFirst().first.flatMap(used)), 2.58, accuracy: 0.0001)
+        XCTAssertEqual(summaryHosts(routing), [dailyHost])
     }
 
     func testProductionFailureStillUsesValidDailySummary() async {
@@ -165,8 +252,8 @@ final class AntigravityCloudCodeTests: XCTestCase {
 
             XCTAssertNil(snapshot.errorCategory, "Production status: \(failure.statusCode)")
             XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Weekly"])
-            XCTAssertEqual(snapshot.lines.map(used), [25, 10])
-            XCTAssertEqual(summaryHosts(routing), [productionHost, dailyHost])
+            assertUsed(snapshot.lines, [25, 10])
+            XCTAssertEqual(summaryHosts(routing), [dailyHost, productionHost])
             assertNoLegacyRequests(routing)
         }
     }
@@ -183,8 +270,8 @@ final class AntigravityCloudCodeTests: XCTestCase {
 
             XCTAssertNil(snapshot.errorCategory, "Daily status: \(failure.statusCode)")
             XCTAssertEqual(snapshot.lines.map(\.label), ["Claude", "Claude Weekly"])
-            XCTAssertEqual(snapshot.lines.map(used), [60, 40])
-            XCTAssertEqual(summaryHosts(routing), [productionHost, dailyHost])
+            assertUsed(snapshot.lines, [60, 40])
+            XCTAssertEqual(summaryHosts(routing), [dailyHost, productionHost])
             assertNoLegacyRequests(routing)
         }
     }
@@ -195,7 +282,7 @@ final class AntigravityCloudCodeTests: XCTestCase {
         let snapshot = await makeProvider(routing).refresh()
 
         XCTAssertEqual(snapshot.errorCategory, .authExpired)
-        XCTAssertEqual(summaryHosts(routing), [productionHost, dailyHost])
+        XCTAssertEqual(summaryHosts(routing), [dailyHost, productionHost])
         assertNoLegacyRequests(routing)
     }
 
@@ -212,7 +299,7 @@ final class AntigravityCloudCodeTests: XCTestCase {
                 let snapshot = await makeProvider(routing).refresh()
 
                 XCTAssertEqual(snapshot.errorCategory, .authExpired)
-                XCTAssertEqual(summaryHosts(routing), [productionHost, dailyHost])
+                XCTAssertEqual(summaryHosts(routing), [dailyHost, productionHost])
                 assertNoLegacyRequests(routing)
             }
         }
@@ -225,7 +312,7 @@ final class AntigravityCloudCodeTests: XCTestCase {
 
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertTrue(snapshot.lines.isEmpty)
-        XCTAssertEqual(summaryHosts(routing), [productionHost, dailyHost])
+        XCTAssertEqual(summaryHosts(routing), [dailyHost, productionHost])
         assertNoLegacyRequests(routing)
     }
 
@@ -237,7 +324,7 @@ final class AntigravityCloudCodeTests: XCTestCase {
 
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertTrue(snapshot.lines.isEmpty)
-        XCTAssertEqual(summaryHosts(routing), [productionHost, dailyHost])
+        XCTAssertEqual(summaryHosts(routing), [dailyHost, productionHost])
         assertNoLegacyRequests(routing)
     }
 
@@ -257,8 +344,8 @@ final class AntigravityCloudCodeTests: XCTestCase {
         XCTAssertEqual(metadata["platform"], "PLATFORM_UNSPECIFIED")
         let userAgent = try XCTUnwrap(request.headers["User-Agent"])
         XCTAssertTrue([
-            "antigravity/2.24.0 (aidev_client; os_type=darwin; arch=arm64)",
-            "antigravity/2.24.0 (aidev_client; os_type=darwin; arch=amd64)"
+            "antigravity/hub/2.24.0 (aidev_client; os_type=darwin; arch=arm64)",
+            "antigravity/hub/2.24.0 (aidev_client; os_type=darwin; arch=amd64)"
         ].contains(userAgent), "Unsupported user agent: \(userAgent)")
     }
 
@@ -323,7 +410,7 @@ final class AntigravityCloudCodeTests: XCTestCase {
             XCTAssertNil(snapshot.errorCategory)
             XCTAssertNil(snapshot.plan)
             XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Weekly", "Claude", "Claude Weekly"])
-            XCTAssertEqual(snapshot.lines.map(used), [25, 10, 60, 40])
+            assertUsed(snapshot.lines, [25, 10, 60, 40])
             XCTAssertTrue(routing.requests.contains { $0.url.path == AntigravityUsageClient.loadCodeAssistPath })
             XCTAssertFalse(routing.requests.contains { $0.url.host == "oauth2.googleapis.com" })
             assertNoLegacyRequests(routing)
@@ -347,8 +434,8 @@ final class AntigravityCloudCodeTests: XCTestCase {
 
             XCTAssertNil(snapshot.errorCategory)
             XCTAssertEqual(snapshot.plan, "Pro")
-            XCTAssertEqual(snapshot.lines.map(used), [25, 10, 60, 40])
-            XCTAssertEqual(summaryHosts(routing), [productionHost])
+            assertUsed(snapshot.lines, [25, 10, 60, 40])
+            XCTAssertEqual(summaryHosts(routing), [dailyHost])
             XCTAssertEqual(routing.requests.filter {
                 $0.url.path == AntigravityUsageClient.loadCodeAssistPath
             }.compactMap(\.url.host), [dailyHost])
@@ -376,8 +463,8 @@ final class AntigravityCloudCodeTests: XCTestCase {
             XCTAssertNil(snapshot.errorCategory)
             XCTAssertEqual(snapshot.plan, "Pro")
             XCTAssertEqual(snapshot.lines.map(\.label), ["Session"])
-            XCTAssertEqual(snapshot.lines.map(used), [25])
-            XCTAssertEqual(summaryHosts(routing), [productionHost, dailyHost])
+            assertUsed(snapshot.lines, [25])
+            XCTAssertEqual(summaryHosts(routing), [dailyHost, productionHost])
             XCTAssertEqual(routing.requests.filter {
                 $0.url.path == AntigravityUsageClient.fetchModelsPath
             }.compactMap(\.url.host), [dailyHost])
@@ -403,8 +490,8 @@ final class AntigravityCloudCodeTests: XCTestCase {
             XCTAssertNil(snapshot.errorCategory)
             XCTAssertEqual(snapshot.plan, "Pro")
             XCTAssertEqual(snapshot.lines.map(\.label), ["Session"])
-            XCTAssertEqual(snapshot.lines.map(used), [50])
-            XCTAssertEqual(summaryHosts(routing), [productionHost, dailyHost])
+            assertUsed(snapshot.lines, [50])
+            XCTAssertEqual(summaryHosts(routing), [dailyHost, productionHost])
             XCTAssertEqual(routing.requests.filter {
                 $0.url.path == AntigravityUsageClient.retrieveQuotaPath
             }.compactMap(\.url.host), [dailyHost])
@@ -450,6 +537,18 @@ final class AntigravityCloudCodeTests: XCTestCase {
     private func used(_ line: MetricLine) -> Double? {
         guard case .progress(_, let used, _, _, _, _, _) = line else { return nil }
         return used
+    }
+
+    /// 사용률은 반올림하지 않은 원값 — 부동소수점 오차를 허용해 비교.
+    private func assertUsed(
+        _ lines: [MetricLine], _ expected: [Double],
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let actual = lines.map(used)
+        XCTAssertEqual(actual.count, expected.count, "\(actual)", file: file, line: line)
+        for (value, want) in zip(actual, expected) {
+            XCTAssertEqual(value ?? .nan, want, accuracy: 0.0001, "\(actual)", file: file, line: line)
+        }
     }
 
     private func summaryHosts(_ routing: RoutingHTTPClient) -> [String] {

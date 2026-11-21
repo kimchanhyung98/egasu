@@ -1,20 +1,18 @@
 #!/bin/bash
-# Regenerates the bundled pricing snapshots from the live feeds:
+# 공개 가격 피드에서 번들 가격 스냅샷 재생성:
 #
 #   Sources/Egasu/Resources/pricing_litellm_snapshot.json      (LiteLLM model_prices)
 #   Sources/Egasu/Resources/pricing_models_dev_snapshot.json   (models.dev api.json)
 #
-# The snapshots are the offline fallback for first launch / no network; at runtime the app fetches
-# the same feeds daily and its disk cache overrides these. Staleness is therefore harmless, but
-# refreshing them at release time keeps first launches accurate. Run from the repo root:
+# 첫 실행·오프라인용 가격. 마지막 성공 후 1시간이 지난 뒤 첫 가격 조회에서 같은 피드의 갱신 시작.
+# 갱신에 실패하면 30분이 지난 뒤 가격을 조회할 때 재시도.
+# 릴리스 시 갱신해 첫 실행의 가격도 최신 상태로 유지. 저장소 루트에서 실행:
 #
 #   ./script/update_pricing_snapshots.sh
 #
-# The compact format must stay in sync with PricingCatalogCodecs.swift (compact codec + the
-# defaulting rules of the LiteLLM/models.dev parsers): per-million rates, cache write defaults to
-# the input rate, and cache read to a tenth of it. When cache read is synthesized, `cre:false`
-# preserves that provenance so providers can distinguish the fallback from a published discount.
-# After regenerating, `swift test` exercises the snapshots via the pricing resolution tests.
+# 축약 형식은 앱 파서와 동일하게 유지: 백만 토큰당 단가, 캐시 쓰기 기본값은 입력 단가, 읽기는 그 1/10.
+# 캐시 읽기 단가를 계산한 경우 cre:false로 표시해 공식 할인 단가와 구분.
+# 재생성 후 swift test의 가격 결정 테스트로 스냅샷 확인.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -60,7 +58,7 @@ def retain_historical_models(filename, current):
         return previous | current
     return current
 
-# LiteLLM: costs are per token; entries without both input and output cost are stubs -> skipped.
+# LiteLLM은 토큰당 단가. 입력·출력 중 단가가 없는 항목은 제외.
 with open(f"{tmpdir}/litellm.json") as f:
     litellm = json.load(f)
 models = {}
@@ -91,7 +89,7 @@ with open(f"{resources}/pricing_litellm_snapshot.json", "w") as f:
     json.dump({"retrieved_at": retrieved_at, "models": models}, f, sort_keys=True, separators=(",", ":"))
 print(f"pricing_litellm_snapshot.json: {len(models)} models")
 
-# models.dev: costs are already per million; ids stored bare, first provider (sorted) wins.
+# models.dev는 백만 토큰당 단가. 모델 ID를 그대로 저장하며 중복은 프로바이더 이름순 첫 항목 우선.
 with open(f"{tmpdir}/models_dev.json") as f:
     models_dev = json.load(f)
 models = {}

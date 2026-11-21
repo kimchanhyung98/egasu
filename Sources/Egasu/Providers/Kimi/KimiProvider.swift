@@ -16,6 +16,10 @@ final class KimiProvider: ProviderRuntime {
     let usageScanner: KimiUsageScanner
     let now: @Sendable () -> Date
     let pricing: @Sendable () async -> ModelPricing
+    private let terminalEnvironment: (any EnvironmentReading)?
+
+    var usageTimerObservations: [UsageTimerObservation] = []
+    var usageTimerCredential: KimiCredentialDocument?
 
     var retainsDedicatedSpendOnScanFailure: Bool { true }
 
@@ -25,6 +29,7 @@ final class KimiProvider: ProviderRuntime {
         credentialLock: KimiCredentialLock = KimiCredentialLock(),
         usageScanner: KimiUsageScanner? = nil,
         now: @escaping @Sendable () -> Date = Date.init,
+        terminalEnvironment: (any EnvironmentReading)? = nil,
         pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() }
     ) {
         self.authStore = authStore
@@ -34,17 +39,28 @@ final class KimiProvider: ProviderRuntime {
             environment: authStore.environment, homeDirectory: authStore.homeDirectory()
         )
         self.now = now
+        self.terminalEnvironment = terminalEnvironment
         self.pricing = pricing
     }
 
     var widgetDescriptors: [WidgetDescriptor] {
         [
-            .percent(id: "kimi.session", provider: provider, title: "Session", sessionStartSignal: .zeroUsage)
-                .supportingSoftLimit(.fiveHours)
+            // 세션 사용량이 0%여도 서버의 초기화 시각만 사용.
+            .percent(id: "kimi.session", provider: provider, title: "Session", showsPeriodWithoutResetDate: false)
                 .exportingLimit("session", unit: "percent"),
             .percent(id: "kimi.weekly", provider: provider, title: "Weekly")
                 .supportingSoftLimit(.weekly)
-                .exportingLimit("weekly", unit: "percent")
+                .exportingLimit("weekly", unit: "percent"),
+            .percent(id: "kimi.total", provider: provider, title: "Total Usage")
+                .supportingSoftLimit(.monthly, acceptsMissingDuration: true)
+                .exportingLimit("totalUsage", unit: "percent"),
+            .values(
+                id: "kimi.extra", provider: provider, title: "Extra Usage", selection: .kind(.dollars),
+                valueWord: "spent"
+            )
+            .exportingLimit("extraUsage", unit: "usd", source: .progressOrValue(kind: .dollars)),
+            .dollarBalance(id: "kimi.extraBalance", provider: provider, title: "Extra Balance", valueWord: "left")
+                .exportingLimit("extraUsageBalance", kind: .balance, unit: "usd", source: .value(kind: .dollars))
         ]
     }
 
@@ -62,7 +78,8 @@ final class KimiProvider: ProviderRuntime {
     }
 
     func refresh() async -> ProviderSnapshot {
-        var snapshot = await quotaSnapshot()
+        let quota = await readQuota()
+        var snapshot = quota.snapshot
         guard snapshot.errorCategory == nil else { return snapshot }
         let refreshedAt = snapshot.refreshedAt
         do {
@@ -75,29 +92,54 @@ final class KimiProvider: ProviderRuntime {
                     appendWarning(warning, to: &snapshot)
                 }
                 if !scan.warnings.isEmpty { snapshot.isDegraded = true }
+                // 개별 진단은 모두 기록하고, 대표 원인은 저장소 오류 > 형식 오류 > 가격 미확인 순으로 선택.
                 if scan.hasUnpricedUsage {
-                    AppDiagnostics.record(.historyScan, result: .degraded, category: .other, providerID: provider.id,
-                                          localContext: "local usage contains unpriced models or cache pricing")
+                    snapshot.reportedPartialFailure = .other
+                    AppDiagnostics.record(
+                        .historyScan, result: .degraded, category: .other, providerID: provider.id,
+                        localContext: "local usage contains unpriced models or cache pricing")
                 }
                 if scan.invalidRows > 0 {
+                    snapshot.reportedPartialFailure = .decoding
                     AppDiagnostics.record(
                         .historyScan, result: .degraded, category: .decoding, providerID: provider.id,
                         localContext: "invalid Kimi Code usage records=\(scan.invalidRows)"
                     )
                 }
-                if !scan.fileErrors.isEmpty {
-                    AppDiagnostics.record(.historyScan, result: .degraded,
-                                          category: scan.fileErrors.first?.errorCategory ?? .storage,
-                                          providerID: provider.id, localContext: scan.readWarnings.joined(separator: " "))
+                if let fileError = KimiHistoryError.representative(in: scan.fileErrors) {
+                    snapshot.reportedPartialFailure = fileError.errorCategory
+                    AppDiagnostics.record(
+                        .historyScan, result: .degraded,
+                        category: fileError.errorCategory,
+                        providerID: provider.id, localContext: scan.readWarnings.joined(separator: " "))
                 }
             }
         } catch is CancellationError {
             return ProviderSnapshot.error(provider: provider, error: CancellationError())
         } catch {
+            snapshot.reportedPartialFailure = ErrorCategory.classify(error)
             AppDiagnostics.record(
                 .historyScan, result: .failure, providerID: provider.id, error: error
             )
             appendWarning((error as? KimiHistoryError ?? .unreadable).localizedDescription, to: &snapshot)
+        }
+        // 이력 조회 중 로그인 전환 가능. 한도 요청에 사용한 인증과 같은 경우에만 결과 사용.
+        if let credential = quota.credential, hasSoftLimitQuota(in: snapshot.lines) {
+            do {
+                let matches = try await loadOffMainActor { [authStore, terminalEnvironment] in
+                    guard try authStore.loadCredentialDocument() == credential else { return false }
+                    guard let terminalEnvironment else { return true }
+                    return try authStore.matchesTerminalLogin(credential, environment: terminalEnvironment)
+                }
+                try Task.checkCancellation()
+                guard matches else { throw KimiAuthError.credentialsChanged }
+            } catch is CancellationError {
+                return ProviderSnapshot.error(provider: provider, error: CancellationError())
+            } catch {
+                usageTimerObservations = []
+                usageTimerCredential = nil
+                return ProviderSnapshot.error(provider: provider, error: normalized(error))
+            }
         }
         return snapshot
     }
@@ -108,27 +150,50 @@ final class KimiProvider: ProviderRuntime {
         snapshot.isDegraded = true
     }
 
-    private func quotaSnapshot() async -> ProviderSnapshot {
+    func quotaSnapshot() async -> ProviderSnapshot {
+        await readQuota().snapshot
+    }
+
+    func readQuota(using prepared: KimiCredentialDocument? = nil) async -> (
+        snapshot: ProviderSnapshot, observation: UsageTimerObservation?, credential: KimiCredentialDocument?
+    ) {
+        usageTimerObservations = []
+        usageTimerCredential = nil
         do {
-            guard var document = try await loadOffMainActor({ [authStore] in
+            var document: KimiCredentialDocument
+            if let prepared {
+                document = prepared
+            } else if let current = try await loadOffMainActor({ [authStore] in
                 try authStore.loadCredentialDocument()
-            }) else {
+            }) {
+                document = current
+            } else {
                 throw KimiAuthError.notLoggedIn
             }
             guard authStore.isUsable(document, now: now()) else {
                 throw KimiAuthError.authExpired
             }
+            if let terminalEnvironment {
+                let matches = try await loadOffMainActor { [authStore, document] in
+                    try authStore.matchesTerminalLogin(document, environment: terminalEnvironment)
+                }
+                guard matches else { throw KimiAuthError.credentialsChanged }
+            }
 
-            if authStore.needsRefresh(document, now: now()) {
+            if prepared == nil && authStore.needsRefresh(document, now: now()) {
                 document = try await rotate(document, force: false)
             }
             guard var accessToken = document.credentials.accessToken?.nilIfEmpty else {
                 throw KimiAuthError.authExpired
             }
+            let usesAPIKey = if case .apiKey = document.credentials.source { true } else { false }
 
-            var response = try await fetch(accessToken)
+            var response = try await fetch(accessToken, service: document.service)
             if ProviderAuthRetry.isAuthFailure(response) {
-                guard case .current = document.credentials.source,
+                if usesAPIKey {
+                    throw KimiAuthError.apiKeyRejected
+                }
+                guard prepared == nil, case .current = document.credentials.source,
                       authStore.oauthLockEnabled
                 else {
                     throw KimiAuthError.authExpired
@@ -138,7 +203,7 @@ final class KimiProvider: ProviderRuntime {
                     throw KimiAuthError.authExpired
                 }
                 accessToken = refreshedAccessToken
-                response = try await fetch(accessToken)
+                response = try await fetch(accessToken, service: document.service)
                 guard !ProviderAuthRetry.isAuthFailure(response) else {
                     throw KimiAuthError.authExpired
                 }
@@ -150,14 +215,34 @@ final class KimiProvider: ProviderRuntime {
                 requestFailed: KimiUsageError.requestFailed
             )
             let mapped = try KimiUsageMapper.map(response.body)
-            return ProviderSnapshot.make(
+            let observedAt = now()
+            let observation: UsageTimerObservation?
+            if !usesAPIKey,
+               let subject = ProviderParse.jwtPayload(accessToken)?["sub"] as? String, !subject.isEmpty,
+               !UsageTimerObservation.hasExhaustedQuota(mapped.lines) {
+                // 기존 기본 서버의 계정 키 유지, 다른 서버의 동명 계정은 분리.
+                let identity = document.service == .standard
+                    ? subject : "\(document.service.baseURL)|\(document.service.oauthHost)|\(subject)"
+                observation = UsageTimerObservation.from(
+                    lines: mapped.lines, accountKey: UsageTimerObservation.accountKey(family: "kimi", identity: identity),
+                    timerID: "kimi.session", observedAt: observedAt
+                )
+            } else {
+                observation = nil
+            }
+            usageTimerObservations = [observation].compactMap { $0 }
+            usageTimerCredential = observation == nil ? nil : document
+            let snapshot = ProviderSnapshot.make(
                 provider: provider,
                 plan: mapped.plan,
                 lines: mapped.lines,
-                refreshedAt: now()
+                refreshedAt: observedAt, liveQuotaObservedAt: observedAt
             )
+            return (snapshot, observation, document)
         } catch {
-            return ProviderSnapshot.error(provider: provider, error: normalized(error))
+            usageTimerObservations = []
+            usageTimerCredential = nil
+            return (ProviderSnapshot.error(provider: provider, error: normalized(error)), nil, nil)
         }
     }
 
@@ -174,7 +259,7 @@ final class KimiProvider: ProviderRuntime {
         let handle = try await credentialLock.acquire(target: lockTarget)
         do {
             let live = try await loadOffMainActor { [authStore] in
-                try authStore.reloadCurrentDocument(original.credentials.source)
+                try authStore.reloadCurrentDocument(original)
             }
             let tokenChanged = live.credentials.accessToken != original.credentials.accessToken
             if tokenChanged, authStore.hasUsableAccess(live, now: now()) {
@@ -196,7 +281,7 @@ final class KimiProvider: ProviderRuntime {
 
             let rotated: KimiTokenRefresh
             do {
-                rotated = try await usageClient.refreshToken(refreshToken: refreshToken)
+                rotated = try await usageClient.refreshToken(refreshToken: refreshToken, service: live.service)
             } catch let error as KimiAuthError {
                 throw error
             } catch let error as KimiUsageError {
@@ -210,11 +295,9 @@ final class KimiProvider: ProviderRuntime {
                 }
             }
 
-            var updated = live
-            updated.credentials.accessToken = rotated.accessToken
-            updated.credentials.refreshToken = rotated.refreshToken
-            updated.credentials.expiresAt = rotated.expiresAt
-            updated.credentials.expiresIn = rotated.expiresIn
+            let updated = try await loadOffMainActor { [authStore] in
+                try authStore.reloadCurrentDocument(live)
+            }
             guard await handle.release() else {
                 throw KimiAuthError.credentialLockCompromised
             }
@@ -227,9 +310,9 @@ final class KimiProvider: ProviderRuntime {
         }
     }
 
-    private func fetch(_ accessToken: String) async throws -> HTTPResponse {
+    private func fetch(_ accessToken: String, service: KimiService) async throws -> HTTPResponse {
         do {
-            return try await usageClient.fetchUsage(accessToken: accessToken)
+            return try await usageClient.fetchUsage(accessToken: accessToken, service: service)
         } catch {
             throw KimiUsageError.connectionFailed
         }

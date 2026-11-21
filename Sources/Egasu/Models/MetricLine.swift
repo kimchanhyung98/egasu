@@ -1,6 +1,6 @@
 import Foundation
 
-/// `.progress` line 값의 표시 format.
+/// .progress 행 값의 표시 형식.
 enum ProgressFormat: Hashable, Sendable, Codable {
     case percent
     case dollars
@@ -59,8 +59,8 @@ enum ProgressFormat: Hashable, Sendable, Codable {
     }
 }
 
-/// `.chart` line의 하루치 column — 기존 출력 문자열과 표시 시 재포맷할 원본 날짜·수량.
-/// `date`는 이전 캐시와 호환되는 선택 필드이며 local HTTP API에서 제외.
+/// .chart 행의 하루치 데이터 — 출력 문자열과 재표시할 원본 날짜·수량.
+/// date는 이전 캐시와 호환되는 선택 필드 — 로컬 HTTP API에서는 제외.
 struct MetricChartPoint: Hashable, Sendable, Codable {
     var value: Double
     var label: String
@@ -78,12 +78,12 @@ struct MetricChartPoint: Hashable, Sendable, Codable {
 
 enum MetricLine: Hashable, Sendable, Codable {
     case text(label: String, value: String, colorHex: String? = nil, subtitle: String? = nil)
-    /// 일별 bar chart (Usage Trend row) — raw per-day point와 note 전달, view가 format·렌더.
-    /// unbounded, menu bar pin 불가.
+    /// Usage Trend의 일별 막대 자료 — 원본 일별 값과 안내 문구를 전달하고 뷰에서 서식 적용.
+    /// 상한이 없으며 Priority 고정 불가.
     case chart(label: String, points: [MetricChartPoint], note: String? = nil)
-    /// raw 숫자(`MetricValue`)를 담는 unbounded row — 숫자가 source of truth, format·값 선택은 표시 edge에서 수행.
-    /// `expiriesAt`은 raw `Date` 유지(popover clock tick·전역 reset mode 대응), `unknownModels`는 가격 미확정 모델 메타데이터,
-    /// `modelBreakdown`은 internal UI 데이터 — local HTTP API wire shape에서 제외.
+    /// 원본 MetricValue를 담는 상한 없는 행 — 표시 시점에 값 선택과 서식 적용.
+    /// `expiriesAt`은 현재 시각에 맞춰 만료를 표시하도록 `Date`로 유지. `unknownModels`는 가격 미확정 모델 목록.
+    /// modelBreakdown은 앱 내부 표시 자료 — 로컬 HTTP API 응답에서는 제외.
     case values(
         label: String,
         values: [MetricValue],
@@ -114,8 +114,8 @@ enum MetricLine: Hashable, Sendable, Codable {
         }
     }
 
-    /// provider 오류 line을 표시하는 badge label (`ProviderSnapshot.error`가 생산).
-    /// producer와 `isError` 판정의 compile-time 결합 — drift 시 오류가 일반 pill로 렌더되고 stale data가 cache되는 문제 방지.
+    /// ProviderSnapshot.error가 생성하는 오류 배지 라벨.
+    /// 생성과 isError 판정이 같은 상수 사용 — 오류가 일반 상태로 표시되거나 캐시되는 상황 방지.
     static let errorBadgeLabel = "Error"
 
     var isError: Bool {
@@ -125,10 +125,10 @@ enum MetricLine: Hashable, Sendable, Codable {
         return false
     }
 
-    /// provider가 metric line을 반환하지 않을 때 표시하는 공용 "no usage data" placeholder badge.
+    /// 프로바이더가 지표를 반환하지 않았을 때의 공통 데이터 없음 배지.
     static let noUsageData = MetricLine.badge(label: "Status", text: "No usage data", colorHex: "#A3A3A3")
 
-    /// 결과가 비어 있으면 `noUsageData` 추가 — 빈 tile 대신 명시적 status 표시.
+    /// 빈 결과에는 noUsageData를 추가하여 명시적 상태 표시.
     static func appendNoDataIfNeeded(_ lines: inout [MetricLine]) {
         if lines.isEmpty {
             lines.append(.noUsageData)

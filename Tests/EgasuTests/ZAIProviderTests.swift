@@ -145,6 +145,22 @@ final class ZAIAuthStoreTests: XCTestCase {
         XCTAssertNil(store.loadAPIKey())
     }
 
+    func testUnreadableConfigAllowsUsableEnvironmentFallback() throws {
+        let path = ZAIAuthStore.configPaths[0]
+        let files = FakeFiles([path: "zai-config"])
+        files.unreadablePaths = [path]
+        let noFallback = ZAIAuthStore(files: files, environment: FakeEnvironment())
+        let withFallback = ZAIAuthStore(files: files, environment: FakeEnvironment(["ZAI_API_KEY": "zai-env"]))
+
+        XCTAssertEqual(noFallback.keyStatus(), .unreadable)
+        XCTAssertNil(noFallback.loadAPIKey())
+        XCTAssertThrowsError(try noFallback.requireAPIKey()) { error in
+            XCTAssertEqual(ErrorCategory.classify(error), .credentialAccess)
+        }
+        XCTAssertEqual(withFallback.keyStatus(), .fromEnvironment)
+        XCTAssertEqual(try withFallback.requireAPIKey().apiKey, "zai-env")
+    }
+
     // MARK: - In-app save / delete / status (Customize → Z.ai → API Key)
 
     func testSaveAPIKeyWritesTrimmedJSONConfigFile() throws {
@@ -398,6 +414,27 @@ final class ZAIProviderTests: XCTestCase {
         XCTAssertFalse(snapshot.lines.contains { $0.isError })
         XCTAssertNotNil(snapshot.line(label: "Session"))
         XCTAssertNil(snapshot.plan)
+    }
+
+    func testChangedAPIKeyDiscardsQuotaAndTimerObservation() async {
+        let path = ZAIAuthStore.configPaths[0]
+        let files = FakeFiles([path: "zai-original"])
+        let provider = ZAIProvider(
+            authStore: ZAIAuthStore(files: files, environment: FakeEnvironment()),
+            usageClient: ZAIUsageClient(
+                http: RoutingHTTPClient { request in
+                    if request.url == ZAIUsageClient.quotaURL { return jsonResponse(quotaBothLimitsJSON) }
+                    files.files[path] = "zai-replaced"
+                    return HTTPResponse(statusCode: 500, headers: [:], body: Data("{}".utf8))
+                }),
+            pricing: { .empty }
+        )
+
+        let snapshot = await provider.refresh()
+
+        XCTAssertNil(snapshot.liveQuotaObservedAt)
+        XCTAssertEqual(snapshot.errorPresentation, ZAIAuthError.credentialsChanged.presentationMessage)
+        XCTAssertTrue(provider.usageTimerObservations.isEmpty)
     }
 
     func testRefreshWithoutKeyReportsNotLoggedIn() async {

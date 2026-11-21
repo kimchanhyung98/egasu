@@ -98,9 +98,10 @@ final class CodexResetWatchNotificationTests: XCTestCase {
         let restored = NotificationSettingsStore(defaults: defaults)
         XCTAssertTrue(restored.codexResetWatch)
         XCTAssertTrue(restored.anyEnabled)
-        XCTAssertFalse(restored.underTenPercent)
-        XCTAssertFalse(restored.healthyToClose)
+        XCTAssertFalse(restored.critical)
+        XCTAssertFalse(restored.warning)
         XCTAssertFalse(restored.closeToRunningOut)
+        XCTAssertFalse(restored.useItOrLoseIt)
 
         settings.codexResetWatch = true
         XCTAssertEqual(changes, 1)
@@ -333,11 +334,14 @@ final class CodexResetWatchNotificationTests: XCTestCase {
     func testDisabledProviderSuppressesDeliveryAndInvalidatesAnInFlightRequest() async {
         let gate = DeliveryGate()
         let started = expectation(description: "delivery before provider disablement")
-        var providerEnabled = false
+        @MainActor final class Enablement {
+            var isEnabled = false
+        }
+        let provider = Enablement()
         var attempts = 0
         var delivered = 0
         let evaluator = CodexResetWatchNotificationEvaluator(
-            defaults: makeDefaults(), isEnabled: { providerEnabled }, now: { self.base },
+            defaults: makeDefaults(), isEnabled: { provider.isEnabled }, now: { self.base },
             post: { _, _, _, _, isCurrent in
                 attempts += 1
                 if attempts == 1 {
@@ -353,17 +357,17 @@ final class CodexResetWatchNotificationTests: XCTestCase {
         await evaluator.receive(result).value
         XCTAssertEqual(attempts, 0)
 
-        providerEnabled = true
+        provider.isEnabled = true
         evaluator.configurationDidChange()
         let task = evaluator.receive(result)
         await fulfillment(of: [started], timeout: 2)
-        providerEnabled = false
+        provider.isEnabled = false
         evaluator.configurationDidChange()
         await gate.open()
         await task.value
         XCTAssertEqual(delivered, 0)
 
-        providerEnabled = true
+        provider.isEnabled = true
         evaluator.configurationDidChange()
         await evaluator.receive(result).value
         XCTAssertEqual(attempts, 2)

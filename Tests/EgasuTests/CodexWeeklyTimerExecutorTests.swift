@@ -71,6 +71,27 @@ final class CodexWeeklyTimerExecutorTests: XCTestCase {
         }
     }
 
+    func testExplicitSparkModelReachesTheIsolatedMessageWithoutChangingDefaultSelection() async throws {
+        for model: String? in [nil, "gpt-5.3-codex-spark"] {
+            let fixture = try Fixture()
+            defer { fixture.remove() }
+            let runner = RecordingTimerRunner { _, output in
+                output("{\"type\":\"turn.completed\"}\n")
+                return StreamingProcessResult(exitCode: 0, output: "")
+            }
+            let result = await fixture.executor(runner: runner).execute(auth: Self.auth, model: model, canLaunch: { true })
+            XCTAssertTrue(result.launched)
+            XCTAssertTrue(result.completed)
+            let request = try XCTUnwrap(runner.requests.last)
+            let modelArguments = request.arguments.filter { $0.hasPrefix("model=") }
+            XCTAssertEqual(modelArguments, model.map { ["model=\"\($0)\""] } ?? [])
+            XCTAssertTrue(request.arguments.contains("--ignore-user-config"))
+            XCTAssertTrue(request.arguments.contains("model_provider=\"openai\""))
+            XCTAssertEqual(String(data: request.standardInput, encoding: .utf8), Self.prompt + "\n")
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: fixture.workspaceRoot.path), [])
+        }
+    }
+
     func testCompletedMessageRemainsCompletedWhenReadingRotatedAuthFails() async throws {
         let diagnostics = DiagnosticEventRecorder()
         let fixture = try Fixture()
@@ -333,10 +354,10 @@ final class CodexWeeklyTimerExecutorTests: XCTestCase {
             CodexProvider(provider: CodexProvider.makeProvider(id: $0))
         }
         var warnings: [String: String] = [:]
-        let router = CodexWeeklyTimerRouter(
+        let router = UsageTimerRouter(
             providers: providers, isProviderEnabled: { $0 != "codex@disabled" }, executor: executor,
-            store: CodexWeeklyTimerAttemptStore(fileURL: fixture.root.appendingPathComponent("attempts.json")),
-            report: { warnings[$0] = $1 }, refresh: { _, _ in XCTFail("Cleanup must not refresh usage") }
+            store: UsageTimerAttemptStore(fileURL: fixture.root.appendingPathComponent("attempts.json")),
+            report: { warnings[$0] = $1?.joined(separator: " ") }, refresh: { _, _ in XCTFail("Cleanup must not refresh usage") }
         )
 
         XCTAssertEqual(Set(warnings.keys), ["codex", "codex@second"])
@@ -399,7 +420,81 @@ final class CodexWeeklyTimerExecutorTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: active.directory.path))
     }
 
-    nonisolated private static let prompt = "When does my weekly Codex usage limit reset? Answer briefly without using tools."
+    func testProductionCleanupPreservesActiveLegacyWorkspaces() throws {
+        let fixture = try Fixture(workspaceName: "egasu.CodexWeeklyTimer")
+        defer { fixture.remove() }
+        let legacy = fixture.root.appendingPathComponent("OpenUsage.CodexWeeklyTimer")
+        let active = try CodexWeeklyTimerWorkspace(baseDirectory: legacy)
+        defer { try? active.remove() }
+        try active.writeAuth(Self.auth)
+        var abandoned: CodexWeeklyTimerWorkspace? = try CodexWeeklyTimerWorkspace(baseDirectory: legacy)
+        let abandonedDirectory = try XCTUnwrap(abandoned?.directory)
+        try abandoned?.writeAuth(Self.auth)
+        abandoned = nil
+        let livePID = legacy.appendingPathComponent("session-\(getpid())-\(UUID().uuidString)")
+        let unrelated = legacy.appendingPathComponent("unrelated")
+        for directory in [livePID, unrelated] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+            try Data("fixture".utf8).write(to: directory.appendingPathComponent("auth.json"))
+        }
+
+        let workspace = try CodexWeeklyTimerWorkspace(baseDirectory: fixture.workspaceRoot)
+        defer { try? workspace.remove() }
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: abandonedDirectory.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: active.codexHome.appendingPathComponent("auth.json").path))
+        for directory in [livePID, unrelated] {
+            XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent("auth.json")), Data("fixture".utf8))
+        }
+    }
+
+    func testDevelopmentAndCustomRootsDoNotCleanLegacyWorkspaces() throws {
+        for workspaceName in ["egasu.dev.CodexWeeklyTimer", "workspaces"] {
+            let fixture = try Fixture(workspaceName: workspaceName)
+            defer { fixture.remove() }
+            let legacy = fixture.root.appendingPathComponent("OpenUsage.CodexWeeklyTimer")
+            var abandoned: CodexWeeklyTimerWorkspace? = try CodexWeeklyTimerWorkspace(baseDirectory: legacy)
+            let authURL = try XCTUnwrap(abandoned?.codexHome).appendingPathComponent("auth.json")
+            try abandoned?.writeAuth(Self.auth)
+            abandoned = nil
+
+            let executor = fixture.executor()
+
+            XCTAssertNil(executor.startupFailureDescription)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: authURL.path))
+        }
+    }
+
+    func testLegacyCleanupFailureIsRetriedBeforeClearingStartupFailure() async throws {
+        let fixture = try Fixture(workspaceName: "egasu.CodexWeeklyTimer")
+        defer { fixture.remove() }
+        let actual = fixture.root.appendingPathComponent("unrelated")
+        try FileManager.default.createDirectory(at: actual, withIntermediateDirectories: false)
+        let authURL = actual.appendingPathComponent("auth.json")
+        try Data("fixture".utf8).write(to: authURL)
+        let legacy = fixture.root.appendingPathComponent("OpenUsage.CodexWeeklyTimer")
+        try FileManager.default.createSymbolicLink(at: legacy, withDestinationURL: actual)
+        let runner = RecordingTimerRunner { _, _ in
+            XCTFail("Cleanup retries must not send a message")
+            return StreamingProcessResult(exitCode: 0, output: "")
+        }
+        let executor = fixture.executor(runner: runner)
+        XCTAssertNotNil(executor.startupFailureDescription)
+
+        let failed = await executor.execute(auth: Self.auth, canLaunch: { false })
+
+        XCTAssertFalse(failed.launched)
+        XCTAssertNotNil(executor.startupFailureDescription)
+        XCTAssertTrue(runner.requests.isEmpty)
+        try FileManager.default.removeItem(at: legacy)
+        let retried = await executor.execute(auth: Self.auth, canLaunch: { false })
+        XCTAssertFalse(retried.launched)
+        XCTAssertNil(executor.startupFailureDescription)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
+        XCTAssertEqual(try Data(contentsOf: authURL), Data("fixture".utf8))
+    }
+
+    nonisolated private static let prompt = "Reply with OK. Do not use tools."
     private static let auth = CodexAuth(tokens: CodexTokens(
         accessToken: "original-access", refreshToken: "original-refresh",
         idToken: "original-id", accountID: "account"
@@ -410,11 +505,12 @@ final class CodexWeeklyTimerExecutorTests: XCTestCase {
 private struct Fixture {
     let root: URL
     let executable: URL
-    var workspaceRoot: URL { root.appendingPathComponent("workspaces", isDirectory: true) }
+    let workspaceRoot: URL
     var messageStartedURL: URL { executable.appendingPathExtension("started") }
 
-    init(script: String = "exit 1") throws {
+    init(script: String = "exit 1", workspaceName: String = "workspaces") throws {
         root = FileManager.default.temporaryDirectory.appendingPathComponent("egasu.TimerExecutorTests.\(UUID().uuidString)")
+        workspaceRoot = root.appendingPathComponent(workspaceName, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         executable = root.appendingPathComponent("fake-codex")
         let source = """

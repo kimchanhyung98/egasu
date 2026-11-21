@@ -46,10 +46,62 @@ final class ResetDisplayTests: XCTestCase {
         XCTAssertEqual(data.resetTooltip()?.hasPrefix("Resets in "), true)
     }
 
-    func testZeroUsageSessionSignalPreservesAntigravityAndKimiBehavior() {
+    private func kimiSession(usedRatio: Double, resetTime: String?) throws -> WidgetData {
+        var quota: [String: Any] = ["used_ratio": usedRatio]
+        quota["reset_time"] = resetTime
+        let mapped = try KimiUsageMapper.map(["usages": ["limit_5h": quota]])
+        let provider = KimiProvider()
+        let descriptor = try XCTUnwrap(provider.widgetDescriptors.first { $0.id == "kimi.session" })
+        let snapshot = ProviderSnapshot.make(
+            provider: provider.provider, plan: nil, lines: mapped.lines, refreshedAt: Date())
+        return WidgetDataResolver.resolve(descriptor, snapshot: snapshot, codexResetWatch: .init())
+    }
+
+    func testKimiZeroUsageSessionShowsTheReportedResetInBothLayouts() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let reset = now.addingTimeInterval(4 * 3600 + 54 * 60)
+        var data = try kimiSession(usedRatio: 0, resetTime: EgasuISO8601.string(from: reset))
+        XCTAssertEqual(data.used, 0)
+        XCTAssertEqual(data.resetsAt, reset)
+        XCTAssertTrue(data.hasResetLabel(now: now))
+
+        for mode in [ResetDisplayMode.relative, .absolute] {
+            data.resetDisplayMode = mode
+            let row = data.dashboardRow(now: now)
+            guard case .bar(_, _, _, let gridReset, _) = row.mark else { return XCTFail("Expected session meter") }
+            let expectedGrid =
+                mode == .relative
+                ? Formatters.countdown(to: reset, now: now) : Formatters.compactClock(reset, now: now)
+            let expectedCard =
+                mode == .relative
+                ? Formatters.resetRelativeLabel(until: reset, now: now)
+                : Formatters.resetAbsoluteLabel(at: reset, now: now)
+            XCTAssertEqual(gridReset, expectedGrid)
+            XCTAssertEqual(row.cardReset, expectedCard)
+        }
+    }
+
+    func testKimiSessionWithoutAValidResetShowsOnlyUsageInBothLayouts() throws {
+        for reset in [nil, "invalid"] as [String?] {
+            for ratio in [0.0, 0.25] {
+                let data = try kimiSession(usedRatio: ratio, resetTime: reset)
+                XCTAssertTrue(data.hasData)
+                XCTAssertEqual(data.used, ratio * 100)
+                XCTAssertEqual(data.periodDurationMs, KimiUsageMapper.sessionPeriodMs)
+                XCTAssertFalse(data.hasResetLabel())
+                XCTAssertNil(data.resetTooltip())
+                let row = data.dashboardRow()
+                guard case .bar(_, _, _, let gridReset, _) = row.mark else { return XCTFail("Expected session meter") }
+                XCTAssertNil(gridReset)
+                XCTAssertNil(row.cardReset)
+            }
+        }
+    }
+
+    func testZeroUsageSessionSignalPreservesAntigravityBehavior() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let period: TimeInterval = 5 * 3600
-        for id in ["antigravity.geminiPro", "antigravity.claude", "kimi.session"] {
+        for id in ["antigravity.geminiPro", "antigravity.claude"] {
             var data = WidgetData(title: "Session", icon: .providerMark("codex"), kind: .percent, used: 0, limit: 100)
             data.sessionStartSignal = .zeroUsage
             data.periodDurationMs = Int(period * 1000)
@@ -124,25 +176,45 @@ final class ResetDisplayTests: XCTestCase {
         let signals = Dictionary(uniqueKeysWithValues: descriptors.compactMap { descriptor in
             descriptor.sample.sessionStartSignal.map { (descriptor.id, $0) }
         })
-        XCTAssertEqual(signals, ["claude.session": .missingResetDate,
-                                 "antigravity.geminiPro": .zeroUsage, "antigravity.claude": .zeroUsage,
-                                 "kimi.session": .zeroUsage])
+        XCTAssertEqual(
+            signals,
+            [
+                "claude.session": .missingResetDate,
+                "antigravity.geminiPro": .zeroUsage,
+                "antigravity.claude": .zeroUsage
+            ])
 
         let suffixed = descriptors.filter { $0.sample.traySuffix != nil }
         XCTAssertEqual(suffixed.map(\.id), ["codex.rateLimitResets"])
         XCTAssertEqual(suffixed.first?.sample.traySuffix, "resets")
     }
 
-    func testAntigravityWeeklyRowsNeverReadNotStarted() {
+    func testAntigravityWeeklyRowsNeverReadNotStarted() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let period: TimeInterval = 7 * 24 * 3600
-        for id in ["antigravity.geminiWeekly", "antigravity.claudeWeekly"] {
-            var data = WidgetData(title: "Weekly", icon: .providerMark("codex"), kind: .percent, used: 0, limit: 100)
-            data.periodDurationMs = Int(period * 1000)
-            data.resetsAt = now.addingTimeInterval(period / 2)
-            XCTAssertFalse(data.isFreshSessionWindow(now: now), id)
-            XCTAssertNotEqual(data.boundedTrailingText(now: now), "Not started", id)
-            XCTAssertEqual(data.boundedTrailingText(now: now)?.hasPrefix("Resets"), true, id)
+        let provider = AntigravityProvider(usageScan: { _, _ in nil }, pricing: { .empty })
+        let registry = WidgetRegistry(providers: [provider.provider], descriptors: provider.widgetDescriptors)
+        let reset = EgasuISO8601.string(from: now.addingTimeInterval(period / 2))
+        let buckets = ["gemini-weekly", "3p-weekly", "gemini-argon-wtu-weekly"].map {
+            ["bucketId": $0, "remainingFraction": 1, "resetTime": reset] as [String: Any]
+        }
+        let payload = try JSONSerialization.data(withJSONObject: ["groups": [["buckets": buckets]]])
+        let snapshot = ProviderSnapshot(
+            providerID: provider.provider.id, displayName: provider.provider.displayName,
+            lines: try XCTUnwrap(AntigravityUsageMapper.parseQuotaSummary(payload)?.lines), refreshedAt: now
+        )
+        try L10n.withLanguage(.english) {
+            for id in ["antigravity.geminiWeekly", "antigravity.claudeWeekly", "antigravity.argonWeekly"] {
+                let descriptor = try XCTUnwrap(registry.descriptor(id: id))
+                var data = WidgetDataResolver.resolve(descriptor, snapshot: snapshot, codexResetWatch: .init())
+                data.resetDisplayMode = .relative
+                XCTAssertTrue(data.hasData, id)
+                XCTAssertEqual(data.used, 0, id)
+                XCTAssertEqual(data.periodDurationMs, Int(period * 1000), id)
+                XCTAssertFalse(data.isFreshSessionWindow(now: now), id)
+                XCTAssertNotEqual(data.boundedTrailingText(now: now), "Not started", id)
+                XCTAssertEqual(data.boundedTrailingText(now: now)?.hasPrefix("Resets"), true, id)
+            }
         }
     }
 
@@ -247,9 +319,9 @@ final class ResetDisplayTests: XCTestCase {
         XCTAssertTrue(RateLimitResetsDetail.entries(from: [], now: Date()).isEmpty)
     }
 
-    func testCompactDurationAlwaysShowsHoursAtDayScale() {
-        XCTAssertEqual(Formatters.compactDuration(4 * 24 * 3600 + 52 * 60), "4d 0h")
-        XCTAssertEqual(Formatters.compactDuration(7 * 24 * 3600), "7d 0h")
+    func testCompactDurationOmitsZeroTrailingHours() {
+        XCTAssertEqual(Formatters.compactDuration(4 * 24 * 3600 + 52 * 60), "4d")
+        XCTAssertEqual(Formatters.compactDuration(7 * 24 * 3600), "7d")
         XCTAssertEqual(Formatters.compactDuration(9 * 24 * 3600 + 21 * 3600), "9d 21h")
         XCTAssertEqual(Formatters.compactDuration(5 * 3600), "5h")
         XCTAssertEqual(Formatters.compactDuration(52 * 60), "52m")
@@ -320,4 +392,165 @@ final class ResetDisplayTests: XCTestCase {
         XCTAssertNil(data.resetTooltip())
         XCTAssertEqual(data.boundedTrailingText(), "$20 limit")
     }
+
+    // MARK: - Antigravity 사용률 원값
+
+    private func antigravitySession(fraction: Double, now: Date) -> WidgetData {
+        guard
+            case .progress(_, let used, let limit, _, let resetsAt, let periodMs, _) = AntigravityUsageMapper.line(
+                pool: AntigravityMetric.sessionLabel, fraction: fraction,
+                resetTime: now.addingTimeInterval(2 * 3600), periodMs: MetricPeriod.sessionMs
+            )
+        else { preconditionFailure("expected a progress line") }
+        var data = WidgetData(
+            title: "Session", icon: .providerMark("antigravity"), kind: .percent, used: used, limit: limit)
+        data.resetsAt = resetsAt
+        data.periodDurationMs = periodMs
+        data.sessionStartSignal = .zeroUsage
+        data.displayMode = .remaining
+        data.resetDisplayMode = .relative
+        return data
+    }
+
+    func testAntigravitySessionJustUnderFullKeepsItsCountdownBehindTheRoundedPercent() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let data = antigravitySession(fraction: 0.99965, now: now)
+
+        XCTAssertEqual(data.used, 0.035, accuracy: 0.001)
+        XCTAssertGreaterThan(data.used, 0, "조금 쓴 세션이 미사용으로 반올림되면 안 됨")
+        L10n.withLanguage(.english) {
+            XCTAssertEqual(data.valueText, "100%", "표시만 정수 %로 반올림")
+            XCTAssertFalse(data.isFreshSessionWindow(now: now))
+            XCTAssertEqual(data.boundedTrailingText(now: now), "Resets in 2h")
+            XCTAssertEqual(data.compactResetText(now: now), "2h")
+        }
+    }
+
+    func testAntigravityUntouchedAndExhaustedWindowsKeepTheirFreshAndCountdownReads() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let untouched = antigravitySession(fraction: 1, now: now)
+        XCTAssertTrue(untouched.isFreshSessionWindow(now: now))
+        XCTAssertNil(untouched.compactResetText(now: now))
+        L10n.withLanguage(.english) { XCTAssertEqual(untouched.boundedTrailingText(now: now), "Not started") }
+
+        let exhausted = antigravitySession(fraction: 0, now: now)
+        XCTAssertFalse(exhausted.isFreshSessionWindow(now: now))
+        L10n.withLanguage(.english) { XCTAssertEqual(exhausted.compactResetText(now: now), "2h") }
+        L10n.withLanguage(.english) { XCTAssertEqual(exhausted.boundedTrailingText(now: now), "Resets in 2h") }
+
+        for (fraction, expected) in [(1.5, 0.0), (-0.5, 100.0)] {
+            guard
+                case .progress(_, let used, _, _, _, _, _) = AntigravityUsageMapper.line(
+                    pool: "x", fraction: fraction, resetTime: nil, periodMs: MetricPeriod.sessionMs
+                )
+            else { return XCTFail("expected a progress line") }
+            XCTAssertEqual(used, expected, "fraction \(fraction)는 0...1로 고정")
+        }
+    }
+
+    func testAntigravityWeeklyKeepsTheRawPercentForTheCardToRound() {
+        guard
+            case .progress(_, let used, let limit, _, _, _, _) = AntigravityUsageMapper.line(
+                pool: AntigravityMetric.weeklyLabel, fraction: 0.9742, resetTime: nil, periodMs: MetricPeriod.weekMs
+            )
+        else { return XCTFail("expected a progress line") }
+        XCTAssertEqual(used, 2.58, accuracy: 0.0001)
+        var data = WidgetData(
+            title: "Weekly", icon: .providerMark("antigravity"), kind: .percent, used: used, limit: limit)
+        data.displayMode = .remaining
+        XCTAssertEqual(data.valueText, "97%")
+    }
+    func testCountdownShowsCalendarMonthsAndDaysFromAMonthOut() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Seoul")!
+        let start = calendar.date(from: DateComponents(year: 2026, month: 11, day: 10, hour: 9))!
+        func countdown(_ components: DateComponents) -> String? {
+            Formatters.countdown(to: calendar.date(byAdding: components, to: start)!, now: start, calendar: calendar)
+        }
+        L10n.withLanguage(.english) {
+            XCTAssertEqual(countdown(DateComponents(day: 29, hour: 23)), "29d 23h", "한 달 미만은 일·시간 유지")
+            XCTAssertEqual(countdown(DateComponents(month: 1)), "1mo", "11월 10일 → 12월 10일은 달력 기준 한 달")
+            XCTAssertEqual(countdown(DateComponents(day: 30)), "1mo")
+            XCTAssertEqual(countdown(DateComponents(month: 3, day: 27, hour: 2)), "3mo 27d")
+            XCTAssertEqual(countdown(DateComponents(year: 1, month: 2, day: 5)), "1y 2mo")
+            XCTAssertEqual(countdown(DateComponents(hour: 2, minute: 6)), "2h 6m")
+            XCTAssertNil(Formatters.countdown(to: start.addingTimeInterval(-60), now: start, calendar: calendar))
+            XCTAssertEqual(
+                Formatters.whenLabel(at: calendar.date(byAdding: .month, value: 4, to: start)!, mode: .relative,
+                                     now: start, calendar: calendar),
+                "4mo", "초기화권 팝오버·툴팁의 카운트다운"
+            )
+        }
+        L10n.withLanguage(.korean) { XCTAssertEqual(countdown(DateComponents(month: 3, day: 27)), "3개월 27일") }
+        L10n.withLanguage(.japanese) { XCTAssertEqual(countdown(DateComponents(month: 3, day: 27)), "3か月 27日") }
+    }
+
+    func testResetColumnUsesMonthsAndDaysForLongCountdowns() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var data = WidgetData(title: "Monthly", icon: .providerMark("codex"), kind: .percent, used: 10, limit: 100)
+        data.resetsAt = Calendar.current.date(byAdding: .month, value: 4, to: now)
+        data.resetDisplayMode = .relative
+        L10n.withLanguage(.english) { XCTAssertEqual(data.compactResetText(now: now), "4mo") }
+    }
+
+    func testLocalizedDurationUnitsAndZeroTails() {
+        let calendar = utcCalendar()
+        let now = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1, hour: 12))!
+        let examples: [(LanguageSetting, [String])] = [
+            (.english, ["1mo", "11mo 30d", "1y", "1y 2mo", "4d", "1m"]),
+            (.korean, ["1개월", "11개월 30일", "1년", "1년 2개월", "4일", "1분"]),
+            (.japanese, ["1か月", "11か月 30日", "1年", "1年 2か月", "4日", "1分"])
+        ]
+        for (language, expected) in examples {
+            L10n.withLanguage(language) {
+                let components = [DateComponents(month: 1), DateComponents(month: 11, day: 30),
+                                  DateComponents(year: 1, day: 5), DateComponents(year: 1, month: 2, day: 5)]
+                let actual = components.map {
+                    Formatters.countdown(to: calendar.date(byAdding: $0, to: now)!, now: now, calendar: calendar)!
+                } + [Formatters.compactDuration(4 * 86_400)!, Formatters.compactDuration(60)!]
+                XCTAssertEqual(actual, expected)
+            }
+        }
+    }
+
+    func testCompactClockChangesFromTimeToWeekdayAndThenMonthDayAtTheDayBoundaries() {
+        let calendar = utcCalendar()
+        let now = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1, hour: 12))!
+        for language in LanguageSetting.allCases {
+            L10n.withLanguage(language) {
+                for days in [0, 1, 6, 7, 8] {
+                    let date = calendar.date(byAdding: .day, value: days, to: now)!
+                    let text = Formatters.compactClock(date, now: now, calendar: calendar)
+                    if days == 0 {
+                        XCTAssertEqual(text, TimeFormatSetting.current.shortTime(date))
+                    } else if days < 7 {
+                        XCTAssertEqual(text, TimeFormatSetting.current.weekdayTime(date))
+                    } else {
+                        XCTAssertEqual(text, Formatters.monthDayLabel(date))
+                    }
+                }
+            }
+        }
+    }
+
+    func testCountdownUsesLocalCalendarAcrossMonthEndLeapDayAndDST() {
+        for zone in ["Asia/Seoul", "America/Los_Angeles"] {
+            var calendar = utcCalendar()
+            calendar.timeZone = TimeZone(identifier: zone)!
+            L10n.withLanguage(.english) {
+                for start in [DateComponents(year: 2026, month: 1, day: 31, hour: 12),
+                              DateComponents(year: 2024, month: 2, day: 29, hour: 12),
+                              DateComponents(year: 2026, month: 2, day: 8, hour: 12)] {
+                    let now = calendar.date(from: start)!
+                    let end = calendar.date(byAdding: .month, value: 1, to: now)!
+                    XCTAssertEqual(Formatters.countdown(to: end, now: now, calendar: calendar), "1mo", zone)
+                }
+                let now = calendar.date(from: DateComponents(year: 2026, month: 3, day: 7, hour: 12))!
+                let end = calendar.date(byAdding: .day, value: 1, to: now)!
+                XCTAssertEqual(Formatters.countdown(to: end, now: now, calendar: calendar),
+                               zone == "America/Los_Angeles" ? "23h" : "1d", "짧은 기간은 실제 남은 시간")
+            }
+        }
+    }
+
 }

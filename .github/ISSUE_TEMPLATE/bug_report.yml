@@ -66,6 +66,19 @@ body:
     validations:
       required: true
   - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostic log excerpt
+      description: |
+        If available, include the provider name, the action that failed, and the time with its time zone.
+        Open Settings → Advanced → Reveal in Finder. Paste only the relevant lines around the failure.
+        Review them for account names, email addresses, private paths, and credentials before posting.
+      placeholder: |
+        Provider and action:
+        Time and time zone:
+        Relevant log lines:
+      render: text
+  - type: textarea
     id: screenshots
     attributes:
       label: Screenshots

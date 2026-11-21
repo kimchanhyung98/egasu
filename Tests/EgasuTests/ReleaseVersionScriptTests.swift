@@ -153,6 +153,42 @@ final class ReleaseVersionScriptTests: XCTestCase {
         }
     }
 
+    func testPinnedLocalDevelopmentVersionReplacesTheNearestTag() throws {
+        let repository = try makeRepository(tag: "v1.0.0-beta.1")
+        XCTAssertEqual(try localDevelopmentVersion(repositoryDirectory: repository), "1.0.0-beta.1-dev")
+
+        try pinDevelopmentVersion("1.0.0-beta.2\n", in: repository)
+
+        XCTAssertEqual(try localDevelopmentVersion(repositoryDirectory: repository), "1.0.0-beta.2-dev")
+        XCTAssertEqual(
+            try developmentVersion(repositoryDirectory: repository), "1.0.0-beta.1-dev",
+            "고정 파일은 로컬 개발 번들 전용 — 태그 기준 버전 함수는 그대로"
+        )
+    }
+
+    func testExplicitLocalDevelopmentVersionBeatsThePin() throws {
+        let repository = try makeRepository(tag: "v1.0.0-beta.1")
+        try pinDevelopmentVersion("1.0.0-beta.2", in: repository)
+
+        XCTAssertEqual(try localDevelopmentVersion(repositoryDirectory: repository, requested: "v1.0.0-dev"), "1.0.0-dev")
+    }
+
+    func testEmptyOrMalformedDevelopmentVersionPinIsRejected() throws {
+        for pin in ["", "\n", "beta.2", "1.0", "1.0.0-beta.2 extra", "0.6.28"] {
+            let repository = try makeRepository(tag: "v1.0.0-beta.1")
+            try pinDevelopmentVersion(pin, in: repository)
+
+            XCTAssertThrowsError(
+                try localDevelopmentVersion(repositoryDirectory: repository),
+                "expected the pin \(pin.debugDescription) to be rejected"
+            ) { error in
+                guard case VersionScriptError.rejectedTag = error else {
+                    return XCTFail("expected a rejection for \(pin.debugDescription), got \(error)")
+                }
+            }
+        }
+    }
+
     func testReleaseTagMustExistAndMatchMainHistory() throws {
         let repository = try makeRepository(tag: "v0.9.5")
         try runGit(["update-ref", "refs/remotes/origin/main", "HEAD"], in: repository)
@@ -225,6 +261,16 @@ final class ReleaseVersionScriptTests: XCTestCase {
             "egasu_development_version",
             arguments: [repositoryDirectory.path],
             workingDirectory: workingDirectory
+        )
+    }
+
+    private func localDevelopmentVersion(repositoryDirectory: URL, requested: String = "") throws -> String {
+        try callFunction("egasu_local_development_version", arguments: [repositoryDirectory.path, requested])
+    }
+
+    private func pinDevelopmentVersion(_ contents: String, in repository: URL) throws {
+        try contents.write(
+            to: repository.appendingPathComponent(".env.local.dev-version"), atomically: true, encoding: .utf8
         )
     }
 

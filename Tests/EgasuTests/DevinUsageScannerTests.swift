@@ -341,6 +341,7 @@ final class DevinUsageScannerTests: XCTestCase {
         let snapshot = await provider.refresh()
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertTrue(snapshot.isDegraded == true)
+        XCTAssertEqual(snapshot.partialRefreshErrorCategory, .storage)
         XCTAssertEqual(snapshot.warningPresentation?.count, 1)
         XCTAssertEqual(snapshot.warning, "Some Devin CLI usage history could not be read. Totals may be incomplete.")
         XCTAssertEqual(L10n.withLanguage(.english) { snapshot.localizedWarning },

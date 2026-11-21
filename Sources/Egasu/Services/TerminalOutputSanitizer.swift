@@ -110,7 +110,7 @@ enum ProcessOutputChannel: Sendable {
     case stderr
 }
 
-/// 두 pipe의 decode·sanitize·callback 순서를 직렬화하고 보존 output을 UTF-8 byte 상한 내 유지.
+/// 두 파이프의 디코딩·제어 문자 정리·콜백 순서 직렬화 — 보관 출력은 UTF-8 바이트 상한 준수.
 final class StreamingProcessOutput: @unchecked Sendable {
     private let lock = NSLock()
     private let deliveryLock = NSLock()
@@ -189,7 +189,7 @@ final class StreamingProcessOutput: @unchecked Sendable {
         tailData.append(incoming)
     }
 
-    /// output 순서를 예약한 뒤 accumulator lock 밖에서 외부 callback 실행.
+    /// 출력 순서를 예약한 뒤 누적 버퍼 잠금 밖에서 외부 콜백 실행.
     private func deliver(_ text: String) {
         guard !text.isEmpty else {
             lock.unlock()
@@ -244,7 +244,7 @@ private struct IncrementalUTF8Decoder: Sendable {
         return Self.decodePreservingC1Controls(pending)
     }
 
-    /// 유효한 UTF-8 continuation은 유지하고 단독 C1 byte만 sanitizer가 읽을 scalar로 변환.
+    /// 유효한 UTF-8 연속 바이트는 유지 — 단독 C1 바이트만 제어 문자 처리용 문자로 변환.
     private static func decodePreservingC1Controls(_ data: Data) -> String {
         var normalized = Data()
         normalized.reserveCapacity(data.count)

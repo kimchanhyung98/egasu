@@ -1,34 +1,33 @@
 import AppKit
 import SwiftUI
 
-/// Text 스타일 menu-bar strip(`MenuBarContent`)을 `MenuBarExtra` 라벨용 template `NSImage`로 렌더링.
-/// black-on-clear라 macOS가 light/dark에 맞게 틴트.
-/// 이미지는 `label:` view builder 밖에서 빌드 필요 — inline `ImageRenderer`는 불명확한 오류 유발.
+/// 메뉴 막대 내용을 NSImage 템플릿으로 렌더링 — 검정·투명 픽셀을 macOS가 테마에 맞게 착색.
 @MainActor
 enum MenuBarStripRenderer {
-    /// (content, style) 기준 마지막 렌더의 memoize.
-    /// 같은 `NSImage` 인스턴스 반환으로 SwiftUI가 status-item 갱신을 건너뛰고 `ImageRenderer` 실행을 실제 시각 변화로 한정.
+    /// 마지막 결과 재사용 — 같은 입력에는 같은 이미지 인스턴스를 반환하여 불필요한 재그리기 방지.
     private static var lastRender: (content: MenuBarContent, style: MenuBarStyle, image: NSImage?)?
 
-    /// 지정 content·style의 strip 이미지 — 해당 스타일에서 렌더할 것이 없으면 `nil`(호출자는 앱 아이콘 fallback).
-    /// memoize: 같은 입력은 이전에 렌더된 인스턴스 반환.
-    static func image(for content: MenuBarContent, style: MenuBarStyle) -> NSImage? {
-        if let lastRender, lastRender.content == content, lastRender.style == style {
+    /// 스트립 이미지 — 그릴 항목이 없으면 업데이트가 있을 때 점 붙은 앱 아이콘, 아니면 `nil`(호출자가 앱 아이콘 사용).
+    static func image(for content: MenuBarContent, style: MenuBarStyle = .text) -> NSImage? {
+        if let lastRender, lastRender.content.drawsSame(as: content), lastRender.style == style {
             AppLog.debug(.menubar, "strip cache hit")
             return lastRender.image
         }
         AppLog.debug(.menubar, "strip cache miss (rendering)")
         let image: NSImage?
-        switch style {
-        case .text: image = textImage(for: content)
-        case .bars: image = barsImage(for: content)
+        if content.isEmpty {
+            image = content.updateAvailable ? appIconWithUpdateDot : nil
+        } else {
+            switch style {
+            case .text: image = textImage(for: content)
+            case .bars: image = barsImage(for: content)
+            }
         }
         lastRender = (content, style, image)
         return image
     }
 
-    /// 고정 metric strip — 고정된 metric이 없거나 데이터가 아직 없으면 `nil`(앱 아이콘 fallback).
-    /// 렌더는 보이는 픽셀로 trim — 투명 여백이 남으면 status item이 artwork보다 넓어져 이웃 항목과의 간격이 과대해짐.
+    /// 보이는 픽셀까지만 잘라내 메뉴 막대 항목 사이의 과도한 여백 방지.
     static func textImage(for content: MenuBarContent) -> NSImage? {
         guard !content.isEmpty else { return nil }
         let renderer = ImageRenderer(content: MenuBarTextStrip(content: content))
@@ -43,6 +42,40 @@ enum MenuBarStripRenderer {
         image.accessibilityDescription = content.accessibilityText
         return image
     }
+
+    /// 앱 아이콘 — 브랜드 마크를 읽지 못하면 시스템 기호 사용.
+    static var appIcon: NSImage { MenuBarIcon.image ?? fallbackIcon }
+
+    /// 최대 다섯 한도를 한 아이콘에 쌓고 넘친 개수·업데이트 표시 유지.
+    static func barsImage(for content: MenuBarContent) -> NSImage? {
+        let fractions = content.items.compactMap(\.fraction)
+        guard !fractions.isEmpty else { return content.updateAvailable ? appIconWithUpdateDot : nil }
+        let renderer = ImageRenderer(content: MenuBarBarsStrip(content: content, fractions: fractions))
+        renderer.scale = 2
+        guard let image = renderer.nsImage else { return nil }
+        image.isTemplate = true
+        image.accessibilityDescription = content.accessibilityText
+        return image
+    }
+
+    /// 앱 아이콘 오른쪽 위에 업데이트 점 표시 — 점 둘레를 비워 마크와 분리.
+    static let appIconWithUpdateDot: NSImage = {
+        let icon = appIcon
+        let image = NSImage(size: icon.size, flipped: false) { rect in
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            icon.draw(in: rect)
+            let dot = CGRect(x: rect.maxX - 5, y: rect.maxY - 5, width: 5, height: 5)
+            context.setBlendMode(.clear)
+            context.fillEllipse(in: dot.insetBy(dx: -1, dy: -1))
+            context.setBlendMode(.normal)
+            context.setFillColor(.black)
+            context.fillEllipse(in: dot)
+            return true
+        }
+        image.isTemplate = true
+        image.accessibilityDescription = L10n.dashboard("Update Available")
+        return image
+    }()
 
     /// 렌더된 strip의 완전 투명 여백 crop — 보이는 픽셀이 없으면 `nil`(호출자는 untrimmed 렌더 유지).
     nonisolated static func trimmedToVisibleContent(_ image: CGImage) -> CGImage? {
@@ -77,35 +110,7 @@ enum MenuBarStripRenderer {
         return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
     }
 
-    /// compact Bars glyph(≤4개 bounded-metric bar) — 고정 metric에 fill이 없으면 `nil`.
-    static func barsImage(for content: MenuBarContent) -> NSImage? {
-        let fractions = content.bars.map(\.fraction)
-        guard !fractions.isEmpty else { return nil }
-        let renderer = ImageRenderer(content: MenuBarBars(fractions: fractions, side: 18))
-        renderer.scale = 2
-        guard let image = renderer.nsImage else { return nil }
-        image.isTemplate = true
-        image.accessibilityDescription = content.accessibilityText
-        return image
-    }
-
-    /// screen-share 프라이버시 대체 이미지 — `MenuBarPrivacyStore.concealUsage` 동안 사용량 대신 wordmark 표시.
-    /// 공유·녹화 화면에 token 수나 지출이 절대 실리지 않는 것이 계약; deterministic이라 1회 렌더, `ImageRenderer` 전체 실패 시에만 `nil`.
-    static let privacyImage: NSImage? = {
-        let renderer = ImageRenderer(content: MenuBarPrivacyLabel())
-        renderer.scale = 2
-        guard let rendered = renderer.cgImage else { return nil }
-        let cgImage = trimmedToVisibleContent(rendered) ?? rendered
-        let image = NSImage(
-            cgImage: cgImage,
-            size: NSSize(width: CGFloat(cgImage.width) / renderer.scale, height: CGFloat(cgImage.height) / renderer.scale)
-        )
-        image.isTemplate = true
-        image.accessibilityDescription = L10n.metrics("egasu, usage hidden while the screen is shared")
-        return image
-    }()
-
-    /// 브랜드 mark 로드 실패 시 최후의 아이콘.
+    /// 브랜드 마크를 읽지 못했을 때의 시스템 아이콘.
     static let fallbackIcon: NSImage = {
         let image = NSImage(
             systemSymbolName: "gauge.with.dots.needle.bottom.50percent",
@@ -116,37 +121,34 @@ enum MenuBarStripRenderer {
     }()
 }
 
-/// 프라이버시 은닉 중 strip 대신 그려지는 브랜드 gauge mark + wordmark.
-/// 단일 metric Text strip과 같은 template 처리·glyph box·글자 크기라 교체 시 menu bar 리듬이 유지됨.
-private struct MenuBarPrivacyLabel: View {
-    var body: some View {
-        HStack(spacing: 5) {
-            // `MenuBarIcon`과 같은 mark·inset, strip의 glyph box 크기에 맞춰 provider-glyph 스케일 유지.
-            if let mark = ProviderMarks.mark(for: "egasu") {
-                ProviderIconShape(pathData: mark.path, inset: 0.08)
-                    .fill(Color.black)
-                    .frame(width: 16, height: 16)
-            }
-            Text("egasu")
-                .font(.system(size: 12, weight: .bold))
-        }
-        .foregroundStyle(.black)
-        .padding(.horizontal, 2)
-        .padding(.vertical, 1)
-        .fixedSize()
-    }
-}
-
-private struct MenuBarTextStrip: View {
+/// 항목마다 프로바이더 마크(+ 계정 이니셜 배지) · 위 짧은 라벨 · 아래 값, 넘친 개수 캡슐, 업데이트 점.
+struct MenuBarTextStrip: View {
     let content: MenuBarContent
 
     var body: some View {
         HStack(spacing: 11) {
-            ForEach(content.groups, id: \.providerID) { group in
+            ForEach(content.items) { item in
                 HStack(spacing: 4) {
-                    glyph(group.icon)
-                    metricsView(group.metrics)
+                    glyph(item.icon)
+                        .overlay(alignment: .bottomTrailing) {
+                            if let badge = item.badge {
+                                AccountBadge(text: badge)
+                                    .offset(x: AccountBadge.overhang.width, y: AccountBadge.overhang.height)
+                            }
+                        }
+                        .compositingGroup()
+                        // 배치 경계 밖은 그려지지 않으므로 배지가 넘치는 만큼 오른쪽·위아래 공간 확보.
+                        .padding(.trailing, item.badge == nil ? 0 : AccountBadge.overhang.width)
+                        .padding(.vertical, item.badge == nil ? 0 : AccountBadge.overhang.height)
+                    labelledValue(item)
                 }
+            }
+            if content.overflow > 0 {
+                overflowCount(content.overflow)
+            }
+            if content.updateAvailable {
+                Image(nsImage: MenuBarStripRenderer.appIconWithUpdateDot)
+                    .renderingMode(.template)
             }
         }
         .foregroundStyle(.black)
@@ -154,27 +156,27 @@ private struct MenuBarTextStrip: View {
         .padding(.horizontal, 2)
         .padding(.vertical, 1)
         .fixedSize()
+        .compositingGroup()
     }
 
-    /// provider의 고정 값들(라벨 없음) — 1개는 큰 숫자 하나, 2개는 좁은 두 줄 stack으로 위치 기반 읽기.
-    @ViewBuilder
-    private func metricsView(_ metrics: [MenuBarContent.Metric]) -> some View {
-        if metrics.count <= 1 {
-            Text(metrics.first?.value ?? "")
-                .font(.system(size: 12, weight: .bold))
-        } else {
-            VStack(alignment: .trailing, spacing: -2) {
-                ForEach(metrics, id: \.id) { metric in
-                    Text(metric.value)
-                }
-            }
-            .font(.system(size: 9, weight: .semibold))
-            .fixedSize()
+    private func labelledValue(_ item: MenuBarContent.Item) -> some View {
+        VStack(alignment: .leading, spacing: -2) {
+            Text(item.shortLabel)
+                .font(.system(size: 9, weight: .medium))
+            Text(item.value)
+                .font(.system(size: 11, weight: .bold))
         }
+        .fixedSize()
     }
 
-    /// glyph box 한 변 길이 — strip 높이를 채워 mark가 옆 metric 블록과 같은 스케일로 읽히도록 함.
-    /// `ProviderIconShape`가 mark를 실제 bounding box로 정규화하므로 근소한 `inset`이면 모든 provider가 box를 균일하게 채움.
+    private func overflowCount(_ count: Int) -> some View {
+        Text("+\(count)")
+            .font(.system(size: 11, weight: .bold))
+            .padding(.horizontal, 5)
+            .frame(height: 16)
+            .background(Capsule().fill(Color.black.opacity(0.16)))
+    }
+
     private static let glyphSide: CGFloat = 16
 
     @ViewBuilder
@@ -189,8 +191,56 @@ private struct MenuBarTextStrip: View {
     }
 }
 
-/// compact 정사각형에 최대 4개의 가로 usage bar 렌더 — 원본 OpenUsage tray bar의 1:1 port.
-/// track 0.16 / fill 1.0 / remainder 0.24 opacity, near-full 양자화로 97% bar도 보이는 꼬리 유지.
+/// 마크 오른쪽 아래 계정 이니셜 — 배지 둘레를 마크에서 오려 내 둘이 닿지 않음.
+private struct AccountBadge: View {
+    let text: String
+
+    static let overhang = CGSize(width: 5, height: 2.5)
+
+    var body: some View {
+        ZStack {
+            Capsule().fill(Color.black)
+                .padding(-1.25)
+                .blendMode(.destinationOut)
+            Capsule().fill(Color.black)
+            Text(text)
+                .font(.system(size: 6.5, weight: .heavy))
+                .padding(.horizontal, 2)
+                .frame(minWidth: 8, minHeight: 8)
+                .foregroundStyle(Color.black)
+                .blendMode(.destinationOut)
+        }
+        .fixedSize()
+    }
+}
+
+struct MenuBarBarsStrip: View {
+    let content: MenuBarContent
+    let fractions: [Double]
+
+    var body: some View {
+        HStack(spacing: 11) {
+            MenuBarBars(fractions: fractions, side: 18)
+            if content.overflow > 0 {
+                Text("+\(content.overflow)")
+                    .font(.system(size: 11, weight: .bold))
+                    .padding(.horizontal, 5)
+                    .frame(height: 16)
+                    .background(Capsule().fill(Color.black.opacity(0.16)))
+            }
+            if content.updateAvailable {
+                Image(nsImage: MenuBarStripRenderer.appIconWithUpdateDot)
+                    .renderingMode(.template)
+            }
+        }
+        .foregroundStyle(.black)
+        .monospacedDigit()
+        .fixedSize()
+    }
+}
+
+/// 작은 정사각형에 가로 막대 최대 다섯 개 표시.
+/// 바탕 0.16 / 채움 1.0 / 잔여 0.24 불투명도, 거의 찬 막대도 100%와 구분되도록 꼬리 유지.
 private struct MenuBarBars: View {
     let fractions: [Double]
     let side: CGFloat
@@ -203,7 +253,7 @@ private struct MenuBarBars: View {
     }
 
     private func draw(into context: inout GraphicsContext, size: CGSize) {
-        let n = max(1, min(4, fractions.count))
+        let n = max(1, min(5, fractions.count))
         let pad = max(1, (size.width * 0.08).rounded())
         let gap = max(1, (size.width * 0.03).rounded())
         let trackX = pad

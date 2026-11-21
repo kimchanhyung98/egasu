@@ -82,6 +82,26 @@ final class ProviderSnapshotCacheTests: XCTestCase {
                        .progress(label: "Session", used: 20, limit: 100, format: .percent))
     }
 
+    func testPayloadWithoutQuotaCompletenessMetadataRetainsDisplayAndIdentityOnly() throws {
+        let (defaults, suite) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "k")
+        var reading = snapshot("codex", used: 42, now: now)
+        reading.liveQuotaObservedAt = now
+        reading.quotaObservedAt = now
+        cache.store(reading, producedByIdentityKey: "account")
+        let data = try XCTUnwrap(defaults.data(forKey: "k"))
+        var oldPayload = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        oldPayload.removeValue(forKey: "liveQuotaTimestamps")
+        defaults.set(try JSONSerialization.data(withJSONObject: oldPayload), forKey: "k")
+
+        let upgraded = ProviderSnapshotCache(userDefaults: defaults, storageKey: "k")
+        reading.liveQuotaObservedAt = nil
+        XCTAssertEqual(upgraded.loadSnapshots(providerIDs: ["codex"])["codex"], reading)
+        XCTAssertEqual(upgraded.producedByIdentityKey(providerID: "codex"), "account")
+    }
+
     func testWritesPersistForAFreshInstance() {
         let (defaults, suite) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }

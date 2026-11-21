@@ -1,7 +1,7 @@
 import AppKit
 
-/// Footer 메뉴 "About egasu" 항목용 표준 macOS About 패널 표시.
-/// menu-bar accessory 특성상 앱을 먼저 activate하지 않으면 패널이 전면 앱 뒤에 열림.
+/// "About egasu" 메뉴용 표준 macOS 앱 정보 패널.
+/// 메뉴 막대 앱은 먼저 활성화해야 패널이 다른 앱 뒤에 열리지 않음.
 enum AboutPanel {
     @MainActor
     static func present() {
@@ -9,7 +9,7 @@ enum AboutPanel {
         NSApplication.shared.orderFrontStandardAboutPanel(options: [.credits: credits])
     }
 
-    /// 가운데 정렬 secondary 스타일 credits. 표준 패널은 `.link` attribute run을 클릭 가능하게 렌더링함.
+    /// 가운데 정렬한 보조색 제작자 정보 — link 속성은 표준 패널에서 클릭 가능한 링크로 표시.
     private static var credits: NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center

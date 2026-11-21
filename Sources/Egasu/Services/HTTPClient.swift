@@ -6,6 +6,12 @@ struct HTTPRequest: Sendable {
     var headers: [String: String] = [:]
     var body: Data?
     var timeout: TimeInterval = 15
+    /// 사용자 설정이나 계정 ID로 만든 URL은 고정 작업명으로 기록.
+    var logEndpoint: StaticString?
+
+    var logTarget: String {
+        logEndpoint.map(String.init(describing:)) ?? LogRedaction.redactURL(url.absoluteString)
+    }
 }
 
 struct HTTPResponse: Sendable {
@@ -22,9 +28,7 @@ protocol HTTPClient: Sendable {
     func send(_ request: HTTPRequest) async throws -> HTTPResponse
 }
 
-// header·성공 응답 body 로깅 금지 — `Authorization`/`Cookie`/`Bearer` header와 token 포함 body 유출 방지.
-// Debug 라인은 method + redacted URL + status code만; HTTP 에러(>= 400)는 `LogRedaction.bodyPreview`를 통과한 500 byte 이하 preview만 추가 — 전체 body 금지.
-
+/// HTTP 진단에는 메서드·작업명 또는 마스킹한 URL과 응답 상태만 기록.
 struct URLSessionHTTPClient: HTTPClient {
     /// true면 `127.0.0.1` 한정 self-signed TLS cert를 수용하는 loopback 세션 사용 (`LoopbackTLSDelegate`).
     /// 로컬 language server의 self-signed HTTPS 전용 — 기본 off, 원격 호출은 전체 certificate 검증 유지.
@@ -38,8 +42,7 @@ struct URLSessionHTTPClient: HTTPClient {
         let configuration = URLSessionConfiguration.default
         if let proxy = ProxyConfig.current {
             configuration.proxyConfigurations = [proxy.proxyConfiguration()]
-            // proxy 적용 사실 기록(지원 로그용) — scheme/host/port만, 내장 `user:pass`는 별도 필드로 로깅 금지.
-            AppLog.info(.config, "proxy enabled \(proxy.scheme.rawValue)://\(proxy.host):\(proxy.port)")
+            AppLog.info(.config, "proxy enabled scheme=\(proxy.scheme.rawValue) port=\(proxy.port)")
         }
         return URLSession(configuration: configuration)
     }()
@@ -71,6 +74,13 @@ struct URLSessionHTTPClient: HTTPClient {
     }
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        let session = allowsInsecureLoopback
+            ? Self.loopbackSession
+            : (sendsCookies ? Self.session : Self.cookieFreeSession)
+        return try await send(request, using: session)
+    }
+
+    func send(_ request: HTTPRequest, using session: URLSession) async throws -> HTTPResponse {
         var urlRequest = URLRequest(url: request.url, timeoutInterval: request.timeout)
         urlRequest.httpMethod = request.method
         urlRequest.httpBody = request.body
@@ -78,15 +88,13 @@ struct URLSessionHTTPClient: HTTPClient {
             urlRequest.setValue(value, forHTTPHeaderField: key)
         }
 
-        let session = allowsInsecureLoopback
-            ? Self.loopbackSession
-            : (sendsCookies ? Self.session : Self.cookieFreeSession)
         let data: Data
         let response: URLResponse
         do { (data, response) = try await session.data(for: urlRequest) }
         catch {
             if (error as? URLError)?.code != .cancelled {
-                AppLog.debug(.http, "request transport failed (code=\((error as NSError).code), category=\(ErrorCategory.classify(error).rawValue))")
+                AppLog.debug(
+                    .http, "\(request.method) \(request.logTarget) transport failed \(AppLog.errorDetails(error))")
             }
             throw error
         }
@@ -99,12 +107,8 @@ struct URLSessionHTTPClient: HTTPClient {
             headers[String(describing: key).lowercased()] = String(describing: value)
         }
 
-        let line = "\(request.method) \(LogRedaction.redactURL(request.url.absoluteString)) -> \(http.statusCode)"
-        if http.statusCode >= 400 {
-            AppLog.debug(.http, "\(line) body: \(LogRedaction.bodyPreview(String(decoding: data, as: UTF8.self)))")
-        } else {
-            AppLog.debug(.http, line)
-        }
+        AppLog.debug(
+            .http, "\(request.method) \(request.logTarget) -> \(http.statusCode)")
         return HTTPResponse(statusCode: http.statusCode, headers: headers, body: data)
     }
 }

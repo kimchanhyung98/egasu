@@ -20,7 +20,7 @@ final class CursorPricingContextTests: XCTestCase {
         }
     }
 
-    func testCSVUsesCursorAliasWithoutChangingReportedModel() throws {
+    func testLegacyCursorAliasKeepsItsOwnRate() throws {
         let pricing = try makePricing(
             supplement: [
                 "grok-4.5": rates(input: 2, cacheRead: 0.3, output: 6),
@@ -31,20 +31,9 @@ final class CursorPricingContextTests: XCTestCase {
                 (#"^grok-4\.5-high$"#, "grok-4.5")
             ]
         )
-        let csv = """
-        Date,Model,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens
-        2026-10-28T00:00:00Z,grok-4.5-high,0,0,1000000,0
-        """
-
-        let row = try XCTUnwrap(CursorUsageCSV.parse(csv: csv, pricing: pricing).rows.first)
-
-        XCTAssertEqual(row.model, "grok-4.5-high")
-        XCTAssertEqual(try XCTUnwrap(row.imputedCostDollars), 0.5, accuracy: 0.000_001)
-        XCTAssertEqual(
-            try XCTUnwrap(pricing.estimatedCostDollars(model: row.model, tokens: row.tokens)),
-            0.3,
-            accuracy: 0.000_001
-        )
+        let tokens = TokenBreakdown(cacheRead: 1_000_000)
+        XCTAssertEqual(pricing.estimatedCostDollars(model: "grok-4.5-high", tokens: tokens, source: .cursor), 0.5)
+        XCTAssertEqual(pricing.estimatedCostDollars(model: "grok-4.5-high", tokens: tokens), 0.3)
     }
 
     func testCursorExactSupplementWinsWhenScopedAliasTargetIsMissing() throws {
@@ -91,7 +80,7 @@ final class CursorPricingContextTests: XCTestCase {
         ))
     }
 
-    func testCursorCSVDoesNotApplyRequestTierToAggregatedTokens() throws {
+    func testLegacyCursorRatesRespectRequestTierOptOut() throws {
         var fast = rates(input: 4, cacheRead: 1, output: 12)
         fast.longContextThresholdTokens = 256_000
         fast.inputAbove200kPerMillion = 6
@@ -99,18 +88,16 @@ final class CursorPricingContextTests: XCTestCase {
         fast.cacheReadAbove200kPerMillion = 1.5
         fast.outputAbove200kPerMillion = 18
         let pricing = makePricing(supplement: ["cursor/grok-4.7-fast": fast])
-        let csv = """
-        Date,Model,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens
-        2026-10-28T00:00:00Z,grok-4.7-fast,0,300000,0,100000
-        """
-
-        let row = try XCTUnwrap(CursorUsageCSV.parse(csv: csv, pricing: pricing).rows.first)
-
-        XCTAssertEqual(try XCTUnwrap(row.imputedCostDollars), 2.4, accuracy: 0.000_001)
+        let tokens = TokenBreakdown(input: 300_000, output: 100_000)
         XCTAssertEqual(
-            try XCTUnwrap(pricing.estimatedCostDollars(model: row.model, tokens: row.tokens, source: .cursor)),
-            3.6,
-            accuracy: 0.000_001
+            try XCTUnwrap(
+                pricing.estimatedCostDollars(
+                    model: "grok-4.7-fast", tokens: tokens, applyLongContextRates: false, source: .cursor
+                )), 2.4, accuracy: 0.000_001
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(pricing.estimatedCostDollars(model: "grok-4.7-fast", tokens: tokens, source: .cursor)),
+            3.6, accuracy: 0.000_001
         )
     }
 
@@ -130,56 +117,43 @@ final class CursorPricingContextTests: XCTestCase {
         )
     }
 
-    func testBundledCSVKeepsCursorRatesSeparateFromDirectAPIPrices() throws {
+    func testLegacyCatalogKeepsCursorRatesSeparateFromDirectAPIPrices() throws {
         let pricing = TestPricing.bundled
-        let csv = """
-        Date,Model,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens
-        2026-10-28T00:00:00Z,grok-4.5,100000,100000,100000,100000
-        2026-10-28T00:00:00Z,gemini-3.5-flash-high,100000,100000,100000,100000
-        2026-10-28T00:00:00Z,gemini-3.6-flash,100000,100000,100000,100000
-        2026-10-28T00:00:00Z,glm-5.3-flash-high,100000,100000,100000,100000
-        """
+        let tokens = TokenBreakdown(input: 100_000, cacheWrite5m: 100_000, cacheRead: 100_000, output: 100_000)
         let expected = [
             (model: "grok-4.5", cursor: 1.05, api: 1.03),
-            (model: "gemini-3.5-flash-high", cursor: 1.215, api: 0.5325),
-            (model: "gemini-3.6-flash", cursor: 1.065, api: 0.5325),
+            (model: "gemini-3.5-flash-high", cursor: 1.215, api: 1.065),
+            (model: "gemini-3.6-flash", cursor: 1.065, api: 1.065),
             (model: "glm-5.3-flash-high", cursor: 0.0829, api: 0.083)
         ]
 
-        let parsed = try CursorUsageCSV.parse(csv: csv, pricing: pricing)
-
-        XCTAssertEqual(parsed.rejectedRowCount, 0)
-        XCTAssertEqual(parsed.rows.count, expected.count)
-        for (row, value) in zip(parsed.rows, expected) {
-            XCTAssertEqual(row.model, value.model)
-            XCTAssertEqual(try XCTUnwrap(row.imputedCostDollars), value.cursor, accuracy: 0.000_001, row.model)
+        for value in expected {
             XCTAssertEqual(
-                try XCTUnwrap(pricing.estimatedCostDollars(
-                    model: row.model, tokens: row.tokens, applyLongContextRates: false
-                )),
-                value.api,
-                accuracy: 0.000_001,
-                row.model
+                try XCTUnwrap(
+                    pricing.estimatedCostDollars(
+                        model: value.model, tokens: tokens, applyLongContextRates: false, source: .cursor
+                    )),
+                value.cursor, accuracy: 0.000_001, value.model
+            )
+            XCTAssertEqual(
+                try XCTUnwrap(
+                    pricing.estimatedCostDollars(model: value.model, tokens: tokens, applyLongContextRates: false)
+                ),
+                value.api, accuracy: 0.000_001, value.model
             )
         }
     }
 
     func testCursorModelDetailsKeepSeparateFamiliesAndHidePricingScope() throws {
         let pricing = TestPricing.bundled
-        let csv = """
-        Date,Model,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens
-        2026-10-28T12:00:00Z,gemini-3.5-flash-high,0,0,0,100000
-        2026-10-28T12:00:00Z,gemini-3.6-flash-low,0,0,0,100000
-        2026-10-28T12:00:00Z,gemini-3.7-flash-high,0,0,0,100000
-        2026-10-28T12:00:00Z,gemini-3.8-flash-low,0,0,0,100000
-        2026-10-28T12:00:00Z,grok-4.7-high-fast,0,0,0,100000
-        2026-10-28T12:00:00Z,grok-4.7-low,0,0,0,100000
-        """
-        let parsed = try CursorUsageCSV.parse(csv: csv, pricing: pricing)
-        let now = try XCTUnwrap(parsed.rows.first?.date)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let rows = [
+            ("gemini-3.5-flash-high", 0.9), ("gemini-3.6-flash-low", 0.75),
+            ("gemini-3.7-flash-high", 0.375), ("gemini-3.8-flash-low", 0.75),
+            ("grok-4.7-high-fast", 1.2), ("grok-4.7-low", 0.6)
+        ].map { CursorUsageEvent(date: now, model: $0.0, tokens: TokenBreakdown(output: 100_000), costUSD: $0.1) }
         var lines: [MetricLine] = []
-
-        let history = CursorUsageMapper.appendSpendLines(rows: parsed.rows, now: now, pricing: pricing, to: &lines)
+        let history = CursorUsageMapper.appendSpendLines(rows: rows, now: now, pricing: pricing, to: &lines)
 
         let models = try XCTUnwrap(history.modelUsage?.daily.first?.models)
         let expectedFamilies: Set<String> = [
@@ -192,13 +166,13 @@ final class CursorPricingContextTests: XCTestCase {
         let gemini36 = try XCTUnwrap(models.first { $0.model == "gemini-3.6-flash" })
         XCTAssertEqual(try XCTUnwrap(gemini36.costUSD), 0.75, accuracy: 0.000_001)
         XCTAssertEqual(gemini36.variants?.map(\.model), ["gemini-3.6-flash-low"])
-        for (family, variant) in [
-            ("gemini-3.7-flash", "gemini-3.7-flash-high"),
-            ("gemini-3.8-flash", "gemini-3.8-flash-low")
+        for (family, variant, cost) in [
+            ("gemini-3.7-flash", "gemini-3.7-flash-high", 0.375),
+            ("gemini-3.8-flash", "gemini-3.8-flash-low", 0.75)
         ] {
             let entry = try XCTUnwrap(models.first { $0.model == family })
             XCTAssertEqual(entry.totalTokens, 100_000)
-            XCTAssertEqual(try XCTUnwrap(entry.costUSD), 0.375, accuracy: 0.000_001)
+            XCTAssertEqual(try XCTUnwrap(entry.costUSD), cost, accuracy: 0.000_001)
             XCTAssertEqual(entry.variants?.map(\.model), [variant])
         }
         let grok = try XCTUnwrap(models.first { $0.model == "grok-4.7" })

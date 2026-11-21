@@ -1,9 +1,9 @@
 // 공개용 예시 사용량. 계정명·상태는 공통 예시 계정 목록에서 가져옴.
 // 손으로 적는 것은 앱이 실제로 받는 입력(used/limit/경과율/시각)뿐.
 // 심각도·pace 문구·헤드라인은 demo.ts의 paceView/boundedView가 앱 규칙대로 계산.
-import type { Row } from './demo';
-import { providerMetrics } from './metrics';
-import { accountFamilies, type DemoAccount } from './accounts';
+import type { Row } from './demo.ts';
+import { providerMetrics } from './metrics.ts';
+import { accountFamilies, type DemoAccount } from './accounts.ts';
 
 export interface QuickLink {
   label: string;
@@ -15,11 +15,11 @@ export interface Card {
   icon: string;
   /** 지표 id의 앞부분(ProviderAccountID.family). 마크 이름과 우연히 같아도 별개 축이라 따로 적음. */
   provider: string;
-  /** Single Card 모드의 카드 제목 — family 이름 그대로. AppContainer.accountCardTitle. */
+  /** 프로바이더 섹션 제목. */
   title: string;
   /** ProviderPlanBadge. 배지가 아니라 .secondary 평문. 없으면 렌더하지 않음. */
   plan?: string;
-  /** 등록 계정이 둘 이상이면 Single Card의 헤더 선택기 표시. */
+  /** 공개 예시의 등록 계정명. */
   account?: string;
   accountID?: string;
   accountOptions?: DemoAccount[];
@@ -28,16 +28,11 @@ export interface Card {
   links: QuickLink[];
 }
 
-/** 예시 값이 없는 지표도 Customize에서 켤 수 있도록 No data 행 준비. */
-export function completeCard(card: Card): Card {
-  const metrics = providerMetrics[card.provider];
-  const complete = (rows: Row[], descriptors: Array<{ title: string }>): Row[] => descriptors.map((metric) =>
-    rows.find((row) => row.label === metric.title) ?? { kind: 'text', label: metric.title, values: ['No data'] });
-  return {
-    ...card,
-    always: complete(card.always, metrics.alwaysVisible),
-    onDemand: complete(card.onDemand, metrics.onDemand),
-  };
+/** 한도를 보고하지 않는 행은 No data로 유지하고 렌더 단계에서 숨김. */
+export function cardRows(card: Card): Row[] {
+  const supplied = [...card.always, ...card.onDemand];
+  return providerMetrics[card.provider].rows.map((metric) => supplied.find((row) => row.label === metric.title)
+    ?? { kind: 'text', label: metric.title, values: ['No data'] });
 }
 
 // elapsed는 pace 투영(used / elapsed)의 입력이라 화면 문구를 되돌려 정한 값.
@@ -51,19 +46,20 @@ export const cards: Card[] = [
     plan: 'Max 20x',
     always: [
       // 여유 있게 소비 중 — 파랑.
-      { kind: 'bounded', label: 'Session', used: 3, limit: 100, elapsed: 0.0423,
+      { kind: 'bounded', label: 'Session', periodHours: 5, used: 3, limit: 100, elapsed: 0.0423,
         resetAbsolute: 'Resets today at 18:20', resetRelative: 'Resets in 5h 12m' },
       // 76% 사용이지만 소비 속도가 완만해 한도 안 착지 — 절대 구간(80%) 미만이라 파랑.
-      { kind: 'bounded', label: 'Weekly', used: 76, limit: 100, elapsed: 0.987,
+      { kind: 'bounded', label: 'Weekly', periodHours: 168, used: 76, limit: 100, elapsed: 0.987,
         resetAbsolute: 'Resets today at 16:00', resetRelative: 'Resets in 2h 52m' },
       // 남은 양이 표시 정밀도에서 0 — Limit reached.
-      { kind: 'bounded', label: 'Fable', used: 100, limit: 100, elapsed: 0.987,
+      { kind: 'bounded', label: 'Fable', periodHours: 168, used: 100, limit: 100, elapsed: 0.987,
         resetAbsolute: 'Resets today at 16:00', resetRelative: 'Resets in 2h 52m' },
     ],
     onDemand: [
       { kind: 'trend', label: 'Usage Trend', bars: [0.12, 0.18, 0.1, 0.24, 0.14, 0.08, 0.15, 0.35, 0.24, 0.16, 0.52, 0.31, 0.28, 0.19, 0.42, 0.71, 0.39, 0.28, 0.44, 0.21, 0.33, 0.88, 0.6, 0.34, 0.45, 0.29, 0.51, 0.38, 0.63, 0.25] },
       { kind: 'text', label: 'Today', values: ['$4.08', '560K tokens'] },
       { kind: 'text', label: 'Yesterday', values: ['$12.50', '1.7M tokens'] },
+      { kind: 'text', label: 'Last 30 Days', values: ['$128.40', '17.8M tokens'] },
     ],
     links: [
       { label: 'Status', href: 'https://status.claude.com/' },
@@ -77,10 +73,10 @@ export const cards: Card[] = [
     title: 'Codex',
     plan: 'Pro',
     always: [
-      { kind: 'bounded', label: 'Session', used: 28, limit: 100, elapsed: 0.31,
-        resetAbsolute: 'Resets today at 21:00', resetRelative: 'Resets in 6h 0m' },
+      { kind: 'bounded', label: 'Session', periodHours: 5, used: 28, limit: 100, elapsed: 0.31,
+        resetAbsolute: 'Resets today at 21:00', resetRelative: 'Resets in 3h 27m' },
       // 리셋 전에 한도 초과 예상 — 빨강 + 소진 예상 시각.
-      { kind: 'bounded', label: 'Weekly', used: 97, limit: 100, elapsed: 0.9, runOutAt: 'today at 15:07',
+      { kind: 'bounded', label: 'Weekly', periodHours: 168, used: 97, limit: 100, elapsed: 0.9, runOutAt: 'today at 15:07',
         resetAbsolute: 'Resets Oct 30 at 10:23', resetRelative: 'Resets in 4d 17h' },
     ],
     onDemand: [
@@ -90,6 +86,7 @@ export const cards: Card[] = [
       { kind: 'text', label: 'Rate Limit Resets', values: ['2 available'] },
       { kind: 'text', label: 'Today', values: ['$2.31', '690K tokens'] },
       { kind: 'text', label: 'Yesterday', values: ['$3.44', '910K tokens'] },
+      { kind: 'text', label: 'Last 30 Days', values: ['$96.12', '19.3M tokens'] },
     ],
     links: [
       { label: 'Status', href: 'https://status.openai.com/' },
@@ -104,16 +101,41 @@ export const cards: Card[] = [
     title: 'Antigravity',
     always: [
       // 아직 첫 메시지를 보내지 않은 session 창.
-      { kind: 'bounded', label: 'Session', used: 0, limit: 100, elapsed: 0, notStarted: true },
-      { kind: 'bounded', label: 'Weekly', used: 16, limit: 100, elapsed: 0.889,
+      { kind: 'bounded', label: 'Session', periodHours: 5, used: 0, limit: 100, elapsed: 0, notStarted: true },
+      { kind: 'bounded', label: 'Weekly', periodHours: 168, used: 16, limit: 100, elapsed: 0.889,
         resetAbsolute: 'Resets tomorrow at 09:35', resetRelative: 'Resets in 19h 44m' },
     ],
     onDemand: [
-      { kind: 'bounded', label: 'Claude', used: 41, limit: 100, elapsed: 0.62,
+      { kind: 'bounded', label: 'Claude', periodHours: 5, used: 41, limit: 100, elapsed: 0.62,
         resetAbsolute: 'Resets tomorrow at 09:35', resetRelative: 'Resets in 19h 44m' },
-      { kind: 'bounded', label: 'Claude Weekly', used: 58, limit: 100, elapsed: 0.889,
+      { kind: 'bounded', label: 'Claude Weekly', periodHours: 168, used: 58, limit: 100, elapsed: 0.889,
         resetAbsolute: 'Resets tomorrow at 09:35', resetRelative: 'Resets in 19h 44m' },
     ],
+    links: [],
+  },
+  {
+    id: 'kiro',
+    icon: 'kiro',
+    provider: 'kiro',
+    title: 'Kiro',
+    always: [
+      { kind: 'bounded', label: 'Credits', periodHours: 30 * 24, used: 23, limit: 50, elapsed: 0.5,
+        resetAbsolute: 'Resets Nov 10 at 10:00', resetRelative: 'Resets in 15d' },
+    ],
+    onDemand: [],
+    links: [],
+  },
+  {
+    id: 'opencode',
+    icon: 'opencode',
+    provider: 'opencode',
+    title: 'OpenCode',
+    plan: 'Go',
+    always: [
+      { kind: 'bounded', label: 'Monthly', periodHours: 30 * 24, estimated: true, used: 24, limit: 60, elapsed: 0.5,
+        resetAbsolute: 'Resets Nov 10 at 10:00', resetRelative: 'Resets in 15d' },
+    ],
+    onDemand: [],
     links: [],
   },
 ];
@@ -130,17 +152,16 @@ export function accountCardVariants(card: Card): Card[] {
     always: index === 0 ? card.always : card.always.map((row, position) => row.kind === 'bounded'
       ? { ...row, used: [42, 35, 18][position % 3], elapsed: 0.65, runOutAt: undefined }
       : row),
-    onDemand: index === 0 ? card.onDemand : card.onDemand.map((row) => row.kind === 'text' && row.label === 'Today'
-      ? { ...row, values: ['$1.26', '120K tokens'] } : row),
+    onDemand: card.onDemand,
   }));
 }
 
 /**
- * Customize에서 켰지만 아직 자료가 없는 provider의 카드.
+ * 예시 인증이 없는 프로바이더의 빈 카드.
  * 실제 한도·사용량을 꾸며 넣지 않고 모든 지표를 No data 텍스트로 준비.
  */
 export function emptyCard(id: string, name: string): Card {
-  return completeCard({
+  return {
     id,
     icon: id,
     provider: id,
@@ -148,5 +169,5 @@ export function emptyCard(id: string, name: string): Card {
     always: [],
     onDemand: [],
     links: [],
-  });
+  };
 }

@@ -52,14 +52,15 @@ final class BackgroundWorkQueueTests: XCTestCase {
         let suite = "BackgroundWorkQueueTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
+        let timeout = 1.0
         let store = WidgetDataStore(
             registry: .from([runtime]), providers: [runtime],
             cache: ProviderSnapshotCache(userDefaults: defaults), defaults: defaults,
-            providerRefreshTimeout: 0.02, workQueue: queue
+            providerRefreshTimeout: timeout, workQueue: queue
         )
         let refresh = Task { await store.refresh(providerID: "cursor", force: true) }
         await waitForPending(1, in: queue)
-        try await Task.sleep(for: .milliseconds(60))
+        try await Task.sleep(for: .seconds(timeout + 0.25))
         XCTAssertEqual(runtime.calls, 0)
         XCTAssertTrue(store.isRefreshQueued(for: "cursor"))
         XCTAssertNil(store.refreshResults["cursor"])
@@ -200,9 +201,10 @@ final class BackgroundWorkQueueTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: stale.path))
 
         queue.finish(ticket)
-        await scanner.waitForPendingWritesForTesting()
-        XCTAssertFalse(FileManager.default.fileExists(atPath: stale.path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: manifest.path))
+        await queue.run("verify-cache-maintenance") {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: stale.path))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: manifest.path))
+        }
         let restored = IncrementalJSONLScanner<Int>(persistence: persistence, workQueue: queue)
         let cached = await restored.items(from: [discovered], since: .distantPast) { _ in
             XCTFail("The queued write must remain reusable after completion")

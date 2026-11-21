@@ -108,7 +108,7 @@ struct ClaudeDesktopAuthStore: Sendable {
         self.keyCache = keyCache
     }
 
-    /// first-run 감지용 저비용·prompt 없는 흔적 확인 — 실제 refresh에서 복호화·검증 수행.
+    /// Keychain 접근 전에 토큰 캐시와 쿠키 파일이 있는지 확인.
     func hasCredentialMaterial() -> Bool {
         let configPath = path(Self.configRelativePath)
         guard let text = try? files.readTextIfPresent(configPath),
@@ -162,7 +162,7 @@ struct ClaudeDesktopAuthStore: Sendable {
             AppLog.warn(LogTag.auth("claude"), "Claude Desktop credential read delayed by another Keychain operation")
             return ClaudeDesktopCredentialResult(oauth: nil, status: .permissionRequired)
         } catch {
-            AppLog.error(LogTag.auth("claude"), "Claude Desktop credential read failed: \(error.localizedDescription)")
+            AppLog.error(LogTag.auth("claude"), "Claude Desktop credential read failed: \(AppLog.errorDetails(error))")
             return ClaudeDesktopCredentialResult(oauth: nil, status: .invalid)
         }
     }

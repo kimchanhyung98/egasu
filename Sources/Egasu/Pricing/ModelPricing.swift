@@ -1,9 +1,10 @@
 import Foundation
 import os
 
-/// 불변 pricing snapshot — supplement + 공개 catalog 2종. `ModelPricingStore`가 생성, scanner/mapper가 한 parse pass 동안 동기 사용.
-/// 해석 순서: supplement alias 재작성 → supplement 정확 일치 → LiteLLM 정확 → `-fast`는 base × fast multiplier(배율 없으면 미가격)
-/// → LiteLLM fuzzy(비-fast slug만) → models.dev 정확 일치만 — reseller 집계 특성상 fuzzy는 오가격 위험, unknown variant는 미가격 유지.
+/// 불변 가격 스냅샷 — 보충표·공개 카탈로그 두 종을 구성하여 한 번의 수집·매핑 동안 동기 사용.
+/// Cursor 기록은 별칭과 보충표의 Cursor 전용 단가를 먼저 확인.
+/// 공통 조회는 별칭을 적용한 뒤 보충표와 LiteLLM의 정확 일치 우선.
+/// 속도 접미사를 정규화하고 Fast 배율·속도별 정확 일치 확인, 일반 모델은 LiteLLM 유사 일치 후 models.dev 정확 일치.
 final class ModelPricing: Sendable {
     enum Source: Hashable, Sendable {
         case api
@@ -16,12 +17,12 @@ final class ModelPricing: Sendable {
     }
 
     let supplement: PricingSupplement
-    /// LiteLLM `model_prices_and_context_window.json` — bundled snapshot에 fetch 데이터 merge.
+    /// LiteLLM 가격표 — 번들 스냅샷에 받은 자료를 병합.
     let primary: PricingCatalog
-    /// models.dev `api.json` — LiteLLM 누락 model의 gap-filler.
+    /// models.dev 가격표 — LiteLLM에 없는 모델의 보조 출처.
     let secondary: PricingCatalog
 
-    /// fuzzy miss마다 전체 catalog 순회 — model 이름별 memoize. snapshot 불변이라 entry invalidation 없음.
+    /// 카탈로그 전체 탐색을 줄이도록 모델·출처별 결과 캐시 — 스냅샷 수명 동안 입력 불변.
     private let memo = OSAllocatedUnfairLock<[ResolutionKey: ModelRates?]>(initialState: [:])
 
     init(supplement: PricingSupplement, primary: PricingCatalog, secondary: PricingCatalog) {
@@ -44,8 +45,8 @@ final class ModelPricing: Sendable {
         return resolved
     }
 
-    /// `model` 기준 `tokens`의 dollar cost — 미가격 model이면 nil.
-    /// request 경계를 보존하지 않는 집계 source는 long-context tier 비활성 가능.
+    /// 모델과 토큰 내역으로 USD 비용 계산 — 단가가 없으면 nil.
+    /// 요청 경계가 없는 집계 자료는 긴 문맥 요율 적용 생략 가능.
     func estimatedCostDollars(
         model: String,
         tokens: TokenBreakdown,
@@ -74,7 +75,7 @@ final class ModelPricing: Sendable {
         return lookup(model)
     }
 
-    /// secondary catalog은 primary 전체 miss 후에만 조회 (ccusage 방식) — LiteLLM이 알면 항상 우선, models.dev는 정확 id만 응답.
+    /// 공통 요율 조회 — models.dev는 정확한 모델 ID만 조회하고, Ultrafast는 전용 항목만 사용.
     private func lookup(_ name: String) -> ModelRates? {
         if let entry = supplement.pricing[name] { return entry }
         if let exact = primary.findExact(name) { return exact.rates }
@@ -110,8 +111,8 @@ final class ModelPricing: Sendable {
         return name.replacingCharacters(in: range, with: "")
     }
 
-    /// `<base>-fast` slug를 base entry × fast multiplier로 가격 산정 — multiplier 미상이면 nil.
-    /// caller는 models.dev의 정확 fast entry는 수용 가능하나 표준 속도 base rate로의 fuzzy 매칭은 금지.
+    /// <base>-fast 모델은 기본 요율에 Fast 배율 적용 — 배율을 모르면 nil.
+    /// 기본 요율은 유사 일치로 찾을 수 있음. 배율이 없으면 전용 Fast 단가 확인을 위해 nil 반환.
     private func fastVariant(_ name: String) -> ModelRates? {
         guard let base = Self.fastBaseName(name), !base.isEmpty else { return nil }
         let undatedBase = base.replacingOccurrences(

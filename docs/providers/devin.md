@@ -6,8 +6,8 @@ Devin CLI 또는 Devin 앱의 로그인으로 Devin 할당량 추적.
 
 | 지표 | 의미 |
 |---|---|
-| Weekly | 주간 할당량 사용량(Devin이 주간 할당량을 숨기면 미표시) |
 | Daily | 일간 할당량 사용량(Devin이 일간 할당량을 숨기면 미표시) |
+| Weekly | 주간 할당량 사용량(Devin이 주간 할당량을 숨기면 미표시) |
 | Extra Balance | 초과/추가 사용 잔액(달러) |
 
 Devin이 요금제 이름을 보고하면 egasu의 프로바이더 이름 옆에 표시.
@@ -15,7 +15,9 @@ Devin이 요금제 이름을 보고하면 egasu의 프로바이더 이름 옆에
 
 ## 상단 통계 지원 범위
 
-이 Mac에 저장된 Devin CLI 요청 이력을 Today·Yesterday·Last 30 Days의 Cost·Tokens·Cost/MTok에 반영.
+### CLI 이력 수집
+
+이 Mac에 저장된 Devin CLI 요청 이력을 상단 Today·Yesterday·30 Days의 Cost·Tokens·Cost/MTok에 반영.
 기본 저장소는 `~/.local/share/devin/cli/sessions.db`이며, 파일 저장 모드의 `cli/sessions/<session>/log.jsonl`도 지원.
 `DEVIN_SESSIONS_DIR`이 있으면 `$DEVIN_SESSIONS_DIR/cli` 사용.
 그 외에는 `$XDG_DATA_HOME/devin/cli` 사용하며, `XDG_DATA_HOME`도 없으면 기본 경로 사용.
@@ -38,10 +40,13 @@ SQLite와 세션 파일은 읽기 전용이며 인증 정보·대화 본문을 �
   진단 로그에는 접근 권한 부족 등 원래 파일 오류 분류 기록.
   사용량 메타데이터가 없는 정상 assistant 기록은 집계 대상에서 제외.
 - 로컬 자정 기준 날짜 사용.
-  Last 30 Days는 기존 통계와 같이 오늘 및 이전 30일 포함.
+  30 Days는 오늘과 이전 30일 포함.
 
 [공식 CLI](https://docs.devin.ai/cli/reference/commands)의 요청별 사용량을 수집하는 범위.
 이 Mac에 기록되지 않은 Cloud·조직 사용량은 포함하지 않음.
+
+### 조회 실패 처리
+
 할당량 조회 실패 시에도 읽을 수 있는 로컬 통계는 갱신하며 기존 한도·요금제·조회 시각은 보존.
 로컬 통계 조회에 실패하면 마지막 통계 수집일이 같은 경우에만 기존 통계 유지.
 통계 수집일은 한도 조회일과 별도로 보존하며, 한도 조회 실패 중 수집한 오늘 통계도 같은 기준 적용.
@@ -50,18 +55,18 @@ SQLite와 세션 파일은 읽기 전용이며 인증 정보·대화 본문을 �
 모든 기록을 읽지 못한 결과는 빈 이력으로 취급하지 않음.
 정상적인 빈 이력이 확인되거나 마지막 통계 수집일이 다른 경우에는 기존 통계 제거.
 
-Devin Desktop의 이전 ACP 이벤트 캐시도 확인.
-이전 경로는 `~/Library/Application Support/Devin/User/acp-events/*.ndjson`.
-공식 v3.11.238은 이 경로를 삭제하고 `acp-messages/*.db` 메시지 캐시 사용.
-최신 메시지 캐시의 완전한 요청별 토큰 원장은 미확인으로, 현재 Desktop 사용량 수집 범위에서 제외.
-Devin Local 실행이 CLI 원장에 남긴 요청은 기존 CLI 수집기로 집계.
-이전 ACP 기록 중 `devin-cli` 값은 요청 단위 미확인으로 Devin 통계에 합산하지 않음.
+### Desktop 기록 처리
+
+Devin Desktop의 ACP 이벤트 캐시 `~/Library/Application Support/Devin/User/acp-events/*.ndjson`도 확인.
+`acp-messages/*.db` 메시지 캐시는 요청별 토큰 원장으로 해석하지 않으며 수집 대상에서 제외.
+Devin Local 실행이 CLI 원장에 남긴 요청은 CLI 이력으로 집계.
+ACP 기록 중 `devin-cli` 값은 요청 단위를 확인할 수 없어 Devin 통계에 합산하지 않음.
 조회 기간 안의 `devin-cli` ACP 기록과 시각이 없는 기록은 `invalidRows`로 계산하여 Devin 카드의 degraded 상태와 진단 기록에 반영.
 조회 기간 밖이나 현재보다 미래의 기록은 현재 이력의 완전성 판단에서 제외.
-손상된 ACP 행은 provider를 확인할 수 없어도 불완전 이력으로 진단.
+손상된 ACP 행은 프로바이더를 확인할 수 없어도 불완전 이력으로 진단.
 마지막 행이 줄바꿈 없이 미완성인 경우에는 다음 수집까지 보류.
 일반 ACP의 현재 컨텍스트 크기와 누적 비용을 요청별 입력·출력 토큰으로 변환하지 않음.
-확인되지 않은 사용량 메타데이터는 원본 collection에 보존하고 불완전 이력으로 구분.
+요청 단위를 확인할 수 없는 사용량 메타데이터는 수집 결과에 보존하고 불완전 이력으로 구분.
 
 ## 인증 정보 출처
 
@@ -70,18 +75,20 @@ Devin Local 실행이 CLI 원장에 남긴 요청은 기존 CLI 수집기로 집
 1. Devin CLI 인증 정보: `XDG_DATA_HOME` 설정 시 `$XDG_DATA_HOME/devin/credentials.toml` 사용.
    미설정 시 `~/.local/share/devin/credentials.toml` 사용.
    `windsurf_api_key` 사용, `api_server_url`이 있으면 함께 사용.
-2. Devin 앱의 로컬 상태 데이터베이스
+2. Devin Desktop의 `~/Library/Application Support/Devin/User/globalStorage/state.vscdb`에 있는 `windsurfAuthStatus` 항목.
 
-CLI 조회가 실패하면 앱의 인증 정보 확인.
-앱의 API 키 또는 API 서버가 CLI 설정과 다를 때 앱의 인증 정보로 다시 조회.
+CLI 인증 정보가 없거나 CLI 조회가 실패하면 Desktop 인증 정보 확인.
+CLI 인증 정보로 이미 시도했다면 Desktop의 API 키 또는 적용할 API 서버가 다를 때 재시도.
 
 ## 문제 해결
 
 - **"Not logged in"** — `devin auth login`을 실행하거나 Devin 앱에 로그인한 뒤 새로 고침.
 - **Weekly에 일간 수치 표시** — 주간 할당량이 표시 대상이고 주간 수치가 없으며 일간 할당량을 숨기는 경우, Weekly 행에 일간 수치 표시.
+  이 경우 소프트 한도와 주간 소진 속도 계산에서 제외.
 
 ## 내부 동작
 
 설정된 API 서버(기본값 `server.codeium.com`)에서 Connect RPC `GetUserStatus` 호출.
 할당량 백분율은 "remaining"으로 전달되며 "used"로 변환.
-토큰 갱신 없이 401/403 발생 시 다음 인증 출처로 전환.
+앱은 저장된 인증 정보로 조회하며 토큰 자동 갱신은 미지원.
+401/403을 비롯한 CLI 조회 실패는 위 인증 정보 출처 규칙에 따라 처리.

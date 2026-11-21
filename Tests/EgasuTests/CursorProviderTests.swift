@@ -1,3 +1,4 @@
+import Synchronization
 import XCTest
 @testable import Egasu
 
@@ -54,6 +55,64 @@ final class CursorAuthStoreTests: XCTestCase {
 }
 
 final class CursorUsageMapperTests: XCTestCase {
+    func testPlanLimitAloneDoesNotImplyFullUsage() throws {
+        let usage: [String: Any] = ["planUsage": ["limit": 500]]
+        for plan in ["Pro", "Team"] {
+            XCTAssertThrowsError(
+                try CursorUsageMapper.mapUsage(
+                    usage: usage, planName: plan, creditGrants: nil, stripeBalanceCents: 0
+                ))
+        }
+        XCTAssertTrue(CursorPlanUsageFacts(usage: usage).shouldTryGenericRequestFallback)
+        let incomplete = try CursorUsageMapper.mapUsage(
+            usage: [
+                "billingCycleStart": 1_770_000_000_000, "billingCycleEnd": 1_770_604_800_000,
+                "planUsage": ["limit": 500, "apiPercentUsed": 0], "spendLimitUsage": ["individualLimit": 100]
+            ],
+            planName: "Pro", creditGrants: nil, stripeBalanceCents: 0
+        )
+        XCTAssertEqual(incomplete.lines.map(\.label), ["API usage"])
+        XCTAssertEqual(progress(incomplete.lines, "API usage")?.used, 0)
+        XCTAssertEqual(incomplete.incompleteQuotaWindows, [.weekly])
+    }
+
+    func testRequestFallbackOnlyResolvesTheSameMetricAndPeriod() throws {
+        let weekStart = 1_770_000_000_000
+        let request = try CursorUsageMapper.mapRequestBasedUsage(
+            ["startOfMonth": "2026-02-01T00:00:00Z", "gpt-4": ["maxRequestUsage": 20, "numRequests": 2]],
+            planName: "Pro", unavailableMessage: "unavailable"
+        )
+        func unresolved(_ days: Int, plan: [String: Any]) -> Set<SoftLimitWindow> {
+            var mapped = request
+            CursorUsageMapper.includeUnresolvedPlanQuota(
+                from: [
+                    "billingCycleStart": weekStart, "billingCycleEnd": weekStart + days * MetricPeriod.dayMs,
+                    "planUsage": plan
+                ],
+                in: &mapped
+            )
+            return mapped.incompleteQuotaWindows
+        }
+        XCTAssertEqual(unresolved(7, plan: ["limit": 500]), [.weekly])
+        XCTAssertEqual(unresolved(28, plan: ["limit": 500]), [])
+        XCTAssertEqual(unresolved(28, plan: ["apiPercentUsed": "invalid"]), [.monthly])
+        XCTAssertEqual(unresolved(28, plan: ["apiPercentUsed": NSNull()]), [])
+    }
+
+    func testRequestCapRequiresAReportedCount() throws {
+        XCTAssertThrowsError(
+            try CursorUsageMapper.mapRequestBasedUsage(
+                ["gpt-4": ["maxRequestUsage": 500]], planName: "Team", unavailableMessage: "unavailable"
+            ))
+        for count in [0, 19] {
+            let mapped = try CursorUsageMapper.mapRequestBasedUsage(
+                ["gpt-4": ["maxRequestUsage": 500, "numRequestsTotal": count]], planName: "Team",
+                unavailableMessage: "unavailable"
+            )
+            XCTAssertEqual(progress(mapped.lines, "Requests")?.used, Double(count))
+        }
+    }
+
     func testMapsCreditsUsageBreakdownAndOnDemand() throws {
         let mapped = try CursorUsageMapper.mapUsage(
             usage: [
@@ -156,7 +215,8 @@ final class CursorUsageMapperTests: XCTestCase {
         XCTAssertEqual(mapped.plan, "Team")
         XCTAssertEqual(progress(mapped.lines, "Requests")?.used, 39)
         XCTAssertEqual(progress(mapped.lines, "Requests")?.limit, 500)
-        XCTAssertEqual(progress(mapped.lines, "Requests")?.periodDurationMs, CursorUsageMapper.billingPeriodMs)
+        XCTAssertEqual(progress(mapped.lines, "Requests")?.periodDurationMs, 28 * MetricPeriod.dayMs)
+        XCTAssertEqual(progress(mapped.lines, "Requests")?.resetsAt, EgasuISO8601.date(from: "2026-03-09T17:36:37Z"))
     }
 
     func testTeamAccountEmitsDollarTotalUsageAndNoOrphanedBonusSpendLine() throws {
@@ -208,29 +268,37 @@ final class CursorUsageMapperTests: XCTestCase {
 @MainActor
 final class CursorProviderTests: XCTestCase {
     func testRefreshFetchesLiveCursorUsage() async {
+        let observedAt = Date(timeIntervalSince1970: 1_772_000_000)
+        let finalTime = observedAt.addingTimeInterval(600)
+        let clock = Mutex(observedAt)
         let accessToken = makeCursorJWT(sub: "google-oauth2|user_abc123")
         let http = RoutingHTTPClient { request in
             let url = request.url.absoluteString
             if url.contains("GetCurrentPeriodUsage") {
-                return HTTPResponse(statusCode: 200, headers: [:], body: Data("""
-                {
-                  "enabled": true,
-                  "billingCycleEnd": 1772592000000,
-                  "planUsage": {
-                    "limit": 40000,
-                    "remaining": 32000,
-                    "totalPercentUsed": 20,
-                    "autoPercentUsed": 12.5,
-                    "apiPercentUsed": 7.5
-                  },
-                  "spendLimitUsage": {
-                    "individualLimit": 5000,
-                    "individualRemaining": 1000
-                  }
-                }
-                """.utf8))
+                return HTTPResponse(
+                    statusCode: 200, headers: [:],
+                    body: Data(
+                        """
+                        {
+                          "enabled": true,
+                          "billingCycleStart": 1770172800000,
+                          "billingCycleEnd": 1772592000000,
+                          "planUsage": {
+                            "limit": 40000,
+                            "remaining": 32000,
+                            "totalPercentUsed": 20,
+                            "autoPercentUsed": 12.5,
+                            "apiPercentUsed": 7.5
+                          },
+                          "spendLimitUsage": {
+                            "individualLimit": 5000,
+                            "individualRemaining": 1000
+                          }
+                        }
+                        """.utf8))
             }
             if url.contains("GetPlanInfo") {
+                clock.withLock { $0 = finalTime }
                 return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"planInfo":{"planName":"pro plan"}}"#.utf8))
             }
             if url.contains("GetCreditGrantsBalance") {
@@ -248,12 +316,15 @@ final class CursorProviderTests: XCTestCase {
                 keychain: FakeKeychain()
             ),
             usageClient: CursorUsageClient(http: http),
-            now: { Date(timeIntervalSince1970: 1_800_000_000) }
+            now: { clock.withLock { $0 } }
         )
 
         let snapshot = await provider.refresh()
 
         XCTAssertEqual(snapshot.plan, "Pro Plan")
+        XCTAssertEqual(snapshot.liveQuotaObservedAt, observedAt)
+        XCTAssertNil(snapshot.incompleteQuotaWindows)
+        XCTAssertEqual(snapshot.refreshedAt, finalTime)
         XCTAssertEqual(dollarValue(snapshot.lines, "Credits") ?? -1, 500)
         XCTAssertEqual(progress(snapshot.lines, "Total usage")?.used, 20)
         XCTAssertEqual(progress(snapshot.lines, "Auto usage")?.used, 12.5)

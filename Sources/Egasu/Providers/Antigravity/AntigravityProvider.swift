@@ -1,6 +1,6 @@
 import Foundation
 
-/// Antigravity(Google의 Codeium/Windsurf 계열 AI IDE)의 pool quota 추적. quota는 fraction 기반, 최대 4개 percent meter — 공유 Gemini pool과 공유 비Gemini pool(Claude, GPT-OSS), 각각 rolling 5시간 + weekly window.
+/// Antigravity의 공유 Gemini·비Gemini 5시간·주간 한도와 별도 Argon 주간 한도 추적.
 /// probe 순서(좋은 source 우선): 1) Antigravity language server(실행 중 앱) — authoritative plan 제공, 2) `agy` language server(실행 중 CLI), 3) Keychain token → Google Cloud Code(앱 종료 시에도 동작, Google OAuth로 refresh).
 /// 각 source에서 `RetrieveUserQuotaSummary` 우선(병합 pool·weekly window를 보고하는 유일한 endpoint) — 미지원 빌드는 legacy per-model endpoint로 fallback, 5h 전용이라 weekly meter는 "No data".
 @MainActor
@@ -50,21 +50,25 @@ final class AntigravityProvider: ProviderRuntime {
         self.pricing = pricing
     }
 
+    var usageTimerObservations: [UsageTimerObservation] = []
+    var usageTimerCredential: AntigravityKeychainToken?
+
     var widgetDescriptors: [WidgetDescriptor] {
         [
             .percent(id: AntigravityMetric.geminiID, provider: provider, title: AntigravityMetric.sessionLabel, sessionStartSignal: .zeroUsage)
-                .supportingSoftLimit(.fiveHours)
                 .exportingLimit("geminiSession", unit: "percent")
                 .exportingHistory(scope: .machineLocal, estimatedCost: true, sourceNote: Self.historySourceNote),
             .percent(id: AntigravityMetric.geminiWeeklyID, provider: provider, title: AntigravityMetric.weeklyLabel)
                 .supportingSoftLimit(.weekly)
                 .exportingLimit("geminiWeekly", unit: "percent"),
             .percent(id: AntigravityMetric.claudeID, provider: provider, title: AntigravityMetric.claudeLabel, sessionStartSignal: .zeroUsage)
-                .supportingSoftLimit(.fiveHours)
                 .exportingLimit("nonGeminiSession", unit: "percent"),
             .percent(id: AntigravityMetric.claudeWeeklyID, provider: provider, title: AntigravityMetric.claudeWeeklyLabel)
                 .supportingSoftLimit(.weekly)
-                .exportingLimit("nonGeminiWeekly", unit: "percent")
+                .exportingLimit("nonGeminiWeekly", unit: "percent"),
+            .percent(id: AntigravityMetric.argonWeeklyID, provider: provider, title: AntigravityMetric.argonWeeklyLabel)
+                .supportingSoftLimit(.weekly)
+                .exportingLimit("argonWeekly", unit: "percent")
         ]
     }
 
@@ -86,12 +90,29 @@ final class AntigravityProvider: ProviderRuntime {
     }
 
     func refresh() async -> ProviderSnapshot {
+        usageTimerObservations = []
+        usageTimerCredential = nil
         let refreshedAt = now()
         var quota: StrategyResult?
+        var quotaObservedAt: Date?
         var quotaError: Error?
         do {
             try Task.checkCancellation()
             quota = try await probe()
+            quotaObservedAt = usageTimerObservations.first?.observedAt ?? now()
+            if usageTimerCredential == nil, let quota,
+               quota.lines.contains(where: {
+                   guard [
+                       AntigravityMetric.sessionLabel, AntigravityMetric.weeklyLabel,
+                       AntigravityMetric.claudeLabel, AntigravityMetric.claudeWeeklyLabel
+                   ].contains($0.label) else { return false }
+                   if case .progress(_, let used, _, .percent, _, _, _) = $0 { return used == 0 }
+                   return false
+               }), let credentials = try await loadOffMainActor({ [authStore] in try authStore.loadKeychainToken() }),
+               credentials.refreshToken?.isEmpty == false {
+                // LS 응답에는 인증 주체가 없음. 자동 전송 후보만 Keychain 인증으로 다시 조회.
+                _ = try await probeCloudCode()
+            }
             try Task.checkCancellation()
         } catch {
             if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled {
@@ -121,7 +142,7 @@ final class AntigravityProvider: ProviderRuntime {
         let history = scan?.usageHistory
         let hasLocalUsage = history?.series.daily.contains { $0.totalTokens > 0 || ($0.costUSD ?? 0) > 0 } == true
             || history?.unknownModelsByDay.values.contains(where: { !$0.isEmpty }) == true
-        if let quotaError, !hasLocalUsage {
+        if let quotaError, quota == nil, !hasLocalUsage {
             return ProviderSnapshot.error(provider: provider, error: quotaError)
         }
 
@@ -157,19 +178,25 @@ final class AntigravityProvider: ProviderRuntime {
                 modelSourceNote: Self.historySourceNote
             )
         }
-        return ProviderSnapshot.make(
+        var snapshot = ProviderSnapshot.make(
             provider: provider, plan: quota?.plan, lines: lines, refreshedAt: refreshedAt,
             usageHistory: history,
             warning: warnings.isEmpty ? nil : warnings.joined(separator: " "),
             warningPresentation: warningPresentations.isEmpty ? nil : warningPresentations,
             authenticationIssue: quotaError.flatMap { ProviderAuthenticationIssue(error: $0) },
-            isDegraded: warnings.isEmpty ? nil : true
+            isDegraded: warnings.isEmpty ? nil : true,
+            incompleteQuotaWindows: quota?.hasIncompleteWeeklyQuota == true ? [.weekly] : nil,
+            liveQuotaObservedAt: quotaObservedAt
         )
+        snapshot.usageTimerObservedAt = usageTimerObservations.first?.observedAt
+        snapshot.reportedPartialFailure = (quotaError ?? scanError).map(ErrorCategory.classify)
+        return snapshot
     }
 
-    private struct StrategyResult {
+    struct StrategyResult {
         var plan: String?
         var lines: [MetricLine]
+        var hasIncompleteWeeklyQuota = false
     }
 
     private func probe() async throws -> StrategyResult {
@@ -216,14 +243,15 @@ final class AntigravityProvider: ProviderRuntime {
             // quota summary가 authoritative(병합 pool + weekly window)라 최우선. 파싱된 summary는 usable bucket이 0이어도 probe 종료 — 아래 legacy endpoint는 quota 정보 부재를 "fully used"로 지어내므로 authoritative 답이 거기로 흘러가면 안 됨. 빈 lines는 "No data" 행으로 렌더.
             if let summary = await usageClient.callLS(scheme: endpoint.scheme, port: endpoint.port, csrf: discovered.csrf, method: "RetrieveUserQuotaSummary") {
                 if (200..<300).contains(summary.statusCode) {
-                    if let lines = AntigravityUsageMapper.parseQuotaSummary(summary.body) {
+                    if let parsed = AntigravityUsageMapper.parseQuotaSummary(summary.body) {
                         // plan은 독립적인 GetUserStatus 호출 — summary는 이에 gate되지 않고, plan 조회 실패는 빈 plan으로만 남음.
                         var plan: String?
                         if let status = await usageClient.callLS(scheme: endpoint.scheme, port: endpoint.port, csrf: discovered.csrf, method: "GetUserStatus"),
                            (200..<300).contains(status.statusCode) {
                             plan = AntigravityUsageMapper.parseUserStatus(status.body)?.plan
                         }
-                        return StrategyResult(plan: plan, lines: lines)
+                        return StrategyResult(
+                            plan: plan, lines: parsed.lines, hasIncompleteWeeklyQuota: parsed.hasIncompleteWeeklyQuota)
                     }
                     // 2xx지만 summary payload 아님 — parser가 경고, legacy 흐름으로 진행.
                 } else if summary.statusCode != 404 {
@@ -256,7 +284,7 @@ final class AntigravityProvider: ProviderRuntime {
 
     // MARK: - Cloud Code
 
-    private func probeCloudCode() async throws -> StrategyResult {
+    func probeCloudCode() async throws -> StrategyResult {
         let authStore = self.authStore
         let keychainToken = try await loadOffMainActor { try authStore.loadKeychainToken() }
 
@@ -281,7 +309,9 @@ final class AntigravityProvider: ProviderRuntime {
         var sawAuthFailure = false
         for token in tokens {
             switch await fetchCloudCode(token: token) {
-            case .success(let result): return result
+            case .success(let result):
+                recordUsageTimer(lines: result.lines, credentials: keychainToken)
+                return result
             case .authFailed: sawAuthFailure = true
             case .unavailable: break
             }
@@ -299,7 +329,9 @@ final class AntigravityProvider: ProviderRuntime {
                     )
                 }
                 switch await fetchCloudCode(token: accessToken) {
-                case .success(let result): return result
+                case .success(let result):
+                    recordUsageTimer(lines: result.lines, credentials: keychainToken)
+                    return result
                 case .authFailed: throw AntigravityError.authExpired
                 // 갱신된 token은 유효 — 여기서의 non-2xx는 auth 불량이 아닌 일시 장애.
                 case .unavailable: throw AntigravityError.unavailable
@@ -330,8 +362,12 @@ final class AntigravityProvider: ProviderRuntime {
         case .authFailed:
             return .authFailed
         case .ok(let bodies):
-            if let lines = AntigravityUsageMapper.parseQuotaSummaries(bodies) {
-                return .success(StrategyResult(plan: await loadPlan(token: token), lines: lines))
+            if let parsed = AntigravityUsageMapper.parseQuotaSummaries(bodies) {
+                return .success(
+                    StrategyResult(
+                        plan: await loadPlan(token: token), lines: parsed.lines,
+                        hasIncompleteWeeklyQuota: parsed.hasIncompleteWeeklyQuota
+                    ))
             }
         case .unavailable:
             break

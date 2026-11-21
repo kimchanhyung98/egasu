@@ -4,7 +4,7 @@
 Astro 정적 출력이며 소개 본문은 한국어.
 앱 미리보기는 영어·한국어·일본어 지원.
 
-화면 구성과 이전 디자인 참고 이미지는 [디자인](/site/docs/design.md)에 기록.
+화면 구성과 시연 조건은 [디자인](/site/docs/design.md) 참조.
 
 ## 실행
 
@@ -42,7 +42,7 @@ Astro CLI가 에이전트 환경에서 백그라운드 서버를 시작하면 `n
 - 동작 줄이기 설정에서는 부드러운 이동 비활성화.
 - 좁은 모바일에서는 상단 버튼 간격과 폭을 줄여 egasu 로고를 한 줄로 유지. 첫 화면 제목도 한 줄 표시.
 - 첫 화면에 사용량·비용·초기화 예측 소개, 다운로드·기능 이동 링크, 지원 언어 표시.
-- 첫 화면 앱 미리보기는 가시 폭이 320px보다 좁으면 전체를 같은 비율로 축소. 가로 스크롤 없이 전체 폭 표시.
+- 첫 화면 앱 미리보기는 가시 폭이 340px보다 좁으면 전체를 같은 비율로 축소. 가로 스크롤 없이 전체 폭 표시.
 - 모바일 미리보기 높이는 화면에 맞춰 300–420px로 제한하고 내용은 앱 안에서 스크롤.
 - 마지막 화면은 다운로드와 푸터가 한 화면 높이를 나눠 사용. 푸터를 보기 위한 추가 스크롤 없이 함께 표시.
 - 푸터 왼쪽 카피라이트 아래에 작은 글씨로 포크 출처와 AI provider 이름·로고 소유 고지 두 줄 표시.
@@ -61,8 +61,7 @@ Astro CLI가 에이전트 환경에서 백그라운드 서버를 시작하면 `n
   비공식 전역 예측이며 개인 계정의 초기화 보장과 구분.
 - 한도 안내선: 주간 사용량 막대에 90% Soft Limit 예시 표시.
   현재 자동 취소 미지원 안내 포함.
-- 계정: `Options → Settings → + → Add Account`를 거쳐 빈 목록에 `Account 1 / Ready` 추가.
-  첫 계정에서는 계정 전환 토글과 Usage Cards 행 제외.
+- 계정: `Options → Accounts → Add Account`를 거쳐 빈 목록에 `Account 1 / In Use` 추가.
   마우스 이동·클릭·화면 전환·단계별 대기는 기본 시연의 절반 속도.
 - 연동: CLI와 로컬 API 예시, 글자 확대 등으로 넘치는 내용은 키보드로도 내부 스크롤 가능.
   위아래 끝에 도달해도 페이지 이동으로 이어지지 않음.
@@ -73,35 +72,41 @@ Astro CLI가 에이전트 환경에서 백그라운드 서버를 시작하면 `n
 
 ## 조작 가능한 앱 미리보기
 
-- `v0.14.0` 화면·동작 기준의 예시 데이터.
+- 대시보드·계정·설정은 공개 예시 데이터로 재현.
   기본 언어는 English이며 Language에서 한국어·일본어 선택 시 전체 미리보기에 즉시 적용.
   언어 변경에 새로고침·재시작 불필요.
 - 이름 변경 전과 같은 출처에서 저장한 미리보기 설정을 이어 쓰도록 기존 `openusage.site.*` 저장 키 유지.
   더 이전 미리보기의 사용량·초기화 시간 표시 설정도 계속 읽음.
+- Priority의 한도 링과 페이스 눈금은 **Show Usage As**에서 선택한 사용량 또는 잔량 기준으로 표시.
+  경고 색은 두 모드 모두 잔량 기준.
+- **Alerts → Show in Priority**에서 네 조건의 표시 여부를 각각 설정.
+  모두 끄면 대시보드에 All Usage만 표시.
+  하나라도 다시 켜면 이전에 선택한 탭으로 복귀.
+  각 조건의 알림 수신은 별도 설정.
 - Reset Watch는 사용량과 별도 확률 막대.
   Used/Left 전환에도 예측 확률과 커뮤니티 투표 눈금 유지.
   예측 시각은 다른 초기화 타이머와 함께 Countdown/Exact Time 및 12/24시간 설정 반영.
-  웹의 Separate Cards에서는 같은 공개 예측을 두 Codex 카드에 표시.
-  Mac 앱의 비활성 분리 카드는 사용량 추이·오늘·어제·Reset Watch를 숨김.
-  웹은 예시 예측을 함께 보여주기 위해 Reset Watch만 유지하고, 사용 이력은 같은 숨김 규칙 적용.
-- Soft Limit은 기본 꺼짐.
-  켜면 5 Hours/Weekly 선택과 1–100% 임계값 입력 표시.
+  공통 사용 이력·예측은 활성 계정에 표시.
+- Soft Limit은 **General → Beta Updates**를 켜면 **Labs** 탭에서 설정 가능.
+  베타 업데이트를 끄면 Soft Limit과 안내선이 꺼지고 기간·임계값은 유지.
+  켜면 주간·월간을 함께 또는 따로 선택하고 1–100% 기준값 입력.
   Enter 또는 입력 종료 시 적용.
   잘못된 입력은 기존 값 유지와 안내, Used/Left 전환은 안내선 위치만 반전.
-  안내선 지원 기간은 표시 이름이 아닌 앱의 지표별 선언 기준.
-  현재 값 있는 5 Hours 예시는 Claude Session, Codex Session, Antigravity Session·Claude.
-  현재 값 있는 Weekly 예시는 Claude Weekly·Fable, Codex Weekly, Antigravity Weekly·Claude Weekly.
-  지원 지표라도 데이터가 없으면 안내선 미표시하며, Reset Watch와 비용·토큰 행은 대상에서 제외.
+  선택한 기간의 구독 한도와 사용량이 있는 막대 안에 안내선 표시.
+  5시간 세션·Reset Watch·최근 30일 비용·토큰 합계는 대상에서 제외.
+  지원 지표는 [앱의 소프트 한도 설정](/docs/settings.md#지원하는-사용량) 참조.
   미리보기에서 설정한 안내선은 로컬 예시 화면에만 적용.
+  Kiro 크레딧은 월간 구독 한도 예시이며, OpenCode Go는 로컬 추정 사용량 예시.
   설정 변경 안내가 떠 있는 동안에도 Options와 다른 컨트롤의 클릭·터치 조작 가능.
-- Notifications의 Codex Reset Watch는 세 할당량 알림과 독립 선택.
+- **Settings → Alerts → Other Notifications**에서 **Codex Reset Watch** 설정.
+  **Condition**의 네 **Receive Alerts** 스위치와 독립.
   알림 발송·권한 요청은 Mac 앱에서 수행.
-- 계정 선택기는 조회할 계정만 변경.
-  카드 우클릭 또는 Shift+F10 메뉴의 `Use …`는 확인 창을 거쳐 예시 활성 계정 전환.
-  카드 헤더의 제목은 Tab으로 초점 이동 가능.
-  Today 같은 텍스트 지표만 남아도 헤더 우클릭 또는 Shift+F10으로 메뉴 열기 가능.
-  카드 메뉴에서 Esc를 누르거나 이 메뉴에서 연 계정 전환 확인 창을 닫으면 같은 제목으로 초점 복귀.
-  Settings의 계정 전환과 같은 상태 사용.
+- 계정 줄의 우클릭 또는 Shift+F10 메뉴에서 `Use …`를 고르면 확인 창을 거쳐 예시 활성 계정 전환.
+  계정 줄은 Tab으로 초점 이동 가능.
+  Today 같은 텍스트 지표만 표시돼도 같은 방법으로 메뉴 열기 가능.
+  카드 메뉴를 Esc로 닫으면 해당 계정의 **Actions** 버튼으로 초점 복귀.
+  전환 확인 창은 전환을 확인하거나 **Cancel**·Esc로 취소해도 같은 버튼으로 초점 복귀.
+  Accounts의 계정 전환과 같은 상태 사용.
 - 초기화권 개수에 포인터를 올리거나 클릭·키보드 조작으로 읽기 전용 만료 목록 팝오버 열기.
   팝오버를 열어도 카드 높이 유지.
   초기화권 사용 버튼과 실제 초기화 요청은 제공하지 않음.
@@ -113,35 +118,37 @@ Astro CLI가 에이전트 환경에서 백그라운드 서버를 시작하면 `n
 `npm run build`는 페이지만 만듦.
 조립 전 `site/`에서 `npm ci` 실행 필요.
 배포물은 `gh-pages`의 feed 파일을 보존해야 하므로 조립 스크립트로 출력 검증.
-`main`에 사이트·조립 스크립트·provider 아이콘·앱의 한국어·일본어 번역 리소스·게시 workflow 변경을 푸시하면 `Publish landing page`가 `gh-pages`에 반영.
-번역 리소스 범위는 `Sources/Egasu/Resources/Localization/{ko,ja}.lproj/*.strings`.
-자동·수동 게시 모두 재사용하는 `Site CI`의 정적 검사·단위 테스트·E2E·조립 검증을 통과해야 게시 시작.
-사이트 게시 대상만 바뀐 `main` push는 게시 내부 검증 한 번으로 처리.
-그 밖의 앱 소스·배포 workflow 변경과 PR은 독립 `Site CI`에서 검증하며, 두 변경 범위가 섞인 push는 양쪽에서 검증 가능.
-가격표 자동·수동 게시 작업은 `main`에서만 실행하며 다른 브랜치·태그의 수동 게시 작업은 건너뜀.
+버전 태그를 푸시하면 `Publish landing page`가 그 태그의 사이트를 `gh-pages`에 게시.
+앱 릴리스·가격표 게시도 같은 태그 푸시로 시작.
+정식·베타 태그 모두 기존 버전 형식과 `main` 이력 포함 여부 확인.
+수동 게시도 `tag` 입력 필수이며 검증·빌드·게시 모두 지정한 태그의 소스 사용.
+자동·수동 사이트 게시 모두 재사용하는 `Site CI`의 정적 검사·단위 테스트·E2E·조립 검증을 통과해야 게시 시작.
+사이트·조립 스크립트·앱 소스·배포 workflow 변경의 `main` push와 PR은 독립 `Site CI`에서 검증만 수행.
 게시 전후 `appcast.xml`·`pricing_supplement.json`의 Git blob을 비교하고, 모두 같을 때 게시 커밋 기록.
 게시 전에는 기존 `openusage.chanhyung.kim` 또는 새 `egasu.chanhyung.kim` 도메인 허용.
 게시 후에는 새 도메인만 허용.
 필수 파일 누락·심볼릭 링크 등 일반 파일이 아닌 항목·허용하지 않은 도메인·`gh-pages/.github` 존재 시 게시 전 실패.
-Release·가격표·사이트 게시가 각각 기록한 커밋을 `pages-publication-<실행 시도 번호>` 산출물로 전달.
+Release·가격표·사이트 게시가 각각 기록한 게시 커밋·태그·소스 커밋을 `pages-publication-<실행 시도 번호>` 산출물로 전달.
 `Deploy Pages`는 성공한 실행의 해당 산출물을 받아 그 커밋만 배포하므로, 대기 중 다른 게시가 시작돼도 배포 내용 고정.
-자동 배포에서 산출물 누락·만료·잘못된 커밋 값은 실패 처리하며 최신 `gh-pages`로 대체하지 않음.
+자동·수동 배포 모두 원격 태그와 게시 소스 커밋이 같은지 확인.
+산출물 누락·만료·잘못된 커밋 값은 실패 처리하며 최신 `gh-pages`로 대체하지 않음.
 
 Release·가격표 게시와 `release-appcast` 실행 그룹 공유.
 사이트는 검증을 마친 게시 작업만 이 그룹에 진입하며, 검증 작업은 호출 workflow별 별도 실행 그룹 사용.
 게시 작업은 `queue: max`로 대기 작업을 보존하고 `cancel-in-progress: false`로 진행 중 작업 유지.
 게시 실패 시 원인을 확인한 뒤 해당 workflow를 다시 실행하고, 후속 `Deploy Pages` 성공까지 확인.
-사이트 재게시 명령은 `gh workflow run publish-site.yml --repo kimchanhyung98/egasu --ref main`.
+사이트 수동 재게시 명령은 `gh workflow run publish-site.yml --repo kimchanhyung98/egasu --ref main -f tag=<버전 태그>`.
+`--ref main`은 실행할 workflow를 선택하며, 게시 소스는 `tag` 입력으로 고정.
 Pages 배포만 실패하면 해당 배포 실행을 재실행하여 같은 게시 커밋으로 재시도.
-산출물 도입 전 게시 실행이나 산출물이 만료된 실행은 새 게시 실행 필요.
-직접 복구할 때는 현재 `gh-pages`의 피드·도메인·사이트 내용을 확인한 뒤 `gh workflow run deploy-pages.yml --repo kimchanhyung98/egasu --ref main`으로 수동 배포.
-이 수동 경로는 현재 `gh-pages`를 배포하며 이전 게시 실행의 커밋에 고정되지 않음.
+태그 기록이 없는 옛 산출물이나 만료된 산출물은 같은 태그로 새 게시 실행 필요.
+Pages 수동 재배포 명령은 `gh workflow run deploy-pages.yml --repo kimchanhyung98/egasu --ref main -f tag=<버전 태그> -f publication_run_id=<성공한 게시 실행 ID>`.
+지정한 실행이 성공한 게시 workflow인지 확인하고, 산출물의 태그가 입력 태그와 같을 때만 배포.
 두 명령 모두 운영 배포를 실행하므로 로컬 검증용으로 사용하지 않음.
 대기열 동작은 [GitHub concurrency 안내](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency) 기준.
 
 `keep_files: true`로 이전 해시 자산과 삭제된 사이트 경로도 `gh-pages`에 보존.
 현재 게시 과정에는 정리 단계가 없으므로 소스에서 파일을 삭제해도 공개 경로는 제거되지 않음.
-페이지 내용 롤백은 해당 소스 변경을 revert한 뒤 `main`에 푸시하고 게시·배포 결과 확인.
+페이지 내용 롤백은 해당 소스 변경을 revert한 뒤 새 버전 태그로 게시·배포 결과 확인.
 사이트 완전 제거는 feed를 보존한 별도 정리 작업 필요.
 
 ```sh
@@ -187,7 +194,7 @@ src/utils/sprite.ts  provider 마크를 인라인 <symbol>로
 src/scripts/app.ts   appcast 파서, 리빌, 내비
 src/scripts/tour.ts  연속 기능 시연, 카메라 배율, 커서, 중단 처리
 src/scripts/tour-scroll.ts  페이지·기능 스크롤·스와이프·키보드 이동과 내부 콘텐츠 경계
-src/scripts/nav.ts   팝오버 안 화면 이동과 Customize 조작
+src/scripts/nav.ts   팝오버 화면 이동·계정·지표 조작
 src/scripts/menus.ts  메뉴 표시 레이어와 화면 경계 배치
 src/scripts/settings.ts  설정 저장·표시 반영·계정 전환
 src/scripts/localization.ts  앱 번역 리소스 연결·언어 즉시 전환
@@ -198,95 +205,52 @@ scripts/og.html      OG 이미지 원본
 
 ## 앱 화면 재현 그래픽
 
-앱 스크린샷을 싣지 않음.
-`Sources/Egasu/`의 SwiftUI 소스를 읽어 레이아웃 상수·구성·문자열을 HTML/CSS로 옮김.
+`Sources/Egasu/`의 SwiftUI 구성·문자열을 HTML/CSS로 재현.
+화면 구성 기준은 [디자인](/site/docs/design.md) 참조.
+Updates는 업데이트 피드가 포함된 배포판 기준으로 표시.
 
-- 화면 구성 기준은 [디자인](/site/docs/design.md), 앱 원문과 수치의 근거는 컴포넌트·데이터 코드에서 확인.
-- 화면 기준은 v0.14.0과 현재 체크아웃의 앱 코드.
-- 밀도 기본값은 Compact, Theme은 System이며 선택한 값에 따라 데모 외관 변경.
-- 대시보드, Customize와 지표 상세, Settings의 일반 섹션 전체 포함.
-- Settings 순서: General → Accounts → iCloud Sync → Appearance → Usage Display → Soft Limit → Notifications → Privacy → Tokscale → Command Line → Advanced → Updates.
-- Updates는 업데이트 피드가 포함된 배포판 기준으로 표시.
-- Party Mode·Drunk Mode는 실제 앱에서도 시크릿 코드 이후에만 나타나므로 기본 화면에서 제외.
-- 계정명은 `accounts.ts`의 `Account 1`, `Account 2` 예시를 Settings와 대시보드가 공유.
-- 실제 Mac 계정·인증·사용량은 읽지 않음.
-- 지표의 켜짐·섹션·별은 `Stores/DefaultLayout.swift`의 세 배열에서만 판정. 대시보드 행과 L2 스위치가 어긋날 수 없음.
-- Codex의 Reset Watch는 기본 배치인 caret 뒤에 표시.
-- 앱 데모는 Language 선택에 따라 영어·한국어·일본어로 즉시 전환. 새로고침·재시작 불필요.
-- 앱 번역 리소스를 재사용하며 메뉴·설정·대시보드·안내·날짜와 시간·접근성 이름까지 반영.
-- 기능 시연 안의 앱 화면·계정 추가 화면·다운로드 버튼에도 같은 언어 적용.
-  소개 본문과 기능 탭·설명·조건 안내·시연 완료 안내는 한국어 유지.
-  서비스·모델 이름과 명령·저장값은 원문 유지.
-- General의 Language 선택지는 앱과 같은 English·한국어·日本語. 기본값은 English.
-- 도넛·스트립 예시와 파생 계산은 `demo.ts`, 계정별 카드 예시는 `dashboard.ts`에서 정의.
-- OG는 별도 정적 이미지이며 데모 설정 변경을 반영하지 않음.
-- 조작 가능한 그래픽은 `role="group"`과 선택 언어에 맞는 `lang`으로 내용 접근 가능.
-- 기능 시연의 앱 내부 컨트롤은 비활성 재현이며 탭 이름과 단계 종료 알림으로 동작 전달.
-- 심각도·페이스 문구·도넛 라벨은 손으로 적지 않고 `demo.ts`가 앱 규칙대로 계산.
-  - 손으로 적으면 상태가 늘 때마다 서로 모순됨.
+- 지표 목록은 각 프로바이더의 `widgetDescriptors` 선언 순서.
+  모든 지표는 기본 표시, 고정은 사용자 선택이며 개수 제한 없음.
+- 계정별 키는 등록 계정 ID, 공통 지표 키는 프로바이더 ID 사용.
+  숨긴 지표는 고정 해제하며 공통 지표의 순서도 계정 간 공유.
+- 앱의 영어 원문과 한국어·일본어 리소스를 재사용.
+  웹 전용 안내는 별도 번역 표에서 관리.
+- 메뉴·설정·대시보드·안내·날짜·접근성 이름에 언어 적용.
+  소개 본문과 기능 탭·설명은 한국어 유지.
+- 메뉴는 최상위 표시 레이어에 띄우고 브라우저 화면 안으로 위치 보정.
+  클릭·우클릭·키보드로 메뉴 열기.
+  **Options**와 설정 선택 메뉴를 Esc로 닫으면 각각 메뉴를 열었던 버튼으로 초점 복귀.
+  설정 선택 메뉴에서 값을 고를 때도 해당 메뉴 버튼으로 초점 복귀.
+  메뉴에서 Accounts·Settings 등의 화면을 열면 이동한 화면의 첫 컨트롤에 초점.
+  Total Spend 기간은 방향키로도 선택하며 선택한 기간만 Tab 이동 대상.
+- 화면·탭 전환 시 내부 스크롤을 처음으로 이동.
+  계정·지표 설정 변경 뒤에도 키보드 초점 유지.
+- 본문·페이지 스크롤, 외부 클릭·초점 이동, 창 크기 변경 시 메뉴 닫기.
+- JavaScript가 없으면 All Usage, 비용 예시, 다운로드 링크 표시.
+  Options와 탭 등 화면 이동 컨트롤은 숨김.
+- 상태 조합은 빌드 시 준비하고 JavaScript가 표시·순서·계산값 갱신.
+  페이지의 실제 사용량·인증 정보를 요청하지 않음.
+- `app-scale.css` 유틸 이름은 `am-` 접두사 사용.
+  사이트 제목 등의 전역 클래스와 충돌 방지.
 
-provider 마크는 사본을 두지 않고 `Sources/Egasu/Resources/ProviderIcons/`를 직접 읽음.
-앱과 마크가 어긋날 수 없음.
-
-### 상호작용
-
-웹에서 확인할 수 있는 표시 설정과 계정 선택 규칙을 데모에 반영.
-로그인·단축키 등록·알림 권한·Tokscale 공유·터미널 도구 설치·로그 파일·업데이트 확인은 Mac 앱 전용 안내 표시.
-해당 안내는 실제 로그인·설치·공유·업데이트를 실행하지 않음.
-
-| 누르는 곳 | 결과 | 범위 |
-|---|---|---|
-| Settings 표시 설정 | Total Spend·Used/Left·Reset Times·Theme·Density·Time Format·Pacing·Transparency 반영 | 전체 데모 |
-| Language | 선택값 저장과 전체 문구 즉시 전환. 재시작 없이 적용 | 전체 데모·기능 시연 |
-| Settings 계정 스위치 | 확인 후 활성 계정과 대시보드 선택 이동. 이미 활성화된 계정은 끌 수 없음 | 해당 provider |
-| Usage Cards | Single Card ↔ Separate Cards. Separate Cards는 계정명 포함 제목과 고정 카드 표시 | 계정 지원 provider 전체 |
-| 카드 헤더 계정 메뉴 | 표시할 계정만 변경. Settings의 활성 계정 유지 | 해당 provider |
-| 사용량 헤드라인 | `meterStyle` 전환. 막대가 반전되고 pace 눈금이 미러링됨. 색은 그대로 | 전역 |
-| 리셋 라벨 | `resetDisplayMode` 전환. Exact Time ↔ Countdown | 전역 |
-| 초기화권 개수 | 포인터 올리기·클릭·키보드로 읽기 전용 만료 목록 팝오버 표시 | 해당 카드 |
-| 카드 아래 화살표 | On Demand 지표와 quick links를 폄 | 그 팝오버만 |
-| Total Spend 기간·지표 | 기간 3 × 지표 3 조합 중 하나를 보임 | 그 팝오버만 |
-| 푸터 Options | 메뉴를 폄. Customize·Settings로 화면 이동 | 그 팝오버만 |
-| Customize 행·화살표 | 그 provider의 지표 상세(L2)로 | 그 팝오버만 |
-| Customize 스위치 | 행이 0.55로 흐려지고 그 provider 카드가 대시보드에서 사라짐 | 그 팝오버만 |
-| L2 지표 스위치 | 그 행이 대시보드에서 사라짐. 다 끄면 카드째 사라짐 | 그 팝오버만 |
-| L2 별 | 메뉴 막대 고정 전환. provider당 2개를 넘기면 거절 알림 | 그 팝오버만 |
-| 상단 뒤로 가기 | L2→L1, L1→대시보드, Settings→대시보드 | 그 팝오버만 |
-
-웹의 기본 Usage Cards는 Separate Cards.
-Codex 계정 두 개를 대시보드에 함께 표시하며 Claude에도 같은 카드 표시 규칙 적용.
-두 Codex 카드의 사용량은 서로 다른 예시 값이며, Reset Watch의 공개 예측은 두 카드에서 공유.
-기존에 저장한 Single Card 선택은 유지.
-Mac 앱의 카드 기본값은 변경하지 않음.
-
-상태를 두 축으로 나눔. 앱의 저장 구분을 그대로 따름.
-
-- **설정·계정 선택**은 조작 가능한 데모 사이에서 공유하고 `localStorage`에 저장. 기능 시연에는 언어만 반영.
-- Settings의 Used/Left·Reset Times 변경과 대시보드 직접 클릭은 같은 저장 경로 사용.
-- 저장값이 잘못되었거나 저장소 접근이 막히면 콘솔과 화면 안내로 실패 표시.
-- **화면 위치**(`screen`·`customizeProviderID`)는 앱에서 팝오버가 닫히면 초기화되므로 팝오버마다 따로 두고 저장하지 않음. hero에서 Customize로 들어가도 다른 그래픽은 그대로.
-
-그 밖에.
-
-- 상태 조합은 빌드 시 전부 렌더해 두고 JS는 보이기만 바꿈. 그래서 JS가 없어도 앱 기본값(Used · Exact Time · Today · Cost)이 그대로 나옴.
-- 화면도 같은 방식 — 전부 그려 두고 `hidden`만 바꿈. JS가 없으면 각 그래픽의 시작 화면 하나만 보임.
-- Customize에서 켤 수 있는 모든 지표를 미리 준비. 예시 값이 없는 지표는 한도나 사용량을 꾸며 넣지 않고 `No data` 텍스트 표시.
-- Always Visible 지표를 모두 끄면 남은 On Demand 지표를 바로 표시하여 빈 카드 방지.
-- 기본 비활성 provider는 JavaScript가 꺼져 있어도 숨김.
-- 펼친 카드의 Status·Dashboard는 해당 서비스 링크로 이동. 동작 없는 복사 아이콘은 표시하지 않음.
-- Show Usage As·Reset Times는 헤드라인·리셋 라벨과 같은 상태. 어느 쪽에서 바꿔도 반대쪽 표시가 따라옴.
-- JS가 없으면 눌러도 반응하지 않는 컨트롤(확장 화살표, 지표 메뉴 표시, Options·뒤로·열기 버튼)은 감춤.
-- Options 메뉴는 앱의 8줄을 그대로 두되 화면을 옮기는 두 개만 동작하고, 나머지는 `aria-disabled`로 흐리게 둠.
-- 계정·Settings·Options·Total Spend 메뉴는 앱의 스크롤 영역 밖에 겹쳐 표시. 화면 가장자리에서는 안쪽으로 이동하거나 위아래 방향 전환.
-- 메뉴는 선택된 항목 또는 첫 항목에 초점이 가고 ↑↓·Home·End로 이동. Esc로 닫으면 여는 버튼으로 초점 복귀.
-- Settings·계정·지표 선택 후에도 여는 버튼으로 초점 복귀. Total Spend 기간은 방향키로 순환 선택하며 선택된 항목만 Tab 이동 대상.
-- 메뉴 밖 클릭·초점 이동, 본문·페이지 스크롤, 화면 크기 변경 시 닫힘.
-- 메뉴를 열기 전에 발생해 뒤늦게 전달된 스크롤은 새 메뉴를 닫지 않음.
-- 긴 안내 문구는 앱 너비 안에서 줄바꿈. 앱 좌우 12px 여백을 남겨 잘림 방지.
-- 첫 화면의 조작 가능한 팝오버 높이는 `min(내용, 560)`. 앱도 패널을 화면 85%로 자르고 넘치면 내부 스크롤함(`PanelHeightController.swift:139`·`:152`).
-  - 상단 바·푸터는 고정이고 가운데 본문만 스크롤. 막대는 앱처럼 숨김.
-  - 상한 덕에 화면을 옮겨도 페이지가 움직이지 않음. 상한 아래에서 바뀔 때는 CSS가 0.22s로 이어 줌.
-- `app-scale.css`의 유틸 이름에는 반드시 `am-` 접두사. 접두사가 없던 `.h1`이 히어로의 `<h1 class="h1">`을 덮어 높이를 1%로 만든 적 있음.
+- Options에서 Accounts·Settings로 이동.
+  Accounts에서 계정 이름·순서와 계정별·공통 지표 순서·표시·고정을 관리.
+  정렬 손잡이에 초점을 두고 위·아래 방향키로 같은 목록 안에서 순서 변경.
+  설정과 이름·순서는 해당 브라우저에 저장하고 화면 위치는 미리보기마다 유지.
+  활성 프로바이더 모두에 사용량 예시가 있고 표시할 지표가 없으면 All Usage에서 Accounts의 표시 설정을 확인하도록 안내.
+  같은 프로바이더의 다른 계정과 이름이 같으면 변경을 거부.
+  현재 언어로 표시한 기본 이름도 중복 검사에 포함.
+  지표 설정을 바꿔도 입력 중인 이름과 중복 오류 안내 유지.
+  언어 전환 후 번역된 기본 이름이 저장된 사용자 지정 이름과 같으면 해당 기본 이름을 영어로 표시.
+  예시 사용량이 없는 항목은 로그인 안내를 표시하며 미리보기에서 제거 가능.
+- Settings의 기본 탭은 General·Display·Alerts·Advanced.
+  Beta Updates를 켜면 Labs 탭에 Soft Limit과 Terminal Helper 표시.
+  Terminal Helper 설치·제거는 브라우저에 저장한 예시로 동작.
+  Labs를 숨겨도 설치 상태를 유지하고 제거하려면 확인 필요.
+  언어는 새로고침 없이 적용.
+  이전에 저장한 Hide From Screen Share 설정값은 Privacy Mode로 이어받음.
+  Privacy Mode에서는 대시보드의 계정 이름과 이메일을 가림.
+  Accounts에서는 계정 이름을 확인하고 편집 가능.
 
 ## 데모 검증
 
@@ -309,11 +273,13 @@ WebKit의 초기 화면 보정과 입력 검사 간 경합 방지.
 기본 동작 줄이기 검사와 실제 계정 추가 애니메이션·빠른 취소 검사 병행.
 실패 시 `test-results/`에 스크린샷·trace, `playwright-report/`에 HTML 보고서 저장.
 런타임 오류와 예상하지 않은 CSP 오류는 실패 처리.
-잘못된 XML 검사에서만 Chromium 자체 `parsererror` 스타일의 두 CSP 차단 메시지를 정확한 해시로 검증.
+잘못된 XML 입력에서만 브라우저가 생성한 스타일의 CSP 진단을 최대 두 건 허용.
+Chromium은 알려진 해시, WebKit은 해당 진단 문구로 확인.
 `.github/workflows/site.yml`은 GitHub Actions의 Playwright 공식 Docker 이미지에서 같은 검증과 조립 수행. 배포 동작 없음.
 `site/package-lock.json`에 기록된 `playwright-core` 버전으로 Ubuntu Noble 이미지 선택.
 Node는 24 사용.
-브라우저·시스템 라이브러리는 이미지에 포함되어 CI의 별도 `playwright install` 단계 생략. 프로젝트 의존성은 `npm ci`로 설치.
+브라우저·시스템 라이브러리는 이미지에 포함되어 CI의 별도 `playwright install` 단계 생략. 버전 조회와 검증에 같은 커밋을 사용.
+프로젝트 의존성은 `npm ci`로 설치.
 컨테이너는 GitHub Actions 홈 디렉터리와 같은 UID 1001로 실행하여 Firefox의 root·홈 소유권 충돌 방지.
 사이트 빌드·미리보기 서버·E2E가 같은 컨테이너 안에서 실행되므로 호스트 포트 공개 불필요.
 Docker 안의 WebKit 검사는 Linux 환경이며 실제 macOS Safari·iPhone 검증과 별개.
@@ -331,7 +297,7 @@ Docker 안의 WebKit 검사는 Linux 환경이며 실제 macOS Safari·iPhone �
 계정·설정·Options·지표 메뉴는 모서리 항목의 실제 클릭 가능 여부와 앱 높이 유지, 스크롤·Esc 닫힘 확인.
 조립 실패·금지 문자열·feed 충돌 시 기존 결과 보존과 무관한 폴더 보호 검사 포함.
 게시 workflow의 실제 검사 단계를 로컬 Git 저장소로 실행하여 정상 사이트 갱신과 feed 변경·누락·도메인 불일치 차단 확인.
-E2E에 Customize 반영, 설정 저장 차단·잘못된 저장값, 내부 스크롤 경계, 404 복귀, 로컬 자산·CSP·중복 ID 검사 포함.
+E2E에 계정 이름 변경·복원, 지표 표시·고정·정렬, 설정 저장 차단·잘못된 저장값, 내부 스크롤 경계, 404 복귀, 로컬 자산·CSP·중복 ID 검사 포함.
 
 ## 다운로드 정보
 

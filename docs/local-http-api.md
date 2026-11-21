@@ -40,10 +40,9 @@ egasu는 루프백 인터페이스에 읽기 전용 HTTP API를 제공 — 다�
 Claude의 429 대기 중 한도 최신 여부는 `/v1/limits`의 `fetchedAt`·`expiresAt`·`stale`로 확인.
 
 두 라우트 모두 렌더링된 같은 프로바이더 스냅샷을 읽음.
-HTTP 조회로 Codex 주간 타이머용 메시지 전송이나 새로 고침을 시작하지 않음.
+HTTP 조회로 구독 타이머용 메시지 전송이나 새로 고침을 시작하지 않음.
 따라서 iCloud 동기화가 켜져 있으면 둘 다 대시보드와 같은 iCloud 합산 사용량을 보게 되며, `/v1/usage`는 기존 UI 지향 형태를 반환하고 `/v1/limits`는 그 데이터를 안정적인 리소스 ID와 원시 스칼라 값으로 투영.
-대시보드의 **Single Card** / **Separate Cards** 모드와 Settings 계정 순서는 API 결과를 필터링하거나 재정렬하지 않음.
-Single Card가 프로바이더의 계정 하나만 보여 줘도 사용 가능한 계정 스냅샷은 계속 조회 가능.
+All Usage 레이아웃과 Accounts의 계정 표시 순서에 관계없이 활성화된 프로바이더에서 사용 가능한 계정 스냅샷을 반환.
 
 - **200 OK** — JSON 배열(아직 아무것도 가져오지 않았으면 빈 `[]`일 수 있음).
 
@@ -122,28 +121,31 @@ Single Card가 프로바이더의 계정 하나만 보여 줘도 사용 가능�
 해당 시각이 없으면 로컬 스냅샷 생성 시각 사용.
 `expiresAt`은 `fetchedAt`에 일반 사용량 5분·Claude 15분을 더한 값이며, `stale`은 해당 시점의 경과 여부를 표시.
 Claude의 429 대기 중에도 캐시 유효 기간을 늘리지 않으며, 마지막 정상 한도 값이 없으면 `stale`로 표시.
-새로 고침에 실패해도 마지막 정상 프로바이더 스냅샷은 계속 사용할 수 있고, 오류는 `errors`에 `{"providerId":"…","message":"…"}` 형태로 포함.
+현재 계정에 맞는 마지막 정상 한도 값이 있으면 새로 고침 실패 후에도 재사용하며, 오류는 `errors`에 `{"providerId":"…","message":"…"}` 형태로 포함.
+계정 변경·신원 미확인에 따른 예외는 [캐싱 동작](/docs/local-http-api.md#캐싱-동작) 참조.
 상한이 있는 진행률 리소스에서 `unit`은 프로바이더의 현재 지표 형식을 따름.
 예를 들어 Cursor `totalUsage`는 백분율 기반 요금제에서는 `percent`, 요청 기반 Enterprise 요금제에서는 `requests`, Cursor가 달러 풀을 보고할 때는 `usd`.
 Copilot `premiumCredits`는 할당량 사용 비율일 때 `percent`, 조직 관리 좌석의 개인 사용 크레딧 수일 때 `credits`.
 개인 크레딧 수에는 `used`만 제공하며 `limit`, `remaining`, `utilization`은 생략.
+`percent` 값은 프로바이더가 보고한 정밀도 그대로 반환.
+Antigravity는 잔여 비율에서 계산하므로 `used`·`remaining`이 정수가 아닐 수 있으며, 표시할 때는 필요한 자릿수로 반올림.
 
 ### 공개 리소스
 
 | 프로바이더 | 리소스 키 |
 | --- | --- |
 | Claude | `session`, `weekly`, `sonnet`, `fable`, `extraUsage` |
-| Codex | `session`, `weekly`, `spark`, `sparkWeekly`, `credits`, `creditValue`, `rateLimitResets` |
+| Codex | `session`, `weekly`, `monthly`, `spark`, `sparkWeekly`, `sparkMonthly`, `credits`, `creditValue`, `rateLimitResets` |
 | Cursor | `totalUsage`, `autoUsage`, `apiUsage`, `onDemand`, `requests`, `credits` |
-| Antigravity | `geminiSession`, `geminiWeekly`, `nonGeminiSession`, `nonGeminiWeekly` |
+| Antigravity | `geminiSession`, `geminiWeekly`, `nonGeminiSession`, `nonGeminiWeekly`, `argonWeekly` |
 | Copilot | `premiumCredits`, `extraUsage`, `orgCredits`, `orgSpend`, `chat`, `completions` |
 | Devin | `daily`, `weekly`, `extraUsageBalance` |
-| Grok | `weekly` |
-| Kimi | `session`, `weekly` |
+| Grok | `weekly`, `monthly` |
+| Kimi | `session`, `weekly`, `totalUsage`, `extraUsage`, `extraUsageBalance` |
 | Kiro | `credits` |
 | OpenCode | `session`, `weekly`, `monthly` |
 | OpenRouter | `credits`, `balance`, `keyLimit` |
-| Z.ai | `session`, `weekly`, `webSearches` |
+| Z.ai | `session`, `weekly`, `monthly`, `webSearches` |
 
 차트, 색상, 부제목, 형식화된 배지, 레이아웃 상태, 과거 지출 기간은 이 계약에서 제외.
 Codex의 결합된 Credits UI 행은 `credits`와 `creditValue` 두 스칼라 리소스로 분리.
@@ -205,7 +207,7 @@ Claude의 이전 한도를 재사용한 경우, 마지막 정상 한도 조회 �
 지출 행은 계속 동일한 `text` 행으로 직렬화되므로 기존 로컬 연동의 현재 형태 유지.
 
 두 응답 형식 모두에서 Claude·Codex의 `displayName`은 `Claude`·`Codex` 같은 프로바이더명 유지.
-Separate Cards 모드에서도 계정명이나 대시보드의 `{Provider}: {name}` 제목은 여기에 노출되지 않음.
+All Usage 레이아웃과 관계없이 루프백 HTTP 응답에 계정명이나 대시보드의 `{Provider}: {name}` 제목을 포함하지 않음.
 신뢰된 1회 실행 CLI는 같은 스키마를 사용하지만 `displayName`에 해석된 Claude·Codex 계정명을 유지할 수 있음.
 매칭은 이름이 아니라 `providerId`(또는 응답 객체의 키) 기준.
 
@@ -228,5 +230,9 @@ DNS rebinding과 임의 웹 페이지의 loopback 읽기를 막기 위해 `Origi
 
 ## 캐싱 동작
 
-API는 앱의 프로바이더 스냅샷을 조회 — 가져오기에 성공한 경우에만 데이터를 교체하므로 새로 고침 실패로 API가 비는 일은 없고, 마지막 정상 스냅샷을 계속 받음.
+API는 앱이 보관한 프로바이더 스냅샷 조회.
+새로 고침 실패 시 현재 계정의 마지막 정상 한도 값은 유지하며, 독립적으로 수집한 로컬 사용량 이력은 갱신 가능.
+계정 신원이 바뀌면 이전 신원의 스냅샷 제외.
+신원을 확인하지 못한 Claude 계정은 이전 캐시를 숨기며, 조회 실패 시 메모리에 남은 스냅샷도 제거.
+해당 ID에 사용할 스냅샷이 없으면 `/v1/usage/:id`는 `200 OK`와 빈 배열 `[]` 반환.
 [새로 고침 및 캐싱](/docs/refreshing.md) 참조.

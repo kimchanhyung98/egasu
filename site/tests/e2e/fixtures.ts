@@ -1,3 +1,4 @@
+import { settingGroups } from '../../src/data/settings';
 import { test as base, expect, type Page } from '@playwright/test';
 
 export const downloadURL = 'https://github.com/kimchanhyung98/egasu/releases/download/v0.99.2/egasu.dmg';
@@ -20,10 +21,15 @@ export const test = base.extend<{ runtimeErrors: string[]; expectXMLParserCsp: b
     await page.route('**/appcast.xml', (route) => route.fulfill({ contentType: 'application/xml', body: stableFeed }));
     await use(errors);
     expect(errors, 'No runtime errors').toEqual([]);
-    // Chromium의 XML parsererror 노드가 삽입하는 두 style만 잘못된 XML 검사에서 예상.
+    // 이전 Chromium은 잘못된 XML에 고정 스타일 두 개를 보고하고, 새 버전은 진단 없이 처리.
     const parserHashes = expectXMLParserCsp && browserName === 'chromium'
       ? ['ICa0DhwZQJsOd/Rn0N8H6FdQ71GfNL+op2zhAQ+Y4mM=', 'ZD0chCyBaNHl+4UwQHJIHGoYhKwMeyCXGgJTKW5/67E='] : [];
-    expect(cspErrors, 'Only explicitly expected XML parser diagnostics').toEqual(parserHashes.map((hash) => expect.stringContaining(`sha256-${hash}`)));
+    const webkitParserStyle = "Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline' does not appear in the style-src directive of the Content Security Policy.";
+    const unexpected = cspErrors.filter(message =>
+      !(expectXMLParserCsp && browserName === 'webkit' && message === webkitParserStyle)
+      && !parserHashes.some(hash => message.includes(`sha256-${hash}`)));
+    expect(cspErrors.length).toBeLessThanOrEqual(2);
+    expect(unexpected, 'Only explicitly expected XML parser diagnostics').toEqual([]);
   }, { auto: true }],
 });
 
@@ -49,9 +55,40 @@ export async function openSettings(page: Page): Promise<void> {
   await expect(app).toHaveAttribute('data-screen', 'settings');
 }
 
+export async function enableLabs(page: Page): Promise<void> {
+  const app = page.locator('[data-mock]');
+  await app.getByRole('tab', { name: 'General', exact: true }).click();
+  const beta = app.getByRole('switch', { name: 'Beta Updates', exact: true });
+  if (await beta.getAttribute('aria-checked') !== 'true') await beta.click();
+  await app.getByRole('tab', { name: 'Labs', exact: true }).click();
+}
+
 export async function chooseSetting(page: Page, label: string, value: string): Promise<void> {
   const app = page.locator('[data-mock]');
-  await app.getByRole('button', { name: label, exact: true }).click();
-  await app.getByRole('menuitemradio', { name: value, exact: true }).click();
-  await expect(app.getByRole('button', { name: label, exact: true })).toBeFocused();
+  const group = settingGroups.find((group) => group.rows.some((row) => row.label === label));
+  if (group) await app.locator(`button[data-settings-tab="${group.tab}"]`).click();
+  const id = group!.rows.find((row) => row.label === label)!.id;
+  const picker = app.locator(`[data-picker="${id}"]`);
+  await picker.click();
+  await app.locator(`[data-pick="${id}"][data-value="${value}"]`).click();
+  await expect(picker).toBeFocused();
+}
+
+export async function allUsage(page: Page): Promise<void> {
+  await expect(page.locator('html')).toHaveAttribute('data-ready', '1');
+  const mock = page.locator('[data-mock]');
+  const tab = mock.locator('button[data-dashboard-tab="All Usage"][role="tab"]');
+  if (await tab.getAttribute('aria-selected') !== 'true') await tab.click();
+  await expect(mock.locator('[data-dashboard-panel="All Usage"]')).toBeVisible();
+}
+
+export async function openAccounts(page: Page): Promise<void> {
+  const app = page.locator('[data-mock]');
+  await app.locator('[data-options]').click();
+  await app.getByRole('menuitem', { name: 'Accounts', exact: true }).click();
+}
+
+export async function accountDetail(page: Page, provider: string, account = 'account-1'): Promise<void> {
+  await openAccounts(page);
+  await page.locator(`[data-mock] [data-account-list] .am-open[data-go="account:${provider}:${account}"]`).click();
 }

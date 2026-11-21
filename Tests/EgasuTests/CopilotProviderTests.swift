@@ -127,6 +127,18 @@ final class CopilotAuthStoreTests: XCTestCase {
 }
 
 final class CopilotUsageMapperTests: XCTestCase {
+    func testNullChatBucketIsIncompleteEvenWithValidCredits() throws {
+        var body = makePaidBody()
+        var quota = body["quota_snapshots"] as! [String: Any]
+        quota["chat"] = NSNull()
+        body["quota_snapshots"] = quota
+
+        let mapped = try CopilotUsageMapper.map(body: body)
+
+        XCTAssertTrue(mapped.hasIncompleteQuota)
+        XCTAssertNotNil(progress(mapped.lines, "Credits"))
+    }
+
     func testMapsPaidCreditsAndChatAsPercentUsed() throws {
         let mapped = try CopilotUsageMapper.map(body: makePaidBody())
 
@@ -150,6 +162,7 @@ final class CopilotUsageMapperTests: XCTestCase {
         XCTAssertNil(progress(mapped.lines, "Chat"))
         XCTAssertNil(progress(mapped.lines, "Completions"))
         XCTAssertEqual(progress(mapped.lines, "Credits")?.used, 59)
+        XCTAssertFalse(mapped.hasIncompleteQuota)
     }
 
     func testEmitsExtraUsageWhenOveragePermitted() throws {
@@ -257,6 +270,20 @@ final class CopilotUsageMapperTests: XCTestCase {
         XCTAssertNotNil(progress(mapped.lines, "Chat")?.resetsAt)
     }
 
+    func testLegacyMissingRemainingOnlyMarksTheUnmeasuredMonthlyQuota() throws {
+        var body: [String: Any] = [
+            "quota_snapshots": ["chat": ["entitlement": 100]],
+            "monthly_quotas": ["chat": 100, "completions": 250],
+            "limited_user_quotas": ["chat": 50]
+        ]
+        let partial = try CopilotUsageMapper.map(body: body)
+        XCTAssertEqual(progress(partial.lines, "Chat")?.used, 50)
+        XCTAssertTrue(partial.hasIncompleteQuota)
+
+        body["limited_user_quotas"] = ["chat": 50, "completions": 250]
+        XCTAssertFalse(try CopilotUsageMapper.map(body: body).hasIncompleteQuota)
+    }
+
     func testTokenBasedBillingReturnsPlanWithoutMeters() throws {
         let body: [String: Any] = [
             "copilot_plan": "business",
@@ -315,16 +342,19 @@ final class CopilotUsageMapperTests: XCTestCase {
 }
 
 final class CopilotOrgBillingMapperTests: XCTestCase {
-    func testParsesOrgLogins() {
+    func testParsesOrgLogins() throws {
         let body: [[String: Any]] = [["login": "acme", "id": 1], ["login": "globex"], ["id": 3]]
-        let response = HTTPResponse(statusCode: 200, headers: [:], body: try! JSONSerialization.data(withJSONObject: body))
+        let response = HTTPResponse(
+            statusCode: 200, headers: [:], body: try! JSONSerialization.data(withJSONObject: body))
 
-        XCTAssertEqual(CopilotOrgBillingMapper.orgLogins(response), ["acme", "globex"])
+        let orgs = try CopilotOrgBillingMapper.orgLogins(response)
+        XCTAssertEqual(orgs.logins, ["acme", "globex"])
+        XCTAssertTrue(orgs.incomplete)
     }
 
-    func testOrgLoginsEmptyForGarbledBody() {
+    func testOrgLoginsRejectGarbledBody() {
         let response = HTTPResponse(statusCode: 200, headers: [:], body: Data("<html>".utf8))
-        XCTAssertEqual(CopilotOrgBillingMapper.orgLogins(response), [])
+        XCTAssertThrowsError(try CopilotOrgBillingMapper.orgLogins(response))
     }
 
     func testMapsAICreditUsageFromSummary() throws {
@@ -348,7 +378,7 @@ final class CopilotOrgBillingMapperTests: XCTestCase {
         XCTAssertEqual(orgDollars(lines, "Org Spend") ?? -1, 1.75, accuracy: 0.0001)
     }
 
-    func testNilWhenNoCopilotCreditItems() {
+    func testNilWhenNoCopilotCreditItems() throws {
         // Actions minutes·Copilot seat 요금(비credit 단위)은 org 미터 미생성
         var body = makeOrgSummaryBody()
         body["usageItems"] = [
@@ -356,11 +386,11 @@ final class CopilotOrgBillingMapperTests: XCTestCase {
             ["product": "Copilot", "sku": "copilot_business_seat", "unitType": "user-months", "grossQuantity": 10, "netAmount": 190]
         ]
 
-        XCTAssertNil(CopilotOrgBillingMapper.usageLines(body: body))
+        XCTAssertNil(try CopilotOrgBillingMapper.usageLines(body: body))
     }
 
-    func testNilWhenSummaryHasNoUsageItems() {
-        XCTAssertNil(CopilotOrgBillingMapper.usageLines(body: ["organization": "acme"]))
+    func testRejectsSummaryMissingUsageItems() {
+        XCTAssertThrowsError(try CopilotOrgBillingMapper.usageLines(body: ["organization": "acme"]))
     }
 }
 
@@ -406,6 +436,7 @@ final class CopilotProviderTests: XCTestCase {
 
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertEqual(snapshot.plan, "Pro")
+        XCTAssertEqual(snapshot.liveQuotaObservedAt, Date(timeIntervalSince1970: 1_800_000_000))
         XCTAssertEqual(snapshot.line(label: "Credits")?.label, "Credits")
         XCTAssertEqual(http.requests.first?.headers["Authorization"], "token gho_editor")
     }
@@ -428,6 +459,33 @@ final class CopilotProviderTests: XCTestCase {
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertEqual(snapshot.plan, "Business")
         XCTAssertTrue(snapshot.lines.isEmpty)
+        XCTAssertNil(snapshot.liveQuotaObservedAt)
+    }
+
+    func testIncompleteMonthlyBucketKeepsReachedEvidenceAndCannotConfirmBelowLimit() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var body = makePaidBody()
+        body["quota_snapshots"] = [
+            "premium_interactions": ["entitlement": 100, "remaining": 40],
+            "chat": ["entitlement": 100]
+        ]
+        let provider = CopilotProvider(
+            authStore: editorTokenStore(),
+            usageClient: CopilotUsageClient(http: FakeHTTPClient(response: ok(body))),
+            usageScanner: .init(databasePath: { nil }), sharedUsage: .init(collectors: []), now: { now }
+        )
+        let snapshot = await provider.refresh()
+        let observation = try XCTUnwrap(
+            SoftLimitObservation.project(
+                snapshot: snapshot, descriptors: provider.widgetDescriptors, window: .all, now: now)
+        )
+
+        XCTAssertEqual(snapshot.incompleteQuotaWindows, [.monthly])
+        XCTAssertEqual(progress(snapshot.lines, "Credits")?.used, 60)
+        XCTAssertNil(snapshot.line(label: "Chat"))
+        XCTAssertNotNil(snapshot.warning)
+        XCTAssertEqual(observation.quotaState(thresholdPercent: 90, at: now), .unknown)
+        XCTAssertEqual(observation.quotaState(thresholdPercent: 50, at: now), .reached)
     }
 
     func testOrgManagedSeatShowsOrgBillingLines() async {
@@ -445,6 +503,7 @@ final class CopilotProviderTests: XCTestCase {
         XCTAssertEqual(snapshot.plan, "Business")
         XCTAssertEqual(orgCount(snapshot.lines, "Org Credits") ?? -1, 298.698546, accuracy: 0.0001)
         XCTAssertEqual(orgDollars(snapshot.lines, "Org Spend"), 0)
+        XCTAssertNil(snapshot.liveQuotaObservedAt)
         // placeholder의 `overage_permitted: true`가 무의미한 Extra Usage 행을 남기지 않아야 함
         XCTAssertNil(snapshot.lines.first(where: { $0.label == "Extra Usage" }))
         XCTAssertEqual(defaults.string(forKey: CopilotProvider.billingOrgDefaultsKey), "acme")
@@ -515,6 +574,8 @@ final class CopilotProviderTests: XCTestCase {
 
         let snapshot = await provider.refresh()
 
+        XCTAssertNil(snapshot.reportedPartialFailure)
+        XCTAssertNil(snapshot.isDegraded)
         XCTAssertNotNil(orgCount(snapshot.lines, "Org Credits"))
         XCTAssertEqual(defaults.string(forKey: CopilotProvider.billingOrgDefaultsKey), "acme")
     }
@@ -531,10 +592,51 @@ final class CopilotProviderTests: XCTestCase {
 
         let snapshot = await provider.refresh()
 
+        XCTAssertEqual(snapshot.partialRefreshErrorCategory, .http5xx)
+        XCTAssertEqual(snapshot.isDegraded, true)
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertTrue(snapshot.lines.isEmpty)
         XCTAssertEqual(defaults.string(forKey: CopilotProvider.billingOrgDefaultsKey), "acme")
         XCTAssertFalse(http.requests.contains { $0.url.absoluteString.contains("/user/orgs") })
+    }
+
+    func testOrganizationLookupPreservesPersonalCreditsAndReportsOnlyUnexpectedFailures() async throws {
+        let accessDenied = HTTPResponse(statusCode: 403, headers: [:], body: Data())
+        let invalid = HTTPResponse(statusCode: 200, headers: [:], body: Data("invalid".utf8))
+        let rateLimit = HTTPResponse(statusCode: 429, headers: [:], body: Data())
+        let cases: [(Bool, Result<HTTPResponse, URLError>, ErrorCategory?)] = [
+            (false, .success(okJSON([])), nil), (false, .success(accessDenied), nil),
+            (false, .success(invalid), .decoding), (false, .success(okJSON([["id": 1]])), .decoding),
+            (false, .success(rateLimit), .rateLimited), (false, .failure(URLError(.timedOut)), .network),
+            (true, .success(ok(["usageItems": []])), nil), (true, .success(accessDenied), nil),
+            (true, .success(invalid), .decoding), (true, .success(ok(["usageItems": 12])), .decoding),
+            (true, .success(rateLimit), .rateLimited), (true, .failure(URLError(.networkConnectionLost)), .network),
+            (true, .failure(URLError(.cancelled)), nil)
+        ]
+        var quotaBody = makeBusinessPlaceholderBody()
+        var buckets = try XCTUnwrap(quotaBody["quota_snapshots"] as? [String: [String: Any]])
+        buckets["premium_interactions"]?["credits_used"] = 24
+        quotaBody["quota_snapshots"] = buckets
+        let personal = ok(quotaBody)
+        for (cached, billing, category) in cases {
+            let defaults = freshDefaults()
+            if cached { defaults.set("acme", forKey: CopilotProvider.billingOrgDefaultsKey) }
+            let http = RoutingHTTPClient { request in
+                if request.url.path == "/copilot_internal/user" { return personal }
+                if cached, request.url.path == "/user/orgs" { return okJSON([]) }
+                return try billing.get()
+            }
+            let snapshot = await makeOrgProvider(http: http, defaults: defaults).refresh()
+            XCTAssertEqual(snapshot.plan, "Business")
+            XCTAssertEqual(countValue(snapshot.lines, "Credits"), 24)
+            XCTAssertNil(snapshot.errorCategory)
+            XCTAssertEqual(snapshot.partialRefreshErrorCategory, category)
+            XCTAssertEqual(snapshot.isDegraded == true, category != nil)
+            XCTAssertEqual(snapshot.warning != nil, category != nil)
+            if cached, category != nil || (try? billing.get()) == nil {
+                XCTAssertEqual(defaults.string(forKey: CopilotProvider.billingOrgDefaultsKey), "acme")
+            }
+        }
     }
 
     func testPersonalPaidAccountMakesNoOrgCalls() async {

@@ -83,8 +83,8 @@ enum JSONLScanCachePaths {
     static let staleIdentityRetention: TimeInterval = 35 * 86_400
 
     static var defaultDirectory: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("OpenUsage/log-scan-cache", isDirectory: true)
+        StorageNamespace.current.applicationSupportDirectory()
+            .appendingPathComponent("log-scan-cache", isDirectory: true)
     }
 
     static func identityDirectory(
@@ -301,7 +301,7 @@ actor JSONLScanCacheWriter {
             } catch {
                 AppLog.warn(
                     .cache,
-                    "could not mark \(persistence.namespace) log parse cache as used: \(error.localizedDescription)"
+                    "could not mark \(persistence.namespace) log parse cache as used: \(AppLog.errorDetails(error))"
                 )
             }
             return JSONLScanCacheReadSnapshot(
@@ -351,7 +351,7 @@ actor JSONLScanCacheWriter {
             } catch {
                 AppLog.warn(
                     .cache,
-                    "could not prune stale \(persistence.namespace) log parse cache: \(error.localizedDescription)"
+                    "could not prune stale \(persistence.namespace) log parse cache: \(AppLog.errorDetails(error))"
                 )
             }
         }

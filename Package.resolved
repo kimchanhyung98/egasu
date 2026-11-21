@@ -1,5 +1,5 @@
 {
-  "originHash" : "125eac8d29643bb7ea030cbbb969519fb8428ac852d97044340cde51e27f5804",
+  "originHash" : "472f5fb33e793539da5d8ef8a885aabddf2384ee5afd5ce4a85b9086ba7afca1",
   "pins" : [
     {
       "identity" : "keyboardshortcuts",
@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/PostHog/posthog-ios.git",
       "state" : {
-        "revision" : "4e9850f767988f394e8584b0bf61ce85674775eb",
-        "version" : "3.93.6"
+        "revision" : "e11720ec94ee8012690b5d126a255f47de700537",
+        "version" : "3.97.0"
       }
     },
     {
@@ -26,6 +26,15 @@
       "state" : {
         "revision" : "ab7d71291238df6e0492143b120c9b696a35f603",
         "version" : "2.10.1"
+      }
+    },
+    {
+      "identity" : "tomldecoder",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/dduan/TOMLDecoder",
+      "state" : {
+        "revision" : "a2bbd2796fe3064e107de18cb56031052c4fa899",
+        "version" : "0.4.5"
       }
     },
     {

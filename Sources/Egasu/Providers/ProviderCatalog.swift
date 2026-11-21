@@ -13,23 +13,28 @@ enum ProviderCatalog {
         codexSharedAuthHome: String? = nil,
         codexSharedSnapshotProfileID: String? = nil,
         codexAccountBinding: CodexAccountBinding? = nil,
-        claudeManagedSwitchActive: Bool = false
+        claudeManagedSwitchActive: Bool = false,
+        allowsClaudeDesktopFallback: Bool = true,
+        kimiTerminalEnvironment: (any EnvironmentReading)? = nil
     ) -> [ProviderRuntime] {
         // 기본 provider 순서: 기존 3개 먼저, 나머지는 display name 알파벳순. account 카드는 family 기본 카드 바로 뒤.
         var runtimes: [ProviderRuntime] = []
-        runtimes.append(ClaudeProvider(
-            // 이 Mac에 다른 Claude 로그인이 있으면 unpinned Desktop fallback이 그 로그인을 빌려 남의 usage를 표시할 수 있음 — 관리형 전환 중에도 동일하며, auth 실패는 다른 account의 usage가 아닌 재로그인으로 표면화되어야 함.
-            // 관리형 전환 중에는 switch transaction이 `~/.claude`를 소유 — credential 읽기와 spend scan도 거기에 고정, ambient CLAUDE_CONFIG_DIR가 다른 home을 가리키게 두지 않음.
-            authStore: ClaudeAuthStore(
-                allowsDesktopFallback: !hasUnregisteredClaudeLogins && !claudeManagedSwitchActive,
-                pinsSharedHome: claudeManagedSwitchActive
-            ),
-            logUsageScanner: ClaudeLogUsageScanner(
-                additionalRoots: defaultClaudeExtraLogRoots,
-                pinsSharedHome: claudeManagedSwitchActive
-            ),
-            includeSharedUsage: !hasUnregisteredClaudeLogins
-        ))
+        runtimes.append(
+            ClaudeProvider(
+                // 이 Mac에 다른 Claude 로그인이 있으면 unpinned Desktop fallback이 그 로그인을 빌려 남의 usage를 표시할 수 있음 — 관리형 전환 중에도 동일하며, auth 실패는 다른 account의 usage가 아닌 재로그인으로 표면화되어야 함.
+                // 관리형 전환 중에는 switch transaction이 `~/.claude`를 소유 — credential 읽기와 spend scan도 거기에 고정, ambient CLAUDE_CONFIG_DIR가 다른 home을 가리키게 두지 않음.
+                authStore: ClaudeAuthStore(
+                    allowsDesktopFallback: allowsClaudeDesktopFallback
+                        && !hasUnregisteredClaudeLogins && !claudeManagedSwitchActive,
+                    pinsSharedHome: claudeManagedSwitchActive,
+                    sharedLoginHome: FileManager.default.homeDirectoryForCurrentUser
+                ),
+                logUsageScanner: ClaudeLogUsageScanner(
+                    additionalRoots: defaultClaudeExtraLogRoots,
+                    pinsSharedHome: claudeManagedSwitchActive
+                ),
+                includeSharedUsage: !hasUnregisteredClaudeLogins
+            ))
         for card in snapshotCards where card.family == "claude" {
             runtimes.append(claudeSnapshotRuntime(card: card))
         }
@@ -54,7 +59,7 @@ enum ProviderCatalog {
             CopilotProvider(defaults: defaults),
             DevinProvider(),
             GrokProvider(),
-            KimiProvider(),
+            KimiProvider(terminalEnvironment: kimiTerminalEnvironment),
             KiroProvider(),
             OpenCodeProvider(),
             OpenRouterProvider(),

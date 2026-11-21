@@ -1,27 +1,27 @@
 import Foundation
 
-/// GitHub organization billing 응답을 org 단위 Copilot meter로 normalize. billing usage summary(`/orgs/{org}/settings/billing/usage/summary`)의 Copilot AI-credit 항목이 **Org Credits**(이달 소비 credit, allotment 미노출이라 percentage 조작 없음)와 **Org Spend**(포함 credit 초과로 실제 청구된 달러)가 됨.
-/// 둘 다 organization 전체 합계 — 개인 Credits와 별도 scope.
+/// 조직별 Copilot 크레딧 수와 순청구액을 Org Credits·Org Spend로 집계. 누락·잘못된 숫자·음수는 0으로 처리.
+/// 개인 Credits와 별도인 조직 전체 합계. 할당량이 없어 사용 비율은 생성하지 않음.
 enum CopilotOrgBillingMapper {
-    /// `/user/orgs` 응답의 org slug, GitHub 순서 그대로. 깨진 body는 빈 배열.
-    static func orgLogins(_ response: HTTPResponse) -> [String] {
-        guard let array = try? JSONSerialization.jsonObject(with: response.body) as? [[String: Any]] else {
-            return []
+    /// 읽을 수 있는 조직은 순서대로 유지하고, 누락한 조직이 있으면 탐색 결과에 표시.
+    static func orgLogins(_ response: HTTPResponse) throws -> (logins: [String], incomplete: Bool) {
+        guard let entries = try? JSONSerialization.jsonObject(with: response.body) as? [Any] else {
+            throw CopilotUsageError.invalidResponse
         }
-        return array.compactMap { entry in
-            (entry["login"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        let logins = entries.compactMap { entry in
+            ((entry as? [String: Any])?["login"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         }
+        return (logins, logins.count != entries.count)
     }
 
-    /// billing usage summary → metric line, Copilot AI-credit 항목이 없으면 nil(그 org는 Copilot credit 미사용 — 호출자가 다른 org 계속 probe).
-    /// `unitType`이 credit 계열(`ai-units`/`ai-credits`)인 항목만 집계 — 다른 단위의 seat-fee 항목이 합계를 오염시키지 못함.
-    static func usageLines(_ response: HTTPResponse) -> [MetricLine]? {
-        guard let body = ProviderParse.jsonObject(response.body) else { return nil }
-        return usageLines(body: body)
+    /// 정상 응답에 Copilot 크레딧 항목이 없으면 다음 조직 조회 허용.
+    static func usageLines(_ response: HTTPResponse) throws -> [MetricLine]? {
+        guard let body = ProviderParse.jsonObject(response.body) else { throw CopilotUsageError.invalidResponse }
+        return try usageLines(body: body)
     }
 
-    static func usageLines(body: [String: Any]) -> [MetricLine]? {
-        guard let items = body["usageItems"] as? [[String: Any]] else { return nil }
+    static func usageLines(body: [String: Any]) throws -> [MetricLine]? {
+        guard let items = body["usageItems"] as? [[String: Any]] else { throw CopilotUsageError.invalidResponse }
 
         let creditItems = items.filter { item in
             isCopilot(item["product"]) && isCreditUnit(item["unitType"])

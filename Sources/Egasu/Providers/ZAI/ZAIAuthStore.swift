@@ -7,6 +7,7 @@ struct ZAIAuth: Hashable, Sendable {
 enum ZAIAuthError: Error, LocalizedError, Equatable {
     case missingKey
     case invalidKey
+    case credentialsChanged
     case saveFailed
     case deleteFailed
 
@@ -21,9 +22,11 @@ enum ZAIAuthError: Error, LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .missingKey:
-            return "No Z.ai API key. Set ZAI_API_KEY or add it to ~/.config/openusage/zai.json."
+            return "No Z.ai API key. Set ZAI_API_KEY or add it to \(ZAIAuthStore.configPaths[0])."
         case .invalidKey:
             return "Z.ai API key invalid. Check your key at z.ai/manage-apikey/apikey-list."
+        case .credentialsChanged:
+            return "Z.ai API key changed while refreshing. Refresh again to use the current key."
         case .saveFailed:
             return "Couldn't save the Z.ai API key."
         case .deleteFailed:
@@ -38,7 +41,7 @@ enum ZAIAuthError: Error, LocalizedError, Equatable {
 struct ZAIAuthStore: Sendable {
     /// 순서대로 확인하는 config 파일 — 처음 읽히는 key 사용. JSON(`apiKey`/`api_key`/`key`) 또는 key만 담긴 plain text.
     static let configPaths = [
-        "~/.config/openusage/zai.json",
+        StorageNamespace.current.configPath("zai.json"),
         "~/.config/zai/key.json"
     ]
     /// 순서대로 확인하는 환경 변수 — `ZAI_API_KEY`가 현행, `GLM_API_KEY`는 아직 쓰이는 구 Zhipu 이름.
@@ -51,6 +54,7 @@ struct ZAIAuthStore: Sendable {
         environment: EnvironmentReading = ProcessEnvironmentReader()
     ) {
         store = UserAPIKeyStore(
+            providerID: "zai",
             configPaths: Self.configPaths,
             environmentNames: Self.environmentNames,
             files: files,
@@ -59,8 +63,14 @@ struct ZAIAuthStore: Sendable {
         )
     }
 
-    func loadAPIKey() -> ZAIAuth? { store.loadKey().map(ZAIAuth.init(apiKey:)) }
-    func currentAPIKey() -> String? { store.loadKey() }
+    func requireAPIKey() throws -> ZAIAuth {
+        guard let key = try store.loadKey() else { throw ZAIAuthError.missingKey }
+        return ZAIAuth(apiKey: key)
+    }
+
+    /// 자동 등록과 타이머는 현재 읽을 수 있는 키만 사용. 실패는 requireAPIKey에서 전달.
+    func loadAPIKey() -> ZAIAuth? { try? requireAPIKey() }
+    func currentAPIKey() -> String? { loadAPIKey()?.apiKey }
     func keyStatus() -> APIKeyStatus { store.keyStatus() }
     func saveAPIKey(_ key: String) throws { try store.saveKey(key) }
     func deleteAPIKey() throws { try store.deleteKey() }

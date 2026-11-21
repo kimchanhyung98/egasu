@@ -4,8 +4,10 @@ import Foundation
 /// `LayoutStore`가 활성 registry 기준으로 필터링 — 미정의 ID는 무시
 /// provider 섹션 순서는 여기서 시드하지 않음, 빈 저장 순서는 registry 순서로 정착
 enum DefaultLayout {
-    static let metricIDs: [String] = [
+    /// v1 켜짐 목록 이전 직전의 기본 ON 지표 — 명시적 시드 기록이 있는 설치에만 적용.
+    static let legacyV1DefaultMetricIDs: [String] = [
         "antigravity.geminiPro", "antigravity.geminiWeekly", "antigravity.claude", "antigravity.claudeWeekly",
+        "antigravity.argonWeekly",
 
         "claude.session", "claude.weekly", "claude.fable", "claude.trend",
         "claude.today", "claude.yesterday",
@@ -24,7 +26,7 @@ enum DefaultLayout {
         "grok.weekly", "grok.trend",
         "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30",
 
-        "kimi.session", "kimi.weekly",
+        "kimi.session", "kimi.weekly", "kimi.total", "kimi.extra", "kimi.extraBalance",
 
         "kiro.credits",
 
@@ -36,6 +38,14 @@ enum DefaultLayout {
 
         "zai.session", "zai.weekly", "zai.webSearches"
     ]
+
+    static func metricIDs(in registry: WidgetRegistry) -> [String] {
+        var seen = Set<String>()
+        return registry.descriptors.compactMap { descriptor in
+            let id = ProviderAccountID.canonicalMetricID(descriptor.id)
+            return seen.insert(id).inserted ? id : nil
+        }
+    }
 
     /// default 시딩 도입 릴리스 시점 default-on metric의 고정 snapshot
     /// 시딩 키 없는 기존 사용자는 이미 제안받은 것으로 간주 — 과거 opt-out 유지, 이후 추가분만 자동 노출
@@ -55,7 +65,7 @@ enum DefaultLayout {
         "cursor.onDemand", "cursor.today", "cursor.yesterday", "cursor.last30"
     ]
 
-    /// 최초 실행 시 메뉴바에 고정되는 metric — 아이콘만 남는 첫 화면 방지, `metricIDs`처럼 registry 필터링
+    /// 이전 기본 메뉴 막대 별표. 사용자 지정 별표를 Priority 고정으로 이전할 때만 비교.
     static let pinnedMetricIDs: [String] = [
         "antigravity.geminiPro", "antigravity.geminiWeekly",
         "claude.weekly",
@@ -68,29 +78,4 @@ enum DefaultLayout {
         "zai.session", "zai.weekly"
     ]
 
-    /// 신규 설치 시 provider별 On Demand 섹션에 배치되는 metric
-    /// 활성화가 아닌 소속 목록 — 비활성 optional row도 나중에 켜면 caret 아래 등장
-    /// registry 필터링 적용, 순수 신규 설치에서만 시드
-    static let expandedMetricIDs: [String] = [
-        // Antigravity: Gemini pool 쌍은 fold 위, Claude pool 쌍은 caret 아래
-        "antigravity.claude", "antigravity.claudeWeekly",
-        // Claude: Session·Weekly·Fable은 fold 위, Trend·optional limit·Extra Usage·spend history는 caret 아래
-        "claude.trend", "claude.extra", "claude.sonnet",
-        "claude.today", "claude.yesterday", "claude.last30",
-        // Codex: Session·Weekly는 fold 위, Trend·reset watch·reset 상세·Spark·Extra Usage·spend history는 caret 아래
-        "codex.trend", "codex.resetWatch", "codex.rateLimitResets", "codex.spark", "codex.sparkWeekly",
-        "codex.credits", "codex.today", "codex.yesterday", "codex.last30",
-        "cursor.onDemand", "cursor.requests", "cursor.credits",
-        "cursor.today", "cursor.yesterday", "cursor.last30",
-        // Copilot: Credits·Extra Usage는 fold 위, org billing 쌍과 Chat·Completions는 caret 아래 — Chat·Completions는 free에서만 실측치
-        "copilot.orgCredits", "copilot.orgSpend", "copilot.chat", "copilot.completions",
-        "devin.extra",
-        "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30",
-        // OpenCode: Go cap 3종과 Trend는 fold 위, spend tile은 caret 아래
-        "opencode.today", "opencode.yesterday", "opencode.last30",
-        // OpenRouter: Credits meter·Balance는 fold 위, 기간 spend·key cap은 caret 아래
-        "openrouter.today", "openrouter.week", "openrouter.month", "openrouter.keyLimit",
-        // Z.ai: Session meter는 fold 위, Web Searches는 caret 아래
-        "zai.webSearches"
-    ]
 }

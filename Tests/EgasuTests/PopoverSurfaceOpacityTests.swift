@@ -5,6 +5,10 @@ import AppKit
 final class PopoverSurfaceOpacityTests: XCTestCase {
     private let appearances: [NSAppearance.Name] = [.aqua, .darkAqua]
 
+    func testPanelBodyIsFullyOpaqueInBothAppearances() {
+        assertOpaque(Theme.panelBodyNSColor, label: "panel body")
+    }
+
     func testTraySurfaceIsFullyOpaqueInBothAppearances() {
         assertOpaque(Theme.trayNSColor, label: "tray")
     }

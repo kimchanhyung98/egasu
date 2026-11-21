@@ -84,6 +84,14 @@ final class CodexWeeklyTimerWorkspace {
     static func cleanAbandonedWorkspaces(baseDirectory: URL, fileManager: FileManager = .default) throws {
         try prepareRoot(baseDirectory, fileManager: fileManager)
         try removeAbandonedWorkspaces(in: baseDirectory, fileManager: fileManager)
+        if baseDirectory.lastPathComponent == "egasu.CodexWeeklyTimer" {
+            let legacy = baseDirectory.deletingLastPathComponent()
+                .appendingPathComponent("OpenUsage.CodexWeeklyTimer", isDirectory: true)
+            if fileManager.fileExists(atPath: legacy.path) {
+                try prepareRoot(legacy, fileManager: fileManager)
+                try removeAbandonedWorkspaces(in: legacy, fileManager: fileManager)
+            }
+        }
     }
 
     func environment(executableURL: URL) -> [String: String] {

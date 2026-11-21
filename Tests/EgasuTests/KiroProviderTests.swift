@@ -79,6 +79,7 @@ final class KiroProviderTests: XCTestCase {
         XCTAssertEqual(format, .count(suffix: "credits"))
         XCTAssertEqual(period, KiroUsageMapper.billingPeriodMs)
         XCTAssertEqual(snapshot.refreshedAt, now)
+        XCTAssertEqual(snapshot.liveQuotaObservedAt, now)
         XCTAssertEqual(sqlite.executeCount, 0)
     }
 
@@ -186,6 +187,7 @@ final class KiroProviderTests: XCTestCase {
         let snapshot = await makeProvider(sqlite: sqlite, http: http).refresh()
 
         XCTAssertEqual(snapshot.errorCategory, .http5xx)
+        XCTAssertNil(snapshot.liveQuotaObservedAt)
         XCTAssertEqual(sqlite.tokenQueryCount, 1)
         XCTAssertEqual(http.requests.count, 1)
     }

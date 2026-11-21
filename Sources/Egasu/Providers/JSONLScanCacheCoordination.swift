@@ -1,6 +1,6 @@
 import Foundation
 
-/// 모든 provider/home identity가 공유하는 scanner 전역 I/O budget — 없으면 identity당 8개 parse task가 multi-account launch에서 수십 개 동시 read로 불어남.
+/// 같은 스캐너의 여러 캐시 식별자가 공유하는 파일 읽기·파싱 동시 실행 한도.
 actor JSONLParsePermitPool {
     private struct Waiter {
         var id: UUID

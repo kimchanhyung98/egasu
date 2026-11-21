@@ -1,5 +1,6 @@
 import { tourCamera, tourGeometry } from '../data/tour';
 import type { Tab } from '../data/copy';
+import { setDashboardTab } from './dashboard';
 import { initTourScroll } from './tour-scroll';
 
 type Stage = Tab['id'];
@@ -55,7 +56,7 @@ export function initFeatureTour(): void {
     section.dataset.tourZoom = value ? 'focused' : 'overview';
     updateCamera();
   };
-  const showScreen = (screen: 'dashboard' | 'settings'): void => {
+  const showScreen = (screen: 'dashboard' | 'accounts'): void => {
     mock.dataset.screen = screen;
     mock.querySelectorAll<HTMLElement>('[data-scr]').forEach((el) => {
       el.hidden = el.dataset.scr !== screen;
@@ -74,16 +75,12 @@ export function initFeatureTour(): void {
     delete section.dataset.tourHighlight;
     terminal.hidden = true;
     mock.dataset.softLimit = 'off';
-    get('[data-card="codex"] .am-more').hidden = true;
-    get('[data-card="codex"] [data-expand]').setAttribute('aria-expanded', 'false');
-    get('[data-card="codex"] .am-reset-detail').hidden = true;
+    get('[data-card="codex-account-1"] .am-reset-detail').hidden = true;
   };
   const showDashboardFeature = (stage: Stage): void => {
     if (stage === 'soft-limit') mock.dataset.softLimit = 'Weekly';
-    if (stage === 'reset-watch') {
-      get('[data-card="codex"] .am-more').hidden = false;
-      get('[data-card="codex"] [data-expand]').setAttribute('aria-expanded', 'true');
-    }
+    const tab = stage === 'reset-watch' || stage === 'soft-limit' ? 'All Usage' : 'Priority';
+    setDashboardTab(mock, tab);
     if (stage === 'soft-limit' || stage === 'reset-watch') {
       const body = get('[data-scr="dashboard"] .am-body');
       body.scrollTop = body.scrollHeight;
@@ -95,7 +92,7 @@ export function initFeatureTour(): void {
   const settle = (): void => {
     closeTransientViews();
     setZoom(true);
-    showScreen(selected === 'accounts' ? 'settings' : 'dashboard');
+    showScreen(selected === 'accounts' ? 'accounts' : 'dashboard');
     section.dataset.tourPopup = selected === 'menu-bar' || selected === 'integrations' ? 'closed' : 'open';
     showAccount(selected === 'accounts');
     terminal.hidden = selected !== 'integrations';
@@ -155,6 +152,7 @@ export function initFeatureTour(): void {
       setPhase('integrations');
     } else {
       await openDashboard(signal);
+      showDashboardFeature(stage);
       if (stage === 'statistics') {
         setPhase('highlighting-statistics');
         // 같은 탭을 다시 눌러도 이전 하이라이트를 끝내고 처음부터 재생.
@@ -164,7 +162,6 @@ export function initFeatureTour(): void {
         delete section.dataset.tourHighlight;
         setPhase('statistics');
       } else if (stage === 'reset-watch' || stage === 'soft-limit') {
-        showDashboardFeature(stage);
         setPhase(stage);
       } else if (stage === 'accounts') {
         showAccount(false);
@@ -173,13 +170,13 @@ export function initFeatureTour(): void {
         get('.am-optmenu').hidden = false;
         get('[data-options]').setAttribute('aria-expanded', 'true');
         await waitForStep(220, signal);
-        await clickAt('.am-optmenu [data-go="settings"]', signal);
+        await clickAt('.am-optmenu [data-go="accounts"]', signal);
         get('.am-optmenu').hidden = true;
         get('[data-options]').setAttribute('aria-expanded', 'false');
-        showScreen('settings');
+        showScreen('accounts');
         setPhase('accounts-empty');
         await waitForStep(750, signal);
-        await clickAt('[data-settings-group="accounts"] [data-add-account]', signal);
+        await clickAt('[data-scr="accounts"] [data-add-account]', signal);
         sheet.hidden = false;
         setPhase('add-account');
         await waitForStep(750, signal);

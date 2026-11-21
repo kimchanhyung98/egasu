@@ -23,22 +23,16 @@ final class MenuBarStripTrimTests: XCTestCase {
     }
 
     func testTextImageHasNoTransparentMargins() throws {
-        let content = MenuBarContent(
-            groups: [
-                MenuBarContent.Group(
-                    providerID: "claude",
-                    displayName: "Claude",
-                    icon: .providerMark("claude"),
-                    metrics: [
-                        MenuBarContent.Metric(id: "claude.session", label: "Session", value: "99%",
-                                              fraction: 0.01, isBounded: true, hasData: true),
-                        MenuBarContent.Metric(id: "claude.weekly", label: "Weekly", value: "87%",
-                                              fraction: 0.13, isBounded: true, hasData: true)
-                    ]
-                )
-            ],
-            bars: []
-        )
+        let content = MenuBarContent(items: [
+            .init(
+                id: "claude.session", icon: .providerMark("claude"), providerName: "Claude", badge: nil,
+                label: "Session", shortLabel: "Session", value: "99%", fraction: 0.01
+            ),
+            .init(
+                id: "claude.weekly", icon: .providerMark("claude"), providerName: "Claude", badge: nil,
+                label: "Weekly", shortLabel: "Weekly", value: "87%", fraction: 0.13
+            )
+        ])
 
         let image = try XCTUnwrap(MenuBarStripRenderer.textImage(for: content))
         var rect = CGRect(origin: .zero, size: image.size)

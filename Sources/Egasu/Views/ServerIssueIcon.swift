@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// provider 상태 페이지의 확인된 장애를 나타내는 프로젝트 소유 단색 해골.
+/// 프로바이더 상태 페이지에서 확인한 장애를 표시하는 단색 해골 아이콘.
 struct ServerIssueIcon: View {
     let issue: ProviderServiceIssue
     let providerName: String

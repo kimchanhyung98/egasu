@@ -1,7 +1,7 @@
 import Foundation
 
-/// provider 일별 spend history의 Mac 간 합산 가능 여부.
-/// shared spend tile 보유 provider의 명시 선언 필수 — account-wide source의 이중 계산 방지.
+/// 프로바이더 일별 지출 이력의 Mac 간 합산 가능 여부.
+/// 공용 지출 지표를 제공하는 프로바이더는 집계 범위를 명시해야 함. 계정 전체 사용량의 중복 합산 방지.
 struct UsageHistoryDescriptor: Hashable, Sendable {
     enum Scope: String, Hashable, Sendable, Codable {
         case machineLocal
@@ -14,7 +14,7 @@ struct UsageHistoryDescriptor: Hashable, Sendable {
 }
 
 extension WidgetDescriptor {
-    /// provider의 정규화 일별 history를 다른 machine-facing export와 나란히 분류.
+    /// 프로바이더의 정규화된 일별 이력을 외부 출력 리소스와 함께 분류.
     func exportingHistory(
         scope: UsageHistoryDescriptor.Scope,
         estimatedCost: Bool,

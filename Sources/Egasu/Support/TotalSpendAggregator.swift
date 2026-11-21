@@ -1,7 +1,7 @@
 import Foundation
 
 /// Total Spend 카드가 표시하는 spend period — `SpendTileMapper`의 per-provider spend tile 3종과 대응, line 라벨이 lookup key.
-enum TotalSpendPeriod: String, CaseIterable, Identifiable, Sendable {
+enum TotalSpendPeriod: String, CaseIterable, Identifiable, Sendable, Codable {
     case today = "Today"
     case yesterday = "Yesterday"
     case last30 = "Last 30 Days"
@@ -31,6 +31,14 @@ enum TotalSpendMetric: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
+    var next: Self {
+        switch self {
+        case .cost: .costPerMtok
+        case .costPerMtok: .tokens
+        case .tokens: .cost
+        }
+    }
+
     var title: String {
         switch self {
         case .cost: L10n.metrics("Cost")
@@ -41,11 +49,7 @@ enum TotalSpendMetric: String, CaseIterable, Identifiable, Sendable {
 
     /// 선택된 period에 해당 metric의 provider가 없을 때의 empty-state 문구.
     var emptyMessage: String {
-        switch self {
-        case .cost: L10n.metrics("No cost data for this period")
-        case .costPerMtok: L10n.metrics("No cost-per-token data for this period")
-        case .tokens: L10n.metrics("No token data for this period")
-        }
+        L10n.metrics("No data")
     }
 }
 

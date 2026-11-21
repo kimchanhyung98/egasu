@@ -45,9 +45,9 @@ final class QuotaPresentationTests: XCTestCase {
             let weekly = try XCTUnwrap(provider.widgetDescriptors.first { $0.id == "\(cardID).weekly" })
             let runtime = Runtime(provider: provider.provider, descriptors: provider.widgetDescriptors)
             let defaults = makeDefaults()
-            let softLimit = SoftLimitSettingsStore(defaults: defaults)
+            let softLimit = SoftLimitSettingsStore(defaults: defaults, labsAvailable: true)
             softLimit.enabled = true
-            softLimit.window = .fiveHours
+            softLimit.window = .all
             softLimit.thresholdPercent = 90
             let store = WidgetDataStore(
                 registry: WidgetRegistry.from([runtime]), providers: [runtime],
@@ -56,7 +56,7 @@ final class QuotaPresentationTests: XCTestCase {
             )
             XCTAssertFalse(store.data(for: session).hasData)
             XCTAssertFalse(store.data(for: session).isFreshSessionWindow(now: now))
-            XCTAssertEqual(session.softLimitWindow, .fiveHours)
+            XCTAssertTrue(session.softLimitWindows.isEmpty)
             XCTAssertNil(weekly.sample.sessionStartSignal)
 
             for reset in [nil, now.addingTimeInterval(9_000)] {
@@ -70,8 +70,8 @@ final class QuotaPresentationTests: XCTestCase {
                     XCTAssertEqual(data.sessionStartSignal, .missingResetDate)
                     XCTAssertEqual(data.isFreshSessionWindow(now: now), reset == nil)
                     XCTAssertEqual(data.hasResetLabel(now: now), reset != nil)
-                    XCTAssertEqual(data.softLimitUsedFraction, 0.9)
-                    XCTAssertEqual(data.softLimitMarkerFraction ?? -1, mode == .used ? 0.9 : 0.1, accuracy: 0.0001)
+                    XCTAssertNil(data.softLimitUsedFraction)
+                    XCTAssertNil(data.softLimitMarkerFraction)
                     XCTAssertEqual(data.meterState(now: now), .level(.normal))
                     XCTAssertNil(data.paceTick(for: data.meterState(now: now), now: now))
                 }
@@ -88,16 +88,16 @@ final class QuotaPresentationTests: XCTestCase {
         }
     }
 
-    func testZeroUsageDoesNotRearmPaceNotificationsBeforeTheWindowAdvances() async {
+    func testZeroUsageRearmsBurningFastWithoutRepeatingOnTimeExtension() async {
         let provider = Provider(id: "fixture", displayName: "Fixture", icon: .providerMark("codex"))
         let descriptor = WidgetDescriptor.percent(id: "fixture.session", provider: provider, title: "Session")
             .supportingSoftLimit(.weekly)
         let runtime = Runtime(provider: provider, descriptors: [descriptor])
         let defaults = makeDefaults()
         let notifications = NotificationSettingsStore(defaults: defaults)
-        notifications.healthyToClose = true
+        notifications.warning = true
         notifications.closeToRunningOut = true
-        let softLimit = SoftLimitSettingsStore(defaults: defaults)
+        let softLimit = SoftLimitSettingsStore(defaults: defaults, labsAvailable: true)
         softLimit.enabled = true
         softLimit.window = .weekly
         let recorder = Recorder()
@@ -108,18 +108,19 @@ final class QuotaPresentationTests: XCTestCase {
             postNotification: { _, title, _, _, _ in recorder.titles.append(title); return true }
         )
         let reset = now.addingTimeInterval(Double(MetricPeriod.weekMs) / 2_000)
-        for (used, expectedCount) in [(0.0, 0), (46.0, 1), (0.0, 1), (46.0, 1), (30.0, 1), (46.0, 2)] {
+        // 실제 0 회복과 속도 회복 모두 다음 소진 알림을 허용 — 첫 관측은 기준선만 기록.
+        for (used, expectedCount) in [(0.0, 0), (60.0, 1), (0.0, 1), (60.0, 2), (30.0, 2), (60.0, 3)] {
             runtime.setUsage(used, reset: reset, period: MetricPeriod.weekMs)
             await store.refresh(providerID: provider.id, force: true)
             await store.evaluateNotifications(now: now)
             XCTAssertEqual(store.data(for: descriptor).softLimitUsedFraction, 0.9)
             XCTAssertEqual(recorder.titles.count, expectedCount)
         }
-        XCTAssertEqual(recorder.titles, ["Cutting It Close", "Cutting It Close"])
+        XCTAssertEqual(recorder.titles, ["Burning Fast", "Burning Fast", "Burning Fast"], "남은 양이 30% 위라 Warning은 없음")
 
-        runtime.setUsage(46, reset: reset.addingTimeInterval(2), period: MetricPeriod.weekMs)
+        runtime.setUsage(60, reset: reset.addingTimeInterval(2), period: MetricPeriod.weekMs)
         await store.refresh(providerID: provider.id, force: true)
         await store.evaluateNotifications(now: now)
-        XCTAssertEqual(recorder.titles, ["Cutting It Close", "Cutting It Close", "Cutting It Close"])
+        XCTAssertEqual(recorder.titles.count, 3, "기존 초기화 시각 전 시각 연장만으로는 반복하지 않음")
     }
 }

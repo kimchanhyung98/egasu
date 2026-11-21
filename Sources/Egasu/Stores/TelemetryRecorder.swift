@@ -4,9 +4,8 @@ import Foundation
 struct TelemetryConfigSnapshot: Sendable {
     let enabledProviders: [String]
     let enabledMetricIDs: [String]
+    /// Priority 고정 지표 — 계정별 ID는 전송 전에 프로바이더 기준으로 축약.
     let pinnedMetricIDs: [String]
-    let expandedMetricIDs: [String]
-    let menuBarStyle: String
 
     /// telemetry 익명성 계약 — 계정 card id(`claude@ab12cd34`)는 identity 파생·개수는 per-user라
     /// 보고되는 모든 id를 family로 collapse
@@ -14,8 +13,6 @@ struct TelemetryConfigSnapshot: Sendable {
         enabledProviders: [String],
         enabledMetricIDs: [String],
         pinnedMetricIDs: [String],
-        expandedMetricIDs: [String],
-        menuBarStyle: String,
         providerIDForMetric: (String) -> String?
     ) -> TelemetryConfigSnapshot {
         func dedupe(_ ids: [String]) -> [String] {
@@ -32,9 +29,7 @@ struct TelemetryConfigSnapshot: Sendable {
         return TelemetryConfigSnapshot(
             enabledProviders: dedupe(enabledProviders.map(ProviderAccountID.family(of:))),
             enabledMetricIDs: dedupe(enabledMetricIDs.map(familyMetricID)),
-            pinnedMetricIDs: dedupe(pinnedMetricIDs.map(familyMetricID)),
-            expandedMetricIDs: dedupe(expandedMetricIDs.map(familyMetricID)),
-            menuBarStyle: menuBarStyle
+            pinnedMetricIDs: dedupe(pinnedMetricIDs.map(familyMetricID))
         )
     }
 }
@@ -184,6 +179,7 @@ final class TelemetryRecorder {
         updateDiagnosticSubscription()
     }
 
+    /// 공유를 껐다 켜면 구독을 교체해 이전 동의 기간에 대기하던 이벤트 제외.
     private func updateDiagnosticSubscription() {
         if let diagnosticObserver { AppDiagnostics.removeObserver(diagnosticObserver) }
         diagnosticObserver = nil
@@ -196,6 +192,7 @@ final class TelemetryRecorder {
         }
     }
 
+    /// 모든 결과를 일별로 집계하고, 예상 밖의 실패·부분 실패·복구는 하루 한도 안에서 먼저 전송.
     func recordDiagnostic(_ event: DiagnosticEvent) {
         guard store.enabled else { return }
         let today = Self.dayString(now())
@@ -267,14 +264,12 @@ final class TelemetryRecorder {
             "install_id": store.installID,
             "app_version": appVersion,
             "build_channel": buildChannel,
-            "schema_version": 2,
+            "schema_version": 3,
             "day": Self.dayString(now()),
             "os_version": TelemetryConfig.osVersion,
             "enabled_providers": config.enabledProviders,
             "enabled_metric_ids": config.enabledMetricIDs,
-            "pinned_metric_ids": config.pinnedMetricIDs,
-            "expanded_metric_ids": config.expandedMetricIDs,
-            "menu_bar_style": config.menuBarStyle
+            "pinned_metric_ids": config.pinnedMetricIDs
         ])
         sink.flush()
     }

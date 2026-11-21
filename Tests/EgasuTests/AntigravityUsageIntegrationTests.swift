@@ -44,8 +44,15 @@ final class AntigravityUsageIntegrationTests: XCTestCase {
         let provider = makeProvider(usageScan: { _, _ in scan }, quotaAvailable: false)
         let fixture = makeStore(provider)
 
+        var reported: [ErrorCategory?] = []
+        fixture.store.onRefreshOutcome = { _, outcome, category, _, degraded in
+            XCTAssertEqual(outcome, .refreshed)
+            XCTAssertTrue(degraded)
+            reported.append(category)
+        }
         _ = await fixture.store.refresh(providerID: provider.provider.id, force: true)
 
+        XCTAssertEqual(reported, [.network])
         let snapshot = try XCTUnwrap(fixture.store.localSnapshots[provider.provider.id])
         XCTAssertEqual(snapshot.usageHistory, scan.usageHistory)
         XCTAssertEqual(snapshot.isDegraded, true)

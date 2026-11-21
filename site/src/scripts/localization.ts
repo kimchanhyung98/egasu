@@ -1,5 +1,7 @@
 import { createTranslator, parseStrings, type PreviewLocale, type TranslationTable } from '../data/preview-locale';
 import { previewTranslations } from '../data/preview-translations';
+import { accountFamilies } from '../data/accounts';
+import { accountName, type PreviewState } from '../data/preview-state';
 
 const sources = import.meta.glob('../../../Sources/Egasu/Resources/Localization/{ko,ja}.lproj/*.strings', {
   query: '?raw', import: 'default', eager: true,
@@ -24,7 +26,34 @@ function translator(locale: PreviewLocale, context: string): (text: string) => s
 interface SourceValue { source: string; rendered: string }
 const textSources = new WeakMap<Text, SourceValue>();
 const attributeSources = new WeakMap<Element, Map<string, SourceValue>>();
+const accountText = new WeakMap<Element, { template: string; name: string }>();
+const accountNameSlot = '\0';
 let currentLocale: PreviewLocale = 'en';
+
+function localeForLanguage(language: string): PreviewLocale {
+  return language === '한국어' ? 'ko' : language === '日本語' ? 'ja' : 'en';
+}
+
+/** 기본 이름의 번역이 사용자 지정 이름과 겹치면 기본 이름만 영어로 표시. */
+export function previewAccountDisplayName(state: PreviewState, family: string, id: string): { name: string; literal: boolean; displayed: string } {
+  const name = accountName(state, family, id);
+  if (Object.hasOwn(state.accountNames, `${family}:${id}`)) return { name, literal: true, displayed: name };
+  const locale = localeForLanguage(String(state.preferences.language));
+  const translated = translator(locale, 'Accounts')(name);
+  const translatedKey = translated.normalize('NFC').toLowerCase();
+  const profiles = accountFamilies.find((entry) => entry.id === family)!.profiles;
+  const literal = profiles.some((profile) =>
+    state.accountNames[`${family}:${profile.id}`]?.normalize('NFC').toLowerCase() === translatedKey);
+  return { name, literal, displayed: literal ? name : translated };
+}
+
+export function setPreviewAccountText(
+  element: HTMLElement, format: (name: string) => string, name: string, literal: boolean,
+): void {
+  element.textContent = format(name);
+  if (literal) accountText.set(element, { template: format(accountNameSlot), name });
+  else accountText.delete(element);
+}
 
 function sourceValue(previous: SourceValue | undefined, value: string): SourceValue {
   return previous?.rendered === value ? previous : { source: value, rendered: value };
@@ -32,8 +61,7 @@ function sourceValue(previous: SourceValue | undefined, value: string): SourceVa
 
 function contextFor(element: Element): string {
   if (element.closest('[data-scr="settings"]')) return 'Settings';
-  if (element.closest('[data-tour-sheet]')) return 'Accounts';
-  if (element.closest('[data-scr^="metrics:"], [data-scr="customize"]')) return 'Customize';
+  if (element.closest('[data-tour-sheet], [data-scr="accounts"], [data-scr^="account:"]')) return 'Accounts';
   return 'Dashboard';
 }
 
@@ -45,9 +73,13 @@ export function localizePreview(root: HTMLElement): void {
   while ((node = walker.nextNode())) {
     const text = node as Text;
     const element = text.parentElement!;
-    if (element.closest('[data-pick="language"], [data-picker="language"], script, style, code')) continue;
+    if (element.closest('[data-pick="language"], [data-picker="language"], [data-preview-literal], script, style, code')) continue;
     const value = sourceValue(textSources.get(text), text.data);
-    value.rendered = translator(currentLocale, contextFor(element))(value.source);
+    const translate = translator(currentLocale, contextFor(element));
+    const account = accountText.get(element);
+    value.rendered = account
+      ? translate(account.template).replace(accountNameSlot, () => account.name)
+      : translate(value.source);
     if (text.data !== value.rendered) text.data = value.rendered;
     textSources.set(text, value);
   }
@@ -66,7 +98,7 @@ export function localizePreview(root: HTMLElement): void {
 }
 
 export function applyPreviewLanguage(language: string): void {
-  currentLocale = language === '한국어' ? 'ko' : language === '日本語' ? 'ja' : 'en';
+  currentLocale = localeForLanguage(language);
   document.querySelectorAll<HTMLElement>('[data-tour-mock] [data-picker="language"] [data-picker-value]').forEach((label) => {
     label.textContent = language;
     label.lang = currentLocale;

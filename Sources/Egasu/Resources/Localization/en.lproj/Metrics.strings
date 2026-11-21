@@ -40,6 +40,7 @@
 "Chat" = "Chat";
 "Claude" = "Claude";
 "Claude Weekly" = "Claude Weekly";
+"Argon Weekly" = "Argon Weekly";
 "Codex Reset Watch" = "Codex Reset Watch";
 "Completions" = "Completions";
 "Cost" = "Cost";
@@ -77,10 +78,8 @@
 "M" = "M";
 "MTok" = "MTok";
 "Monthly" = "Monthly";
-"No cost data for this period" = "No cost data for this period";
-"No cost-per-token data for this period" = "No cost-per-token data for this period";
+"Monthly limit" = "Monthly limit";
 "No data" = "No data";
-"No token data for this period" = "No token data for this period";
 "No usage data" = "No usage data";
 "No usage in this period" = "No usage in this period";
 "Not available" = "Not available";
@@ -119,6 +118,7 @@
 "Sessions start after you send your first message." = "Sessions start after you send your first message.";
 "Sonnet" = "Sonnet";
 "Spark" = "Spark";
+"Spark Monthly" = "Spark Monthly";
 "Spark Weekly" = "Spark Weekly";
 "T" = "T";
 "This Month" = "This Month";
@@ -179,3 +179,32 @@
 "From your OpenCode logs and local tools" = "From your OpenCode logs and local tools";
 "From your Grok usage files and logs (estimated)" = "From your Grok usage files and logs (estimated)";
 "From your Grok usage files, logs, and local tools (estimated)" = "From your Grok usage files, logs, and local tools (estimated)";
+
+"%lld%% or less left for this window." = "%lld%% or less left for this window.";
+"A limit may run out before its reset" = "A limit may run out before its reset";
+"Alert when a limit drops critically low" = "Alert when a limit drops critically low";
+"Alert when a limit requires your attention" = "Alert when a limit requires your attention";
+"Critical" = "Critical";
+"May run out before the limit resets." = "May run out before the limit resets.";
+"Over 50% left a day before its reset" = "Over 50% left a day before its reset";
+"Over 50% left, resets in under 24 hours." = "Over 50% left, resets in under 24 hours.";
+"Use It or Lose It" = "Use It or Lose It";
+"Warning" = "Warning";
+
+"%lldd" = "%lldd";
+"%lldmo" = "%lldmo";
+"%lldmo %lldd" = "%lldmo %lldd";
+"%lldy" = "%lldy";
+"%lldy %lldmo" = "%lldy %lldmo";
+"Soft limit at %lld%%" = "Soft limit at %lld%%";
+
+"Failed" = "Failed";
+
+"%@ didn't report any data for this range." = "%@ didn't report any data for this range.";
+"30 Days Ending %@" = "30 Days Ending %@";
+"Breakdown Unavailable" = "Breakdown Unavailable";
+"Copy %@ Usage" = "Copy %@ Usage";
+"Loading Breakdown…" = "Loading Breakdown…";
+"Refresh to load the details for this range." = "Refresh to load the details for this range.";
+"Saved %@" = "Saved %@";
+"Top Models" = "Top Models";

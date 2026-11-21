@@ -1,8 +1,7 @@
 import Foundation
 
-/// 커스텀 config dir(기본 home 외 `CLAUDE_CONFIG_DIR` 대상)의 추가 Claude 로그인 launch-time 스캔.
-/// keychain secret 미조회(파일 존재 + attributes-only probe) — 권한 dialog·launch 블로킹 금지.
-/// 후보는 `~`의 dot-dir와 `~/.config` 하위로 한정; identity 추출 성공이 곧 검증(이름 매칭 아님).
+/// 추가 Claude 로그인 경로 탐색. 계정 신원과 자격 증명 흔적이 모두 있는 경로만 채택.
+/// 인증 파일이나 Keychain 메타데이터를 확인하며 Keychain 비밀값은 읽지 않음.
 struct ClaudeConfigDirDiscovery {
     /// 승인된 커스텀 config-dir 로그인 1건 — 카드화/기존 계정 귀속 판단은 assembly 소관.
     struct Finding: Equatable, Sendable {
@@ -16,7 +15,7 @@ struct ClaudeConfigDirDiscovery {
 
     struct Result: Sendable {
         var findings: [Finding] = []
-        /// 결정별 support trail(로그 출력) — 토큰·이메일 없이 identity 해시·종류·경로만 포함.
+        /// 진단 로그에는 탐색 결과와 자격 증명 출처만 기록.
         var notes: [String] = []
     }
 
@@ -25,7 +24,7 @@ struct ClaudeConfigDirDiscovery {
     var keychain: KeychainAccessing
     var homeDirectory: @Sendable () -> URL
     var listSubdirectories: @Sendable (URL) -> [URL]
-    /// wall-clock 예산 — 초과 시 부분 결과 반환, 다음 launch에서 재개.
+    /// 탐색 시간 제한. 초과 시 확인한 결과만 반환.
     var timeBudget: TimeInterval
     var now: @Sendable () -> Date
 
@@ -47,10 +46,10 @@ struct ClaudeConfigDirDiscovery {
         self.now = now
     }
 
-    func run(additionalDirectories: [URL] = []) -> Result {
+    func run(additionalDirectories: [URL] = [], observedDefaultHome: String? = nil) -> Result {
         let started = now()
         var result = Result()
-        let excluded = Set(defaultClaudeConfigDirs().map(canonical))
+        let excluded = Set(defaultClaudeConfigDirs(observedDefaultHome: observedDefaultHome).map(canonical))
         var visited: Set<String> = []
 
         // 등록된 home은 정확한 계정 handle — bounded ambient 스캔보다 우선, launch 예산 안에서 카드 바인딩 필수.
@@ -102,9 +101,8 @@ struct ClaudeConfigDirDiscovery {
         }
     }
 
+    /// 계정 정보와 자격 증명을 모두 확인한 디렉터리만 채택. 계정 파일이 있는 후보만 진단에 기록.
     private func claudeCandidate(at url: URL, notes: inout [String]) -> Finding? {
-        // pre-gate: identity 파일 보유 dir만 trail 진입 — 나머지는 무관한 dot-dir로 로그 제외.
-        // 커스텀 dir은 state를 내부에 보관; 기본 home(`~/.claude.json` 방식)은 사전 제외됨.
         guard let identityText = try? files.readTextIfPresent(url.path + "/.claude.json") else {
             return nil
         }
@@ -114,7 +112,7 @@ struct ClaudeConfigDirDiscovery {
               let account = parsed.oauthAccount,
               let key = DefaultAccountObserver.claudeIdentityKey(account)
         else {
-            notes.append("claude candidate \(logPath(url.path)): identity file present but names no account → skipped")
+            notes.append("claude config discovery: skipped candidate without account identity")
             return nil
         }
 
@@ -138,11 +136,11 @@ struct ClaudeConfigDirDiscovery {
             }
         }
         guard fileBacked || matchedLiteral != nil else {
-            notes.append("claude candidate \(logPath(url.path)): identity \(hash8(key)) but no credential (no .credentials.json, no keychain item for \(literals.count) path spellings) → skipped")
+            notes.append("claude config discovery: skipped candidate without file or Keychain credentials")
             return nil
         }
 
-        notes.append("claude candidate \(logPath(url.path)): accepted (\(hash8(key)), \(fileBacked ? "file" : "keychain") credential)")
+        notes.append("claude config discovery: accepted source=\(fileBacked ? "file" : "keychain")")
         return Finding(
             identityKey: key,
             label: DefaultAccountObserver.claudeIdentityLabel(account),
@@ -175,10 +173,12 @@ struct ClaudeConfigDirDiscovery {
 
     // MARK: - Default homes (the exclusion set)
 
-    /// 기본 카드의 config dir 목록 — `CLAUDE_CONFIG_DIR` 우선, 없으면 표준 해석(`$XDG_CONFIG_HOME/claude`, `~/.claude`).
-    private func defaultClaudeConfigDirs() -> [String] {
+    /// 셸 함수가 환경 변수를 덮어쓰면 관찰한 기본 홈만 추가 계정 탐색에서 제외.
+    private func defaultClaudeConfigDirs(observedDefaultHome: String?) -> [String] {
+        if let observedDefaultHome { return [observedDefaultHome] }
         if let raw = environment.value(for: "CLAUDE_CONFIG_DIR")?
-            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        {
             return [expandTilde(raw)]
         }
         let home = homeDirectory()
@@ -196,16 +196,5 @@ struct ClaudeConfigDirDiscovery {
 
     private func canonical(_ path: String) -> String {
         URL(fileURLWithPath: expandTilde(path)).resolvingSymlinksInPath().standardizedFileURL.path
-    }
-
-    /// 로그 안전 경로 — home prefix를 `~`로 접어 username 노출 방지.
-    private func logPath(_ path: String) -> String {
-        let home = homeDirectory().path
-        guard path.hasPrefix(home + "/") else { return path }
-        return "~" + path.dropFirst(home.count)
-    }
-
-    private func hash8(_ identityKey: String) -> String {
-        String(ProviderAccountID.make(family: "claude", identityKey: identityKey).dropFirst("claude@".count))
     }
 }

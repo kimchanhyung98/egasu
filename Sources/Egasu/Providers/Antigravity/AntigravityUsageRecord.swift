@@ -80,7 +80,7 @@ struct AntigravityUsageRecord: Sendable {
         guard UsageLogNumbers.sum(input, output, write, read) != nil else {
             throw AntigravityUsageScanError.unreadable
         }
-        // input은 비캐시 입력. output은 thinking·response를 이미 포함한 합계.
+        // 입력은 비캐시 토큰. 출력은 추론·응답 토큰을 포함한 합계.
         return TokenBreakdown(input: input, cacheWrite5m: write, cacheRead: read, output: output)
     }
 
@@ -118,7 +118,7 @@ struct AntigravityUsageRecord: Sendable {
     }
 }
 
-/// SQLite 소유 blob의 범위를 빌려 읽으며 미사용 필드는 길이만큼 건너뜀.
+/// SQLite 소유 바이너리 데이터의 범위를 빌려 읽으며 미사용 필드는 길이만큼 건너뜀.
 private enum AntigravityProtobuf {
     struct Field {
         var number: Int

@@ -1,7 +1,7 @@
 import Foundation
 
 enum UsageLogNumbers {
-    /// 정수 문자열은 Double을 거치지 않아 큰 PID·token의 정밀도 유지. 소수·범위 초과·명시적 잘못된 값은 거부.
+    /// 정수 문자열은 Double을 거치지 않아 큰 PID·토큰 수의 정밀도 유지. 소수·범위 초과·잘못된 값은 거부.
     static func count(_ value: Any?, missing: Int? = nil) -> Int? {
         guard let value else { return missing }
         let text: String

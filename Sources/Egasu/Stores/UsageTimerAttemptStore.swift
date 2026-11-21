@@ -1,0 +1,373 @@
+import CryptoKit
+import Darwin
+import Foundation
+
+struct UsageTimerAttempt: Codable, Equatable, Sendable {
+    enum Execution: String, Codable, Sendable {
+        case pending, completed, failed
+    }
+
+    var id: UUID
+    var attemptedAt: Date
+    var resetBefore: Date?
+    var resetAfter: Date?
+    var execution: Execution
+    var notBefore: Date
+    var lastVerifiedAt: Date?
+    var messageLaunched: Bool? = nil
+}
+
+enum UsageTimerObservationChange: Equatable {
+    case stale, baseline, incomparable, unchanged, changed
+}
+
+/// 전송 전 기록을 원자적으로 저장 — 손상·읽기 실패 시 기존 중복 방지 기록을 버리지 않음.
+@MainActor
+final class UsageTimerAttemptStore {
+    static let retryCooldown: TimeInterval = 5 * 60
+    static let sendLimit = 2
+    static let sendLimitWindow: TimeInterval = 24 * 60 * 60
+
+    fileprivate struct FreshObservation: Codable, Equatable, Sendable {
+        var rawResetAt: Date?
+        var observedAt: Date
+        var stableSince: Date?
+        var stableResetAt: Date?
+        var lastObservedAt: Date?
+        var usedPercent: Double?
+        var confirmedResetAt: Date?
+    }
+
+    struct RevalidationState: Equatable, Sendable {
+        let confirmedReset: Date?
+        fileprivate let key: String
+        fileprivate let observation: FreshObservation?
+        fileprivate let attempt: UsageTimerAttempt?
+    }
+
+    private struct Document: Codable {
+        var version = 3
+        var attempts: [String: UsageTimerAttempt] = [:]
+        var observations: [String: FreshObservation] = [:]
+        var sendHistory: [String: [Date]] = [:]
+
+        enum CodingKeys: CodingKey { case version, attempts, observations, sendHistory }
+
+        init() {}
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            version = try container.decode(Int.self, forKey: .version)
+            attempts = try container.decode([String: UsageTimerAttempt].self, forKey: .attempts)
+            observations = try container.decodeIfPresent([String: FreshObservation].self, forKey: .observations) ?? [:]
+            sendHistory = version >= 3
+                ? try container.decode([String: [Date]].self, forKey: .sendHistory) : [:]
+        }
+    }
+
+    private enum StoreError: Error {
+        case invalidDocument
+    }
+
+    let fileURL: URL
+
+    init(fileURL: URL = StorageNamespace.current.applicationSupportDirectory()
+        .appendingPathComponent("codex-weekly-timer-attempts.json")) {
+        self.fileURL = fileURL
+    }
+
+    func attempt(for accountKey: String) throws -> UsageTimerAttempt? {
+        try withLock { try read().attempts[Self.key(accountKey)] }
+    }
+
+    func canAttempt(accountKey: String, now: Date, budgetWindow: TimeInterval = sendLimitWindow) throws -> Bool {
+        try withLock {
+            let document = try read()
+            let key = Self.key(accountKey)
+            return Self.limitResetsAt(document, key: key, now: now, budgetWindow: budgetWindow) == nil
+                && (document.attempts[key].map({ $0.notBefore <= now }) ?? true)
+                && (Self.confirmedReset(in: document.observations[key]).map({ $0 <= now }) ?? true)
+        }
+    }
+
+    func sendLimitResetsAt(accountKey: String, now: Date, budgetWindow: TimeInterval = sendLimitWindow) throws -> Date? {
+        try withLock { Self.limitResetsAt(try read(), key: Self.key(accountKey), now: now, budgetWindow: budgetWindow) }
+    }
+
+    /// 정기 재확인의 비교 기준 캡처 — 기존 주간 보류를 유지하고 재시도 간격·전송 상한 확인.
+    func revalidationState(accountKey: String, now: Date, budgetWindow: TimeInterval = sendLimitWindow) throws -> RevalidationState? {
+        try withLock {
+            let document = try read()
+            let key = Self.key(accountKey)
+            guard Self.limitResetsAt(document, key: key, now: now, budgetWindow: budgetWindow) == nil,
+                  document.attempts[key].map({ $0.notBefore <= now }) ?? true else { return nil }
+            return RevalidationState(
+                confirmedReset: Self.confirmedReset(in: document.observations[key]), key: key,
+                observation: document.observations[key], attempt: document.attempts[key]
+            )
+        }
+    }
+
+    /// 첫 조회 이후 변경이 없고 두 조회가 미시작 상태를 증명할 때만 기존 보류 해제와 전송 예약을 함께 저장.
+    func beginAfterRevalidation(
+        first: UsageTimerObservation, second: UsageTimerObservation,
+        expectedState: RevalidationState, now: Date
+    ) throws -> UsageTimerAttempt? {
+        try withLock {
+            var document = try read()
+            let key = Self.key(first.storageKey)
+            let budgetWindow = first.budgetWindow
+            guard first.storageKey == second.storageKey, expectedState.key == key,
+                  document.observations[key] == expectedState.observation,
+                  document.attempts[key] == expectedState.attempt,
+                  let latest = document.observations[key],
+                  (latest.lastObservedAt ?? latest.observedAt) == first.observedAt,
+                  (latest.usedPercent ?? 0) == 0,
+                  Self.limitResetsAt(document, key: key, now: now, budgetWindow: budgetWindow) == nil,
+                  document.attempts[key].map({ $0.notBefore <= now }) ?? true,
+                  first.usedPercent == 0, second.usedPercent == 0,
+                  let firstReset = first.rawResetAt, let secondReset = second.rawResetAt,
+                  firstReset > first.observedAt, secondReset > second.observedAt, secondReset > now,
+                  second.observedAt.timeIntervalSince(first.observedAt)
+                    >= UsageTimerObservation.verificationInterval,
+                  !UsageTimerObservation.resetTimesMatch(firstReset, secondReset)
+            else { return nil }
+            let attempt = UsageTimerAttempt(
+                id: UUID(), attemptedAt: now, resetBefore: secondReset, resetAfter: nil,
+                execution: .pending, notBefore: now.addingTimeInterval(Self.retryCooldown),
+                lastVerifiedAt: nil
+            )
+            document.observations[key] = FreshObservation(
+                rawResetAt: secondReset, observedAt: second.observedAt,
+                stableSince: second.observedAt, stableResetAt: secondReset,
+                lastObservedAt: second.observedAt, usedPercent: 0, confirmedResetAt: nil
+            )
+            document.attempts[key] = attempt
+            Self.reserveSend(in: &document, key: key, now: now, budgetWindow: budgetWindow)
+            try write(document)
+            return attempt
+        }
+    }
+
+    /// 계정·기본 주간 버킷의 예약과 기존 보류 확인을 같은 파일 잠금 안에서 수행.
+    func begin(
+        accountKey: String, resetBefore: Date?, now: Date, expectedObservedAt: Date? = nil,
+        budgetWindow: TimeInterval = sendLimitWindow
+    ) throws -> UsageTimerAttempt? {
+        try withLock {
+            var document = try read()
+            let key = Self.key(accountKey)
+            guard Self.limitResetsAt(document, key: key, now: now, budgetWindow: budgetWindow) == nil,
+                  document.attempts[key].map({ $0.notBefore <= now }) ?? true else { return nil }
+            guard Self.confirmedReset(in: document.observations[key]).map({ $0 <= now }) ?? true else { return nil }
+            if let expectedObservedAt,
+               document.observations[key]?.observedAt != expectedObservedAt { return nil }
+            let attempt = UsageTimerAttempt(
+                id: UUID(), attemptedAt: now, resetBefore: resetBefore, resetAfter: nil,
+                execution: .pending,
+                notBefore: now.addingTimeInterval(Self.retryCooldown),
+                lastVerifiedAt: nil
+            )
+            document.attempts[key] = attempt
+            Self.reserveSend(in: &document, key: key, now: now, budgetWindow: budgetWindow)
+            try write(document)
+            return attempt
+        }
+    }
+
+    func update(accountKey: String, attempt: UsageTimerAttempt) throws {
+        try withLock {
+            var document = try read()
+            let key = Self.key(accountKey)
+            guard document.attempts[key]?.id == attempt.id else { return }
+            document.attempts[key] = attempt
+            if attempt.messageLaunched == false {
+                document.sendHistory[key]?.removeAll { $0 == attempt.attemptedAt }
+            }
+            try write(document)
+        }
+    }
+
+    /// 절대 reset_at만 비교하고 이전 정상 조회를 교체 — 실행 보류 시각은 변경하지 않음.
+    func observe(
+        accountKey: String, rawResetAt: Date?, observedAt: Date, usedPercent: Double = 0,
+        confirmsReset: Bool = false
+    ) throws -> UsageTimerObservationChange {
+        try withLock {
+            var document = try read()
+            let key = Self.key(accountKey)
+            let previous = document.observations[key]
+            if let previous, observedAt <= (previous.lastObservedAt ?? previous.observedAt) { return .stale }
+            // 허용 범위 안에서는 최초 기준 유지 — 조금씩 이동하는 리셋을 고정으로 오판하지 않음.
+            let previousReset = previous?.stableResetAt ?? previous?.rawResetAt
+            let sameReset = UsageTimerObservation.resetTimesMatch(previousReset, rawResetAt)
+            let stableSince = sameReset ? (previous?.stableSince ?? previous?.observedAt) : observedAt
+            var confirmedReset = Self.confirmedReset(in: previous).flatMap { $0 > observedAt ? $0 : nil }
+            if confirmedReset == nil, let reset = rawResetAt, reset > observedAt,
+               confirmsReset || usedPercent > 0 || (sameReset && observedAt.timeIntervalSince(stableSince ?? observedAt)
+                   >= UsageTimerObservation.verificationInterval) {
+                confirmedReset = reset
+            }
+            if var previous, sameReset, usedPercent == 0, (previous.usedPercent ?? 0) == 0,
+               observedAt.timeIntervalSince(stableSince ?? observedAt) <= UsageTimerObservation.resetTimeTolerance {
+                previous.lastObservedAt = observedAt
+                previous.confirmedResetAt = confirmedReset
+                document.observations[key] = previous
+                try write(document)
+                return .incomparable
+            }
+            document.observations[key] = FreshObservation(
+                rawResetAt: rawResetAt, observedAt: observedAt, stableSince: rawResetAt == nil ? nil : stableSince,
+                stableResetAt: sameReset ? previousReset : rawResetAt,
+                lastObservedAt: observedAt, usedPercent: usedPercent, confirmedResetAt: confirmedReset
+            )
+            try write(document)
+            guard let previous else { return .baseline }
+            guard previous.rawResetAt != nil, rawResetAt != nil else { return .incomparable }
+            guard sameReset else { return .changed }
+            return observedAt.timeIntervalSince(stableSince ?? observedAt) > UsageTimerObservation.resetTimeTolerance
+                ? .unchanged : .incomparable
+        }
+    }
+
+    func isLatest(_ observation: UsageTimerObservation) throws -> Bool {
+        try withLock {
+            let latest = try read().observations[Self.key(observation.storageKey)]
+            return latest?.rawResetAt == observation.rawResetAt && latest?.observedAt == observation.observedAt
+        }
+    }
+
+    func isLatestReceived(_ observation: UsageTimerObservation) throws -> Bool {
+        try withLock {
+            guard let latest = try read().observations[Self.key(observation.storageKey)] else { return false }
+            return (latest.lastObservedAt ?? latest.observedAt) == observation.observedAt
+        }
+    }
+
+    func latestObservationAt(accountKey: String) throws -> Date? {
+        try withLock { try read().observations[Self.key(accountKey)]?.observedAt }
+    }
+
+    /// 시계 후퇴로 미래가 된 비교값만 초기화 — 확인된 리셋과 전송 기록 보존.
+    func discardFutureObservations(now: Date) throws -> Bool {
+        try withLock {
+            var document = try read()
+            var changed = false
+            for (key, observation) in document.observations
+                where (observation.lastObservedAt ?? observation.observedAt) > now {
+                document.observations[key] = FreshObservation(
+                    rawResetAt: nil, observedAt: .distantPast,
+                    confirmedResetAt: Self.confirmedReset(in: observation)
+                )
+                changed = true
+            }
+            if changed { try write(document) }
+            return changed
+        }
+    }
+
+    /// 이전 형식의 고정 관찰도 복원 — 확인된 주간 구간은 리셋 시각 흔들림으로 해제 금지.
+    private static func confirmedReset(in observation: FreshObservation?) -> Date? {
+        guard let observation else { return nil }
+        if let confirmed = observation.confirmedResetAt { return confirmed }
+        let observedAt = observation.lastObservedAt ?? observation.observedAt
+        guard let reset = observation.stableResetAt ?? observation.rawResetAt, reset > observedAt,
+              (observation.usedPercent ?? 0) > 0
+                || observedAt.timeIntervalSince(observation.stableSince ?? observedAt)
+                    >= UsageTimerObservation.verificationInterval else { return nil }
+        return reset
+    }
+
+    private static func key(_ accountKey: String) -> String {
+        SHA256.hash(data: Data("codex-default-weekly\u{0}\(accountKey)".utf8))
+            .map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func limitResetsAt(_ document: Document, key: String, now: Date, budgetWindow: TimeInterval) -> Date? {
+        let recent = (document.sendHistory[key] ?? []).filter { now.timeIntervalSince($0) < budgetWindow }
+        guard recent.count >= sendLimit, let first = recent.first else { return nil }
+        return first.addingTimeInterval(budgetWindow)
+    }
+
+    /// 실행 전에 횟수 예약. 메시지 실행 전 실패가 확인된 경우만 반환.
+    private static func reserveSend(in document: inout Document, key: String, now: Date, budgetWindow: TimeInterval) {
+        document.sendHistory[key] = (document.sendHistory[key] ?? [])
+            .filter { now.timeIntervalSince($0) < budgetWindow } + [now]
+    }
+
+    private func read() throws -> Document {
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch let error as NSError where error.domain == NSCocoaErrorDomain
+            && error.code == NSFileReadNoSuchFileError {
+            return Document()
+        }
+        var document = try JSONDecoder().decode(Document.self, from: data)
+        guard [1, 2, 3].contains(document.version), document.attempts.allSatisfy({ key, attempt in
+            Self.isValidKey(key)
+                && attempt.notBefore >= attempt.attemptedAt
+        }), document.observations.keys.allSatisfy(Self.isValidKey) else { throw StoreError.invalidDocument }
+        if document.version == 1 {
+            for key in document.attempts.keys {
+                guard var attempt = document.attempts[key] else { continue }
+                attempt.notBefore = attempt.attemptedAt.addingTimeInterval(Self.retryCooldown)
+                document.attempts[key] = attempt
+            }
+        }
+        if document.version < 3 {
+            // 이전 형식에는 마지막 시도만 존재. 누락된 재시도 수를 추측하지 않고 24시간 보류.
+            document.sendHistory = document.attempts.mapValues {
+                Array(repeating: $0.attemptedAt, count: Self.sendLimit)
+            }
+            document.version = 3
+        }
+        guard document.sendHistory.allSatisfy({ key, dates in
+            Self.isValidKey(key) && dates.count <= Self.sendLimit && dates == dates.sorted()
+                && dates.allSatisfy { $0.timeIntervalSince1970.isFinite }
+        }), document.attempts.allSatisfy({ key, attempt in
+            guard let dates = document.sendHistory[key] else { return false }
+            return attempt.messageLaunched == false
+                ? !dates.contains(attempt.attemptedAt)
+                : dates.last == attempt.attemptedAt
+        }) else { throw StoreError.invalidDocument }
+        return document
+    }
+
+    private static func isValidKey(_ key: String) -> Bool {
+        key.utf8.count == 64 && key.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
+    }
+
+    private func write(_ document: Document) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(document)
+        let temporary = fileURL.appendingPathExtension(UUID().uuidString)
+        let descriptor = Darwin.open(temporary.path, O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, S_IRUSR | S_IWUSR)
+        guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        defer {
+            try? handle.close()
+            try? FileManager.default.removeItem(at: temporary)
+        }
+        try handle.write(contentsOf: data)
+        try handle.close()
+        guard Darwin.rename(temporary.path, fileURL.path) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+    }
+
+    private func withLock<Value>(_ body: () throws -> Value) throws -> Value {
+        let directory = fileURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let lockURL = fileURL.appendingPathExtension("lock")
+        let descriptor = Darwin.open(lockURL.path, O_CREAT | O_RDWR | O_CLOEXEC, S_IRUSR | S_IWUSR)
+        guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        defer { Darwin.close(descriptor) }
+        while flock(descriptor, LOCK_EX) != 0 {
+            guard errno == EINTR else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        }
+        defer { flock(descriptor, LOCK_UN) }
+        return try body()
+    }
+}

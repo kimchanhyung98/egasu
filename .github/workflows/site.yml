@@ -2,14 +2,23 @@ name: Site CI
 
 on:
   workflow_call:
+    inputs:
+      ref:
+        description: "검증할 소스 ref"
+        required: true
+        type: string
+    outputs:
+      source_sha:
+        description: "검증한 소스 커밋"
+        value: ${{ jobs.verify.outputs.source_sha }}
   push:
     branches: [main]
     paths:
+      - 'site/**'
+      - 'script/site_*.sh'
       - 'Sources/Egasu/**'
-      - '!Sources/Egasu/Resources/ProviderIcons/**'
-      - '!Sources/Egasu/Resources/Localization/ko.lproj/*.strings'
-      - '!Sources/Egasu/Resources/Localization/ja.lproj/*.strings'
       - '.github/workflows/site.yml'
+      - '.github/workflows/publish-site.yml'
       - '.github/workflows/deploy-pages.yml'
       - '.github/workflows/release.yml'
       - '.github/workflows/pricing-supplement.yml'
@@ -33,9 +42,12 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.lock.outputs.version }}
+      source_sha: ${{ steps.checkout.outputs.commit }}
     steps:
       - uses: actions/checkout@v7
+        id: checkout
         with:
+          ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
       - name: Playwright 버전 확인
         run: |
@@ -45,12 +57,14 @@ jobs:
         id: lock
 
   verify:
+    outputs:
+      source_sha: ${{ steps.source.outputs.source_sha }}
     needs: playwright
     concurrency:
-      group: site-ci-${{ github.workflow }}-${{ github.ref }}
+      group: site-ci-${{ github.workflow }}-${{ inputs.ref || github.ref }}
       cancel-in-progress: true
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     container:
       image: mcr.microsoft.com/playwright:v${{ needs.playwright.outputs.version }}-noble
       options: --init --ipc=host --user 1001
@@ -61,6 +75,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.playwright.outputs.source_sha }}
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
@@ -71,6 +86,11 @@ jobs:
       - run: npm run verify
       - name: 조립 결과 검증
         run: ../script/site_assemble.sh
+      - name: 검증한 소스 커밋 기록
+        run: |
+          source_sha="$(git rev-parse HEAD)"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+        id: source
       - uses: actions/upload-artifact@v7
         if: failure()
         with:

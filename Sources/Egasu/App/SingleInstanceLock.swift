@@ -11,7 +11,7 @@ enum SingleInstanceLock {
     }
 
     /// process 수명 동안 lock 소유 — descriptor를 열어 두어 `flock` 유지. token 해제 시 unlock + close.
-    final class Token {
+    final class Token: Sendable {
         private let fd: CInt
 
         fileprivate init(fd: CInt) {
@@ -24,16 +24,19 @@ enum SingleInstanceLock {
         }
     }
 
-    /// `Application Support/OpenUsage/<bundle id>.lock` 잠금 — 앱 bundle 위치와 무관하게 안정적인 경로.
-    static func acquire(bundleIdentifier: String) -> Acquisition {
-        guard let appSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first else {
+    /// 구버전과 같은 `Application Support/OpenUsage/<bundle id>.lock` 잠금 — 저장 폴더 이전 대상에서 제외.
+    static func acquire(bundleIdentifier: String, applicationSupportRoot: URL? = nil) -> Acquisition {
+        guard
+            let appSupport = applicationSupportRoot
+                ?? FileManager.default.urls(
+                    for: .applicationSupportDirectory,
+                    in: .userDomainMask
+                ).first
+        else {
             return .failed("Application Support directory unavailable")
         }
         let lockURL = appSupport
-            .appendingPathComponent("OpenUsage", isDirectory: true)
+            .appendingPathComponent(StorageNamespace.legacyName, isDirectory: true)
             .appendingPathComponent("\(bundleIdentifier).lock")
         return acquire(at: lockURL)
     }

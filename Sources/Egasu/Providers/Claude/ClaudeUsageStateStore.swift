@@ -19,6 +19,7 @@ struct ClaudeUsageStateStore: Sendable {
 
         private let kind: Kind
         private let credentialFingerprint: String
+        private let refreshGrantFingerprint: String?
 
         init?(_ error: Error, credentials: ClaudeOAuth, config: ClaudeOAuthConfig) {
             switch error {
@@ -28,16 +29,36 @@ struct ClaudeUsageStateStore: Sendable {
             default: return nil
             }
             credentialFingerprint = Self.fingerprint(credentials, config: config)
+            refreshGrantFingerprint =
+                kind == .sessionExpired
+                ? credentials.refreshToken.map { Self.grantFingerprint($0, config: config) } : nil
         }
 
         func error(matching credentials: ClaudeOAuth, config: ClaudeOAuthConfig) -> ClaudeAuthError? {
             credentialFingerprint == Self.fingerprint(credentials, config: config) ? kind.error : nil
         }
 
+        /// 다른 액세스 토큰이 같은 거부된 refresh grant를 다시 제출하지 않도록 구분.
+        func rejectsRefreshGrant(for credentials: ClaudeOAuth, config: ClaudeOAuthConfig) -> Bool {
+            guard kind == .sessionExpired, let token = credentials.refreshToken else { return false }
+            if let refreshGrantFingerprint {
+                return refreshGrantFingerprint == Self.grantFingerprint(token, config: config)
+            }
+            return credentialFingerprint == Self.fingerprint(credentials, config: config)
+        }
+
+        private static func grantFingerprint(_ token: String, config: ClaudeOAuthConfig) -> String {
+            digest([config.refreshURL.absoluteString, config.clientID, token])
+        }
+
         // 같은 계정의 다른 로그인·OAuth client까지 만료로 오판하지 않으며 토큰 원문은 저장하지 않음.
         private static func fingerprint(_ credentials: ClaudeOAuth, config: ClaudeOAuthConfig) -> String {
             let values = [config.refreshURL.absoluteString, config.clientID,
                           credentials.accessToken ?? "", credentials.refreshToken ?? ""]
+            return digest(values)
+        }
+
+        private static func digest(_ values: [String]) -> String {
             let input = values.map { "\($0.utf8.count):\($0)" }.joined()
             return SHA256.hash(data: Data(input.utf8)).map { String(format: "%02x", $0) }.joined()
         }
@@ -135,7 +156,7 @@ struct ClaudeUsageStateStore: Sendable {
                 }
                 return record
             } catch {
-                AppLog.error(LogTag.plugin("claude"), "usage retry state read failed: \(error.localizedDescription)")
+                AppLog.error(LogTag.plugin("claude"), "usage retry state read failed: \(AppLog.errorDetails(error))")
                 throw StoreError.invalidRecord
             }
         }
@@ -156,7 +177,7 @@ struct ClaudeUsageStateStore: Sendable {
                 try handle.close()
                 guard Darwin.rename(temporary.path, fileURL.path) == 0 else { throw StoreError.storageUnavailable }
             } catch {
-                AppLog.error(LogTag.plugin("claude"), "usage retry state write failed: \(error.localizedDescription)")
+                AppLog.error(LogTag.plugin("claude"), "usage retry state write failed: \(AppLog.errorDetails(error))")
                 throw StoreError.storageUnavailable
             }
         }
@@ -166,8 +187,8 @@ struct ClaudeUsageStateStore: Sendable {
     private let onContention: @Sendable () -> Void
 
     init(
-        directory: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("OpenUsage/claude-usage-state"),
+        directory: URL = StorageNamespace.current.applicationSupportDirectory()
+            .appendingPathComponent("claude-usage-state"),
         onContention: @escaping @Sendable () -> Void = {}
     ) {
         self.directory = directory
@@ -178,35 +199,15 @@ struct ClaudeUsageStateStore: Sendable {
         let key = SHA256.hash(data: Data("claude-oauth-usage\u{0}\(usageURL.absoluteString)\u{0}\(accountKey)".utf8))
             .map { String(format: "%02x", $0) }.joined()
         let fileURL = directory.appendingPathComponent(key).appendingPathExtension("json")
-        do {
-            try FileManager.default.createDirectory(
-                at: directory, withIntermediateDirectories: true,
-                attributes: [.posixPermissions: 0o700]
-            )
-        } catch {
-            AppLog.error(LogTag.plugin("claude"), "usage retry directory unavailable: \(error.localizedDescription)")
-            throw StoreError.storageUnavailable
-        }
-        let descriptor = Darwin.open(
-            fileURL.appendingPathExtension("lock").path,
-            O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR
-        )
-        guard descriptor >= 0 else {
-            AppLog.error(LogTag.plugin("claude"), "usage retry lock open failed (errno=\(errno))")
-            throw StoreError.storageUnavailable
-        }
+        let descriptor = try Self.openLock(for: fileURL)
         let clock = SuspendingClock()
         let deadline = clock.now.advanced(by: .seconds(120))
         var waited = false
         do {
             while true {
                 try Task.checkCancellation()
-                if flock(descriptor, LOCK_EX | LOCK_NB) == 0 {
+                if try Self.tryLock(descriptor) {
                     return Lease(descriptor: descriptor, fileURL: fileURL, waited: waited)
-                }
-                guard errno == EWOULDBLOCK || errno == EINTR else {
-                    AppLog.error(LogTag.plugin("claude"), "usage retry lock failed (errno=\(errno))")
-                    throw StoreError.storageUnavailable
                 }
                 guard clock.now < deadline else { throw StoreError.busy }
                 if !waited { onContention() }
@@ -217,5 +218,44 @@ struct ClaudeUsageStateStore: Sendable {
             Darwin.close(descriptor)
             throw error
         }
+    }
+
+    static func tryAcquireForMigration(fileURL: URL) throws -> Lease {
+        let descriptor = try openLock(for: fileURL)
+        do {
+            guard try tryLock(descriptor) else { throw StoreError.busy }
+            return Lease(descriptor: descriptor, fileURL: fileURL, waited: false)
+        } catch {
+            Darwin.close(descriptor)
+            throw error
+        }
+    }
+
+    private static func openLock(for fileURL: URL) throws -> Int32 {
+        do {
+            try FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700])
+        } catch {
+            AppLog.error(LogTag.plugin("claude"), "usage retry directory unavailable: \(AppLog.errorDetails(error))")
+            throw StoreError.storageUnavailable
+        }
+        let descriptor = Darwin.open(
+            fileURL.appendingPathExtension("lock").path,
+            O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
+        guard descriptor >= 0 else {
+            AppLog.error(LogTag.plugin("claude"), "usage retry lock open failed (errno=\(errno))")
+            throw StoreError.storageUnavailable
+        }
+        return descriptor
+    }
+
+    private static func tryLock(_ descriptor: Int32) throws -> Bool {
+        if flock(descriptor, LOCK_EX | LOCK_NB) == 0 { return true }
+        guard errno == EWOULDBLOCK || errno == EINTR else {
+            AppLog.error(LogTag.plugin("claude"), "usage retry lock failed (errno=\(errno))")
+            throw StoreError.storageUnavailable
+        }
+        return false
     }
 }

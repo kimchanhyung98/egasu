@@ -1,5 +1,30 @@
 // 앱 번역 리소스에 없는 웹 미리보기 문구.
 export const previewTranslations: Record<string, { ko: string; ja: string }> = {
+  "This preview changes language immediately. The Mac app applies it after restarting.": { ko: "이 미리보기에서는 언어가 즉시 바뀝니다. Mac 앱에서는 재시작 후 적용됩니다.", ja: "このプレビューでは言語がすぐに変わります。Macアプリでは再起動後に反映されます。" },
+  "Sample provider added. Connect your account in the Mac app.": { ko: "예시 프로바이더를 추가했습니다. 실제 계정은 Mac 앱에서 연결하세요.", ja: "サンプルのプロバイダーを追加しました。実際のアカウントはMacアプリで接続してください。" },
+  "Sign in again in the Mac app. This preview does not access your credentials.": { ko: "Mac 앱에서 다시 로그인하세요. 이 미리보기는 로그인 정보에 접근하지 않습니다.", ja: "Macアプリで再ログインしてください。このプレビューは認証情報にアクセスしません。" },
+  "Remove accounts in the Mac app. Your actual accounts are not connected to this preview.": { ko: "계정 삭제는 Mac 앱에서 진행하세요. 이 미리보기에는 실제 계정이 연결되어 있지 않습니다.", ja: "アカウントの削除はMacアプリで行ってください。このプレビューに実際のアカウントは接続されていません。" },
+  "Remove From Preview": { ko: "미리보기에서 제거", ja: "プレビューから削除" },
+  'Use up to 60 characters without slashes, backslashes, or control characters.': {
+    ko: '이름은 60자 이내로 입력하세요. 슬래시, 역슬래시, 제어 문자는 사용할 수 없습니다.',
+    ja: 'スラッシュ、バックスラッシュ、制御文字を使わず、60文字以内で入力してください。',
+  },
+  "This account name is already in use.": { ko: "이미 사용 중인 계정 이름입니다.", ja: "このアカウント名はすでに使用されています。" },
+  "Could not rename this account.": { ko: "계정 이름을 변경하지 못했습니다.", ja: "アカウント名を変更できませんでした。" },
+  "Account Settings": { ko: "계정별 설정", ja: "アカウント設定" },
+  "Shared Settings": { ko: "공통 설정", ja: "共通設定" },
+  "%@, Show in Priority": { ko: "%@, 우선순위에 표시", ja: "%@、優先に表示" },
+  "%@, Receive Alerts": { ko: "%@, 알림 받기", ja: "%@、通知を受け取る" },
+  "Unpin %@": { ko: "%@ 고정 해제", ja: "%@の固定を解除" },
+  "Reorder %@": { ko: "%@ 순서 변경", ja: "%@の順序を変更" },
+  'Show example email addresses on the dashboard.': { ko: '대시보드에 예시 이메일 주소를 표시합니다.', ja: 'ダッシュボードにサンプルのメールアドレスを表示します。' },
+  'Show account names on the dashboard.': { ko: '대시보드에 계정 이름을 표시합니다.', ja: 'ダッシュボードにアカウント名を表示します。' },
+  'Privacy Mode keeps names and email addresses masked.': { ko: 'Privacy Mode에서는 이름과 이메일 주소가 가려집니다.', ja: 'プライバシーモードでは名前とメールアドレスを伏せます。' },
+  "egasu is maintained by kimchanhyung98. This website uses sample data.": { ko: "egasu는 kimchanhyung98이 관리합니다. 이 웹사이트는 예시 데이터를 사용합니다.", ja: "egasuはkimchanhyung98が管理しています。このWebサイトはサンプルデータを使用します。" },
+  'Reset chance is high': { ko: '초기화 가능성 높음', ja: 'リセットの可能性が高い' },
+  'Reset chance is low': { ko: '초기화 가능성 낮음', ja: 'リセットの可能性が低い' },
+  '%@ dollars': { ko: '%@ 달러', ja: '%@ドル' },
+  '%@ million': { ko: '%@ 백만', ja: '%@百万' },
   'Download': { ko: '다운로드', ja: 'ダウンロード' },
   'Language changes apply immediately in this preview.': {
     ko: '이 미리보기에서는 언어 변경이 즉시 적용됩니다.',
@@ -16,10 +41,6 @@ export const previewTranslations: Record<string, { ko: string; ja: string }> = {
   'Preview value changed. Apply this setting in the Mac app.': {
     ko: '미리보기 설정을 변경했습니다. 실제 설정은 Mac 앱에서 적용하세요.',
     ja: 'プレビューの設定を変更しました。実際の設定はMacアプリで適用してください。',
-  },
-  'Preview guide changed. Automatic cancellation is currently unavailable in the Mac app.': {
-    ko: '미리보기 안내선을 변경했습니다. 현재 Mac 앱에서는 작업 자동 취소를 사용할 수 없습니다.',
-    ja: 'プレビューの目安線を変更しました。現在、Macアプリではタスクの自動キャンセルを利用できません。',
   },
   'Enter a whole percentage from 1 to 100. The previous threshold is unchanged.': {
     ko: '1부터 100까지의 정수를 입력하세요. 기존 기준값을 유지합니다.',
@@ -41,9 +62,9 @@ export const previewTranslations: Record<string, { ko: string; ja: string }> = {
     ko: 'Mac 앱에서 Tokscale 프로필에 사용량을 게시하세요. 이 미리보기는 데이터를 업로드하지 않습니다.',
     ja: 'MacアプリからTokscaleのプロフィールに使用量を公開してください。このプレビューはデータをアップロードしません。',
   },
-  'Install the terminal helper from the Mac app.': {
-    ko: 'Mac 앱에서 터미널 도우미를 설치하세요.',
-    ja: 'Macアプリからターミナルヘルパーをインストールしてください。',
+  'This removes the sample installation saved in your browser.': {
+    ko: '브라우저에 저장된 예시 설치 상태를 지웁니다.',
+    ja: 'ブラウザーに保存したサンプルのインストール状態を削除します。',
   },
   'Copy the actual log file path from Settings → Advanced in the Mac app.': {
     ko: 'Mac 앱의 설정 → 고급에서 실제 로그 파일 경로를 복사하세요.',
@@ -85,10 +106,6 @@ export const previewTranslations: Record<string, { ko: string; ja: string }> = {
     ko: 'Mac 앱에서 %@ 사용량을 새로고침하세요. 이 미리보기는 예시 데이터를 사용합니다.',
     ja: 'Macアプリで%@の使用量を更新してください。このプレビューはサンプルデータを使用します。',
   },
-  'Shows a personal limit guide. Automatic cancellation is currently unavailable.': {
-    ko: '직접 설정한 한도 안내선을 표시합니다. 현재 작업 자동 취소는 지원하지 않습니다.',
-    ja: '自分で設定した上限の目安線を表示します。現在、タスクの自動キャンセルは利用できません。',
-  },
   'Notifies you about new public reset forecasts or scheduled resets. Not a guarantee of an account reset.': {
     ko: '새로운 공개 초기화 예측이나 초기화 예정 정보를 알립니다. 계정의 한도 초기화를 보장하지 않습니다.',
     ja: '新しい公開リセット予測やリセット予定を通知します。アカウントの上限リセットを保証するものではありません。',
@@ -97,13 +114,22 @@ export const previewTranslations: Record<string, { ko: string; ja: string }> = {
     ko: '에이전트가 한도를 확인할 수 있도록 전역 `egasu` 명령을 추가합니다.',
     ja: 'エージェントが上限を確認できるグローバルな`egasu`コマンドを追加します。',
   },
+  'No sample usage for this provider.': { ko: "이 프로바이더의 예시 사용량이 없습니다.", ja: "このプロバイダーのサンプル使用量はありません。" },
+  'Copy a usage image from the Mac app.': { ko: "Mac 앱에서 사용량 이미지를 복사하세요.", ja: "Macアプリで使用量の画像をコピーしてください。" },
+  'Pin %@': { ko: "%@ 고정", ja: "%@を固定" },
+  'Copy %@': { ko: "%@ 복사", ja: "%@をコピー" },
+  'Quit egasu from the Mac app.': { ko: "Mac 앱에서 egasu를 종료하세요.", ja: "Macアプリでegasuを終了してください。" },
+  '%@, %@: %@': { ko: '%@, %@: %@', ja: '%@、%@: %@' },
+  'Metrics': { ko: '지표', ja: '指標' },
+  'Not Pinned': { ko: '고정 안 됨', ja: '未固定' },
+  '%@ Links': { ko: '%@ 링크', ja: '%@のリンク' },
   'Total Spend Period': { ko: '총 지출 기간', ja: '合計支出の期間' },
   'Switch Account': { ko: '계정 전환', ja: 'アカウントを切り替え' },
   'Account %d': { ko: '계정 %d', ja: 'アカウント%d' },
   '%@ Account %d': { ko: '%@ 계정 %d', ja: '%@ アカウント%d' },
-  'egasu usage dashboard. Open Customize and Settings from Options.': {
-    ko: 'egasu 사용량 대시보드. 옵션에서 커스터마이즈와 설정으로 이동.',
-    ja: 'egasuの使用量ダッシュボード。オプションからカスタマイズと設定を開けます。',
+  'egasu usage dashboard. Open Accounts and Settings from Options.': {
+    ko: 'egasu 사용량 대시보드. 옵션에서 계정과 설정으로 이동.',
+    ja: 'egasuの使用量ダッシュボード。オプションからアカウントと設定を開けます。',
   },
   '%@ Account': { ko: '%@ 계정', ja: '%@アカウント' },
   '%@ Actions': { ko: '%@ 작업', ja: '%@の操作' },

@@ -10,7 +10,7 @@ struct AntigravityModelConfig: Sendable, Equatable {
 }
 
 /// Antigravity quota 응답을 앱의 metric vocabulary로 변환.
-/// authoritative source는 `RetrieveUserQuotaSummary` RPC(`parseQuotaSummary`): 두 pool(Gemini = "Session"/"Weekly", Claude = GPT-OSS 포함 모든 비Gemini), 각각 rolling 5시간 + weekly window — 최대 4개 meter.
+/// authoritative source는 `RetrieveUserQuotaSummary` RPC(`parseQuotaSummary`): 두 pool(Gemini = "Session"/"Weekly", Claude = GPT-OSS 포함 모든 비Gemini), 각각 rolling 5시간 + weekly window, 별도 Argon weekly window — 최대 5개 meter.
 /// 해당 RPC 없는 빌드는 legacy per-model endpoint로 fallback — 세분화 모델을 pool별 최저 remaining fraction의 5h meter 2개("Session", "Claude")로 축약, 5h 전용이라 weekly meter는 "No data".
 enum AntigravityUsageMapper {
     /// meter로 노출 금지인 internal/중복 모델 ID. 모델 ID(LS `modelOrAlias.model`, Cloud Code `model`/key) 기준 매칭 — Cloud Code 경로는 `isInternal`도 제외.
@@ -23,27 +23,49 @@ enum AntigravityUsageMapper {
 
     // MARK: - Quota summary (the authoritative source)
 
-    /// `RetrieveUserQuotaSummary`가 보고하는 pool bucket 4개 — **정확한 `bucketId`로만** 매칭.
-    /// 미래의 bucket(예: `gemini-image-5h`)이 조용히 pool에 합류하면 안 되고, pool identity를 `displayName`/`window`에서 추론 금지.
-    static let summaryBuckets: [(bucketID: String, label: String, periodMs: Int)] = [
+    /// 공유 한도 네 개를 정확한 `bucketId`로만 식별.
+    /// 새 한도를 기존 공유 한도에 섞지 않도록 `displayName`·`window`로 종류 추정 금지.
+    private static let sharedSummaryBuckets: [(bucketID: String, label: String, periodMs: Int)] = [
         ("gemini-5h", AntigravityMetric.sessionLabel, MetricPeriod.sessionMs),
         ("gemini-weekly", AntigravityMetric.weeklyLabel, MetricPeriod.weekMs),
         ("3p-5h", AntigravityMetric.claudeLabel, MetricPeriod.sessionMs),
         ("3p-weekly", AntigravityMetric.claudeWeeklyLabel, MetricPeriod.weekMs)
     ]
+    static let summaryBuckets =
+        sharedSummaryBuckets + [
+            (
+                bucketID: "gemini-argon-wtu-weekly", label: AntigravityMetric.argonWeeklyLabel,
+                periodMs: MetricPeriod.weekMs
+            )
+        ]
 
-    /// `RetrieveUserQuotaSummary` → 최대 4개 pool meter (Session, Weekly, Claude, Claude Weekly 순). LS envelope(`{"response": {"groups": …}}`)와 bare 원격 payload(`{"groups": …}`) 모두 허용.
+    struct QuotaSummary {
+        let lines: [MetricLine]
+        let hasIncompleteWeeklyQuota: Bool
+
+        /// 공유 한도 네 개와 응답에 명시된 주간 한도가 유효하면 추가 서버 조회 생략 가능.
+        var isComplete: Bool {
+            let labels = Set(lines.map(\.label))
+            return !hasIncompleteWeeklyQuota && sharedSummaryBuckets.allSatisfy { labels.contains($0.label) }
+        }
+    }
+
+    /// `RetrieveUserQuotaSummary` → 최대 5개 meter (Session, Weekly, Claude, Claude Weekly, Argon Weekly 순). LS envelope(`{"response": {"groups": …}}`)와 bare 원격 payload(`{"groups": …}`) 모두 허용.
     /// nil은 "summary 아님"(decode 불가 body / `groups` 부재) — 호출자가 legacy endpoint로 fallback 가능. non-nil은 비어 있어도 authoritative: legacy 경로는 quota 부재를 "fully used"로 지어내므로 파싱된 summary가 흘러가면 안 됨.
     /// bucket은 관대하게 decode(잘못된 bucket 하나가 envelope를 무효화하지 않음) — `remainingFraction`이 없거나 못 쓰는 bucket은 0%/100% 조작 대신 line을 drop("No data" 행).
-    static func parseQuotaSummary(_ data: Data) -> [MetricLine]? {
-        parseQuotaSummaries([data])
+    static func parseQuotaSummary(_ data: Data, logWarnings: Bool = true) -> QuotaSummary? {
+        parseQuotaSummaries([data], logWarnings: logWarnings)
     }
 
     /// 여러 서버의 요약을 bucket ID로 병합 — 비율·재설정 시각을 각각 첫 유효값으로 유지.
-    static func parseQuotaSummaries(_ bodies: [Data]) -> [MetricLine]? {
+    static func parseQuotaSummaries(_ bodies: [Data], logWarnings: Bool = true) -> QuotaSummary? {
         let groupLists = bodies.compactMap { data -> [QuotaSummaryGroup]? in
             guard let groups = summaryGroups(data) else {
-                AppLog.warn(LogTag.plugin("antigravity"), "quota summary response has no decodable groups; treating as not-a-summary")
+                if logWarnings {
+                    AppLog.warn(
+                        LogTag.plugin("antigravity"),
+                        "quota summary response has no decodable groups; treating as not-a-summary")
+                }
                 return nil
             }
             return groups
@@ -52,39 +74,46 @@ enum AntigravityUsageMapper {
 
         var pooled: [String: Double] = [:]
         var resetTimes: [String: Date] = [:]
+        var reportedWeeklyIDs = Set<String>()
         for bucket in groupLists.joined().flatMap({ $0.buckets ?? [] }) {
-            guard let id = bucket.bucketId, summaryBuckets.contains(where: { $0.bucketID == id }) else {
-                AppLog.warn(LogTag.plugin("antigravity"), "quota summary: skipping unrecognized bucket id '\(bucket.bucketId ?? "<absent>")'")
+            guard let id = bucket.bucketId, let spec = summaryBuckets.first(where: { $0.bucketID == id }) else {
+                if logWarnings {
+                    AppLog.warn(
+                        LogTag.plugin("antigravity"),
+                        "quota summary: skipping unrecognized bucket id '\(bucket.bucketId ?? "<absent>")'")
+                }
+                continue
+            }
+            guard bucket.disabled != true else { continue }
+            if spec.periodMs == MetricPeriod.weekMs { reportedWeeklyIDs.insert(id) }
+            guard !bucket.hasInvalidDisabledFlag else {
+                if logWarnings {
+                    AppLog.warn(
+                        LogTag.plugin("antigravity"), "quota summary: bucket '\(id)' has an unusable disabled flag")
+                }
                 continue
             }
             if resetTimes[id] == nil {
                 resetTimes[id] = bucket.resetTime.flatMap { EgasuISO8601.date(from: $0) }
             }
-            guard pooled[id] == nil else { continue } // 중복 bucket ID — 첫 유효 비율 유지.
-            guard let fraction = bucket.remainingFraction, fraction.isFinite else {
-                AppLog.warn(LogTag.plugin("antigravity"), "quota summary: bucket '\(id)' has no usable remainingFraction")
+            guard pooled[id] == nil else { continue } // 중복 한도 ID는 첫 유효 비율 유지.
+            guard let fraction = bucket.remainingFraction, fraction.isFinite,
+                spec.periodMs != MetricPeriod.weekMs || (0...1).contains(fraction)
+            else {
+                if logWarnings {
+                    AppLog.warn(
+                        LogTag.plugin("antigravity"), "quota summary: bucket '\(id)' has no usable remainingFraction")
+                }
                 continue
             }
             pooled[id] = fraction
         }
 
-        return summaryBuckets.compactMap { spec in
+        let lines = summaryBuckets.compactMap { spec -> MetricLine? in
             guard let fraction = pooled[spec.bucketID] else { return nil }
             return line(pool: spec.label, fraction: fraction, resetTime: resetTimes[spec.bucketID], periodMs: spec.periodMs)
         }
-    }
-
-    static func isQuotaSummary(_ data: Data) -> Bool {
-        summaryGroups(data) != nil
-    }
-
-    /// 기존 네 bucket에 모두 유효한 비율이 있으면 다른 서버 조회 생략 가능.
-    static func isCompleteSummary(_ data: Data) -> Bool {
-        guard let groups = summaryGroups(data) else { return false }
-        let usable = Set(groups.flatMap { $0.buckets ?? [] }.compactMap { bucket in
-            bucket.remainingFraction?.isFinite == true ? bucket.bucketId : nil
-        })
-        return summaryBuckets.allSatisfy { usable.contains($0.bucketID) }
+        return QuotaSummary(lines: lines, hasIncompleteWeeklyQuota: !reportedWeeklyIDs.isSubset(of: pooled.keys))
     }
 
     private static func summaryGroups(_ data: Data) -> [QuotaSummaryGroup]? {
@@ -202,7 +231,7 @@ enum AntigravityUsageMapper {
         let used = (1 - clamped) * 100
         return .progress(
             label: pool,
-            used: used.rounded(), // 정수 percent 유지 — 새 window가 0으로 읽혀 "Not started" 동작
+            used: used, // 원값 유지. 반올림으로 소량 사용을 미시작으로 오인하지 않도록 처리.
             limit: 100,
             format: .percent,
             resetsAt: resetTime,
@@ -279,14 +308,23 @@ private struct QuotaSummaryBucket: Decodable {
     let bucketId: String?
     let remainingFraction: Double?
     let resetTime: String?
+    let disabled: Bool?
+    let hasInvalidDisabledFlag: Bool
 
-    private enum CodingKeys: String, CodingKey { case bucketId, remainingFraction, resetTime }
+    private enum CodingKeys: String, CodingKey { case bucketId, remainingFraction, resetTime, disabled }
 
     init(from decoder: Decoder) {
         let container = try? decoder.container(keyedBy: CodingKeys.self)
         bucketId = container.flatMap { (try? $0.decodeIfPresent(String.self, forKey: .bucketId)) ?? nil }
         remainingFraction = container.flatMap { (try? $0.decodeIfPresent(Double.self, forKey: .remainingFraction)) ?? nil }
         resetTime = container.flatMap { (try? $0.decodeIfPresent(String.self, forKey: .resetTime)) ?? nil }
+        do {
+            disabled = try container?.decodeIfPresent(Bool.self, forKey: .disabled)
+            hasInvalidDisabledFlag = false
+        } catch {
+            disabled = nil
+            hasInvalidDisabledFlag = true
+        }
     }
 }
 

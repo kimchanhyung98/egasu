@@ -1,7 +1,7 @@
-// 팝오버 안 화면 이동과 Customize 상호작용.
-// 화면 위치·Customize 조작은 팝오버별 상태. Settings와 계정 선택은 공통 데모 상태로 반영.
-import { maxPins } from '../data/metrics';
-import { initPreviewSettings, applySettingsToMock, choosePreviewSetting, handleSettingsClick, previewPreference } from './settings';
+import { metricKey, providerMetrics } from '../data/metrics';
+import { setMetric, setProviderEnabled, moveMetric, accountName } from '../data/preview-state';
+import { renderDashboard, setDashboardTab } from './dashboard';
+import { initPreviewSettings, applySettingsToMock, choosePreviewSetting, handleSettingsClick, previewState, renamePreviewAccount, updatePreviewState } from './settings';
 import { openMenu, closeMenu } from './menus';
 import { localizePreview } from './localization';
 
@@ -48,7 +48,7 @@ function watchHeights(): void {
   if (!('ResizeObserver' in window)) return;
   document.querySelectorAll<HTMLElement>('[data-mock]').forEach((mock) => {
     const io = new ResizeObserver(() => requestAnimationFrame(() => fitHeight(mock)));
-    mock.querySelectorAll<HTMLElement>('.am-content, .am-screen, .am-topbar, .am-foot').forEach((s) => io.observe(s));
+    mock.querySelectorAll<HTMLElement>('.am-content, .am-screen, .am-topbar, .am-foot, .am-settings-tabs').forEach((s) => io.observe(s));
   });
 }
 
@@ -63,7 +63,7 @@ function closePickers(mock: HTMLElement): void {
 
 function closeOptions(mock: HTMLElement): void {
   closePickers(mock);
-  mock.querySelectorAll<HTMLElement>('.am-optmenu, .am-account-actions').forEach((m) => {
+  mock.querySelectorAll<HTMLElement>('.am-optmenu, .am-account-actions, .am-family-menu, .am-row-menu').forEach((m) => {
     closeMenu(m);
   });
   mock.querySelectorAll<HTMLElement>('[data-options]').forEach((b) => {
@@ -87,79 +87,113 @@ function pill(mock: HTMLElement, text: string, notice = false): void {
   }, PILL_MS));
 }
 
-/**
- * Customize·Settings의 상태를 대시보드에 반영.
- * - provider를 끄면 그 카드가 사라짐, 켜면 나타남(자료 없는 provider는 값 없는 행으로).
- * - 지표를 끄면 그 행이 사라지고, 다 끄면 카드째 사라짐(displayGroups의 guard !widgets.isEmpty).
- * - Show Total Spend를 끄면 Total Spend 카드가 사라짐(DashboardContentView.swift:47).
- */
-function syncCards(mock: HTMLElement): void {
-  mock.querySelectorAll<HTMLElement>('.am-section[data-provider]').forEach((section) => {
-    const provider = section.dataset.provider ?? '';
-    const providerOn = mock.querySelector(`[data-provider-toggle="${provider}"]`)?.getAttribute('aria-checked') !== 'false';
-    const rows = Array.from(section.querySelectorAll<HTMLElement>('[data-metric]'));
-    for (const row of rows) {
-      const id = row.dataset.metric ?? '';
-      const sw = mock.querySelector(`[data-metric-toggle="${id}"]`);
-      row.hidden = sw ? sw.getAttribute('aria-checked') === 'false' : false;
-    }
-    section.hidden = !providerOn || (rows.length > 0 && rows.every((r) => r.hidden));
-    const more = section.querySelector<HTMLElement>('.am-more');
-    const caret = section.querySelector<HTMLButtonElement>('[data-expand]');
-    if (more && caret) {
-      const promote = rows.some((row) => !row.hidden && more.contains(row))
-        && !rows.some((row) => !row.hidden && !more.contains(row));
-      more.hidden = !promote && caret.getAttribute('aria-expanded') !== 'true';
-      caret.hidden = promote;
+function sync(mock: HTMLElement): void {
+  const focus = document.activeElement;
+  applySettingsToMock(mock);
+  if (mock.dataset.settingsTab === 'Labs' && !previewState().preferences.betaUpdates) settingsTab(mock, 'General');
+  renderDashboard(mock, previewState());
+  localizePreview(mock);
+  fitHeight(mock);
+  if (focus instanceof HTMLElement && mock.contains(focus) && !focus.closest('[hidden]')) {
+    focus.focus({ preventScroll: true });
+  }
+}
+
+function settingsTab(mock: HTMLElement, tab: string): void {
+  closeOptions(mock);
+  mock.dataset.settingsTab = tab;
+  mock.querySelectorAll<HTMLElement>('[data-settings-panel]').forEach((panel) => { panel.hidden = panel.dataset.settingsPanel !== tab; });
+  mock.querySelectorAll<HTMLElement>('button[data-settings-tab]').forEach((button) => {
+    const selected = button.dataset.settingsTab === tab;
+    button.setAttribute('aria-selected', String(selected));
+    button.tabIndex = selected ? 0 : -1;
+  });
+  mock.querySelector<HTMLElement>('[data-scr="settings"] .am-body')!.scrollTop = 0;
+  fitHeight(mock);
+}
+
+interface RowSelection {
+  id: string;
+  accountID: string;
+  provider: string;
+  trigger: HTMLElement;
+}
+
+const rowSelections = new WeakMap<HTMLElement, RowSelection>();
+
+function openContext(target: Element, event: Event): void {
+  const mock = root(target);
+  if (!mock) return;
+  const menuTrigger = target.closest('[data-provider-header], .am-account-caption')
+    ?.querySelector<HTMLButtonElement>('[data-provider-menu-trigger], [data-account-actions-trigger]');
+  if (menuTrigger) {
+    const id = menuTrigger.getAttribute('aria-controls');
+    const menu = id && mock.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
+    if (!menu) return;
+    event.preventDefault();
+    openMenu(menu, menuTrigger);
+    return;
+  }
+  const row = target.closest<HTMLElement>('[data-row], [data-line-id]');
+  const menu = mock.querySelector<HTMLElement>('[data-row-menu]');
+  if (!row || !menu) return;
+  const id = row.dataset.row ?? row.dataset.lineId!;
+  const providerID = row.dataset.provider!;
+  const accountID = row.dataset.accountId!;
+  const metric = providerMetrics[providerID]?.rows.find((entry) => entry.id === id);
+  if (!metric) return;
+  const trigger = target.closest<HTMLElement>('[tabindex], button') ?? row;
+  rowSelections.set(mock, { id, accountID, provider: providerID, trigger });
+  const option = menu.querySelector<HTMLElement>('[data-row-action="pin"]')!;
+  option.closest('li')!.hidden = !metric.pinnable;
+  menu.querySelectorAll<HTMLElement>('[data-row-account-action]').forEach((item) => { item.hidden = row.hasAttribute('data-priority-key'); });
+  option.textContent = previewState().pinnedMetrics.includes(metricKey(id, accountID)) ? 'Unpin' : 'Pin';
+  localizePreview(mock);
+  event.preventDefault();
+  openMenu(menu, trigger);
+}
+
+function inlineRename(mock: HTMLElement, family: string, id: string): void {
+  if (previewState().preferences.privacyMode) return;
+  closeOptions(mock);
+  const name = mock.querySelector<HTMLElement>(`.am-account-caption [data-account-name="${family}"][data-account-id="${id}"]`);
+  if (!name) return;
+  const input = document.createElement('input');
+  input.className = 'am-inline-name'; input.value = accountName(previewState(), family, id); input.maxLength = 60;
+  input.setAttribute('aria-label', 'Account Name');
+  name.hidden = true;
+  name.after(input);
+  localizePreview(input);
+  let finished = false;
+  const finish = (restoreFocus: boolean): void => {
+    if (finished) return;
+    finished = true;
+    try { renamePreviewAccount(family, id, input.value); }
+    catch (error) { console.warn('Preview account rename failed'); pill(mock, error instanceof Error ? error.message : 'Could not rename this account.', true); }
+    input.remove(); name.hidden = false;
+    if (restoreFocus) name.focus({ preventScroll: true });
+  };
+  input.addEventListener('keydown', (event) => {
+    if (event.isComposing) return;
+    if (event.key === 'Enter') { event.preventDefault(); finish(true); }
+    if (event.key === 'Escape') {
+      finished = true;
+      input.remove();
+      name.hidden = false;
+      name.focus({ preventScroll: true });
     }
   });
-
-  const spend = mock.querySelector<HTMLElement>('.am-spend-card');
-  if (spend) spend.hidden = previewPreference('showTotalSpend') === false;
-  applySettingsToMock(mock);
-}
-
-function toggleSwitch(el: HTMLElement): boolean {
-  const on = el.getAttribute('aria-checked') !== 'true';
-  el.setAttribute('aria-checked', String(on));
-  el.classList.toggle('is-on', on);
-  return on;
-}
-
-/** 별은 provider당 2개까지. 넘으면 켜지지 않고 거절 알림만 뜸(LayoutStore.maxPinsPerProvider). */
-function toggleStar(mock: HTMLElement, button: HTMLElement): void {
-  const provider = button.dataset.provider ?? '';
-  const on = button.getAttribute('aria-pressed') === 'true';
-  if (!on) {
-    const pinned = mock.querySelectorAll(`[data-star][data-provider="${provider}"][aria-pressed="true"]`).length;
-    if (pinned >= maxPins) {
-      pill(mock, `Up to ${maxPins} stars per provider`, true);
-      return;
-    }
-  }
-  button.setAttribute('aria-pressed', String(!on));
-  button.classList.toggle('is-on', !on);
-  pill(mock, on ? 'Removed from menu bar' : 'Starred for menu bar');
+  input.addEventListener('blur', () => finish(false));
+  input.focus(); input.select();
 }
 
 export function initPopoverNav(): void {
-  document.querySelectorAll<HTMLElement>('[data-mock] [data-account-actions-trigger]').forEach((header) => {
-    header.tabIndex = 0;
-  });
-  const openAccountActions = (target: Element, event: Event): void => {
-    const section = target.closest<HTMLElement>('[data-mock] .am-section');
-    const menu = section?.querySelector<HTMLElement>('.am-account-actions');
-    const trigger = section?.querySelector<HTMLElement>('[data-account-actions-trigger]');
-    if (!menu || !trigger) return;
-    event.preventDefault();
-    openMenu(menu, trigger);
-  };
   document.addEventListener('contextmenu', (event) => {
-    if (event.target instanceof Element) openAccountActions(event.target, event);
+    if (event.target instanceof Element) openContext(event.target, event);
   });
   document.addEventListener('keydown', (event) => {
     if ((event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) && event.target instanceof Element) {
-      openAccountActions(event.target, event);
+      openContext(event.target, event);
     }
   });
   document.addEventListener('click', (event) => {
@@ -167,6 +201,54 @@ export function initPopoverNav(): void {
     if (!target || !target.closest) return;
     const mock = root(target);
     if (mock && handleSettingsClick(target, mock)) return;
+
+    const rowAction = target.closest<HTMLElement>('[data-row-action]');
+    if (rowAction && mock) {
+      const selection = rowSelections.get(mock);
+      if (!selection) return;
+      closeOptions(mock);
+      const { id, accountID, provider, trigger } = selection;
+      if (rowAction.dataset.rowAction === 'edit') go(mock, `account:${provider}:${accountID}`);
+      else {
+        const pinned = previewState().pinnedMetrics.includes(metricKey(id, accountID));
+        const action = rowAction.dataset.rowAction === 'hide' ? 'hide' : pinned ? 'unpin' : 'pin';
+        updatePreviewState(setMetric(previewState(), id, accountID, action));
+        const focus = mock.contains(trigger) && !trigger.closest('[hidden]')
+          ? trigger
+          : mock.querySelector<HTMLElement>('.am-dashboard-tabs:not([hidden]) [aria-selected="true"], [data-scr="dashboard"] [data-options]');
+        focus?.focus({ preventScroll: true });
+      }
+      return;
+    }
+    const rename = target.closest<HTMLElement>('[data-rename-account]');
+    if (rename && mock) {
+      inlineRename(mock, rename.dataset.renameAccount!, rename.dataset.accountId!);
+      return;
+    }
+    if (mock && target.closest('[data-toggle-account-name]')) {
+      mock.dataset.showEmails = String(mock.dataset.showEmails !== 'true');
+      sync(mock);
+      return;
+    }
+    const settingTab = target.closest<HTMLElement>('button[data-settings-tab]');
+    if (settingTab && mock) {
+      settingsTab(mock, settingTab.dataset.settingsTab!);
+      return;
+    }
+    const tab = target.closest<HTMLElement>('button[data-dashboard-tab]');
+    if (tab && mock) {
+      setDashboardTab(mock, tab.dataset.dashboardTab!);
+      fitHeight(mock);
+      return;
+    }
+    const menuButton = target.closest<HTMLButtonElement>('[data-provider-menu-trigger], [data-open-account-menu]');
+    if (mock && menuButton) {
+      if (menuButton.getAttribute('aria-expanded') === 'true') {
+        closeOptions(mock);
+        menuButton.focus({ preventScroll: true });
+      } else openContext(menuButton, event);
+      return;
+    }
 
     const options = target.closest<HTMLElement>('[data-options]');
     if (options && mock) {
@@ -186,6 +268,30 @@ export function initPopoverNav(): void {
       return;
     }
 
+    const add = target.closest<HTMLElement>('[data-add-provider]');
+    if (add && mock) {
+      const state = previewState();
+      const id = add.dataset.addProvider!;
+      if (state.enabledProviders.includes(id)) pill(mock, 'Add and sign in to accounts in the Mac app.');
+      else {
+        updatePreviewState(setProviderEnabled(state, id, true));
+        go(mock, 'accounts');
+        pill(mock, 'Sample provider added. Connect your account in the Mac app.');
+      }
+      return;
+    }
+
+    const remove = target.closest<HTMLButtonElement>('button[data-remove-preview-provider]');
+    if (remove && mock) {
+      const id = remove.dataset.removePreviewProvider;
+      const state = previewState();
+      if (id && state.enabledProviders.includes(id)) {
+        updatePreviewState(setProviderEnabled(state, id, false));
+        go(mock, 'accounts');
+      }
+      return;
+    }
+
     const picker = target.closest<HTMLElement>('[data-picker]');
     if (picker && mock) {
       const menu = mock.querySelector<HTMLElement>(`#${CSS.escape(picker.getAttribute('aria-controls') ?? '')}`);
@@ -199,40 +305,31 @@ export function initPopoverNav(): void {
 
     const pick = target.closest<HTMLElement>('[data-pick]');
     if (pick && mock) {
-      const id = pick.dataset.pick ?? '';
-      choosePreviewSetting(mock, id, pick.dataset.value ?? '');
+      const menu = pick.closest<HTMLElement>('[role="menu"]');
+      const trigger = menu && mock.querySelector<HTMLElement>(`[aria-controls="${CSS.escape(menu.id)}"]`);
+      choosePreviewSetting(mock, pick.dataset.pick!, pick.dataset.value!);
       closePickers(mock);
-      Array.from(mock.querySelectorAll<HTMLElement>(`[data-picker="${id}"]`))
-        .find((button) => !button.closest<HTMLElement>('.am-section')?.hidden
-          && !button.closest<HTMLElement>('.am-scr')?.hidden)?.focus({ preventScroll: true });
+      trigger?.focus({ preventScroll: true });
       return;
     }
 
-    const star = target.closest<HTMLElement>('[data-star]');
-    if (star && mock) {
-      toggleStar(mock, star);
+    const metric = target.closest<HTMLButtonElement>('[data-metric-toggle], [data-pin]');
+    if (metric && mock && !metric.disabled) {
+      metric.focus({ preventScroll: true });
+      const state = previewState();
+      const id = metric.dataset.metricToggle ?? metric.dataset.pin!;
+      const accountID = metric.dataset.accountId!;
+      const key = metricKey(id, accountID);
+      const action = metric.dataset.pin
+        ? (state.pinnedMetrics.includes(key) ? 'unpin' : 'pin')
+        : (state.hiddenMetrics.includes(key) ? 'show' : 'hide');
+      updatePreviewState(setMetric(state, id, accountID, action));
       return;
     }
 
-    const metric = target.closest<HTMLElement>('[data-metric-toggle]');
-    if (metric && mock) {
-      toggleSwitch(metric);
-      syncCards(mock);
-      return;
-    }
-
-    const provider = target.closest<HTMLElement>('[data-provider-toggle]');
-    if (provider && mock) {
-      const on = toggleSwitch(provider);
-      provider.closest('.am-prow')?.classList.toggle('is-off', !on);
-      syncCards(mock);
-      return;
-    }
-
-    // 행 아무 데나 눌러도 열림 — 앱도 grip과 스위치만 빼고 전부 열기 타깃.
-    const row = target.closest<HTMLElement>('.am-prow[data-open]');
-    if (row && mock && !target.closest('.am-grip')) {
-      go(mock, row.dataset.open ?? 'customize');
+    const row = target.closest<HTMLElement>('[data-open]');
+    if (row && mock && !target.closest('.am-drag')) {
+      go(mock, row.dataset.open!);
       return;
     }
 
@@ -249,11 +346,25 @@ export function initPopoverNav(): void {
       });
       return;
     }
+    const active = document.activeElement as HTMLElement | null;
+    const tablist = active?.closest('[role="tablist"]:is(.am-dashboard-tabs, .am-settings-tabs)');
+    if (tablist && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+      const tabs = [...tablist.querySelectorAll<HTMLButtonElement>('button[role="tab"]:not([hidden])')];
+      const index = tabs.indexOf(active as HTMLButtonElement);
+      if (index < 0) return;
+      const offset = event.key === 'ArrowLeft' ? -1 : 1;
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + offset + tabs.length) % tabs.length;
+      event.preventDefault();
+      tabs[next].click();
+      tabs[next].focus({ preventScroll: true });
+      return;
+    }
     moveInMenu(event);
   });
 
-  initPreviewSettings(() => document.querySelectorAll<HTMLElement>('[data-mock]').forEach(syncCards), pill);
+  initPreviewSettings(() => document.querySelectorAll<HTMLElement>('[data-mock]').forEach(sync), pill);
   watchHeights();
+  initReordering();
 }
 
 // 열린 메뉴 안에서 위아래·Home/End 이동. Options 메뉴와 Total Spend 지표 메뉴가 같은 role="menu"라 함께 처리.
@@ -262,11 +373,72 @@ function moveInMenu(event: KeyboardEvent): void {
   const active = document.activeElement as HTMLElement | null;
   const menu = active?.closest<HTMLElement>('[role="menu"]');
   if (!menu || menu.hidden) return;
-  const items = Array.from(menu.querySelectorAll<HTMLButtonElement>('button[role^="menuitem"]:not(:disabled)'));
-  const i = items.indexOf(active as HTMLButtonElement);
+  const items = Array.from(menu.querySelectorAll<HTMLElement>('[role^="menuitem"]:not([aria-disabled="true"]):not(:disabled):not(li[hidden] *)'));
+  const i = items.indexOf(active!);
   if (i < 0) return;
   const next: Record<string, number> = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: items.length - 1 };
   if (!(event.key in next)) return;
   event.preventDefault();
   items[(next[event.key] + items.length) % items.length].focus();
+}
+
+function reorder(source: HTMLElement, target: HTMLElement): void {
+  const state = previewState();
+  const move = (order: string[], id: string, target: string): string[] => {
+    const result = order.filter((item) => item !== id);
+    result.splice(order.indexOf(target), 0, id); return result;
+  };
+  if (source.dataset.dragMetric && target.dataset.dragMetric) {
+    const detail = source.closest<HTMLElement>('[data-account-detail]')!;
+    updatePreviewState(moveMetric(state, detail.dataset.accountDetail!, detail.dataset.accountId!, source.dataset.dragMetric, target.dataset.dragMetric));
+  } else if (source.dataset.dragProvider && target.dataset.dragProvider) {
+    updatePreviewState({ ...state, providerOrder: move(state.providerOrder, source.dataset.dragProvider, target.dataset.dragProvider) });
+  } else if (source.dataset.dragAccount && target.dataset.dragAccount) {
+    const [family, id] = source.dataset.dragAccount.split(':');
+    const [other, targetID] = target.dataset.dragAccount.split(':');
+    if (family !== other || !state.accountOrder[family]) return;
+    updatePreviewState({ ...state, accountOrder: { ...state.accountOrder, [family]: move(state.accountOrder[family], id, targetID) } });
+  }
+  source.focus({ preventScroll: true });
+}
+
+function dragTarget(source: HTMLElement, over: Element): HTMLElement | undefined {
+  const row = over.closest(source.dataset.dragMetric ? '[data-metric-setting]' : source.dataset.dragAccount ? '[data-account-list-row]' : '[data-provider-header]');
+  const target = row?.querySelector<HTMLElement>('.am-drag') ?? undefined;
+  const metricList = target?.closest('[data-metric-list]');
+  if (source.dataset.dragMetric && (!metricList || metricList !== source.closest('[data-metric-list]'))) return;
+  return target;
+}
+
+function initReordering(): void {
+  document.addEventListener('keydown', (event) => {
+    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey
+      || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') || !(event.target instanceof HTMLElement)) return;
+    const handle = event.target.closest<HTMLElement>('.am-drag');
+    if (!handle || !root(handle)) return;
+    const list = handle.closest('[data-metric-list], [data-account-list], [data-dashboard-panel="All Usage"]');
+    if (!list) return;
+    const family = handle.dataset.dragAccount?.split(':')[0];
+    const handles = [...list.querySelectorAll<HTMLElement>('.am-drag')].filter((item) =>
+      !item.closest('[hidden]') && (!family || item.dataset.dragAccount?.startsWith(`${family}:`)));
+    const next = handles[handles.indexOf(handle) + (event.key === 'ArrowUp' ? -1 : 1)];
+    event.preventDefault();
+    if (next) reorder(handle, next);
+  });
+  let source: HTMLElement | undefined;
+  document.addEventListener('dragstart', (event) => {
+    source = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>('.am-drag') ?? undefined : undefined;
+    if (source) { event.dataTransfer!.setData('text/plain', 'egasu-preview'); event.dataTransfer!.effectAllowed = 'move'; }
+  });
+  document.addEventListener('dragover', (event) => {
+    if (!source || !(event.target instanceof Element)) return;
+    if (source.dataset.dragMetric ? dragTarget(source, event.target) : event.target.closest('[data-mock]')) event.preventDefault();
+  });
+  document.addEventListener('drop', (event) => {
+    if (!source || !(event.target instanceof Element)) return;
+    const target = dragTarget(source, event.target);
+    if (target) { event.preventDefault(); reorder(source, target); }
+    source = undefined;
+  });
+  document.addEventListener('dragend', () => { source = undefined; });
 }

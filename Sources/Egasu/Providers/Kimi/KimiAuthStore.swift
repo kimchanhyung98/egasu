@@ -3,6 +3,7 @@ import Foundation
 enum KimiCredentialSource: Sendable, Equatable {
     case current(home: URL, credential: URL, lockTarget: URL)
     case legacy(credential: URL)
+    case apiKey(configuration: URL)
 }
 
 struct KimiCredentials: Sendable, Equatable {
@@ -16,6 +17,7 @@ struct KimiCredentials: Sendable, Equatable {
 struct KimiCredentialDocument: Sendable, Equatable {
     var credentials: KimiCredentials
     var rawJSON: String
+    var service: KimiService = .standard
 }
 
 struct KimiTokenRefresh: Sendable, Equatable {
@@ -45,14 +47,51 @@ struct KimiAuthStore: Sendable {
         self.homeDirectory = homeDirectory
     }
 
-    func loadCredentialDocument() throws -> KimiCredentialDocument? {
-        try validateConfiguration()
-
-        let current = currentSource()
-        if let document = try readDocument(source: current) {
+    func loadCredentialDocument(requiresDefaultModel: Bool = false) throws -> KimiCredentialDocument? {
+        try KimiCLIConfiguration.validateEnvironment(environment)
+        let home = currentHome()
+        let configurationURL = home.appendingPathComponent("config.toml")
+        let text: String?
+        do {
+            text = try files.readTextIfPresent(configurationURL.path)
+        } catch {
+            throw KimiAuthError.credentialsUnreadable
+        }
+        guard
+            let configuration = try KimiCLIConfiguration.resolve(
+                text, environment: environment, requiresDefaultModel: requiresDefaultModel
+            )
+        else { return nil }
+        if let apiKey = configuration.apiKey {
+            return KimiCredentialDocument(
+                credentials: KimiCredentials(
+                    source: .apiKey(configuration: configurationURL), accessToken: apiKey,
+                    refreshToken: nil, expiresAt: nil, expiresIn: nil
+                ),
+                rawJSON: "", service: configuration.service
+            )
+        }
+        let key = configuration.service.credentialKey
+        let name = String(key.dropFirst("oauth/".count))
+        let current = KimiCredentialSource.current(
+            home: home,
+            credential: home.appendingPathComponent("credentials/\(name).json"),
+            lockTarget: home.appendingPathComponent(key)
+        )
+        if let document = try readDocument(source: current, service: configuration.service) {
             return document
         }
-        return try readDocument(source: legacySource())
+        guard configuration.allowsLegacy else { return nil }
+        return try readDocument(source: legacySource(), service: .standard)
+    }
+
+    /// 한도 요청에 사용한 인증 문서와 터미널 기본 모델의 인증 비교. 토큰 갱신 후에는 새 문서 사용.
+    func matchesTerminalLogin(
+        _ document: KimiCredentialDocument, environment terminal: any EnvironmentReading
+    ) throws -> Bool {
+        var terminalStore = self
+        terminalStore.environment = terminal
+        return try terminalStore.loadCredentialDocument(requiresDefaultModel: true) == document
     }
 
     func isUsable(_ document: KimiCredentialDocument, now: Date) -> Bool {
@@ -62,7 +101,7 @@ struct KimiAuthStore: Sendable {
         if hasUsableAccess(document, now: now) { return true }
 
         switch document.credentials.source {
-        case .legacy:
+        case .legacy, .apiKey:
             return false
         case .current:
             return oauthLockEnabled && document.credentials.refreshToken?.nilIfEmpty != nil
@@ -96,11 +135,13 @@ struct KimiAuthStore: Sendable {
         return expiresAt.timeIntervalSince(now) <= threshold
     }
 
-    func reloadCurrentDocument(_ source: KimiCredentialSource) throws -> KimiCredentialDocument {
-        guard case .current = source,
-              let document = try readDocument(source: source)
+    func reloadCurrentDocument(_ original: KimiCredentialDocument) throws -> KimiCredentialDocument {
+        guard case .current = original.credentials.source,
+              let document = try loadCredentialDocument(),
+            document.credentials.source == original.credentials.source,
+            document.service == original.service
         else {
-            throw KimiAuthError.credentialsInvalid
+            throw KimiAuthError.credentialLockCompromised
         }
         return document
     }
@@ -155,26 +196,23 @@ struct KimiAuthStore: Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines) != "1"
     }
 
-    private func currentSource() -> KimiCredentialSource {
+    private func currentHome() -> URL {
         let rawHome = environment.value(for: "KIMI_CODE_HOME")?
             .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-        let home = rawHome.map(resolvePath) ?? homeDirectory().appendingPathComponent(".kimi-code")
-        return .current(
-            home: home,
-            credential: home.appendingPathComponent("credentials/kimi-code.json"),
-            lockTarget: home.appendingPathComponent("oauth/kimi-code")
-        )
+        return rawHome.map(resolvePath) ?? homeDirectory().appendingPathComponent(".kimi-code")
     }
 
     private func legacySource() -> KimiCredentialSource {
         .legacy(credential: homeDirectory().appendingPathComponent(".kimi/credentials/kimi-code.json"))
     }
 
-    private func readDocument(source: KimiCredentialSource) throws -> KimiCredentialDocument? {
+    private func readDocument(source: KimiCredentialSource, service: KimiService) throws -> KimiCredentialDocument? {
         let path: String
         switch source {
         case .current(_, let credential, _), .legacy(let credential):
             path = credential.path
+        case .apiKey:
+            throw KimiAuthError.credentialsInvalid
         }
 
         let text: String?
@@ -212,26 +250,9 @@ struct KimiAuthStore: Sendable {
                 expiresAt: expiresAt,
                 expiresIn: expiresIn
             ),
-            rawJSON: text
+            rawJSON: text,
+            service: service
         )
-    }
-
-    private func validateConfiguration() throws {
-        let overrides = [
-            ("KIMI_CODE_BASE_URL", Self.defaultBaseURL),
-            ("KIMI_CODE_OAUTH_HOST", Self.defaultOAuthHost),
-            ("KIMI_OAUTH_HOST", Self.defaultOAuthHost)
-        ]
-        for (key, expected) in overrides {
-            guard let raw = environment.value(for: key)?
-                .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-            else {
-                continue
-            }
-            guard Self.matchesDefaultEndpoint(raw, expected: expected) else {
-                throw KimiAuthError.unsupportedConfiguration
-            }
-        }
     }
 
     private func resolvePath(_ path: String) -> URL {
@@ -249,23 +270,5 @@ struct KimiAuthStore: Sendable {
 
     private static func string(_ value: Any?) -> String? {
         (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-    }
-
-    private static func matchesDefaultEndpoint(_ value: String, expected: String) -> Bool {
-        guard let actual = URLComponents(
-            string: value.trimmingCharacters(in: .whitespacesAndNewlines)
-        ), let standard = URLComponents(string: expected),
-              actual.user == nil,
-              actual.password == nil,
-              actual.query == nil,
-              actual.fragment == nil,
-              actual.scheme?.lowercased() == standard.scheme?.lowercased(),
-              actual.host?.lowercased() == standard.host?.lowercased(),
-              actual.port == standard.port
-        else {
-            return false
-        }
-        return actual.percentEncodedPath.trimmingTrailingSlashes
-            == standard.percentEncodedPath.trimmingTrailingSlashes
     }
 }

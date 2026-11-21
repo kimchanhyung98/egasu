@@ -3,12 +3,12 @@ import XCTest
 @testable import Egasu
 
 @MainActor
-final class CodexWeeklyTimerAttemptStoreTests: XCTestCase {
+final class UsageTimerAttemptStoreTests: XCTestCase {
     func testStoreInstancesShareReservationAndPrivateHashedRecord() throws {
         try withStore { store in
             let now = Date(timeIntervalSince1970: 1_800_000_000)
             let first = try XCTUnwrap(store.begin(accountKey: "private@example.com:workspace", resetBefore: nil, now: now))
-            let secondStore = CodexWeeklyTimerAttemptStore(fileURL: store.fileURL)
+            let secondStore = UsageTimerAttemptStore(fileURL: store.fileURL)
             XCTAssertNil(try secondStore.begin(accountKey: "private@example.com:workspace", resetBefore: nil, now: now))
             XCTAssertEqual(try secondStore.attempt(for: "private@example.com:workspace"), first)
             let text = try String(contentsOf: store.fileURL, encoding: .utf8)
@@ -81,7 +81,7 @@ final class CodexWeeklyTimerAttemptStoreTests: XCTestCase {
             let now = Date(timeIntervalSince1970: 1_800_000_000)
             let reset = now.addingTimeInterval(900)
             XCTAssertEqual(try store.observe(accountKey: "a", rawResetAt: reset, observedAt: now), .baseline)
-            let restarted = CodexWeeklyTimerAttemptStore(fileURL: store.fileURL)
+            let restarted = UsageTimerAttemptStore(fileURL: store.fileURL)
             XCTAssertEqual(try restarted.observe(accountKey: "a", rawResetAt: reset, observedAt: now.addingTimeInterval(65)), .unchanged)
             XCTAssertEqual(try restarted.observe(accountKey: "a", rawResetAt: nil, observedAt: now.addingTimeInterval(66)), .incomparable)
             XCTAssertEqual(try restarted.observe(accountKey: "a", rawResetAt: reset, observedAt: now.addingTimeInterval(67)), .incomparable)
@@ -106,7 +106,7 @@ final class CodexWeeklyTimerAttemptStoreTests: XCTestCase {
             let reset = now.addingTimeInterval(900)
             _ = try store.observe(accountKey: "a", rawResetAt: reset, observedAt: now)
             _ = try store.observe(accountKey: "a", rawResetAt: reset, observedAt: now.addingTimeInterval(65))
-            let restarted = CodexWeeklyTimerAttemptStore(fileURL: store.fileURL)
+            let restarted = UsageTimerAttemptStore(fileURL: store.fileURL)
             _ = try restarted.observe(accountKey: "a", rawResetAt: reset.addingTimeInterval(61), observedAt: now.addingTimeInterval(366))
             XCTAssertNil(try restarted.begin(accountKey: "a", resetBefore: reset, now: now.addingTimeInterval(366)))
             _ = try restarted.observe(accountKey: "a", rawResetAt: nil, observedAt: now.addingTimeInterval(500))
@@ -127,7 +127,7 @@ final class CodexWeeklyTimerAttemptStoreTests: XCTestCase {
             document["observations"] = observations
             try JSONSerialization.data(withJSONObject: document).write(to: store.fileURL)
 
-            let restarted = CodexWeeklyTimerAttemptStore(fileURL: store.fileURL)
+            let restarted = UsageTimerAttemptStore(fileURL: store.fileURL)
             _ = try restarted.observe(accountKey: "a", rawResetAt: reset.addingTimeInterval(61), observedAt: now.addingTimeInterval(366))
 
             XCTAssertFalse(try restarted.canAttempt(accountKey: "a", now: now.addingTimeInterval(366)))
@@ -161,7 +161,7 @@ final class CodexWeeklyTimerAttemptStoreTests: XCTestCase {
             let now = Date(timeIntervalSince1970: 1_800_000_000)
             let reset = now.addingTimeInterval(900)
             _ = try store.observe(accountKey: "a", rawResetAt: reset, observedAt: now)
-            let restarted = CodexWeeklyTimerAttemptStore(fileURL: store.fileURL)
+            let restarted = UsageTimerAttemptStore(fileURL: store.fileURL)
 
             XCTAssertEqual(try restarted.observe(accountKey: "a", rawResetAt: reset.addingTimeInterval(60),
                                                  observedAt: now.addingTimeInterval(65)), .unchanged)
@@ -199,7 +199,7 @@ final class CodexWeeklyTimerAttemptStoreTests: XCTestCase {
             legacy["version"] = 1
             legacy["observations"] = nil
             try JSONSerialization.data(withJSONObject: legacy).write(to: store.fileURL)
-            let restored = try XCTUnwrap(CodexWeeklyTimerAttemptStore(fileURL: store.fileURL).attempt(for: "a"))
+            let restored = try XCTUnwrap(UsageTimerAttemptStore(fileURL: store.fileURL).attempt(for: "a"))
             XCTAssertEqual(restored.id, attempt.id)
             XCTAssertEqual(restored.execution, .completed)
             XCTAssertEqual(restored.resetAfter, attempt.resetAfter)
@@ -221,7 +221,7 @@ final class CodexWeeklyTimerAttemptStoreTests: XCTestCase {
             let adjustedNow = now.addingTimeInterval(-3_600)
 
             XCTAssertTrue(try store.discardFutureObservations(now: adjustedNow))
-            let restarted = CodexWeeklyTimerAttemptStore(fileURL: store.fileURL)
+            let restarted = UsageTimerAttemptStore(fileURL: store.fileURL)
 
             XCTAssertEqual(try restarted.attempt(for: "a"), attempt)
             XCTAssertEqual(try restarted.sendLimitResetsAt(accountKey: "a", now: adjustedNow),
@@ -244,10 +244,10 @@ final class CodexWeeklyTimerAttemptStoreTests: XCTestCase {
         }
     }
 
-    private func withStore(_ body: (CodexWeeklyTimerAttemptStore) throws -> Void) throws {
+    private func withStore(_ body: (UsageTimerAttemptStore) throws -> Void) throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        try body(CodexWeeklyTimerAttemptStore(fileURL: directory.appendingPathComponent("attempts.json")))
+        try body(UsageTimerAttemptStore(fileURL: directory.appendingPathComponent("attempts.json")))
     }
 }

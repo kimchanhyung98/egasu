@@ -2,7 +2,7 @@ import Foundation
 
 /// login shell 환경 1회 캡처·캐시 — Finder/Dock/`open` launch GUI 앱은 launchd 세션 환경만 상속하므로 shell profile export를 여기서 해석.
 /// `ProcessEnvironmentReader`가 process 환경 다음 fallback으로 사용.
-/// 스레딩 계약: 캡처 subprocess는 lock 보유 중 실행·대기 금지; 메인 스레드는 캐시만 read(미완 시 `nil`), off-main caller만 on-demand 캡처.
+/// 메인 스레드는 캐시만 읽고, 백그라운드 호출만 `captureLock`에서 캡처 순서를 대기.
 final class LoginShellEnvironment: @unchecked Sendable {
     static let shared = LoginShellEnvironment()
 
@@ -66,7 +66,7 @@ final class LoginShellEnvironment: @unchecked Sendable {
     }
 
     /// 환경 1회 캡처 후 캐시 — off-main 전용, `captureLock`으로 subprocess 1개 보장.
-    /// spawn은 lock 미보유 상태 실행, 저장만 짧은 `stateLock` — 동시 캐시 read의 subprocess 대기 금지.
+    /// `stateLock`은 캐시 접근에만 사용하여 캐시 조회가 하위 프로세스를 기다리지 않도록 처리.
     private func capturedEnvironment() -> [String: String] {
         captureLock.lock()
         defer { captureLock.unlock() }
@@ -81,7 +81,7 @@ final class LoginShellEnvironment: @unchecked Sendable {
     private func capture() -> [String: String] {
         let shell = ProcessInfo.processInfo.environment["SHELL"]?.nilIfEmpty ?? "/bin/zsh"
         // `-i -l -c`: rc 파일과 profile 파일 모두 source; `env -0`은 NUL 구분 `KEY=VALUE`로 개행 포함 값에 안전.
-        let command = "printf '%s\\0' \(Self.beginMarker); /usr/bin/env -0; printf '%s\\0' \(Self.endMarker)"
+        let command = "printf '\\0%s\\0' \(Self.beginMarker); /usr/bin/env -0; printf '%s\\0' \(Self.endMarker)"
         do {
             let result = try runner.run(
                 executable: shell,

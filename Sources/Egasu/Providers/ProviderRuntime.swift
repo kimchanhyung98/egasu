@@ -18,12 +18,22 @@ protocol ProviderRuntime: AnyObject {
     func refresh() async -> ProviderSnapshot
 
     /// 이 provider의 credential이 기기에 이미 있는지 — 저렴한 로컬 전용 probe(file·keychain·SQLite, 네트워크 금지).
-    /// fresh install 첫 launch에 `FirstRunSeeder`가 1회 사용. `refresh()`가 읽는 credential source를 그대로 미러링, blocking 로드는 `loadOffMainActor` 경유.
+    /// 첫 실행과 신규 프로바이더 감지 등에 사용. `refresh()`와 같은 로컬 자격 증명 출처를 사용하고, 차단 작업은 `loadOffMainActor` 경유.
     func hasLocalCredentials() async -> Bool
 }
 
 extension ProviderRuntime {
     var retainsDedicatedSpendOnScanFailure: Bool { false }
+
+    func hasSoftLimitQuota(in lines: [MetricLine]) -> Bool {
+        let descriptors = widgetDescriptors
+        return lines.contains { line in
+            guard case let .progress(label, _, _, _, _, duration, _) = line else { return false }
+            return descriptors.contains {
+                $0.metricLabel == label && $0.supportsSoftLimit(.all, periodDurationMs: duration)
+            }
+        }
+    }
 }
 
 /// blocking `Sendable` credential 로드를 MainActor 밖에서 실행.

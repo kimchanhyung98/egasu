@@ -114,7 +114,7 @@ enum CodexAuthError: Error, LocalizedError, Equatable {
 }
 
 /// `CodexAuthStore`가 볼 수 있는 login의 범위. `.standard`는 기본 카드 (`CODEX_HOME`, 기본 home 목록, 공유 keychain item).
-/// `.home`은 managed-profile 계정 카드 전용 — keychain·environment·기본 home fallback 없이 생성 당시의 login 하나만 접근. (`ClaudeCredentialScope` mirror.)
+    /// `.home`은 지정 홈의 `auth.json`만 조회. 환경 변수·다른 홈·공유 Keychain으로 대체하지 않음.
 enum CodexCredentialScope: Hashable, Sendable {
     case standard
     /// 등록된 launch-profile home 하나 — `<path>/auth.json`만 읽기.
@@ -181,8 +181,7 @@ struct CodexAuthStore: Sendable {
         }
     }
 
-    /// 단일 auth 파일에서 credential 읽기 — 이미 로드한 source의 재로드용, 후보 경로 전체 재스캔 없음.
-    /// 파일 누락·판독 불가·token 없는 auth는 `nil`.
+    /// 지정한 인증 파일에서 토큰이나 API 키를 읽음. 파일이 없거나 인증을 읽을 수 없으면 `nil`.
     func loadAuth(at path: String) -> CodexAuthState? {
         guard files.exists(path),
               let text = try? files.readText(path),
@@ -223,7 +222,10 @@ struct CodexAuthStore: Sendable {
         do {
             current = try sourceText(state, allowInteraction: allowInteraction)
         } catch {
-            AppLog.error(.auth, "Codex credential verification before saving failed: \(error.localizedDescription)")
+            AppLog.error(
+                LogTag.auth("codex"),
+                "credential verification before saving failed: \(AppLog.errorDetails(error))"
+            )
             throw CodexAuthError.credentialsChanged
         }
         guard let current, current.utf8.elementsEqual(original.utf8) else {
@@ -319,7 +321,10 @@ struct CodexAuthStore: Sendable {
             try save(snapshot, allowInteraction: allowInteraction)
             AppLog.info(.auth, "Codex rotated credentials preserved in the departed account snapshot")
         } catch {
-            AppLog.error(.auth, "Codex rotated snapshot credentials could not be saved: \(error.localizedDescription)")
+            AppLog.error(
+                LogTag.auth("codex"),
+                "rotated snapshot credentials could not be saved: \(AppLog.errorDetails(error))"
+            )
         }
     }
 

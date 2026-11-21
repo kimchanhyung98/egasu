@@ -12,11 +12,26 @@ final class KimiProviderTests: XCTestCase {
         XCTAssertEqual(provider.provider.id, "kimi")
         XCTAssertEqual(provider.provider.displayName, "Kimi")
         XCTAssertTrue(provider.provider.links.isEmpty)
-        XCTAssertEqual(provider.widgetDescriptors.map(\.id), ["kimi.session", "kimi.weekly"])
-        XCTAssertEqual(provider.widgetDescriptors.map(\.metricLabel), ["Session", "Weekly"])
-        XCTAssertEqual(provider.widgetDescriptors[0].sample.sessionStartSignal, .zeroUsage)
+        XCTAssertEqual(
+            provider.widgetDescriptors.map(\.id),
+            [
+                "kimi.session", "kimi.weekly", "kimi.total", "kimi.extra", "kimi.extraBalance"
+        ])
+        XCTAssertEqual(
+            provider.widgetDescriptors.map(\.metricLabel),
+            [
+                "Session", "Weekly", "Total Usage", "Extra Usage", "Extra Balance"
+        ])
+        XCTAssertNil(provider.widgetDescriptors[0].sample.sessionStartSignal)
         XCTAssertEqual(provider.widgetDescriptors[0].limitResources.first?.key, "session")
         XCTAssertEqual(provider.widgetDescriptors[1].limitResources.first?.key, "weekly")
+        let resources = provider.widgetDescriptors.flatMap(\.limitResources)
+        XCTAssertEqual(resources.map(\.key), ["session", "weekly", "totalUsage", "extraUsage", "extraUsageBalance"])
+        XCTAssertEqual(resources.map(\.unit), ["percent", "percent", "percent", "usd", "usd"])
+        XCTAssertEqual(resources.first { $0.key == "totalUsage" }?.source, .progress)
+        XCTAssertEqual(resources.first { $0.key == "extraUsage" }?.source, .progressOrValue(kind: .dollars))
+        XCTAssertEqual(resources.first { $0.key == "extraUsageBalance" }?.source, .value(kind: .dollars))
+        XCTAssertEqual(resources.first { $0.key == "extraUsageBalance" }?.kind, .balance)
     }
 
     func testHasLocalCredentialsUsesLoaderWithoutNetwork() async throws {
@@ -108,10 +123,94 @@ final class KimiProviderTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.lockURL.path))
     }
 
-    func testProactiveRefreshPersistsRotatedCredentialBeforeUsageFetch() async throws {
+    func testRefreshDiscardsQuotaWhenLoginChangesDuringTheRequest() async throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let files = KimiProviderFiles(
+            files: [
+                fixture.credential.path: credentialJSON(
+                    access: "account-before", refresh: "refresh-before", expiresAt: nil)
+            ], failWrites: false)
+        let changed = credentialJSON(access: "account-after", refresh: "refresh-after", expiresAt: nil)
+        let http = KimiRecordingHTTPClient { request in
+            XCTAssertEqual(request.headers["Authorization"], "Bearer account-before")
+            try files.writeText(fixture.credential.path, changed)
+            return HTTPResponse(statusCode: 200, headers: [:], body: Self.usageBody)
+        }
+        let provider = makeProvider(fixture: fixture, files: files, http: http)
+
+        let snapshot = await provider.refresh()
+
+        XCTAssertNil(snapshot.liveQuotaObservedAt)
+        XCTAssertEqual(snapshot.errorCategory, .credentialAccess)
+        XCTAssertEqual(snapshot.errorPresentation?.key, KimiAuthError.credentialsChanged.localizedDescription)
+    }
+
+    func testTerminalPreflightRejectsQuotaWhenTheTerminalSwitchesLoginsDuringFetch() async throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let files = KimiProviderFiles(
+            files: [
+                fixture.root.appendingPathComponent("config.toml").path: Self.terminalOAuthConfiguration,
+                fixture.credential.path: credentialJSON(access: "current", refresh: nil, expiresAt: nil)
+            ], failWrites: false)
+        let switched = credentialJSON(access: "terminal", refresh: nil, expiresAt: nil)
+        let http = KimiRecordingHTTPClient { request in
+            XCTAssertEqual(request.headers["Authorization"], "Bearer current")
+            try files.writeText(fixture.credential.path, switched)
+            return HTTPResponse(statusCode: 200, headers: [:], body: Self.usageBody)
+        }
+        let terminal = FakeEnvironment(["KIMI_CODE_HOME": fixture.root.path])
+        let provider = makeProvider(fixture: fixture, files: files, http: http, terminalEnvironment: terminal)
+
+        let snapshot = await provider.refresh()
+
+        XCTAssertNil(snapshot.liveQuotaObservedAt)
+        XCTAssertEqual(snapshot.errorPresentation?.key, KimiAuthError.credentialsChanged.localizedDescription)
+        XCTAssertEqual(http.requests.count, 1)
+    }
+
+    func testTerminalPreflightSkipsFetchWhenDefaultModelIsNotKimiCode() async throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let config = """
+            default_model = "other"
+            \(Self.kimiOAuthProviderConfiguration)
+            [models.other]
+            provider = "anthropic"
+            model = "claude-sonnet"
+            max_context_size = 100000
+            [providers.anthropic]
+            type = "anthropic"
+            base_url = "https://api.anthropic.com"
+            api_key = "other-key"
+            """
+        let files = FakeFiles([
+            fixture.root.appendingPathComponent("config.toml").path: config,
+            fixture.credential.path: credentialJSON(access: "current", refresh: nil, expiresAt: nil)
+        ])
+        let http = KimiRecordingHTTPClient { _ in
+            HTTPResponse(statusCode: 200, headers: [:], body: Self.usageBody)
+        }
+        let terminal = FakeEnvironment(["KIMI_CODE_HOME": fixture.root.path])
+        let provider = makeProvider(fixture: fixture, files: files, http: http, terminalEnvironment: terminal)
+
+        let preflight = await provider.refresh()
+
+        XCTAssertNil(preflight.liveQuotaObservedAt)
+        XCTAssertTrue(http.requests.isEmpty)
+
+        let dashboard = await makeProvider(fixture: fixture, files: files, http: http).refresh()
+
+        XCTAssertNotNil(dashboard.liveQuotaObservedAt)
+        XCTAssertEqual(http.requests.map(\.url), [KimiUsageClient.usageURL])
+    }
+
+    func testTerminalPreflightUsesTheRotatedCredentialBeforeUsageFetch() async throws {
         let fixture = try makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
         let files = FakeFiles([
+            fixture.root.appendingPathComponent("config.toml").path: Self.terminalOAuthConfiguration,
             fixture.credential.path: credentialJSON(
                 access: "expiring-access",
                 refresh: "fake-refresh",
@@ -127,11 +226,13 @@ final class KimiProviderTests: XCTestCase {
             XCTAssertEqual(request.headers["Authorization"], "Bearer rotated-access")
             return HTTPResponse(statusCode: 200, headers: [:], body: Self.usageBody)
         }
-        let provider = makeProvider(fixture: fixture, files: files, http: http)
+        let terminal = FakeEnvironment(["KIMI_CODE_HOME": fixture.root.path])
+        let provider = makeProvider(fixture: fixture, files: files, http: http, terminalEnvironment: terminal)
 
         let snapshot = await provider.refresh()
 
         XCTAssertNil(snapshot.errorCategory)
+        XCTAssertNotNil(snapshot.liveQuotaObservedAt)
         XCTAssertEqual(http.requests.map(\.url), [KimiUsageClient.refreshURL, KimiUsageClient.usageURL])
         let saved = try XCTUnwrap(ProviderParse.jsonObject(Data(files.files[fixture.credential.path]!.utf8)))
         XCTAssertEqual(saved["access_token"] as? String, "rotated-access")
@@ -401,7 +502,8 @@ final class KimiProviderTests: XCTestCase {
         files: TextFileAccessing,
         http: HTTPClient,
         environment: EnvironmentReading? = nil,
-        homeDirectory: (@Sendable () -> URL)? = nil
+        homeDirectory: (@Sendable () -> URL)? = nil,
+        terminalEnvironment: (any EnvironmentReading)? = nil
     ) -> KimiProvider {
         let fixedNow = now
         return KimiProvider(
@@ -417,7 +519,7 @@ final class KimiProviderTests: XCTestCase {
                 acquisitionBudget: 0.3,
                 retryDelay: 0.005
             )),
-            now: { fixedNow }, pricing: { .empty }
+            now: { fixedNow }, terminalEnvironment: terminalEnvironment, pricing: { .empty }
         )
     }
 
@@ -448,6 +550,22 @@ final class KimiProviderTests: XCTestCase {
         if let expiresIn { object["expires_in"] = expiresIn }
         return String(decoding: try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]), as: UTF8.self)
     }
+
+    private static let terminalOAuthConfiguration = """
+        default_model = "kimi-code/k3"
+        \(kimiOAuthProviderConfiguration)
+        """
+
+    private static let kimiOAuthProviderConfiguration = """
+        [models."kimi-code/k3"]
+        provider = "managed:kimi-code"
+        model = "k3"
+        max_context_size = 1048576
+        [providers."managed:kimi-code"]
+        type = "kimi"
+        base_url = "https://api.kimi.com/coding/v1"
+        oauth = { storage = "file", key = "oauth/kimi-code" }
+        """
 
     private static let usageBody = Data(#"""
     {
@@ -491,6 +609,7 @@ private final class KimiSequencedCredentialFiles: TextFileAccessing, @unchecked 
     let documents: [String]
     var readCount = 0
     var writeCount = 0
+    private var persisted: String?
 
     init(credentialPath: String, documents: [String]) {
         self.credentialPath = credentialPath
@@ -501,6 +620,7 @@ private final class KimiSequencedCredentialFiles: TextFileAccessing, @unchecked 
 
     func readTextIfPresent(_ path: String) throws -> String? {
         guard path == credentialPath else { return nil }
+        if let persisted { return persisted }
         let index = min(readCount, documents.count - 1)
         readCount += 1
         return documents[index]
@@ -512,6 +632,7 @@ private final class KimiSequencedCredentialFiles: TextFileAccessing, @unchecked 
 
     func writeText(_ path: String, _ text: String) throws {
         writeCount += 1
+        persisted = text
     }
 
     func remove(_ path: String) throws {}

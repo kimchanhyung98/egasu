@@ -20,8 +20,7 @@ final class SplitRefreshCadenceTests: XCTestCase {
         }
         let center = NotificationCenter()
         let telemetry = TelemetryRecorder(sink: Sink(), store: TelemetryStore(defaults: fixture.defaults), snapshot: {
-            TelemetryConfigSnapshot(enabledProviders: [], enabledMetricIDs: [], pinnedMetricIDs: [],
-                                    expandedMetricIDs: [], menuBarStyle: "text")
+            TelemetryConfigSnapshot(enabledProviders: [], enabledMetricIDs: [], pinnedMetricIDs: [])
         })
         let http = FakeHTTPClient(response: HTTPResponse(statusCode: 503, headers: [:], body: Data()))
         let loop = AppRefreshLoop.start(
@@ -60,8 +59,7 @@ final class SplitRefreshCadenceTests: XCTestCase {
         }
         let center = NotificationCenter()
         let telemetry = TelemetryRecorder(sink: Sink(), store: TelemetryStore(defaults: fixture.defaults), snapshot: {
-            TelemetryConfigSnapshot(enabledProviders: [], enabledMetricIDs: [], pinnedMetricIDs: [],
-                                    expandedMetricIDs: [], menuBarStyle: "text")
+            TelemetryConfigSnapshot(enabledProviders: [], enabledMetricIDs: [], pinnedMetricIDs: [])
         })
         var passes = 0
         let loop = AppRefreshLoop.start(
@@ -148,8 +146,7 @@ final class SplitRefreshCadenceTests: XCTestCase {
         }
         let center = NotificationCenter()
         let telemetry = TelemetryRecorder(sink: Sink(), store: TelemetryStore(defaults: fixture.defaults), snapshot: {
-            TelemetryConfigSnapshot(enabledProviders: [], enabledMetricIDs: [], pinnedMetricIDs: [],
-                                    expandedMetricIDs: [], menuBarStyle: "text")
+            TelemetryConfigSnapshot(enabledProviders: [], enabledMetricIDs: [], pinnedMetricIDs: [])
         })
         let loop = AppRefreshLoop.start(
             dataStore: fixture.store,

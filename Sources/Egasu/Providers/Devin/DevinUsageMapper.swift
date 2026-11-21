@@ -52,17 +52,17 @@ enum DevinUsageMapper {
             ))
         } else if !hideWeeklyQuota, hideDailyQuota,
                   let dailyRemaining {
-            // 응답에 weekly quota 부재 시 숨겨진 daily quota를 Weekly 행으로 표시 (remaining→used 반전은 동일)
+            // 호환용 주간 행에는 일간 잔여 비율만 있으므로 주간 속도·소프트 한도 계산에서 제외.
             lines.append(quotaLine(
                 label: "Weekly quota",
                 remaining: dailyRemaining,
                 resetsAt: weeklyReset,
-                periodDurationMs: weekPeriodMs
+                    periodDurationMs: nil
             ))
         }
 
         if let extraUsageBalance {
-            // 숫자 원값 유지 — `MetricFormatter`의 compact 표기("$1.2K left")를 그대로 적용받기 위함
+            // 숫자는 원값으로 전달. 축약 표시는 `MetricFormatter` 담당.
             lines.append(.values(label: "Extra usage balance", values: [MetricValue(number: extraUsageBalance, kind: .dollars)]))
         }
 
@@ -73,8 +73,10 @@ enum DevinUsageMapper {
         return DevinMappedUsage(plan: plan, lines: lines)
     }
 
-    /// Devin이 보고하는 remaining percent를 `100 - remaining`(clamp)으로 반전한 used percent 행 생성.
-    private static func quotaLine(label: String, remaining: Double, resetsAt: Date?, periodDurationMs: Int) -> MetricLine {
+    /// 잔여 비율을 `100 - remaining`으로 사용 비율로 바꾸고 0…100 범위로 제한.
+    private static func quotaLine(label: String, remaining: Double, resetsAt: Date?, periodDurationMs: Int?)
+        -> MetricLine
+    {
         .progress(
             label: label,
             used: ProviderParse.clampPercent(100 - remaining),
@@ -90,8 +92,8 @@ enum DevinUsageMapper {
         return Date(timeIntervalSince1970: seconds)
     }
 
-    /// micros 값을 달러 단위 overage balance로 변환.
-    /// 필드 부재·비숫자일 때만 `nil` — 0 balance는 실측 0으로 유지("$0.00" 표시).
+    /// 마이크로달러 단위의 추가 사용 잔액을 달러로 변환.
+    /// 값이 없거나 잘못된 숫자면 nil. 보고된 0은 유지.
     private static func dollarsFromMicros(_ value: Any?) -> Double? {
         guard let micros = ProviderParse.number(value) else { return nil }
         return max(0, micros) / 1_000_000

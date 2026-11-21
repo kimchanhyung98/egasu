@@ -7,6 +7,7 @@ struct CopilotMappedUsage: Equatable, Sendable {
     /// 명시적 flag로 유지 — org 조회를 `lines`의 우연한 형태로 gate하지 않음 (issue #839: placeholder `overage_permitted`가 "Extra Usage: 0" 행을 끼워 넣어 조회를 막았던 회귀).
     var isOrgManagedSeat: Bool = false
     var hasInvalidPersonalCredits: Bool = false
+    var hasIncompleteQuota: Bool = false
 }
 
 /// `/copilot_internal/user` 응답을 meter로 normalize. 실제 premium allotment는 Credits 사용 비율, 초과분은 Extra Usage로 표시.
@@ -29,31 +30,42 @@ enum CopilotUsageMapper {
             ?? parseResetDate(body["limited_user_reset_date"])
 
         var lines: [MetricLine] = []
+        var incompleteLabels: Set<String> = []
 
         // metered premium pool은 "Credits", 초과분은 "Extra Usage". Extra Usage는 포함 pool에 상대적으로만 존재해 Credits meter에 종속 — org 관리 placeholder가 zero-entitlement bucket에 `overage_permitted: true`를 실을 수 있고, 그때 "0" 렌더는 무의미(과거 org-billing fallback을 막던 원인).
         let snapshots = body["quota_snapshots"] as? [String: Any]
         let premium = snapshots?["premium_interactions"]
-        let creditsLine = snapshotLine(label: "Credits", premium, resetsAt: resetsAt)
+        let creditsLine = snapshotLine(label: "Credits", premium, resetsAt: resetsAt, incomplete: &incompleteLabels)
         appendIfPresent(&lines, creditsLine)
         if creditsLine != nil {
             appendIfPresent(&lines, overageLine(premium))
         }
 
         // chat + completions: 무료는 실제 bucket별 count, 유료는 `-1` "unlimited" sentinel(`snapshotLine`이 억제). `quota_snapshots` 없는 구 무료 응답은 아래 `limited_user_quotas`/`monthly_quotas`로 fallback.
-        appendIfPresent(&lines, snapshotLine(label: "Chat", snapshots?["chat"], resetsAt: resetsAt))
-        appendIfPresent(&lines, snapshotLine(label: "Completions", snapshots?["completions"], resetsAt: resetsAt))
+        let requestQuotas = [("Chat", "chat"), ("Completions", "completions")]
+        for (label, key) in requestQuotas {
+            let line = snapshotLine(label: label, snapshots?[key], resetsAt: resetsAt, incomplete: &incompleteLabels)
+            appendIfPresent(&lines, line)
+        }
 
         // legacy 무료 tier 형태(`quota_snapshots` 이전): 월 한도 대비 remaining count. 아무것도 생성되지 않았을 때만 — 아니면 `limited_user_quotas`가 남은 유료 계정(Credits 있음, chat/completions는 unlimited로 억제)이 Credits 옆에 무료 tier meter를 잘못 표시.
         if lines.isEmpty {
             let limited = body["limited_user_quotas"] as? [String: Any]
             let monthly = body["monthly_quotas"] as? [String: Any]
-            appendIfPresent(&lines, limitedLine(label: "Chat", remaining: limited?["chat"], total: monthly?["chat"], resetsAt: resetsAt))
-            appendIfPresent(&lines, limitedLine(label: "Completions", remaining: limited?["completions"], total: monthly?["completions"], resetsAt: resetsAt))
+            for (label, key) in requestQuotas {
+                let line = limitedLine(
+                    label: label, remaining: limited?[key], total: monthly?[key], resetsAt: resetsAt,
+                    incomplete: &incompleteLabels
+                )
+                appendIfPresent(&lines, line)
+            }
         }
 
         guard lines.isEmpty else {
-            return CopilotMappedUsage(plan: plan, lines: lines)
+            let missing = incompleteLabels.subtracting(lines.map(\.label))
+            return CopilotMappedUsage(plan: plan, lines: lines, hasIncompleteQuota: !missing.isEmpty)
         }
+        if !incompleteLabels.isEmpty { throw CopilotUsageError.invalidResponse }
         // 실제 quota가 없는 org 관리 좌석만 개인 count로 보완 — 할당량·초기화 시각을 임의 생성하지 않음.
         guard !isKnownFree, ProviderParse.bool(body["token_based_billing"]) == true else {
             throw CopilotUsageError.quotaUnavailable
@@ -76,8 +88,14 @@ enum CopilotUsageMapper {
 
     /// `quota_snapshots` bucket → percent-used meter, 억제 시 nil.
     /// 억제 대상: bucket 부재, `unlimited` 또는 `-1` sentinel(usage-based billing의 유료 chat·completions는 실제 meter가 없어 오해의 0% 대신 숨김), zero-entitlement placeholder(allotment 없는 무료 계정의 Credits 등).
-    private static func snapshotLine(label: String, _ raw: Any?, resetsAt: Date?) -> MetricLine? {
-        guard let snapshot = raw as? [String: Any] else { return nil }
+    private static func snapshotLine(
+        label: String, _ raw: Any?, resetsAt: Date?, incomplete: inout Set<String>
+    ) -> MetricLine? {
+        guard let raw else { return nil }
+        guard let snapshot = raw as? [String: Any] else {
+            incomplete.insert(label)
+            return nil
+        }
 
         let entitlement = ProviderParse.number(snapshot["entitlement"])
         let remaining = ProviderParse.number(snapshot["remaining"])
@@ -92,9 +110,12 @@ enum CopilotUsageMapper {
         let usedPercent: Double
         if let percentRemaining = ProviderParse.number(snapshot["percent_remaining"]) {
             usedPercent = ProviderParse.clampPercent(100 - percentRemaining)
-        } else if let entitlement, entitlement > 0, let remaining {
+        } else if let entitlement, entitlement > 0, let remaining, remaining >= 0 {
             usedPercent = ProviderParse.clampPercent(100 - (remaining / entitlement) * 100)
         } else {
+            if snapshot["entitlement"] != nil || snapshot["remaining"] != nil || snapshot["percent_remaining"] != nil {
+                incomplete.insert(label)
+            }
             return nil
         }
 
@@ -108,7 +129,7 @@ enum CopilotUsageMapper {
         )
     }
 
-    /// "Extra Usage" — 포함 Credits pool 초과로 소비한 premium interaction. 추가(overage) 지출 활성화(`overage_permitted`) 시에만 표시 — 그때는 실제 0도 "0"으로 표시(show-real-zeros 규칙), 비활성화면 진짜 N/A → nil("No data").
+    /// "Extra Usage" — Credits 지표가 있고 `overage_permitted`가 참이면 초과 사용량 표시. 0도 포함.
     /// endpoint가 spending cap을 노출하지 않아 meter가 아닌 unbounded count.
     private static func overageLine(_ raw: Any?) -> MetricLine? {
         guard let snapshot = raw as? [String: Any],
@@ -121,10 +142,16 @@ enum CopilotUsageMapper {
     }
 
     /// 무료 tier bucket: 월 한도 `total` 대비 `remaining` → percent-used meter. 양수 한도와 remaining이 모두 있어야 함 — 분모 없이 정직한 percentage 불가.
-    private static func limitedLine(label: String, remaining: Any?, total: Any?, resetsAt: Date?) -> MetricLine? {
-        guard let total = ProviderParse.number(total), total > 0,
-              let remaining = ProviderParse.number(remaining)
-        else {
+    private static func limitedLine(
+        label: String, remaining rawRemaining: Any?, total rawTotal: Any?, resetsAt: Date?,
+        incomplete: inout Set<String>
+    ) -> MetricLine? {
+        guard rawTotal != nil || rawRemaining != nil else { return nil }
+        let total = ProviderParse.number(rawTotal)
+        let remaining = ProviderParse.number(rawRemaining)
+        if total == 0 || total == -1 || remaining == -1 { return nil }
+        guard let total, total > 0, let remaining, remaining >= 0 else {
+            incomplete.insert(label)
             return nil
         }
         let used = max(0, total - remaining)

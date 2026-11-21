@@ -9,7 +9,7 @@ enum ErrorCategory: String, Sendable, CaseIterable, Codable {
     case authExpired = "auth_expired"
     /// 만료가 아니라 구조적으로 잘못된 auth (payload 손상, OAuth URL 오설정, 미지원 key).
     case authInvalid = "auth_invalid"
-    /// 로컬 credential은 존재하나 file·database·Keychain 항목 읽기 실패.
+    /// 로컬 자격 증명 저장소 접근 실패. 사용량 DB 읽기 오류는 storage로 분류.
     case credentialAccess = "credential_access"
     /// 요청 자체가 완료되지 못한 경우 (transport/connection 실패).
     case network = "network"
@@ -55,6 +55,15 @@ protocol CategorizedError: Error {
     var errorCategory: ErrorCategory { get }
 }
 
+extension SQLiteError: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .queryFailed: .storage
+        case .boundParametersUnsupported: .other
+        }
+    }
+}
+
 extension KeychainError: CategorizedError {
     var errorCategory: ErrorCategory {
         switch self {
@@ -69,6 +78,58 @@ extension AccountCredentialVaultError: CategorizedError {
     var errorCategory: ErrorCategory { .authInvalid }
 }
 
+// MARK: - Account operations
+
+extension AccountCredentialSwitcher.Error: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .unsupportedFamily: .notAvailable
+        case .missingSnapshot: .notLoggedIn
+        case .invalidClaudeState: .decoding
+        case .snapshotIdentityMismatch, .incompleteClaudeAuthentication, .conflictingClaudeAuthentication,
+            .switchVerificationFailed:
+            .authInvalid
+        case .switchRecoveryRequired, .selectionSaveFailed: .storage
+        }
+    }
+}
+
+extension AccountCredentialImporter.ImportError: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .noSignIn: .notLoggedIn
+        case .identityUnreadable, .verificationFailed: .authInvalid
+        }
+    }
+}
+
+extension AccountCredentialImporter.RemovalError: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .workspace: .storage
+        case .snapshot: .credentialAccess
+        }
+    }
+}
+
+extension AccountIdentityReplacementError: CategorizedError {
+    var errorCategory: ErrorCategory { .storage }
+}
+
+extension AccountSignInWorkspace.WorkspaceError: CategorizedError {
+    var errorCategory: ErrorCategory { .storage }
+}
+
+extension AccountProfileError: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .registryUnreadable: .storage
+        case .unknownFamily, .accountLimitReached: .notAvailable
+        case .invalidLabel, .duplicateLabel, .profileNotFound, .ambiguousReference, .removeSelectedProfile: .other
+        }
+    }
+}
+
 // MARK: - Provider conformances
 // retroactive conformance를 한 파일에 모음 — 새 error case가 `.other`로 조용히 떨어지는 대신 여기서 컴파일 오류 발생 (exhaustive switch).
 
@@ -79,7 +140,7 @@ extension ClaudeAuthError: CategorizedError {
         case .sessionExpired, .tokenExpired, .desktopTokenExpired: .authExpired
         case .invalidOAuthURL, .desktopCredentialsUnavailable: .authInvalid
         case .desktopPermissionRequired: .credentialAccess
-        case .credentialsChanged: .other
+        case .credentialsChanged, .rotationInProgress: .other
         }
     }
 }
@@ -90,6 +151,15 @@ extension ClaudeUsageError: CategorizedError {
         case .connectionFailed: .network
         case .invalidResponse: .decoding
         case .requestFailed(let status): ErrorCategory.http(status)
+        }
+    }
+}
+
+extension ClaudeDesktopCredentialError: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .permissionRequired, .invalidSafeStorageKey, .keychainFailure: .credentialAccess
+        case .invalidCiphertext, .invalidAccountMetadata, .decryptionFailed: .authInvalid
         }
     }
 }
@@ -146,6 +216,9 @@ extension GrokAuthError: CategorizedError {
         case .expired: .authExpired
         case .credentialsChanged: .other
         case .credentialReadFailed: .credentialAccess
+        case .refreshConnectionFailed: .network
+        case .refreshRequestFailed(let status): ErrorCategory.http(status)
+        case .refreshResponseInvalid: .decoding
         }
     }
 }
@@ -163,10 +236,12 @@ extension GrokUsageError: CategorizedError {
 extension KimiAuthError: CategorizedError {
     var errorCategory: ErrorCategory {
         switch self {
-        case .notLoggedIn: .notLoggedIn
-        case .credentialsUnreadable, .credentialLockUnavailable,
+        case .notLoggedIn, .apiKeyMissing: .notLoggedIn
+        case .credentialsUnreadable, .credentialsChanged, .credentialLockUnavailable,
              .credentialLockCompromised, .credentialSaveFailed: .credentialAccess
-        case .credentialsInvalid, .unsupportedConfiguration: .authInvalid
+        case .credentialsInvalid, .unsupportedConfiguration, .configurationInvalid,
+            .apiKeyRejected:
+            .authInvalid
         case .authExpired, .refreshRejected: .authExpired
         case .refreshResponseInvalid: .decoding
         }
@@ -247,7 +322,8 @@ extension OpenCodeUsageError: CategorizedError {
     var errorCategory: ErrorCategory {
         switch self {
         case .notLoggedIn: .notLoggedIn
-        case .credentialsUnreadable, .databaseUnreadable: .credentialAccess
+        case .credentialsUnreadable: .credentialAccess
+        case .databaseUnreadable: .storage
         }
     }
 }
@@ -277,7 +353,7 @@ extension ZAIAuthError: CategorizedError {
         switch self {
         case .missingKey: .notLoggedIn
         case .invalidKey: .authInvalid
-        case .saveFailed, .deleteFailed: .other
+        case .credentialsChanged, .saveFailed, .deleteFailed: .other
         }
     }
 }

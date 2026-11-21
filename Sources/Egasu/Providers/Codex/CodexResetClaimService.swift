@@ -197,8 +197,7 @@ final class CodexResetClaimService {
         return .failed
     }
 
-    /// `expires_at`이 `expiry`와 일치(±1s — 실제 매칭은 정확 일치, 허용치는 sub-second 절단 흡수용)하는 still-available credit의 id.
-    /// mapper의 status filter와 동일 — `status` 없는 credit은 available 간주, 명시적 non-"available"만 제외.
+    /// 만료 시각 차이가 1초 미만인 첫 사용 가능 크레딧의 ID. `status`를 생략한 크레딧도 사용 가능으로 처리.
     static func creditID(in body: [String: Any], expiringAt expiry: Date) -> String? {
         guard let credits = body["credits"] as? [[String: Any]] else { return nil }
         return credits.first { credit in

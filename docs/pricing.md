@@ -109,10 +109,39 @@
 
 ## 모델 사용량의 가격
 
-egasu가 토큰 수를 추정 달러로 환산하는 방식(Claude, Codex, Cursor, Antigravity, Devin, Grok, Kimi, Z.ai).
-OpenRouter와 OpenCode는 예외 — OpenRouter는 API가 지출 금액을 보고하고, OpenCode는 로컬 로그에 메시지별 비용을 기록하므로 이 문서 내용이 적용되지 않음.
+egasu가 토큰 수를 추정 달러로 환산하는 방식(Claude, Codex, Antigravity, Devin, Grok, Kimi, Z.ai).
+Cursor·OpenRouter는 API가 보고한 비용 사용.
+OpenCode는 로컬 로그에 기록된 메시지별 비용 사용.
+이 세 경로는 토큰 단가로 비용을 다시 계산하지 않음.
+Cursor는 현재 30일 범위의 모든 페이지 조회가 완료된 경우에만 이력 교체.
+조회 실패 시 경고와 같은 계정으로 확인한 마지막 정상 이력 유지.
+포함·무료 사용량은 토큰에만 합산하며, 요금제의 누적 크레딧·할당량을 날짜별 비용에 임의로 배정하지 않음.
 Kiro도 모델 가격 엔진 대신 로컬 턴별 크레딧에 공식 추가 크레딧 단가를 적용.
 실제 청구액과 다른 환산 추정치이며, 계산 범위는 [Kiro](/docs/providers/kiro.md#상단-통계-지원-범위) 참조.
+
+### 모델 요율 예시
+
+주요 모델의 일반 정가는 다음과 같으며 단위는 USD/100만 토큰.
+
+| 모델 | 입력 | 캐시 쓰기 | 캐시 읽기 | 출력 | 근거 |
+|---|---:|---:|---:|---:|---|
+| Claude Fable 5.2 | 8 | 10(5분) | 0.20 | 40 | [Anthropic 가격](https://platform.claude.com/docs/en/about-claude/pricing) |
+| Claude Mythos 5.2 | 8 | 10(5분) | 0.20 | 40 | 같은 공식 표 |
+| GPT-5.6 Sol | 5 | 6.25(30분) | 0.50 | 30 | [OpenAI 공개 정가](https://openai.com/index/previewing-gpt-5-6-sol/) |
+| Gemini 4 Carbon | 4 | 별도 요율 없음 | 0.20 | 20 | [Google 가격](https://aistudio.google.com/docs/pricing#gemini-4-carbon) |
+| Gemini 4 Argon | 4 | 별도 요율 없음 | 0.20 | 20 | [Google 가격](https://aistudio.google.com/docs/pricing#gemini-4-argon) |
+| Gemini 3.6·3.8 Flash | 1.5 | 별도 요율 없음 | 0.15 | 7.5 | [Google 가격](https://aistudio.google.com/docs/pricing#gemini-3.8-flash) |
+| Gemini 4 Hydrogen | 1.5 | 별도 요율 없음 | 0.075 | 7.5 | [Google 가격](https://aistudio.google.com/docs/pricing#gemini-4-hydrogen) |
+
+Fable·Mythos 5.2의 Fast는 일반 요율의 2배, 1시간 캐시 쓰기는 일반 입력의 2배.
+GPT-5.6 Sol의 Fast는 일반 정가의 2배이며, 272k 초과 요청에는 장문 단가 적용.
+GPT-5.6 Sol과 Carbon·Argon·Flash 3.6·3.8의 정가는 보충 파일에서 관리.
+Fable·Mythos·Hydrogen은 공식 표와 일치하는 LiteLLM 직영 항목에 별칭으로 연결.
+Carbon·Hydrogen은 `gemini/gemini-4-carbon`·`gemini/gemini-4-hydrogen` 정확 항목 사용.
+직접 지정한 Databricks 모델명은 해당 공급 경로의 가격 사용.
+CLI의 Carbon Low·Medium·High와 Hydrogen Low·Medium·High·XHigh는 각각 같은 모델 가격 사용.
+번들 스냅샷은 오프라인 계산을 지원하며, 공개 가격표에서 사라진 모델도 사용 기록 계산용으로 보존.
+정가 변경은 가격표 갱신으로 반영.
 
 ## 가격의 출처
 
@@ -124,7 +153,9 @@ Kiro도 모델 가격 엔진 대신 로컬 턴별 크레딧에 공식 추가 크
 3. **models.dev** — LiteLLM이 놓친 모델(예: 갓 출시된 모델이나 일부 틈새 모델)을 채우는 보완 출처.
 
 앱은 세 출처의 스냅샷을 함께 넣어 배포하므로 오프라인에서도, 첫 실행에서도 가격 계산이 동작.
-실행 중에는 마지막 성공 후 한 시간이 지나면 각 출처를 다시 확인하고(ETag 재검증), `~/Library/Application Support/OpenUsage/pricing/`에 캐시.
+운영 앱은 실행 중 마지막 성공 후 한 시간이 지나면 각 출처를 다시 확인하고(ETag 재검증), `~/Library/Application Support/egasu/pricing/`에 캐시.
+표준 개발 빌드는 `egasu.dev`, 그 외 설정 도메인은 `egasu.suite.<해시>`를 `egasu` 대신 사용.
+식별자별 저장소 이름·경로는 [CLI 문서](/docs/cli.md) 참조.
 연결 실패 시 30분 뒤부터 재시도하며, 앱에서 가격을 읽을 때 갱신 시작.
 원격 재검증은 공통 작업 큐에서 순차 실행하며, 대기 중에는 보유한 가격표로 계산.
 진행 중인 사용량 스캔은 새 가격 응답을 기다리지 않고 이미 확보한 가격표로 계산.
@@ -147,10 +178,9 @@ LiteLLM·models.dev 캐시는 유지.
 
 ## 모델 이름을 찾아가는 방식
 
-Cursor CSV는 보충 파일의 `cursor/` 전용 항목과 별칭을 먼저 조회.
-전용 요율이 없으면 아래 공통 조회 순서 사용.
-모델별 내역도 Cursor 전용 별칭으로 묶되 내부 `cursor/` 접두사는 표시하지 않음.
-예: Grok 4.5의 캐시 읽기는 Cursor 0.50달러, xAI API 0.30달러 / 100만 토큰으로 구분.
+Cursor의 현재 비용은 서버 보고값이며 아래 가격 조회 순서와 별개.
+모델별 내역은 Cursor 전용 별칭으로 묶되 내부 공급 경로 접두사는 표시하지 않음.
+`cursor/` 단가·가격 조회 경로는 기존 가격표를 받는 이전 앱과의 호환성을 위해 유지.
 
 보충 파일에 별칭 규칙이 있으면 연결된 모델 이름으로 먼저 조회.
 연결된 이름에서 가격을 찾지 못하면 원래 모델 이름으로 다시 조회.
@@ -228,15 +258,17 @@ Grok 4.7 Fast 장문 요금은 일반 기본 단가의 3배로, Fast 기본 단�
 xAI 공식 표의 `≥200k`와 모델 설명의 `>200k`가 달라 정확히 200k에서는 기존 초과 판정 유지.
 어느 경우든 높은 요금은 요청 전체에 적용.
 공개된 캐시 할인이 있으면 사용하고, 출처가 할인을 게시하지 않으면 Codex 캐시 입력은 전체 입력 요금으로 폴백.
-Cursor의 내보내기는 여러 요청을 한 행에 합치므로, 그중 하나가 한도를 넘었다고 추측하지 않고 일반 요금을 사용.
+Cursor는 서버 비용에 장문 요율·라우팅 추가료·할인을 다시 곱하지 않음.
 Claude 로그 줄에 `costUSD`가 명시돼 있으면 유효한 비음수 비용만 사용.
 잘못된 비용은 해당 사용량과 함께 제외하고 진단 로그에 기록.
 중첩된 Claude advisor 사용량은 전달받은 비용이 없으므로, advisor 모델을 써서 그 토큰으로 따로 가격을 계산.
-결과는 청구서가 아니라 API 요금 기준의 추정 가치 — 구독 요금제는 토큰 단위로 청구하지 않음.
+토큰 기반 비용은 API 정가로 환산한 사용 가치이며 실제 청구액과 다를 수 있음.
+캐시·Fast·장문 구간 등 정식 요율 구분 유지.
+서버·로그에서 제공한 비용은 해당 수집 경로의 보고값 우선 규칙 유지.
 Batch·Flex 할인과 지역 처리 10% 할증은 현재 수집 로그로 판별하지 않으므로 추정값에 미반영.
 OpenAI의 12시간 캐시 쓰기도 로그에서 보존 시간을 식별할 수 없어 미반영.
-Cursor의 팀별 Token Rate 추가료·라우팅 모드·500k 창 선택만으로 실제 장문 요청 여부를 추측하지 않음.
-DeepSeek의 Cursor 요율은 Cursor 공식 표를 사용하며, 직영 API의 시간대별 할인은 적용하지 않음.
+구버전용 DeepSeek의 Cursor 요율은 Cursor 공식 표 사용.
+직영 API의 시간대별 할인은 해당 항목에 적용하지 않음.
 과거 로그도 현재 확보한 가격으로 다시 계산하므로, 가격 갱신이 지난 날짜의 추정값을 바꿀 수 있음.
 
 ## 가격 지원 범위
@@ -253,10 +285,6 @@ Kimi K3 Fast는 [Fireworks의 별도 상품](https://fireworks.ai/models/firewor
 Muse Spark 1.3 Contributor도 [별도 요율](https://openrouter.ai/meta/muse-spark-1.3-contributor)인 입력 $0.10·캐시 읽기 $0.002·출력 $0.20 / 100만 토큰으로 구분.
 두 모델을 기본 모델의 별칭으로 바꾸지 않음.
 Auto·Composer 1/1.5/2·Bugbot의 기존 값도 보존하며, 현행 공식 단가와의 일치를 보장하지 않음.
-GPT-5.6 Sol의 할인 기간은 [OpenAI API 가격](https://developers.openai.com/api/docs/pricing)에서 2026-11-30까지, [Cursor 모델 및 가격](https://cursor.com/docs/models-and-pricing.md)에서 Cursor 요율에 대해 2026-11-21까지로 안내.
-[Google API 가격](https://ai.google.dev/gemini-api/docs/pricing)은 Gemini 4 Argon의 할인 요율을 2026-11-30까지, Gemini 3.6·3.8 Flash의 할인 요율을 2026-12-31까지로 안내.
-만료 후에는 공급 경로별 공식 표를 다시 확인해 보충 파일 갱신 필요.
-앱은 갱신된 가격표를 받은 뒤 변경 요율로 계산.
 
 ## 개인정보 보호
 
@@ -280,10 +308,11 @@ GPT-5.6 Sol의 할인 기간은 [OpenAI API 가격](https://developers.openai.co
   경계는 양의 정수, 단가는 유한한 비음수 필수이며 잘못된 장문 객체는 로딩·게시 단계에서 거부.
   Cursor 전용 단가는 `cursor/` 키와 전용 별칭으로 등록하고, 공급자의 API 단가와 별도로 검증.
   새 게시 파일의 `updated_at`은 실제로 유효한 UTC 날짜·시각 `YYYY-MM-DDTHH:MM:SSZ` 형식 필수.
-  `main` 병합 후 가격표 게시와 [Pages 배포](/docs/updates.md#유지-관리자-게시-버전-보호)가 완료되면 포크 피드를 읽는 앱의 다음 갱신에서 반영.
-  번들 사본은 첫 실행을 위해 다음 릴리스에 포함.
+  `main` 병합만으로 가격표를 게시하지 않음.
+  버전 태그 푸시 또는 대상 태그를 지정한 수동 게시와 [Pages 배포](/docs/updates.md#유지-관리자-게시-버전-보호)가 완료되면 포크 피드를 읽는 앱의 다음 갱신에서 반영.
+  같은 태그의 앱 릴리스에는 첫 실행용 번들 사본 포함.
   **pricing-update skill**(`.agents/skills/pricing-update/`)은 에이전트가 동기화 전 과정(Cursor 페이지 가져오기, diff, 편집, 검증, PR 열기)을 따라가도록 안내.
-- **번들 스냅샷**(`pricing_litellm_snapshot.json`, `pricing_models_dev_snapshot.json`): 가끔(예: 릴리스 전) `script/update_pricing_snapshots.sh`로 재생성.
+- **번들 스냅샷**(`pricing_litellm_snapshot.json`, `pricing_models_dev_snapshot.json`): 릴리스 전 `script/update_pricing_snapshots.sh`로 재생성.
   공개 가격표에서 사라진 기존 모델 단가는 과거 사용 기록 계산을 위해 보존.
   같은 모델이 현재 가격표에도 있으면 현재 값으로 갱신.
   온라인 갱신에 성공하면 받은 가격을 다음 조회부터 사용.

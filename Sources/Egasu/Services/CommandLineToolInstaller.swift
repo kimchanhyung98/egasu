@@ -2,8 +2,8 @@ import AppKit
 import Foundation
 import Observation
 
-/// 번들된 one-shot CLI를 앱 밖 복사 없이 macOS 기본 PATH에 설치.
-/// symlink는 대상 경로가 안정적이라 in-place Sparkle 업데이트에도 생존.
+/// 번들 CLI를 가리키는 심볼릭 링크를 설치. 기본 경로는 `/usr/local/bin/egasu`.
+/// 안정된 앱 내부 경로를 가리키는 심볼릭 링크로 Sparkle 업데이트 후에도 연결 유지.
 @MainActor
 @Observable
 final class CommandLineToolInstaller {
@@ -18,22 +18,28 @@ final class CommandLineToolInstaller {
 
     private(set) var status: Status
     private(set) var errorMessage: String?
+    private(set) var isVerifying = false
+    var isConfirmingRemoval = false
 
     let destinationPath: String
+    var bundledExecutablePath: String? { isExecutableHelper(at: sourcePath) ? sourcePath : nil }
     private let sourcePath: String
     private let fileManager: FileManager
     private let performPrivileged: @MainActor (Operation, String, String) -> OperationResult
+    private let waitForVerification: @MainActor () async -> Void
 
     init(
         sourcePath: String = Bundle.main.bundleURL
             .appendingPathComponent("Contents/Helpers/egasu").path,
         destinationPath: String = "/usr/local/bin/egasu",
         fileManager: FileManager = .default,
+        waitForVerification: @escaping @MainActor () async -> Void = { try? await Task.sleep(for: .seconds(1)) },
         performPrivileged: (@MainActor (Operation, String, String) -> OperationResult)? = nil
     ) {
         self.sourcePath = sourcePath
         self.destinationPath = destinationPath
         self.fileManager = fileManager
+        self.waitForVerification = waitForVerification
         self.performPrivileged = performPrivileged ?? { operation, source, destination in
             CommandLineToolInstaller.runPrivileged(
                 operation: operation,
@@ -56,26 +62,52 @@ final class CommandLineToolInstaller {
         )
     }
 
-    func install() {
+    func install() async {
+        guard !isVerifying else { return }
         refreshStatus()
         guard status != .installed else { return }
         guard status != .conflict else {
             errorMessage = L10n.errors("%@ already exists and wasn't installed by egasu.", destinationPath)
             return
         }
-        guard fileManager.isExecutableFile(atPath: sourcePath) else {
+        guard isExecutableHelper(at: sourcePath) else {
             errorMessage = L10n.errors("The bundled terminal helper couldn't be found. Reinstall egasu and try again.")
             AppDiagnostics.record(.cliInstall, result: .failure, category: .storage,
                                   localContext: "Bundled terminal helper is missing or not executable")
             return
         }
-        handle(performPrivileged(.install, sourcePath, destinationPath), action: "install", operation: .cliInstall)
+        errorMessage = nil
+        let result = performPrivileged(.install, sourcePath, destinationPath)
+        if case .success = result {
+            isVerifying = true
+            defer { isVerifying = false }
+            await waitForVerification()
+            refreshStatus()
+            guard status == .installed, isExecutableHelper(at: destinationPath) else {
+                errorMessage = L10n.errors(
+                    "The terminal helper could not be verified. Check that the shortcut points to the executable bundled with egasu."
+                )
+                AppDiagnostics.record(
+                    .cliInstall, result: .failure, category: .storage,
+                    localContext: "Installed terminal helper link or executable could not be verified")
+                return
+            }
+        }
+        handle(result, action: "install", operation: .cliInstall)
     }
 
     func uninstall() {
+        guard !isVerifying else { return }
         refreshStatus()
         guard status == .installed else { return }
+        errorMessage = nil
         handle(performPrivileged(.uninstall, sourcePath, destinationPath), action: "remove", operation: .cliRemove)
+    }
+
+    private func isExecutableHelper(at path: String) -> Bool {
+        let target = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+        return fileManager.isExecutableFile(atPath: path)
+            && (try? target.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
     }
 
     private func handle(_ result: OperationResult, action: String, operation: DiagnosticOperation) {
@@ -112,7 +144,7 @@ final class CommandLineToolInstaller {
         guard let target = try? fileManager.destinationOfSymbolicLink(atPath: destinationPath) else {
             return fileManager.fileExists(atPath: destinationPath) ? .conflict : .notInstalled
         }
-        // installer는 항상 이 정확한 절대 target 기록, uninstall도 privilege 하에 같은 문자열 재검사 — 수동 생성된 상대/동등 링크는 외부 링크로 간주.
+        // 설치한 링크는 정확한 절대 경로로 식별. 관리자 권한으로 제거하기 직전 같은 경로인지 재확인.
         return target == sourcePath ? .installed : .conflict
     }
 
@@ -186,7 +218,7 @@ final class CommandLineToolInstaller {
         )
     }
 
-    private static func shellQuote(_ value: String) -> String {
+    nonisolated static func shellQuote(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 

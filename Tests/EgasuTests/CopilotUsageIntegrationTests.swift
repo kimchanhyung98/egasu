@@ -231,7 +231,9 @@ final class CopilotUsageIntegrationTests: XCTestCase {
             if providerID == "claude" {
                 XCTAssertNil(store.localSnapshots[providerID])
                 XCTAssertNil(store.snapshots[providerID])
-                XCTAssertEqual(cache.loadSnapshots(providerIDs: [providerID])[providerID], previous)
+                let stored = try XCTUnwrap(cache.loadSnapshots(providerIDs: [providerID])[providerID])
+                XCTAssertEqual(stored, previous)
+                XCTAssertNil(cache.applyingQuotaInvalidation(stored).liveQuotaObservedAt)
             } else {
                 let retained = try XCTUnwrap(store.localSnapshots[providerID])
                 XCTAssertEqual(retained.quotaObservedAt, previous.quotaObservedAt)
@@ -307,9 +309,8 @@ final class CopilotUsageIntegrationTests: XCTestCase {
         let ids = ["copilot.premium", "copilot.extra", "copilot.orgCredits", "copilot.orgSpend", "copilot.chat", "copilot.completions"]
         XCTAssertEqual(fixture.provider.widgetDescriptors.map(\.id), ids)
         XCTAssertEqual(fixture.layout.visiblePlaced.map(\.descriptorID), ids)
-        XCTAssertEqual(fixture.layout.pinnedGroups.flatMap(\.metrics).map(\.id), ["copilot.premium"])
-        XCTAssertEqual(fixture.layout.displayGroups.first?.alwaysShownWidgets.map(\.descriptorID), Array(ids.prefix(2)))
-        XCTAssertEqual(fixture.layout.displayGroups.first?.expandedWidgets.map(\.descriptorID), Array(ids.dropFirst(2)))
+        XCTAssertTrue(fixture.layout.priorityPinIDs.isEmpty)
+        XCTAssertEqual(fixture.layout.displayGroups.first?.widgets.map(\.descriptorID), ids)
         XCTAssertFalse(fixture.provider.widgetDescriptors.contains(where: \.isSpendTile))
         let histories = fixture.provider.widgetDescriptors.compactMap(\.historyResource)
         XCTAssertEqual(histories.count, 1)

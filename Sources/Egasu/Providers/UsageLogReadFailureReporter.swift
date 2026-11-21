@@ -1,6 +1,6 @@
 import Foundation
 
-/// 로컬 usage 파일이 새로 unreadable해질 때만 로그 — 반복 refresh는 파일이 복구 후 다시 실패할 때까지 조용.
+/// 로컬 사용량 파일의 새 읽기 실패만 로그. 복구 후 다시 실패하면 재보고.
 actor UsageLogReadFailureReporter {
     typealias Warning = @Sendable (Int) -> Void
 
@@ -15,12 +15,12 @@ actor UsageLogReadFailureReporter {
         self.warning = warning
     }
 
-    /// 새로 실패한 경로 반환 — 호출자가 요약 경고와 같은 edge-trigger 주기(새 실패당 1회)로 per-path 상세를 로그 가능.
+    /// 새로 실패한 경로 반환. 호출자는 경로별 상세 로그를 실패 발생당 한 번 기록 가능.
     @discardableResult
     func update(checkedPaths: Set<String>, failingPaths nextFailingPaths: Set<String>) -> Set<String> {
         let previouslyFailed = !failingPaths.isEmpty
         let newlyFailing = nextFailingPaths.subtracting(failingPaths)
-        // 기억된 실패는 같은 경로가 다시 검사되어 성공했을 때만 해제 — 다른 batch를 본 scan은 이전 실패에 대해 아무 말도 못 함.
+        // 같은 경로를 다시 읽어 성공한 경우에만 실패 상태 해제. 다른 파일의 조회로 해제 금지.
         failingPaths.subtract(checkedPaths)
         failingPaths.formUnion(nextFailingPaths)
         if previouslyFailed, failingPaths.isEmpty {

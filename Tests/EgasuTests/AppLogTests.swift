@@ -28,6 +28,53 @@ final class AppLogTests: XCTestCase {
         try String(contentsOf: tempDir.appendingPathComponent("egasu.log"), encoding: .utf8)
     }
 
+    func testUnreadableAPIKeyLogsTheFailureWithoutTheKeyOrPath() throws {
+        AppLog.reloadLevel(.info)
+        let path = OpenRouterAuthStore.configPaths[0]
+        let privateKey = "private-key-for-log-fixture"
+        let files = FakeFiles([path: privateKey])
+        files.unreadablePaths = [path]
+        let store = OpenRouterAuthStore(files: files, environment: FakeEnvironment())
+
+        XCTAssertThrowsError(try store.requireAPIKey())
+        XCTAssertThrowsError(try store.deleteAPIKey())
+
+        let log = try fileContents()
+        XCTAssertTrue(log.contains("operation=credential_read result=failure category=credential_access"))
+        XCTAssertTrue(log.contains("operation=credential_remove result=failure category=permission"))
+        XCTAssertFalse(log.contains(privateKey))
+        XCTAssertFalse(log.contains(path))
+    }
+
+    func testCLIUsesTheContainingAppsLogLevel() throws {
+        let suite = "EgasuTests.AppLog.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        defaults.set("debug", forKey: LogLevelSetting.key)
+        AppLog.reloadLevel(defaults: defaults)
+        AppLog.debug(.refresh, "visible-cli-debug")
+        defaults.set("error", forKey: LogLevelSetting.key)
+        AppLog.reloadLevel(defaults: defaults)
+        AppLog.warn(.refresh, "hidden-cli-warning")
+
+        let log = try fileContents()
+        XCTAssertTrue(log.contains("visible-cli-debug"))
+        XCTAssertFalse(log.contains("hidden-cli-warning"))
+    }
+
+    func testProviderLogTagsGroupAccountsAndPreserveCollectorNames() throws {
+        AppLog.error(LogTag.plugin("codex@profile-private"), "quota unavailable")
+        AppLog.error(LogTag.auth("claude@profile-private"), "login unavailable")
+        AppLog.error(LogTag.plugin("pi"), "history unavailable")
+
+        let log = try fileContents()
+        XCTAssertTrue(log.contains("[plugin:codex] quota unavailable"))
+        XCTAssertTrue(log.contains("[auth:claude] login unavailable"))
+        XCTAssertTrue(log.contains("[plugin:pi] history unavailable"))
+        XCTAssertFalse(log.contains("profile-private"))
+    }
+
     func testInfoFloorSuppressesDebugButKeepsInfoAndError() throws {
         AppLog.reloadLevel(.info)
         AppLog.debug(.cache, "debug-below-floor")
@@ -44,6 +91,72 @@ final class AppLogTests: XCTestCase {
         AppLog.reloadLevel(.debug)
         AppLog.debug(.cache, "debug-now-visible")
         XCTAssertTrue(try fileContents().contains("debug-now-visible"))
+    }
+
+    @MainActor
+    func testHTTPLogsExcludeRequestAndResponsePayloadsAtEveryStatus() async throws {
+        AppLog.reloadLevel(.debug)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [HTTPLogURLProtocol.self]
+        let session = URLSessionHTTPClient.makeCookieFreeSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let client = URLSessionHTTPClient()
+
+        for status in [200, 400, 401, 500] {
+            let url = try XCTUnwrap(URL(string: "https://egasu-log-test.invalid/\(status)?token=PRIVATE_QUERY_VALUE"))
+            let response = try await client.send(
+                HTTPRequest(
+                    method: "POST", url: url,
+                    headers: ["Authorization": "Bearer PRIVATE_AUTH_VALUE", "Cookie": "session=PRIVATE_COOKIE_VALUE"],
+                    body: Data("PRIVATE_REQUEST_BODY".utf8)
+                ), using: session)
+            XCTAssertEqual(response.statusCode, status)
+            XCTAssertEqual(String(decoding: response.body, as: UTF8.self), HTTPLogURLProtocol.body)
+            XCTAssertEqual(response.header("x-private-header"), "PRIVATE_RESPONSE_HEADER")
+        }
+
+        let contents = try fileContents()
+        for status in [200, 400, 401, 500] {
+            XCTAssertTrue(contents.contains("POST https://egasu-log-test.invalid/\(status)?token="), contents)
+            XCTAssertTrue(contents.contains("-> \(status)"), contents)
+        }
+        for value in [
+            "PRIVATE_QUERY_VALUE", "PRIVATE_AUTH_VALUE", "PRIVATE_COOKIE_VALUE",
+            "PRIVATE_REQUEST_BODY", "PRIVATE_RESPONSE_HEADER", HTTPLogURLProtocol.body
+        ] {
+            XCTAssertFalse(contents.contains(value), contents)
+        }
+    }
+
+    func testDynamicProviderURLsUseFixedLogLabels() async throws {
+        let http = FakeHTTPClient(response: HTTPResponse(statusCode: 200, headers: [:], body: Data()))
+        let tenant = "https://private-org.example.invalid/private-account"
+        let config = ClaudeOAuthConfig(
+            usageURL: try XCTUnwrap(URL(string: tenant + "/usage")),
+            refreshURL: try XCTUnwrap(URL(string: tenant + "/refresh")), clientID: "fixture")
+        let claude = ClaudeUsageClient(httpClient: http)
+        _ = try await claude.fetchUsage(accessToken: "fixture", config: config)
+        _ = try await claude.fetchProfile(accessToken: "fixture", config: config)
+        _ = try await claude.refreshToken("fixture", config: config)
+        _ = try await DevinUsageClient(http: http).fetchUserStatus(
+            auth: DevinAuth(apiKey: "fixture"), apiServerURL: tenant)
+        _ = try await CopilotOrgBillingClient(http: http).fetchUsageSummary(org: "private-org", token: "fixture")
+        let service = KimiService(baseURL: tenant, oauthHost: tenant)
+        let kimi = KimiUsageClient(http: http)
+        _ = try await kimi.fetchUsage(accessToken: "fixture", service: service)
+        http.response = HTTPResponse(
+            statusCode: 200, headers: [:],
+            body: Data(#"{"access_token":"fixture","refresh_token":"fixture","expires_in":3600}"#.utf8))
+        _ = try await kimi.refreshToken(refreshToken: "fixture", service: service)
+
+        XCTAssertTrue(http.requests.allSatisfy { $0.url.absoluteString.contains("private-org") })
+        XCTAssertEqual(
+            http.requests.map(\.logTarget),
+            [
+                "claude.usage", "claude.profile", "claude.oauth_refresh", "devin.user_status",
+                "copilot.org_billing_summary",
+                "kimi.usage", "kimi.oauth_refresh"
+            ])
     }
 
     @MainActor
@@ -127,7 +240,7 @@ final class AppLogTests: XCTestCase {
     @MainActor
     func testSlowProviderRefreshWritesWarningAtDefaultLogLevel() async throws {
         AppLog.reloadLevel(.info)
-        let provider = Provider(id: "slow-test", displayName: "Slow Test", icon: .providerMark("codex"))
+        let provider = Provider(id: "codex@profile-slow", displayName: "Slow Test", icon: .providerMark("codex"))
         let runtime = TestProviderRuntime(
             provider: provider,
             descriptors: [],
@@ -149,8 +262,37 @@ final class AppLogTests: XCTestCase {
 
         let contents = try fileContents()
         XCTAssertTrue(
-            contents.contains("[WARN] [refresh] slow-test slow refresh (12500ms, threshold=10000ms)"),
+            contents.contains("[WARN] [refresh] codex slow refresh (12500ms, threshold=10000ms)"),
             contents
         )
     }
+}
+
+private final class HTTPLogURLProtocol: URLProtocol, @unchecked Sendable {
+    static let body = "PRIVATE_RESPONSE_BODY_WITH_UNSTRUCTURED_ACCOUNT_DETAILS"
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url?.host == "egasu-log-test.invalid"
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        guard let url = request.url, let status = Int(url.lastPathComponent),
+            let response = HTTPURLResponse(
+                url: url, statusCode: status, httpVersion: nil,
+                headerFields: ["X-Private-Header": "PRIVATE_RESPONSE_HEADER"]
+            )
+        else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+            return
+        }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(Self.body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }

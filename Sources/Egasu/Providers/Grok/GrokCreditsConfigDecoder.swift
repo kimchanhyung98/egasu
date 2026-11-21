@@ -5,11 +5,11 @@ import Foundation
 struct GrokCreditsConfig: Equatable, Sendable {
     /// `USAGE_PERIOD_TYPE_*` enum 이름 (`GrokCreditsConfigDecoder.weeklyPeriodType` 참고).
     var periodType: String
-    /// 0...100 범위의 pool 사용률 — finite만 검증, 범위 clamp는 mapper 담당.
+    /// 유한한 사용 비율. 0…100 범위 제한은 지표 변환에서 적용.
     var usedPercent: Double
     var periodStart: Date
     var periodEnd: Date
-    /// USD 센트 단위 pay-as-you-go cap — 비활성 시 0, proto-JSON은 0일 때 필드 생략 가능.
+    /// USD 센트 단위 추가 지출 한도. proto-JSON에서 생략된 값은 0으로 처리.
     var onDemandCap: Double
 
     var periodDurationMs: Int {
@@ -22,6 +22,7 @@ struct GrokCreditsConfig: Equatable, Sendable {
 enum GrokCreditsConfigDecoder {
     /// unified-billing 사용자가 이전된 shared weekly pool의 period type.
     static let weeklyPeriodType = "USAGE_PERIOD_TYPE_WEEKLY"
+    static let monthlyPeriodType = "USAGE_PERIOD_TYPE_MONTHLY"
 
     /// JSON 응답 body를 `GrokCreditsConfig`로 decode.
     /// config/period 누락, 비유한 percent, 잘못된 timestamp, 진행하지 않는 period는 `invalidResponse`.

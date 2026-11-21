@@ -3,7 +3,7 @@ import XCTest
 @testable import Egasu
 
 @MainActor
-final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
+final class UsageTimerCoordinatorTests: XCTestCase {
     func testOnlyExactZeroTriggersAndPreparationRechecksUsage() async throws {
         let probe = try WeeklyTimerProbe()
         defer { probe.cleanup() }
@@ -47,7 +47,7 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
     func testReservationExistsBeforeExecutionAndSurvivesRestartAndResetChanges() async throws {
         let probe = try WeeklyTimerProbe()
         defer { probe.cleanup() }
-        var reserved: CodexWeeklyTimerAttempt?
+        var reserved: UsageTimerAttempt?
         probe.executionHook = { key in reserved = try? probe.store.attempt(for: key) }
         let coordinator = probe.coordinator()
         probe.receive(coordinator)
@@ -60,7 +60,7 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
         probe.receive(restarted, reset: probe.now.addingTimeInterval(400))
         XCTAssertFalse(restarted.hasPendingWork)
         XCTAssertEqual(probe.executed, ["a"])
-        let persisted = try CodexWeeklyTimerAttemptStore(fileURL: probe.store.fileURL).attempt(for: "a")
+        let persisted = try UsageTimerAttemptStore(fileURL: probe.store.fileURL).attempt(for: "a")
         XCTAssertEqual(persisted?.id, reserved?.id)
         XCTAssertEqual(persisted?.notBefore, probe.start.addingTimeInterval(365))
     }
@@ -105,7 +105,7 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
     func testStablePostResetRecoversUncertainExecutionWithoutAnotherSend() async throws {
         let probe = try WeeklyTimerProbe()
         defer { probe.cleanup() }
-        probe.result = .init(launched: true, completed: false, updatedAuth: nil, failureDescription: "Message failed.")
+        probe.result = .init(launched: true, completed: false, failureDescription: "Message failed.")
         probe.verification = [probe.observation(reset: probe.start.addingTimeInterval(900)),
                               probe.observation(reset: probe.start.addingTimeInterval(900))]
         let coordinator = probe.coordinator()
@@ -124,20 +124,20 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
         let probe = try WeeklyTimerProbe()
         defer { probe.cleanup() }
         probe.preparationReset = probe.start.addingTimeInterval(800)
-        probe.result = .init(launched: true, completed: false, updatedAuth: nil, failureDescription: nil)
+        probe.result = .init(launched: true, completed: false, failureDescription: nil)
         let coordinator = probe.coordinator()
         probe.receive(coordinator)
         await settle { probe.finished.count == 1 }
         XCTAssertEqual(probe.verificationTimes.count, 3)
         XCTAssertEqual(try probe.store.attempt(for: "a")?.notBefore, probe.start.addingTimeInterval(365))
-        XCTAssertEqual(probe.reports, ["Weekly timer message completion could not be confirmed. Retries wait at least five minutes and are limited to 2 attempts per 24 hours."])
+        XCTAssertEqual(probe.reports, ["Usage timer message completion could not be confirmed. Retries wait at least five minutes and are limited to 2 attempts per usage window."])
     }
 
     func testPrelaunchFailureKeepsCooldownAndDoesNotBlockNextAccount() async throws {
         let probe = try WeeklyTimerProbe()
         defer { probe.cleanup() }
         try probe.add(providerID: "second", accountKey: "b")
-        probe.result = .init(launched: false, completed: false, updatedAuth: nil, failureDescription: "CLI missing.")
+        probe.result = .init(launched: false, completed: false, failureDescription: "CLI missing.")
         let coordinator = probe.coordinator()
         probe.receive(coordinator)
         probe.receive(coordinator, providerID: "second")
@@ -364,7 +364,7 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
         probe.receive(coordinator)
         await settle { probe.finished.count == 1 }
         XCTAssertTrue(probe.executed.isEmpty)
-        XCTAssertEqual(probe.reports, ["Weekly timer automation could not save its state. No message was sent."])
+        XCTAssertEqual(probe.reports, ["Usage timer automation could not save its state. No message was sent."])
     }
 
     func testVerificationFromAnotherAccountCannotReplaceHold() async throws {
@@ -436,7 +436,7 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
         let coordinator = probe.coordinator()
         probe.receive(coordinator)
         await settle { probe.finished.count == 1 }
-        XCTAssertEqual(probe.reports, ["Weekly timer message completed, but the server reset time could not be confirmed."])
+        XCTAssertEqual(probe.reports, ["Usage timer message completed, but the server reset time could not be confirmed."])
         let reset = probe.now.addingTimeInterval(800)
         probe.receive(coordinator, reset: reset)
         XCTAssertEqual(probe.reports.count, 1)

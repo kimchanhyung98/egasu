@@ -19,13 +19,6 @@ extension AppContainer {
         accountCardPresentation.orderedProfiles(accountProfiles.profiles(family: family), family: family)
     }
 
-    func accountCardDisplayMode(for family: String) -> AccountCardDisplayMode {
-        accountCardPresentation.effectiveMode(
-            for: family,
-            profiles: accountProfiles.profiles(family: family),
-            registryReadable: !accountProfiles.hasUnreadableRegistry
-        )
-    }
 
     /// 등록 계정 표시 대상·순서만 계산 — 런타임 catalog·CLI·HTTP API는 유지.
     func orderedAccountCardIDs(_ cardIDs: [String]) -> [String] {
@@ -43,44 +36,5 @@ extension AppContainer {
         )
     }
 
-    /// Dashboard·Share가 동일한 최종 카드 목록을 사용하며 선택 fallback은 기존 규칙 유지.
-    func presentedAccountGroups(selectionByFamily: [String: String]? = nil) -> [ProviderGroup] {
-        _ = accountSelectionRevision
-        let selections = selectionByFamily ?? DashboardUsageAccountSelection.storedSelections()
-        let groups = layout.displayGroups
-        let rawIDs = groups.map(\.provider.id)
-        let selectedIDs = Dictionary(uniqueKeysWithValues: AccountProfilesStore.supportedFamilies.compactMap { family in
-            visibleAccountCardID(
-                for: family,
-                among: accountCardIDs(for: family, among: rawIDs),
-                stored: selections[family] ?? ""
-            ).map { (family, $0) }
-        })
-        let modes = Dictionary(uniqueKeysWithValues: AccountProfilesStore.supportedFamilies.map {
-            ($0, accountCardDisplayMode(for: $0))
-        })
-        let presentedIDs = AccountCardPresentationPlanner.presentedCardIDs(
-            orderedCardIDs: orderedAccountCardIDs(rawIDs),
-            modesByFamily: modes,
-            selectedCardIDsByFamily: selectedIDs
-        )
-        let groupsByID = Dictionary(uniqueKeysWithValues: groups.map { ($0.provider.id, $0) })
-        return presentedIDs.compactMap { cardID in
-            guard let group = groupsByID[cardID] else { return nil }
-            return AccountCardPresentationPlanner.presentedGroup(
-                group,
-                mode: modes[ProviderAccountID.family(of: cardID)] ?? .singleCard
-            )
-        }
-    }
 
-    func accountCardTitle(for provider: Provider) -> String {
-        let family = ProviderAccountID.family(of: provider.id)
-        return AccountCardPresentationPlanner.cardTitle(
-            providerID: provider.id,
-            fallback: displayName(for: provider),
-            mode: accountCardDisplayMode(for: family),
-            accountName: accountOptionTitle(for: provider.id)
-        )
-    }
 }

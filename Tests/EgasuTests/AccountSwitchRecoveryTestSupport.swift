@@ -10,6 +10,7 @@ struct AccountSwitchRecoveryFixture {
     let keychain: SwitchRecoveryKeychain
     let workspace: AccountSignInWorkspace
     let switcher: AccountCredentialSwitcher
+    let http: ClaudeReconciliationHTTPClient
     let a: AccountProfile
     let b: AccountProfile
     let entryA: AccountCredentialVault.Entry
@@ -24,8 +25,14 @@ struct AccountSwitchRecoveryFixture {
         let store = AccountProfilesStore(defaults: defaults, synchronizeDefaults: synchronize)
         let keychain = SwitchRecoveryKeychain()
         let workspace = AccountSignInWorkspace(baseDirectory: root.appendingPathComponent("AccountSignIn"))
+        let http = ClaudeReconciliationHTTPClient()
+        http.identities = [
+            "token-a": "acct-a|org-a", "token-b": "acct-b|org-b",
+            "rotated-a": "acct-a|org-a", "rotated-access-a": "acct-a|org-a"
+        ]
         let switcher = AccountCredentialSwitcher(
-            keychain: keychain, environment: FakeEnvironment([:]), homeDirectory: root, workspace: workspace
+            keychain: keychain, environment: FakeEnvironment([:]), homeDirectory: root, workspace: workspace,
+            httpClient: http
         )
         let a = try store.add(family: "claude", label: "A", identityKey: "acct-a|org-a", id: "profile-a")
         let b = try store.add(family: "claude", label: "B", identityKey: "acct-b|org-b", id: "profile-b")
@@ -43,6 +50,7 @@ struct AccountSwitchRecoveryFixture {
         self.keychain = keychain
         self.workspace = workspace
         self.switcher = switcher
+        self.http = http
         self.a = a
         self.b = b
         self.entryA = entryA
@@ -54,8 +62,11 @@ struct AccountSwitchRecoveryFixture {
     }
 
     var importer: AccountCredentialImporter {
-        AccountCredentialImporter(
-            keychain: keychain, environment: FakeEnvironment([:]), homeDirectory: root, workspace: workspace
+        let http = ClaudeReconciliationHTTPClient()
+        http.identities = ["token-a": "acct-a|org-a", "token-b": "acct-b|org-b", "rotated-access-a": "acct-a|org-a"]
+        return AccountCredentialImporter(
+            keychain: keychain, environment: FakeEnvironment([:]), homeDirectory: root, workspace: workspace,
+            httpClient: http
         )
     }
 
@@ -73,30 +84,41 @@ struct AccountSwitchRecoveryFixture {
         AccountProfilesStore(defaults: try XCTUnwrap(UserDefaults(suiteName: suite)))
     }
 
-    func rotateScopedCredentials(replacingRefreshToken: Bool = false) throws -> AccountCredentialVault.Entry {
-        let home = root.appendingPathComponent(".claude").path
+    func rotateDefaultCredentials(replacingRefreshToken: Bool = false) throws -> AccountCredentialVault.Entry {
         let auth = ClaudeAuthStore(
-            environment: FakeEnvironment([:]), keychain: keychain,
-            scope: .configDir(path: home, keychainLiteral: home), allowsDesktopFallback: false
+            environment: FakeEnvironment([:]), files: FakeFiles([:]), keychain: keychain,
+            scope: .standard, allowsDesktopFallback: false, pinsSharedHome: true
         )
         let generation = try auth.credentialGeneration()
         var credential = try XCTUnwrap(auth.loadCredentialCandidates().first)
-        XCTAssertEqual(credential.source, .keychainCurrentUser(service: scopedService))
+        XCTAssertEqual(credential.source, .keychainCurrentUser(service: baseService))
         credential.oauth.accessToken = "rotated-access-a"
         if replacingRefreshToken { credential.oauth.refreshToken = "rotated-refresh-a" }
         XCTAssertTrue(try auth.save(credential, ifUnchanged: generation))
         return try XCTUnwrap(switcher.readSharedAuthentication(family: "claude"))
     }
 
-    func stageIntent() throws -> AccountSwitchJournal.Record {
+    func seedLegacyMirrors(_ entry: AccountCredentialVault.Entry) throws {
+        let directory = root.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        keychain.currentUserValues[scopedService] = entry.credential
+        try Data(entry.credential.utf8).write(to: directory.appendingPathComponent(".credentials.json"))
+        let account = try XCTUnwrap(entry.claudeOAuthAccount)
+        try Data(#"{"oauthAccount":\#(account)}"#.utf8).write(to: directory.appendingPathComponent(".claude.json"))
+    }
+
+    func stageIntent(legacy: Bool = false) throws -> AccountSwitchJournal.Record {
+        if legacy { try seedLegacyMirrors(entryA) }
+        let state = try switcher.readClaudeSwitchState(legacyRecord: legacy)
         let record = AccountSwitchJournal.Record(
             previousProfileID: a.id,
             previousIdentity: a.identityKey,
             previousCredentialFingerprint: AccountSwitchJournal.fingerprint(entryA.credential),
-            previousStateFingerprint: try switcher.readClaudeSwitchState().fingerprint(),
+            previousStateFingerprint: try state.fingerprint(),
             selectedProfileID: b.id,
             selectedIdentity: b.identityKey,
-            selectedCredentialFingerprint: AccountSwitchJournal.fingerprint(entryB.credential)
+            selectedCredentialFingerprint: AccountSwitchJournal.fingerprint(entryB.credential),
+            sourceID: state.sourceID
         )
         try journal.save(record, replacing: nil)
         return record
@@ -128,6 +150,7 @@ final class SwitchRecoveryKeychain: KeychainAccessing, @unchecked Sendable {
         var currentUserValues: [String: String] = [:]
         var currentUserModificationDates: [String: Date] = [:]
         var writeCount = 0
+        var noninteractiveReadServices: [String] = []
         var readFailureService: String?
         var beforeRead: (@Sendable (String) throws -> Void)?
         var beforeWrite: ((String, String) throws -> Void)?
@@ -153,6 +176,8 @@ final class SwitchRecoveryKeychain: KeychainAccessing, @unchecked Sendable {
 
     var writeCount: Int { lock.withLock { state.writeCount } }
 
+    var noninteractiveReadServices: [String] { lock.withLock { state.noninteractiveReadServices } }
+
     var readFailureService: String? {
         get { lock.withLock { state.readFailureService } }
         set { lock.withLock { state.readFailureService = newValue } }
@@ -168,12 +193,25 @@ final class SwitchRecoveryKeychain: KeychainAccessing, @unchecked Sendable {
         set { lock.withLock { state.beforeWrite = newValue } }
     }
 
+    func readAppOwnedPassword(service: String, forCurrentUser: Bool, allowInteraction: Bool) throws -> String? {
+        if !allowInteraction {
+            lock.withLock { state.noninteractiveReadServices.append(service) }
+        }
+        return try forCurrentUser
+            ? readGenericPasswordForCurrentUser(service: service)
+            : readGenericPassword(service: service)
+    }
+
     func readGenericPassword(service: String) throws -> String? {
         try beforeRead?(service)
         return try lock.withLock {
             if service == state.readFailureService { throw Failure.injected }
             return state.values[service]
         }
+    }
+
+    func readGenericPassword(service: String, allowInteraction: Bool) throws -> String? {
+        try readAppOwnedPassword(service: service, forCurrentUser: false, allowInteraction: allowInteraction)
     }
 
     func readGenericPasswordForCurrentUser(service: String) throws -> String? {

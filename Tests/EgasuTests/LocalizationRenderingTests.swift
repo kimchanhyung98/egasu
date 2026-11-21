@@ -11,26 +11,26 @@ final class LocalizationRenderingTests: XCTestCase {
         var row = WidgetData(title: "Today", icon: MockData.codex.icon, kind: .count, used: 123456, limit: nil,
                              values: [MetricValue(number: 123456, kind: .count, label: "tokens")])
         row.isUsagePeriod = true
-        for density in DensitySetting.allCases {
-            defaults.set(density.rawValue, forKey: DensitySetting.key)
+        for layoutStyle in DashboardLayoutStyle.allCases {
             for appearance in [ColorScheme.light, .dark] {
+                let variant = "\(layoutStyle.rawValue)-\(appearance)"
                 var rasters: [Raster] = []
                 for models in [[], ["unpriced-model"]] as [[String]] {
                     row.unknownModels = models
-                    let view = WidgetRowView(data: row)
+                    let view = DashboardMetricRow(model: row.dashboardRow(), layoutStyle: layoutStyle)
                         .frame(width: 320)
                         .background(appearance == .light ? Color.white : Color.black)
                         .environment(\.colorScheme, appearance)
                         .environment(\.hoverTooltipsDisabled, true)
                         .defaultAppStorage(defaults)
-                    rasters.append(try rasterize(view, width: 320, name: "\(density)-\(appearance)", export: nil))
+                    rasters.append(try rasterize(view, width: 320, name: variant, export: nil))
                 }
-                XCTAssertFalse(visiblyDiffers(rasters[0], rasters[1]), "\(density)-\(appearance)")
+                XCTAssertFalse(visiblyDiffers(rasters[0], rasters[1]), variant)
             }
         }
     }
 
-    func testDashboardAndShareCardsRenderAllLanguagesAcrossDensitiesAndAppearances() throws {
+    func testDashboardAndShareCardsRenderAllLanguagesAcrossLayoutsAndAppearances() throws {
         let suite = "EgasuTests.Localization.Rendering.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -40,17 +40,16 @@ final class LocalizationRenderingTests: XCTestCase {
             try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true)
         }
 
-        for density in DensitySetting.allCases {
-            defaults.set(density.rawValue, forKey: DensitySetting.key)
+        for layoutStyle in DashboardLayoutStyle.allCases {
             for appearance in [ColorScheme.light, .dark] {
                 var renderedBySurface: [String: [LanguageSetting: Raster]] = [:]
                 for language in LanguageSetting.allCases {
                     try L10n.withLanguage(language) {
                         let rows = sampleRows()
-                        let variant = "\(language.rawValue)-\(density.rawValue)-\(appearance)"
+                        let variant = "\(language.rawValue)-\(layoutStyle.rawValue)-\(appearance)"
                         let dashboard = VStack(spacing: 0) {
                             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                                WidgetRowView(data: row)
+                                DashboardMetricRow(model: row.dashboardRow(), chartPoints: row.chartPoints, layoutStyle: layoutStyle)
                             }
                         }
                         .padding(14)
@@ -60,7 +59,7 @@ final class LocalizationRenderingTests: XCTestCase {
                         .environment(\.hoverTooltipsDisabled, true)
                         .defaultAppStorage(defaults)
                         let share = ShareCardView(
-                            provider: MockData.codex, plan: "Plus", rows: rows, appearance: appearance
+                            family: sampleFamily(rows), plans: ["codex": "Plus"], appearance: appearance, layoutStyle: layoutStyle
                         )
                         .defaultAppStorage(defaults)
 
@@ -89,7 +88,7 @@ final class LocalizationRenderingTests: XCTestCase {
                     ] {
                         let firstRaster = try XCTUnwrap(renders[first])
                         let secondRaster = try XCTUnwrap(renders[second])
-                        let context = "\(surface), \(density), \(appearance), \(first.rawValue)/\(second.rawValue)"
+                        let context = "\(surface), \(appearance), \(first.rawValue)/\(second.rawValue)"
                         XCTAssertEqual(firstRaster.width, secondRaster.width, context)
                         XCTAssertTrue(visiblyDiffers(firstRaster, secondRaster), context)
                     }
@@ -98,11 +97,22 @@ final class LocalizationRenderingTests: XCTestCase {
         }
     }
 
+    private func sampleFamily(_ rows: [WidgetData]) -> DashboardFamily {
+        let lines = rows.enumerated().map { index, data in
+            DashboardLine(
+                descriptor: WidgetDescriptor(id: "codex.row\(index)", providerID: "codex", metricLabel: data.title, sample: data),
+                data: data
+            )
+        }
+        let account = DashboardAccount(provider: MockData.codex, providerName: "Codex", name: nil, lines: lines)
+        return DashboardFamily(id: "codex", provider: MockData.codex, displayName: "Codex", accounts: [account])
+    }
+
     private func sampleRows() -> [WidgetData] {
         let icon = MockData.codex.icon
-        var session = WidgetData(title: "Session", icon: icon, kind: .percent, used: 42, limit: 100)
-        session.softLimitUsedFraction = 0.8
-        let weekly = WidgetData(title: "Weekly", icon: icon, kind: .percent, used: 100, limit: 100)
+        let session = WidgetData(title: "Session", icon: icon, kind: .percent, used: 42, limit: 100)
+        var weekly = WidgetData(title: "Weekly", icon: icon, kind: .percent, used: 100, limit: 100)
+        weekly.softLimitUsedFraction = 0.8
         var spend = WidgetData(title: "Last 30 Days", icon: icon, kind: .dollars, used: 125.42, limit: nil)
         spend.isUsagePeriod = true
         spend.values = [

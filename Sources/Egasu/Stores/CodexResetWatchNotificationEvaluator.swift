@@ -37,7 +37,7 @@ final class CodexResetWatchNotificationEvaluator {
         self.enabled = isEnabled()
     }
 
-    /// 빠른 off→on도 이전 전달을 되살리지 않도록 설정 변경 시 동기 무효화.
+    /// 설정을 바꾸면 대기 결과를 비우고 전달 중 사용하는 세대 토큰을 무효화.
     func configurationDidChange() {
         let current = isEnabled()
         guard current != enabled else { return }

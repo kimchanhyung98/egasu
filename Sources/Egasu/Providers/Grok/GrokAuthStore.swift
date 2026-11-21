@@ -40,6 +40,9 @@ enum GrokAuthError: Error, LocalizedError, Equatable {
     case expired
     case credentialsChanged
     case credentialReadFailed
+    case refreshConnectionFailed
+    case refreshRequestFailed(Int)
+    case refreshResponseInvalid
 
     var errorDescription: String? {
         switch self {
@@ -53,6 +56,12 @@ enum GrokAuthError: Error, LocalizedError, Equatable {
             return "Grok sign-in changed while refreshing. Refresh again to use the current account."
         case .credentialReadFailed:
             return "Grok sign-in could not be read. Check access to the Grok auth file and refresh again."
+        case .refreshConnectionFailed:
+            return "Grok sign-in could not be refreshed. Check your connection."
+        case .refreshRequestFailed(let status):
+            return "Grok sign-in could not be refreshed (HTTP \(status)). Try again later."
+        case .refreshResponseInvalid:
+            return "Grok returned an invalid token refresh response. Try again later."
         }
     }
 }
@@ -79,12 +88,18 @@ struct GrokAuthStore: Sendable {
 
     func loadAuthCandidates() throws -> [GrokAuthState] {
         let path = resolvedAuthPath
-        guard files.exists(path),
-              let text = try? files.readText(path),
-              let auth = Self.parseAuth(text),
-              let document = Self.parseJSONObject(text)
-        else {
-            throw GrokAuthError.notLoggedIn
+        let contents: String?
+        do {
+            contents = try files.readTextIfPresent(path)
+        } catch {
+            try ProviderAuthRetry.rethrowCancellation(error)
+            AppLog.warn(LogTag.auth("grok"), "credential file read failed: \(AppLog.errorDetails(error))")
+            throw GrokAuthError.credentialReadFailed
+        }
+        guard let text = contents else { throw GrokAuthError.notLoggedIn }
+        guard let auth = Self.parseAuth(text), let document = Self.parseJSONObject(text) else {
+            AppLog.warn(LogTag.auth("grok"), "credential file could not be decoded")
+            throw GrokAuthError.invalidAuth
         }
 
         let candidates = try auth.compactMap { entryKey, entry -> GrokAuthState? in
@@ -113,7 +128,11 @@ struct GrokAuthStore: Sendable {
         do {
             currentText = try files.readTextIfPresent(state.authPath)
         } catch {
-            AppLog.error(LogTag.auth("grok"), "credential verification before saving failed: \(error.localizedDescription)")
+            try ProviderAuthRetry.rethrowCancellation(error)
+            AppDiagnostics.record(
+                .credentialSave, result: .failure, category: .credentialAccess, providerID: "grok", error: error,
+                localContext: "verify source before saving rotated credentials"
+            )
             throw GrokAuthError.credentialReadFailed
         }
         guard let existingText = currentText,

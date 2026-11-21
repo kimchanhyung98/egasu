@@ -1,7 +1,7 @@
-# main의 가격표 변경을 GitHub Pages에 게시.
+# 버전 태그의 가격표를 GitHub Pages에 게시.
 #
 # 가격표에는 Cursor 모델 가격(auto, composer-*, github_bugbot), fast 배수, 모델 별칭 규칙 포함.
-# 포크 피드를 읽는 앱의 가격표 갱신은 마지막 성공 후 한 시간 간격이며 태그·릴리스·Sparkle과 독립.
+# 태그 게시 후 포크 피드를 읽는 앱이 마지막 성공 후 한 시간 간격으로 가격표 갱신.
 # upstream 피드를 읽던 기존 앱은 포크 피드로 전환하는 앱 업데이트 필요.
 #
 # Release·사이트 게시와 실행 그룹 공유. keep_files 게시를 직렬화하여 동시 push의 변경 유실 방지.
@@ -9,11 +9,13 @@ name: Publish pricing supplement
 
 on:
   push:
-    branches: [main]
-    paths:
-      - Sources/Egasu/Resources/pricing_supplement.json
-      - .github/workflows/pricing-supplement.yml
+    tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "게시할 버전 태그(예: v1.0.0-beta.1)"
+        required: true
+        type: string
 
 concurrency:
   group: release-appcast
@@ -25,10 +27,20 @@ permissions:
 
 jobs:
   publish:
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    env:
+      PUBLICATION_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.sha }}
+          fetch-depth: 0
+
+      - name: 게시 태그 확인
+        run: |
+          source script/version.sh
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          egasu_release_version "$GITHUB_WORKSPACE" "$PUBLICATION_TAG"
 
       - name: 가격표 JSON 검증
         run: |
@@ -121,11 +133,14 @@ jobs:
       - name: 게시된 Pages 커밋 기록
         run: |
           git fetch --no-tags --depth=1 origin gh-pages
-          git rev-parse FETCH_HEAD > "$RUNNER_TEMP/revision.txt"
+          mkdir -p "$RUNNER_TEMP/pages-publication"
+          git rev-parse FETCH_HEAD > "$RUNNER_TEMP/pages-publication/revision.txt"
+          printf '%s\n' "$PUBLICATION_TAG" > "$RUNNER_TEMP/pages-publication/tag.txt"
+          git rev-parse HEAD > "$RUNNER_TEMP/pages-publication/source.txt"
 
       - name: 검증된 게시 커밋 전달
         uses: actions/upload-artifact@v7
         with:
           name: pages-publication-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/revision.txt
+          path: ${{ runner.temp }}/pages-publication/
           if-no-files-found: error

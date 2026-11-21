@@ -72,11 +72,14 @@ OpenCode처럼 로컬 기록만 수집하는 프로바이더는 사용량 조회
    JSON·숫자·퍼센트 파싱에는 `ProviderParse`, 시각 처리에는 `EgasuISO8601` 재사용.
 3. **위젯 선언.**
    `WidgetDescriptor+Factories.swift`의 팩토리(`percent`, `boundedDollars`, `spend`, `tokenSpend`, `combined`, `values`, `badge` 등)로 프로바이더의 지표를 `WidgetDescriptor`로 노출.
+   주간·월간 구독 한도는 디스크립터에 지원 기간을 선언하고 매퍼에 실제 기간과 사용량 출처를 반영.
+   실측·추정 한도의 판정 차이는 [소프트 한도](/docs/architecture.md#소프트-한도) 참조.
 4. **기본 배치 확인.**
-   지표별 기본 활성화 여부, Always Visible/On Demand 위치, 메뉴 막대 고정 여부, 표시 순서를 소유자와 확인.
-   확인한 값을 `DefaultLayout.metricIDs`, `DefaultLayout.expandedMetricIDs`, `DefaultLayout.pinnedMetricIDs`와 `widgetDescriptors` 선언 순서에 반영.
-   접기 버튼이 필요하면 활성 지표 중 하나 이상을 Always Visible로 유지.
-   활성 지표가 전부 On Demand이면 대시보드가 모든 지표를 항상 표시하는 방식으로 처리.
+   모든 지표는 기본 켜짐이며 기존 숨김 설정 우선.
+   새 지표의 순서를 소유자와 확인하고 `widgetDescriptors` 선언 순서에 반영.
+   메뉴 막대는 [표시 기준](/docs/menu-bar.md#표시-항목)에 따라 Priority 보드에서 지표 선택.
+   Priority 고정은 사용자가 설정.
+   `DefaultLayout.pinnedMetricIDs`는 이전 기본 별표와 저장된 별표를 비교하는 마이그레이션 전용 값.
 5. **등록.**
    `ProviderCatalog.make()`의 앱·CLI 공용 목록에 프로바이더 추가.
    Claude·Codex·Cursor를 앞에 유지하고, 새 프로바이더는 나머지 목록에 표시 이름의 알파벳순으로 배치.
@@ -121,16 +124,17 @@ OpenCode처럼 로컬 기록만 수집하는 프로바이더는 사용량 조회
 
 대부분의 프로바이더는 연동 CLI·앱의 세션이나 키체인에서 기존 인증 정보 사용.
 OpenRouter처럼 사용자 제공 API 키가 필요한 프로바이더는 `APIKeyManaging` 구현.
-그러면 **Customize → 해당 프로바이더** 화면에 공용 API 키 관리 카드 표시.
+그러면 **Accounts → 해당 계정** 화면에 공용 API 키 관리 카드 표시.
 프로바이더별 입력 UI를 별도로 만들 필요 없음.
 
 - 인증 스토어의 `keyStatus()`는 `notSet` / `fromEnvironment` / `saved` / `overrideActive` 중 현재 상태 반환.
-- `currentAPIKey()`는 사용자가 키 표시를 선택했을 때 현재 키 제공.
+- `currentAPIKey()`는 현재 키를 반환하는 내부 계약.
+  Accounts UI는 저장 키의 가림 해제를 제공하지 않음.
 - `saveAPIKey(_:)`와 `deleteAPIKey()`는 인증 스토어가 읽는 설정 파일의 저장 키 관리.
   설정 파일이 환경 변수보다 우선하므로 저장된 키가 환경 변수의 키를 대체.
 - 프로바이더는 위 동작을 인증 스토어에 위임.
 - `AppContainer`는 `APIKeyManaging` 프로바이더를 `apiKeyProviders`로 수집.
-  Customize의 프로바이더 상세 화면은 이 목록에서 해당 프로바이더를 찾아 카드 표시.
+  Accounts의 계정 상세 화면은 이 목록에서 해당 프로바이더를 찾아 카드 표시.
 
 키는 인증 스토어가 이미 확인하는 파일에 저장.
 사용자가 같은 파일을 직접 편집할 수 있도록 별도 저장소 도입 금지.

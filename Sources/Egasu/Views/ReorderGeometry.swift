@@ -2,16 +2,7 @@ import SwiftUI
 
 struct ReorderLift {
     enum Payload {
-        case dashboardProvider(provider: Provider, plan: String?, rows: [WidgetData])
-        case dashboardMetric(data: WidgetData)
-        case customizeProviderRow(provider: Provider, isEnabled: Bool, metricCount: Int)
-        case customizeMetric(title: String)
-        case settingsAccountRow(
-            label: String,
-            state: AccountStatus,
-            isSelected: Bool,
-            showsSelectionToggle: Bool
-        )
+        case view(AnyView)
     }
 
     let id: String
@@ -44,14 +35,11 @@ struct ReorderLift {
 
 struct ReorderLiftPreview: View {
     let lift: ReorderLift
-    @Environment(AppContainer.self) private var container
-
-    // 프리뷰는 라이브 화면과 동일 뷰 재사용 — density도 함께 읽어 모든 density에서 원본 블록과 일치
-    @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
 
     var body: some View {
         preview
             .frame(width: lift.sourceFrame.width)
+            .background(Theme.panelBody, in: Theme.cardShape)
             .scaleEffect(1.025)
             .shadow(color: .black.opacity(0.18), radius: 14, x: 0, y: 8)
             .position(
@@ -65,64 +53,12 @@ struct ReorderLiftPreview: View {
     @ViewBuilder
     private var preview: some View {
         switch lift.payload {
-        case .dashboardProvider(let provider, let plan, let rows):
-            dashboardProviderPreview(provider: provider, plan: plan, rows: rows)
-        case .dashboardMetric(let data):
-            dashboardMetricPreview(data)
-        case .customizeProviderRow(let provider, let isEnabled, let metricCount):
-            customizeProviderRowPreview(provider: provider, isEnabled: isEnabled, metricCount: metricCount)
-        case .customizeMetric(let title):
-            customizeMetricPreview(title)
-        case .settingsAccountRow(let label, let state, let isSelected, let showsSelectionToggle):
-            AccountSettingsLiftRow(
-                label: label,
-                state: state,
-                isSelected: isSelected,
-                showsSelectionToggle: showsSelectionToggle
-            )
-            .liftedRowSurface()
+        case .view(let view):
+            view
         }
     }
 
-    private func dashboardProviderPreview(provider: Provider, plan: String?, rows: [WidgetData]) -> some View {
-        // 라이브 대시보드 섹션과 동일 구성 (헤더 + 공유 메트릭 카드)
-        VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
-            ProviderSectionHeader(provider: provider, displayName: container.displayName(for: provider), plan: plan)
-                .padding(.horizontal, 8)
 
-            DashboardMetricCard {
-                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                    WidgetRowView(data: row)
-                }
-            }
-        }
-    }
-
-    private func dashboardMetricPreview(_ data: WidgetData) -> some View {
-        WidgetRowView(data: data)
-            .liftedRowSurface()
-    }
-
-    private func customizeProviderRowPreview(provider: Provider, isEnabled: Bool, metricCount: Int) -> some View {
-        // 라이브 L1 행과 동일 구성의 비활성 렌더 — 프리뷰 전체가 non-interactive
-        ProviderListRow(
-            provider: provider,
-            isEnabled: isEnabled,
-            metricCount: metricCount,
-            handle: { $0 }
-        )
-        .liftedRowSurface()
-    }
-
-    private func customizeMetricPreview(_ title: String) -> some View {
-        CustomizeMetricRow(title: title,
-            trailing: {
-                CustomizeStarPlaceholder()
-                CustomizeSwitchPlaceholder()
-            }
-        )
-        .liftedRowSurface()
-    }
 
 }
 

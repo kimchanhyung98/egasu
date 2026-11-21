@@ -52,7 +52,7 @@ final class StalenessLabelTests: XCTestCase {
     func testVeryStaleSnapshotFormatsTooltipInDays() {
         let store = makeStore()
         store.snapshots["devin"] = snapshot(refreshedAt: now.addingTimeInterval(-3 * 24 * 60 * 60))
-        XCTAssertEqual(store.stalenessHint(for: "devin")?.tooltip, "Last updated 3d 0h ago")
+        XCTAssertEqual(store.stalenessHint(for: "devin")?.tooltip, "Last updated 3d ago")
     }
 
     func testFutureRefreshedAtHasNoStalenessLabel() {

@@ -24,7 +24,7 @@ final class DevinProvider: ProviderRuntime {
         usageClient: DevinUsageClient = DevinUsageClient(),
         usageScanner: DevinUsageScanner = DevinUsageScanner(),
         now: @escaping @Sendable () -> Date = Date.init,
-        pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() }
+        pricing: @escaping @Sendable () async -> ModelPricing = { ModelPricingStore.shared.current() }
     ) {
         self.authStore = authStore
         self.usageClient = usageClient
@@ -38,6 +38,7 @@ final class DevinProvider: ProviderRuntime {
             .percent(id: "devin.daily", provider: provider, title: "Daily", metricLabel: "Daily quota")
                 .exportingLimit("daily", unit: "percent"),
             .percent(id: "devin.weekly", provider: provider, title: "Weekly", metricLabel: "Weekly quota")
+                .supportingSoftLimit(.weekly)
                 .exportingLimit("weekly", unit: "percent"),
             .dollarBalance(id: "devin.extra", provider: provider, title: "Extra Balance", metricLabel: "Extra usage balance", valueWord: "left")
                 .exportingLimit("extraUsageBalance", kind: .balance, unit: "usd", source: .value(kind: .dollars))
@@ -70,6 +71,7 @@ final class DevinProvider: ProviderRuntime {
                     } else {
                         category = .other
                     }
+                    snapshot.reportedPartialFailure = category
                     AppDiagnostics.record(
                         .historyScan, result: .degraded,
                         category: category, providerID: provider.id, localContext: scan.warnings.joined(separator: " ")
@@ -79,6 +81,7 @@ final class DevinProvider: ProviderRuntime {
         } catch is CancellationError {
             return snapshot
         } catch {
+            snapshot.reportedPartialFailure = ErrorCategory.classify(error)
             AppDiagnostics.record(.historyScan, result: .failure, providerID: provider.id, error: error)
             appendWarning(error.localizedDescription, to: &snapshot)
         }
@@ -154,7 +157,11 @@ final class DevinProvider: ProviderRuntime {
     }
 
     private func snapshot(from mapped: DevinMappedUsage) -> ProviderSnapshot {
-        ProviderSnapshot.make(provider: provider, plan: mapped.plan, lines: mapped.lines, refreshedAt: now())
+        let observedAt = now()
+        return ProviderSnapshot.make(
+            provider: provider, plan: mapped.plan, lines: mapped.lines, refreshedAt: observedAt,
+            liveQuotaObservedAt: hasSoftLimitQuota(in: mapped.lines) ? observedAt : nil
+        )
     }
 }
 

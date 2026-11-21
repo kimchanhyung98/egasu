@@ -89,7 +89,7 @@ actor CodexResetWatchStore {
         self.workQueue = workQueue
     }
 
-    /// 현재 유효한 forecast — 외부 장애 시 마지막 유효 값 유지, provider refresh와 분리.
+    /// 사용량 조회와 독립적으로 예측 조회. 장애 시 캐시 정책이 허용하는 유효한 예측을 반환.
     func current() async -> CodexResetWatch? {
         await currentResult().watch
     }

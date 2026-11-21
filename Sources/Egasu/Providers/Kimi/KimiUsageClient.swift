@@ -16,31 +16,35 @@ struct KimiUsageClient: Sendable {
         self.now = now
     }
 
-    func fetchUsage(accessToken: String) async throws -> HTTPResponse {
-        try await http.send(HTTPRequest(
-            method: "GET",
-            url: Self.usageURL,
-            headers: [
-                "Authorization": "Bearer \(accessToken)",
-                "Accept": "application/json"
-            ],
-            timeout: 15
-        ))
+    func fetchUsage(accessToken: String, service: KimiService = .standard) async throws -> HTTPResponse {
+        try await http.send(
+            HTTPRequest(
+                method: "GET",
+                url: service.usageURL,
+                headers: [
+                    "Authorization": "Bearer \(accessToken)",
+                    "Accept": "application/json"
+                ],
+                timeout: 15,
+                logEndpoint: "kimi.usage"
+            ))
     }
 
-    func refreshToken(refreshToken: String) async throws -> KimiTokenRefresh {
+    func refreshToken(refreshToken: String, service: KimiService = .standard) async throws -> KimiTokenRefresh {
         let body = [
             "client_id=\(Self.clientID.urlFormEncoded)",
             "grant_type=refresh_token",
             "refresh_token=\(refreshToken.urlFormEncoded)"
         ].joined(separator: "&")
-        let response = try await http.send(HTTPRequest(
-            method: "POST",
-            url: Self.refreshURL,
-            headers: ["Content-Type": "application/x-www-form-urlencoded"],
-            body: Data(body.utf8),
-            timeout: 15
-        ))
+        let response = try await http.send(
+            HTTPRequest(
+                method: "POST",
+                url: service.refreshURL,
+                headers: ["Content-Type": "application/x-www-form-urlencoded"],
+                body: Data(body.utf8),
+                timeout: 15,
+                logEndpoint: "kimi.oauth_refresh"
+            ))
 
         if response.statusCode == 401 || response.statusCode == 403 {
             throw KimiAuthError.refreshRejected

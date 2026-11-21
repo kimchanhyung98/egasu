@@ -1,11 +1,11 @@
 import AppKit
 
-/// Force Touch Taptic Engine 기반 trackpad haptics — 미지원 하드웨어에서는 조용한 no-op.
-/// drag 전용 — mouse-click 액션에서 발화 금지. Force Touch 클릭 자체가 Taptic pulse라 앱 pulse가 겹치면 이중 진동으로 읽힘.
+/// Force Touch 트랙패드의 햅틱 — 미지원 하드웨어에서는 효과 없음.
+/// 드래그 전용 — 클릭 자체의 햅틱과 겹치지 않도록 클릭 동작에서는 호출 금지.
 @MainActor
 enum Haptics {
-    /// "snap" tap — drag이 실제로 새 순서를 commit할 때만 발화, 단순 drag 이동에서는 금지.
-    /// commit당 `.levelChange` pulse 정확히 1회; 최소 간격 floor는 빠른 drag의 연속 pulse가 buzz로 뭉개지는 것 방지.
+    /// 새 순서가 확정된 드래그에서만 햅틱 발생 — 단순 이동에는 미발생.
+    /// 빠른 연속 드래그의 진동이 겹치지 않도록 `.levelChange` 호출 사이 최소 간격 적용.
     private static let minimumSnapInterval: TimeInterval = 0.12
     private static var lastSnapAt: TimeInterval = 0
 

@@ -32,23 +32,27 @@ final class CursorProvider: ProviderRuntime {
     var widgetDescriptors: [WidgetDescriptor] {
         [
             .percent(id: "cursor.usage", provider: provider, title: "Total Usage", metricLabel: "Total usage")
+                .supportingSoftLimit(.weekly, .monthly, allowsDSTOffset: true)
                 .exportingLimit("totalUsage", unit: "percent"),
             .percent(id: "cursor.auto", provider: provider, title: "Auto Usage", metricLabel: "Auto usage")
+                .supportingSoftLimit(.weekly, .monthly, allowsDSTOffset: true)
                 .exportingLimit("autoUsage", unit: "percent"),
             .percent(id: "cursor.api", provider: provider, title: "API Usage", metricLabel: "API usage")
+                .supportingSoftLimit(.weekly, .monthly, allowsDSTOffset: true)
                 .exportingLimit("apiUsage", unit: "percent"),
             .boundedDollars(id: "cursor.onDemand", provider: provider, title: "Extra Usage", metricLabel: "On-demand", limit: 100, valueWord: "spent")
                 .exportingLimit("onDemand", unit: "usd", source: .progressOrValue(kind: .dollars)),
             .boundedCount(id: "cursor.requests", provider: provider, title: "Requests", limit: 500,
                           suffix: "requests", periodDurationMs: CursorUsageMapper.billingPeriodMs)
+            .supportingSoftLimit(.weekly, .monthly, allowsDSTOffset: true)
                 .exportingLimit("requests", unit: "requests"),
             .dollarBalance(id: "cursor.credits", provider: provider, title: "Credits", valueWord: "left")
                 .exportingLimit("credits", kind: .balance, unit: "usd", source: .value(kind: .dollars)),
             .usageTrend(provider: provider)
                 .exportingHistory(
                     scope: .accountWide,
-                    estimatedCost: true,
-                    sourceNote: "From your Cursor usage export"
+                    estimatedCost: false,
+                    sourceNote: WidgetData.cursorUsageHistoryNote
                 )
         ] + WidgetDescriptor.spendTiles(
             provider: provider,
@@ -61,13 +65,27 @@ final class CursorProvider: ProviderRuntime {
         await loadOffMainActor { [authStore] in authStore.loadAuthState() } != nil
     }
 
+    func currentIdentityKey(allowKeychainInteraction: Bool = true) async -> String? {
+        guard
+            let state = await loadOffMainActor({ [authStore] in
+                authStore.loadAuthState(allowKeychainInteraction: allowKeychainInteraction)
+            })
+        else { return nil }
+        let token = refreshedKeychainToken?.source == state ? refreshedKeychainToken?.accessToken : state.accessToken
+        return token.flatMap { CursorUsageClient.session(from: $0)?.userID }
+    }
+
     private var refreshIsDegraded = false
+    private var historyRetryAfter: Date?
+    private var historySessionID: String?
     private var refreshedKeychainToken: (source: CursorAuthState, accessToken: String)?
 
     func refresh() async -> ProviderSnapshot {
         refreshIsDegraded = false
         guard let state = await loadOffMainActor({ [authStore] in authStore.loadAuthState() }) else {
             refreshedKeychainToken = nil
+            historyRetryAfter = nil
+            historySessionID = nil
             return ProviderSnapshot.error(provider: provider, error: CursorAuthError.notLoggedIn)
         }
 
@@ -75,7 +93,11 @@ final class CursorProvider: ProviderRuntime {
             return try await probe(authState: state)
         } catch {
             if error is CursorAuthError { refreshedKeychainToken = nil }
-            return ProviderSnapshot.error(provider: provider, error: error)
+            var failure = ProviderSnapshot.error(provider: provider, error: error)
+            if !Task.isCancelled {
+                failure.producedByIdentityKey = await currentIdentityKey()
+            }
+            return failure
         }
     }
 
@@ -107,6 +129,7 @@ final class CursorProvider: ProviderRuntime {
         }
 
         let fetchedUsage = try await fetchUsageWithRetry(accessToken: accessToken, authState: &authState)
+        let usageObservedAt = now()
         let usageResponse = fetchedUsage.response
         try ProviderAuthRetry.requireSuccess(
             usageResponse,
@@ -126,13 +149,14 @@ final class CursorProvider: ProviderRuntime {
             planInfoUnavailable: planInfoUnavailable
         )
         if fallback.shouldFallback {
-            var mapped = try await usageSummaryAndRequestResult(
+            let (summary, observedAt) = try await usageSummaryAndRequestResult(
                 accessToken: currentToken,
                 planName: planName,
                 unavailableMessage: fallback.message
             )
-            let history = await appendSpendLines(to: &mapped.lines, accessToken: currentToken)
-            return snapshot(mapped, usageHistory: history)
+            var mapped = summary
+            CursorUsageMapper.includeUnresolvedPlanQuota(from: usage, in: &mapped)
+            return await snapshot(mapped, observedAt: observedAt, accessToken: currentToken)
         }
 
         if shouldTryGenericRequestFallback(usage: usage) {
@@ -142,8 +166,8 @@ final class CursorProvider: ProviderRuntime {
                     planName: planName,
                     unavailableMessage: "Cursor request-based usage data unavailable. Try again later."
                 )
-                let history = await appendSpendLines(to: &mapped.lines, accessToken: currentToken)
-                return snapshot(mapped, usageHistory: history)
+                CursorUsageMapper.includeUnresolvedPlanQuota(from: usage, in: &mapped)
+                return await snapshot(mapped, observedAt: now(), accessToken: currentToken)
             } catch {
                 noteDegraded(.cursorFallback, error: error, localContext: "optional request-based usage fallback failed")
             }
@@ -151,63 +175,60 @@ final class CursorProvider: ProviderRuntime {
 
         let creditGrants = await fetchCreditGrants(accessToken: currentToken)
         let stripeBalanceCents = await fetchStripeBalanceCents(accessToken: currentToken)
-        var mapped = try CursorUsageMapper.mapUsage(
+        let mapped = try CursorUsageMapper.mapUsage(
             usage: usage,
             planName: planName,
             creditGrants: creditGrants,
             stripeBalanceCents: stripeBalanceCents
         )
-        let history = await appendSpendLines(to: &mapped.lines, accessToken: currentToken)
-        return snapshot(mapped, usageHistory: history)
+        return await snapshot(mapped, observedAt: usageObservedAt, accessToken: currentToken)
     }
 
-    /// CSV 실패 시 nil 이력 반환 — 기존 한도 유지, 저장소에서 마지막 정상 지출 이력 보존.
+    /// 이력 실패 시 한도는 유지하고 저장소의 마지막 정상 이력을 경고와 함께 표시.
     private func appendSpendLines(to lines: inout [MetricLine], accessToken: String) async -> ProviderUsageHistory? {
-        let calendar = Calendar.current
+        let sessionID = CursorUsageClient.session(from: accessToken)?.userID
+        if historySessionID != sessionID {
+            historyRetryAfter = nil
+            historySessionID = sessionID
+        }
+        if let historyRetryAfter, now() < historyRetryAfter {
+            noteDegraded(
+                .historyScan, category: .http(429), localContext: "usage events retry deferred after rate limit")
+            return nil
+        }
         let end = now()
-        let startOfToday = calendar.startOfDay(for: end)
-        let start = calendar.date(byAdding: .day, value: -29, to: startOfToday) ?? startOfToday
-
-        let response: HTTPResponse?
+        let today = Calendar.current.startOfDay(for: end)
+        let start = Calendar.current.date(byAdding: .day, value: -29, to: today) ?? today
         do {
-            response = try await usageClient.fetchUsageCSV(accessToken: accessToken, start: start, end: end)
+            let events = try await usageClient.fetchUsageEvents(accessToken: accessToken, start: start, end: end)
+            let pricing = await pricing()
+            historyRetryAfter = nil
+            AppDiagnostics.record(.historyScan, result: .success, providerID: provider.id)
+            return CursorUsageMapper.appendSpendLines(rows: events, now: end, pricing: pricing, to: &lines)
+        } catch CursorHistoryError.http(let status, let retryAfter) {
+            if status == 429 { historyRetryAfter = Self.retryDate(retryAfter, receivedAt: now()) }
+            noteDegraded(
+                .historyScan, category: .http(status), localContext: "usage events request returned HTTP \(status)")
         } catch {
-            noteDegraded(.historyScan, error: error, localContext: "usage CSV request failed")
-            return nil
-        }
-        guard let response else {
-            noteDegraded(.historyScan, category: .authInvalid, localContext: "usage CSV request could not be prepared from the current session")
-            return nil
-        }
-        guard (200..<300).contains(response.statusCode) else {
-            noteDegraded(.historyScan, category: .http(response.statusCode), localContext: "usage CSV request returned HTTP \(response.statusCode)")
-            return nil
-        }
-        guard let csv = String(data: response.body, encoding: .utf8) else {
-            noteDegraded(.historyScan, category: .decoding, localContext: "usage CSV response was not valid UTF-8")
-            return nil
-        }
-        let pricing = await pricing()
-        do {
-            let parsed = try CursorUsageCSV.parse(csv: csv, pricing: pricing)
-            if parsed.rejectedRowCount > 0 {
-                noteDegraded(.historyScan, category: .decoding,
-                             localContext: "usage CSV ignored \(parsed.rejectedRowCount) malformed row\(parsed.rejectedRowCount == 1 ? "" : "s")")
-                if parsed.rows.isEmpty { return nil }
-            }
-            if parsed.rejectedRowCount == 0 { AppDiagnostics.record(.historyScan, result: .success, providerID: provider.id) }
-            return CursorUsageMapper.appendSpendLines(rows: parsed.rows, now: end, pricing: pricing, to: &lines)
-        } catch let error as CursorUsageCSVError {
-            switch error {
-            case .missingColumns(let columns):
-                noteDegraded(.historyScan, category: .decoding, error: error, localContext: "usage CSV missing required columns: \(columns.joined(separator: ", "))")
-            case .malformedCSV:
-                noteDegraded(.historyScan, category: .decoding, error: error, localContext: "usage CSV is structurally malformed")
-            }
-        } catch {
-            noteDegraded(.historyScan, category: .decoding, error: error, localContext: "usage CSV could not be parsed")
+            noteDegraded(
+                .historyScan, category: error as? CursorUsageError == .invalidResponse ? .decoding : nil,
+                error: error, localContext: "usage events history could not be loaded completely")
         }
         return nil
+    }
+
+    static func retryDate(_ value: String?, receivedAt: Date) -> Date {
+        if let value, let seconds = Double(value), seconds.isFinite, seconds >= 0 {
+            return receivedAt.addingTimeInterval(seconds)
+        }
+        if let value {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            formatter.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss zzz"
+            if let date = formatter.date(from: value), date > receivedAt { return date }
+        }
+        return receivedAt.addingTimeInterval(3_600)
     }
 
     private func fetchUsageWithRetry(
@@ -217,6 +238,7 @@ final class CursorProvider: ProviderRuntime {
         var currentToken = accessToken
         defer { authState = working }
         let response = try await ProviderAuthRetry.fetch(
+            provider: "cursor",
             token: accessToken,
             attempt: { try await self.usageClient.fetchUsage(accessToken: $0) },
             refreshAccessToken: {
@@ -407,11 +429,14 @@ final class CursorProvider: ProviderRuntime {
         accessToken: String,
         planName: String?,
         unavailableMessage: String
-    ) async throws -> CursorMappedUsage {
+    ) async throws -> (CursorMappedUsage, Date) {
         let summary = await fetchOptionalJSONObject(label: "usage-summary", operation: .cursorSummary, request: {
             try await self.usageClient.fetchUsageSummary(accessToken: accessToken)
         })
-        if let summary, !CursorUsageSummaryMapper.hasUsableSummaryPayload(summary) {
+        let summaryObservedAt = summary.flatMap {
+            CursorUsageSummaryMapper.hasUsableSummaryPayload($0) ? now() : nil
+        }
+        if summary != nil, summaryObservedAt == nil {
             noteDegraded(.cursorSummary, category: .decoding, localContext: "optional usage-summary response contained no usable usage fields")
         }
         let requestUsage = await fetchOptionalJSONObject(label: "request-based usage", operation: .cursorFallback, request: {
@@ -420,18 +445,20 @@ final class CursorProvider: ProviderRuntime {
         if let requestUsage, !CursorUsageSummaryMapper.hasUsableRequestPayload(requestUsage) {
             noteDegraded(.cursorFallback, category: .decoding, localContext: "optional request-based usage response contained no usable usage fields")
         }
-        if let summary, CursorUsageSummaryMapper.hasUsableSummaryPayload(summary) {
+        if summaryObservedAt != nil {
             AppDiagnostics.record(.cursorSummary, result: .success, providerID: provider.id)
         }
         if let requestUsage, CursorUsageSummaryMapper.hasUsableRequestPayload(requestUsage) {
             AppDiagnostics.record(.cursorFallback, result: .success, providerID: provider.id)
         }
-        return try CursorUsageSummaryMapper.map(
+        let mapped = try CursorUsageSummaryMapper.map(
             summary: summary,
             requestUsage: requestUsage,
             planName: planName,
             unavailableMessage: unavailableMessage
         )
+        // 두 응답을 합친 한도는 먼저 받은 데이터의 시각부터 만료.
+        return (mapped, summaryObservedAt ?? now())
     }
 
     private func shouldTryGenericRequestFallback(usage: [String: Any]) -> Bool {
@@ -448,14 +475,24 @@ final class CursorProvider: ProviderRuntime {
         AppDiagnostics.record(operation, result: .degraded, category: category, providerID: provider.id, error: error, localContext: localContext)
     }
 
-    private func snapshot(_ mapped: CursorMappedUsage, usageHistory: ProviderUsageHistory? = nil) -> ProviderSnapshot {
-        ProviderSnapshot.make(
+    private func snapshot(
+        _ mapped: CursorMappedUsage, observedAt: Date, accessToken: String
+    ) async -> ProviderSnapshot {
+        let quotaObservedAt = hasSoftLimitQuota(in: mapped.lines) ? observedAt : nil
+        var lines = mapped.lines
+        let usageHistory = await appendSpendLines(to: &lines, accessToken: accessToken)
+        var snapshot = ProviderSnapshot.make(
             provider: provider,
             plan: mapped.plan,
-            lines: mapped.lines,
+            lines: lines,
             refreshedAt: now(),
             usageHistory: usageHistory,
-            isDegraded: refreshIsDegraded ? true : nil
+            warning: usageHistory == nil ? "Cursor usage history could not be refreshed. Try again later." : nil,
+            isDegraded: refreshIsDegraded ? true : nil,
+            incompleteQuotaWindows: mapped.incompleteQuotaWindows.isEmpty ? nil : mapped.incompleteQuotaWindows,
+            liveQuotaObservedAt: quotaObservedAt
         )
+        snapshot.producedByIdentityKey = CursorUsageClient.session(from: accessToken)?.userID
+        return snapshot
     }
 }

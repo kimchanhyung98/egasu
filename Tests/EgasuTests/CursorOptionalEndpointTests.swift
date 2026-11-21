@@ -3,6 +3,29 @@ import XCTest
 
 @MainActor
 final class CursorOptionalEndpointTests: XCTestCase {
+    func testIncompleteWeeklyLimitPreservesMeasuredBreakdownAndUnknownState() async throws {
+        let provider = makeProvider { request in
+            if request.url == CursorUsageClient.usageURL {
+                let body = """
+                    {"billingCycleStart":1799800000000,"billingCycleEnd":1800404800000,
+                     "planUsage":{"limit":300,"apiPercentUsed":20}}
+                    """
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(body.utf8))
+            }
+            return HTTPResponse(statusCode: 404, headers: [:], body: Data())
+        }
+        let snapshot = await provider.refresh()
+        XCTAssertEqual(snapshot.incompleteQuotaWindows, [.weekly])
+        XCTAssertEqual(progress(snapshot.lines, "API usage")?.used, 20)
+        let now = try XCTUnwrap(snapshot.liveQuotaObservedAt)
+        let observed = try XCTUnwrap(
+            SoftLimitObservation.project(
+                snapshot: snapshot, descriptors: provider.widgetDescriptors, window: .weekly, now: now
+            ))
+        XCTAssertEqual(observed.quotaState(thresholdPercent: 90, at: now), .unknown)
+        XCTAssertEqual(observed.quotaState(thresholdPercent: 10, at: now), .reached)
+    }
+
     func testOptionalSchemaAndHTTPFailuresAreLoggedWithoutDiscardingPrimaryUsage() async throws {
         let diagnostics = DiagnosticEventRecorder()
         let accessToken = makeCursorJWT(includeSubject: true)
@@ -26,6 +49,7 @@ final class CursorOptionalEndpointTests: XCTestCase {
         XCTAssertEqual(progress(snapshot.lines, "Total usage")?.used, 20)
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertEqual(snapshot.isDegraded, true)
+        XCTAssertNil(snapshot.incompleteQuotaWindows)
         XCTAssertTrue(diagnostics.events.contains(DiagnosticEvent(.cursorCredits, result: .degraded, category: .http5xx, providerID: "cursor")))
         XCTAssertTrue(logs.contains("optional plan response contained invalid plan metadata"), logs)
         XCTAssertTrue(logs.contains("optional credit-grants request returned HTTP 503"), logs)
@@ -88,6 +112,32 @@ final class CursorOptionalEndpointTests: XCTestCase {
         XCTAssertEqual(progress(snapshot.lines, "Requests")?.limit, 500)
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertTrue(logs.contains("optional plan response contained invalid plan metadata"), logs)
+    }
+
+    func testEnterpriseOnDemandSpendAloneDoesNotSupplyASubscriptionObservation() async {
+        let provider = makeProvider { request in
+            switch request.url {
+            case CursorUsageClient.usageURL:
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"enabled":true}"#.utf8))
+            case CursorUsageClient.planURL:
+                let plan = #"{"planInfo":{"planName":"enterprise"}}"#
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(plan.utf8))
+            case CursorUsageClient.usageSummaryURL:
+                let summary = """
+                    {"billingCycleStart":"2026-07-01T00:00:00Z","billingCycleEnd":"2026-08-01T00:00:00Z",
+                     "individualUsage":{"onDemand":{"used":500,"limit":1000}}}
+                    """
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(summary.utf8))
+            default:
+                return HTTPResponse(statusCode: 404, headers: [:], body: Data())
+            }
+        }
+
+        let snapshot = await provider.refresh()
+
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertEqual(progress(snapshot.lines, "On-demand")?.used, 5)
+        XCTAssertNil(snapshot.liveQuotaObservedAt)
     }
 
     func testMissingPrepaidBalanceMetadataIsLoggedWithoutDiscardingPrimaryUsage() async throws {
@@ -153,12 +203,10 @@ final class CursorOptionalEndpointTests: XCTestCase {
         let diagnostics = DiagnosticEventRecorder()
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let yesterday = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: -1, to: now))
-        let iso = ISO8601DateFormatter()
-        let csv = """
-        Date,Model,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens
-        \(iso.string(from: now)),test-model,0,0,0,1000000
-        \(iso.string(from: yesterday)),test-model,0,0,0,500000
-        """
+        let body = try CursorEventFixture.page([
+            CursorEventFixture.event(date: now, tokens: 1_000_000, cents: 1_000),
+            CursorEventFixture.event(date: yesterday, tokens: 500_000, cents: 500)
+        ])
         let pricing = ModelPricing(
             supplement: PricingSupplement(),
             primary: PricingCatalog(entries: ["test-model": ModelRates(
@@ -167,13 +215,14 @@ final class CursorOptionalEndpointTests: XCTestCase {
             secondary: PricingCatalog()
         )
         let provider = makeProvider(pricing: pricing) { request in
-            if request.url.path == CursorUsageClient.exportCSVURL.path {
-                return HTTPResponse(statusCode: 200, headers: [:], body: Data(csv.utf8))
+            if request.url.path == CursorUsageClient.usageEventsURL.path {
+                return HTTPResponse(statusCode: 200, headers: [:], body: body)
             }
             if request.url.absoluteString.hasPrefix(CursorUsageClient.restUsageURL.absoluteString) {
-                return HTTPResponse(statusCode: 200, headers: [:], body: Data(
-                    #"{"gpt-4":{"maxRequestUsage":500,"numRequests":100}}"#.utf8
-                ))
+                let usage = """
+                    {"startOfMonth":"2027-01-01T00:00:00Z","gpt-4":{"maxRequestUsage":500,"numRequests":100}}
+                    """
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(usage.utf8))
             }
             switch request.url {
             case CursorUsageClient.usageURL:
@@ -190,6 +239,7 @@ final class CursorOptionalEndpointTests: XCTestCase {
 
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertNil(snapshot.isDegraded)
+        XCTAssertEqual(snapshot.liveQuotaObservedAt, now)
         XCTAssertEqual(progress(snapshot.lines, "Requests")?.used, 100)
         XCTAssertEqual(progress(snapshot.lines, "Requests")?.limit, 500)
         XCTAssertEqual(diagnostics.events.filter { $0.operation == .cursorFallback }, [
@@ -204,7 +254,7 @@ final class CursorOptionalEndpointTests: XCTestCase {
                 continue
             }
             XCTAssertEqual(values, [
-                MetricValue(number: dollars, kind: .dollars, estimated: true),
+                MetricValue(number: dollars, kind: .dollars, estimated: false),
                 MetricValue(number: tokens, kind: .count, label: "tokens")
             ])
         }
@@ -222,12 +272,12 @@ final class CursorOptionalEndpointTests: XCTestCase {
         let failures: [(HTTPResponse?, ErrorCategory)] = [
             (nil, .network),
             (HTTPResponse(statusCode: 503, headers: [:], body: Data()), .http5xx),
-            (HTTPResponse(statusCode: 200, headers: [:], body: Data("not-csv".utf8)), .decoding)
+            (HTTPResponse(statusCode: 200, headers: [:], body: Data("not-json".utf8)), .decoding)
         ]
         for (response, category) in failures {
             let diagnostics = DiagnosticEventRecorder()
             let provider = makeProvider { request in
-                if request.url.path == CursorUsageClient.exportCSVURL.path {
+                if request.url.path == CursorUsageClient.usageEventsURL.path {
                     guard let response else { throw URLError(.cannotConnectToHost) }
                     return response
                 }
@@ -261,7 +311,7 @@ final class CursorOptionalEndpointTests: XCTestCase {
             XCTAssertEqual(diagnostics.events.filter { $0.operation == .historyScan }, [
                 DiagnosticEvent(.historyScan, result: .degraded, category: category, providerID: "cursor")
             ])
-            XCTAssertTrue(logs.contains("usage CSV"), logs)
+            XCTAssertTrue(logs.contains("usage events"), logs)
             XCTAssertFalse(logs.contains(makeCursorJWT(includeSubject: true)), logs)
         }
     }
@@ -293,6 +343,7 @@ final class CursorOptionalEndpointTests: XCTestCase {
         let (snapshot, logs) = try await captureLogs { await provider.refresh() }
 
         XCTAssertNotNil(snapshot.errorCategory)
+        XCTAssertNil(snapshot.liveQuotaObservedAt)
         XCTAssertTrue(logs.contains("optional request-based usage fallback failed"), logs)
         XCTAssertEqual(
             diagnostics.events.filter { $0.operation == .cursorFallback },

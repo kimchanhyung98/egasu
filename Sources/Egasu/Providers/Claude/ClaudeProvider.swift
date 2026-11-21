@@ -49,7 +49,6 @@ final class ClaudeProvider: ProviderRuntime {
     var widgetDescriptors: [WidgetDescriptor] {
         [
             .percent(id: "\(provider.id).session", provider: provider, title: "Session", sessionStartSignal: .missingResetDate)
-                .supportingSoftLimit(.fiveHours)
                 .exportingLimit("session", unit: "percent"),
             .percent(id: "\(provider.id).weekly", provider: provider, title: "Weekly")
                 .supportingSoftLimit(.weekly)
@@ -86,9 +85,13 @@ final class ClaudeProvider: ProviderRuntime {
         return load.desktopStatus == .permissionRequired || load.desktopStatus == .stale
     }
 
+    var usageTimerObservations: [UsageTimerObservation] = []
+    var usageTimerCredentialState: ClaudeCredentialState?
     var refreshIsDegraded = false
 
     func refresh() async -> ProviderSnapshot {
+        usageTimerObservations = []
+        usageTimerCredentialState = nil
         refreshIsDegraded = false
         return await refresh(
             credentialReloadsRemaining: 1,
@@ -171,6 +174,7 @@ final class ClaudeProvider: ProviderRuntime {
         // keychain-우선 순서로 credential source probe. auth-expiry 실패는 다음 source로 폴백;
         // 비-auth 에러(rate limit, transport)는 즉시 표면화 — 실제 장애를 재시도로 가리지 않음.
         var lastFallbackError: ClaudeAuthError?
+        var rejectedGrant: ClaudeUsageStateStore.AuthenticationFailure?
         var credentialGeneration = ClaudeCredentialGeneration(storedCandidates)
         for state in candidates {
             // environment 토큰은 subscription usage 조회 불가 — spend 전용 폴백이 거짓 성공이 되기 전에 Desktop 시도.
@@ -190,6 +194,7 @@ final class ClaudeProvider: ProviderRuntime {
                 let snapshot = try await probe(
                     state: state,
                     credentialGeneration: &credentialGeneration,
+                    rejectedGrant: &rejectedGrant,
                     fallbackWarning: desktopFallbackWarning,
                     requestedAt: requestedAt
                 )
@@ -234,6 +239,7 @@ final class ClaudeProvider: ProviderRuntime {
     private func probe(
         state initialState: ClaudeCredentialState,
         credentialGeneration: inout ClaudeCredentialGeneration,
+        rejectedGrant: inout ClaudeUsageStateStore.AuthenticationFailure?,
         fallbackWarning: ClaudeAuthError?,
         requestedAt: Date
     ) async throws -> ProviderSnapshot {
@@ -254,6 +260,7 @@ final class ClaudeProvider: ProviderRuntime {
             mapped = try await fetchLiveUsage(
                 state: &state,
                 credentialGeneration: &credentialGeneration,
+                rejectedGrant: &rejectedGrant,
                 requestedAt: requestedAt
             )
             // rate-limited notice는 mapped usage에 실어 header 삼각형까지 전달 — badge/note 라인이 레이아웃에 없어도 표시.
@@ -277,7 +284,7 @@ final class ClaudeProvider: ProviderRuntime {
 
         // Claude 원장과 공유 도구 사용량 병합. 두 스캔 모두 전용 액터에서 실행.
         let pricing = await pricing()
-        let nativeScan = await logUsageScanner.scan(now: now(), pricing: pricing)
+        let nativeScan = await logUsageScanner.scan(now: now(), pricing: pricing, sharedRoute: state.sharedLoginRoute)
         let sharedScan = includeSharedUsage
             ? await UsageCollectionCoordinator.shared.scan(providerID: provider.id, now: now(), pricing: pricing)
             : nil
@@ -313,6 +320,7 @@ final class ClaudeProvider: ProviderRuntime {
             warningPresentation: warningPresentation.isEmpty ? nil : warningPresentation,
             authenticationIssue: authenticationIssue,
             isDegraded: refreshIsDegraded ? true : nil,
+            incompleteQuotaWindows: mapped.hasIncompleteWeeklyQuota == true ? [.weekly] : nil,
             liveQuotaObservedAt: mapped.liveQuotaObservedAt,
             quotaObservedAt: mapped.quotaObservedAt,
             usageRetryAfter: mapped.retryAfter

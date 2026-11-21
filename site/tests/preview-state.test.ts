@@ -2,56 +2,119 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { test } from 'node:test';
 import { accountFamilies } from '../src/data/accounts.ts';
-import { settingGroups } from '../src/data/settings.ts';
-import { softLimitWindows } from '../src/data/metrics.ts';
-import { initialPreviewState, changePreference, selectDashboardAccount, activateAccount, restorePreviewState, previewTime } from '../src/data/preview-state.ts';
+import { settingGroups, settingsTabs, alertConditions } from '../src/data/settings.ts';
+import { providerMetrics, softLimitWindowFor, softLimitWindows } from '../src/data/metrics.ts';
+import { initialPreviewState, changePreference, activateAccount, renameAccount, restorePreviewState, previewTime } from '../src/data/preview-state.ts';
 
 const source = (path: string): string => readFileSync(new URL(`../../Sources/Egasu/${path}`, import.meta.url), 'utf8');
 const englishSource = (path: string): string => source(path)
   .replace(/\bL10n\.\w+\(\s*("(?:\\.|[^"\\])*")\s*\)/g, '$1');
 
-test('Settings covers every native section in display order', () => {
-  const body = englishSource('Views/SettingsScreen.swift').split('return VStack(alignment: .leading, spacing: density.sectionSpacing)')[1].split('ScreenCrossLinkRow(')[0];
-  const sections: Record<string, string> = {
-    AccountsSettingsSection: 'Accounts', ICloudSyncSettingsSection: 'iCloud Sync', notificationsSection: 'Notifications',
-    TokscaleSettingsSection: 'Tokscale', commandLineSection: 'Command Line', advancedSection: 'Advanced',
-    SoftLimitSettingsSection: 'Soft Limit',
-  };
-  const native = [...body.matchAll(/section\("([^"]+)"\)|\b(AccountsSettingsSection|ICloudSyncSettingsSection|SoftLimitSettingsSection|notificationsSection|TokscaleSettingsSection|commandLineSection|advancedSection)\b/g)]
-    .map((match) => match[1] ?? sections[match[2]]);
-  assert.ok(native.includes('General'), 'The native section extractor must find the General section');
-  assert.deepEqual(settingGroups.map((group) => group.title), native);
+test('Settings follows the native tab order and covers its named sections', () => {
+  const cases = source('Stores/PopoverState.swift').match(/enum SettingsTab:[^{]+\{\s*case ([^\n]+)/)?.[1];
+  assert.ok(cases);
+  assert.deepEqual(settingsTabs.map((tab) => tab.toLowerCase()), cases.split(',').map((name) => name.trim()));
+  for (const tab of settingsTabs) {
+    const body = englishSource(`Views/Settings/Settings${tab}Tab.swift`);
+    const titles = [...body.matchAll(/Section\(\s*"([^"]+)"\s*\)|}\s*header:\s*\{\s*Text\(\s*"([^"]+)"\s*\)/g)]
+      .map((match) => match[1] ?? match[2]);
+    const groups = settingGroups.filter((group) => group.tab === tab);
+    if (tab === 'Display') assert.ok(titles.includes('Menu Bar Icons'));
+    for (const title of titles) {
+      assert.ok(groups.some((group) => group.title === title), `${tab}: ${title}`);
+    }
+  }
+  assert.ok(!settingGroups.some((group) => group.id === 'accounts'));
 });
 
-test('Settings includes normal native rows and notification triggers', () => {
-  const labels = new Set(settingGroups.flatMap((group) => group.rows.map((row) => row.label)));
-  const hiddenEasterEggs = new Set(['Party Mode', 'Drunk Mode']);
-  const settingsSource = englishSource('Views/SettingsScreen.swift');
-  assert.match(settingsSource, /\bLanguageSettingsRow\(selection:/);
-  const nativeRows = [...settingsSource.matchAll(/row\("([^"]+)"\)/g)].map((match) => match[1]);
-  const languageRows = [...englishSource('Views/LanguageSettingsRow.swift').matchAll(/Text\("([^"]+)"\)\s+Spacer\([^)]*\)\s+Picker\(/g)]
-    .map((match) => match[1]);
-  nativeRows.push(...languageRows);
-  assert.ok(nativeRows.includes('Language'), 'The native row extractor must find the Language picker');
-  assert.ok(nativeRows.includes('Show Total Spend'), 'The native row extractor must keep existing rows');
-  for (const label of nativeRows) {
-    if (!hiddenEasterEggs.has(label)) assert.ok(labels.has(label), label);
+test('Settings matches native control names within each tab', () => {
+  const controlsIn = (view: string) => [...englishSource(`Views/Settings/${view}.swift`)
+    .matchAll(/\b(?:Toggle|Picker|SettingsPicker|LabeledContent|levelPicker)\(\s*"([^"]+)"|SettingsTitle\(\s*title:\s*"([^"]+)"/g)]
+    .map((match) => match[1] ?? match[2])
+    .filter((label) => !label.includes('\\('));
+  const sectionsByTab = {
+    General: ['LanguageSettingsRow', 'ICloudSyncSettingsSection'],
+    Display: [],
+    Alerts: [],
+    Advanced: [],
+    Labs: ['SoftLimitSettingsSection', 'SoftLimitThresholdField', 'TerminalHelperSettingsSection'],
+  };
+  const alerts = englishSource('Views/Settings/SettingsAlertsTab.swift');
+  const conditions = [...alerts.matchAll(/\bconditionRow\(\s*"([^"]+)",\s*info:\s*"[^"]+",\s*shown:\s*\$[\w.]+,/g)];
+  assert.deepEqual(conditions.map(([, name]) => name), ['Warning', 'Critical', 'Burning Fast', 'Use It or Lose It']);
+  assert.deepEqual(conditions.map(([, name]) => name), alertConditions.map((condition) => condition.label));
+  const resetWatchLabel = englishSource('Stores/CodexResetWatchNotificationEvaluator.swift')
+    .match(/settingLabel:\s*String\s*\{\s*"([^"]+)"/)?.[1];
+  assert.ok(resetWatchLabel);
+  assert.match(alerts,
+    /Toggle\(isOn:\s*\$notifications\.codexResetWatch\)\s*\{\s*SettingsTitle\(\s*title:\s*CodexResetWatchNotificationEvaluator\.settingLabel\b/);
+  const tokscale = englishSource('Views/Settings/TokscaleSettingsSection.swift');
+  assert.match(tokscale, /Text\(\s*"Usage Sync"\s*\)/);
+  assert.match(tokscale, /Button\(\s*"Sync"\s*\)\s*\{\s*store\.startSubmit\(\)/);
+  for (const tab of settingsTabs) {
+    const native = controlsIn(`Settings${tab}Tab`).concat(sectionsByTab[tab].flatMap(controlsIn))
+      .filter((label) => !(tab === 'General' && label === 'iCloud Sync'));
+    if (tab === 'Alerts') {
+      native.push(resetWatchLabel, ...conditions.flatMap(([, name]) => [
+        `${name}, Show in Priority`, `${name}, Receive Alerts`,
+      ]));
+    }
+    if (tab === 'Advanced') native.push('Usage Sync');
+    const preview = settingGroups.filter((group) => group.tab === tab)
+      .flatMap((group) => group.rows.map((row) => row.label)).filter(Boolean);
+    assert.deepEqual(preview.sort(), native.sort(), tab);
   }
-  const milestones = englishSource('Support/PaceNotificationLogic.swift').split('var settingLabel: String')[1].split('var notificationTitle')[0];
-  const milestoneLabels = [...milestones.matchAll(/(?:return|case \.\w+:)\s*"([^"]+)"/g)].map((match) => match[1]);
-  assert.equal(milestoneLabels.length, 3, 'Every native notification trigger must be checked');
-  for (const label of milestoneLabels) assert.ok(labels.has(label), label);
-  const resetWatch = englishSource('Stores/CodexResetWatchNotificationEvaluator.swift');
-  const resetWatchLabel = resetWatch.match(/static var settingLabel: String \{ "([^"]+)" \}/)?.[1];
-  assert.ok(resetWatchLabel, 'The native Reset Watch notification label must be checked');
-  assert.ok(labels.has(resetWatchLabel));
+});
+
+test('Labs contains the same feature groups as the native app', () => {
+  const labs = englishSource('Views/Settings/SettingsLabsTab.swift');
+  const groups = settingGroups.filter((group) => group.tab === 'Labs');
+  assert.deepEqual(groups.map((group) => group.title), ['Soft Limit', 'Command Line']);
+  assert.match(labs, /SoftLimitSettingsSection\(/);
+  assert.match(labs, /TerminalHelperSettingsSection\(/);
+  const helper = englishSource('Views/Settings/TerminalHelperSettingsSection.swift');
+  for (const label of ['Install…', 'Uninstall', 'Unavailable']) assert.ok(helper.includes(`"${label}"`), label);
+});
+
+test('Alerts, Soft Limit, and Tokscale expose their preview controls', () => {
+  const expectedRows = {
+    thresholds: { tab: 'Alerts', rows: { warning: 'picker', critical: 'picker' } },
+    conditions: { tab: 'Alerts', rows: {
+      showWarning: 'toggle',
+      warningNotification: 'toggle',
+      showCritical: 'toggle',
+      criticalNotification: 'toggle',
+      showBurningFast: 'toggle',
+      closeToRunningOut: 'toggle',
+      showUseItOrLoseIt: 'toggle',
+      useItOrLoseItNotification: 'toggle',
+    } },
+    notifications: { tab: 'Alerts', rows: { codexResetWatch: 'toggle' } },
+    softLimit: { tab: 'Labs', rows: { softLimitEnabled: 'toggle', softLimitWindow: 'picker', softLimitThreshold: 'number', softLimitCommands: 'action' } },
+    tokscale: { tab: 'Advanced', rows: { usageSync: 'action' } },
+  };
+  for (const [groupId, { tab, rows }] of Object.entries(expectedRows)) {
+    const group = settingGroups.find((group) => group.id === groupId);
+    assert.ok(group, groupId);
+    assert.equal(group.tab, tab, groupId);
+    for (const [id, kind] of Object.entries(rows)) {
+      assert.equal(group.rows.find((row) => row.id === id)?.control.kind, kind, id);
+    }
+  }
+  const softLimit = settingGroups.find((group) => group.id === 'softLimit');
+  for (const id of ['softLimitWindow', 'softLimitThreshold', 'softLimitCommands']) {
+    assert.equal(softLimit?.rows.find((row) => row.id === id)?.requires, 'softLimitEnabled', id);
+  }
 });
 
 test('Soft Limit preserves its threshold, rejects invalid percentages, and defaults to off', () => {
   const initial = initialPreviewState();
   assert.equal(initial.preferences.softLimitEnabled, false);
-  assert.equal(initial.preferences.softLimitWindow, 'Weekly');
+  assert.equal(initial.preferences.softLimitWindow, 'Weekly and Monthly');
   assert.equal(initial.preferences.softLimitThreshold, '90');
+  const window = settingGroups.flatMap((group) => group.rows).find((row) => row.id === 'softLimitWindow')!.control;
+  assert.deepEqual(window.kind === 'picker' && window.options, ['Weekly and Monthly', 'Weekly', 'Monthly']);
+  assert.throws(() => changePreference(initial, 'softLimitWindow', '5 Hours'));
   const changed = changePreference(initial, 'softLimitThreshold', '95');
   assert.equal(restorePreviewState(changed).preferences.softLimitThreshold, '95');
   for (const invalid of ['0', '101', '-1', '90.5', '', 'abc']) {
@@ -60,25 +123,105 @@ test('Soft Limit preserves its threshold, rejects invalid percentages, and defau
   assert.equal(initial.preferences.codexResetWatch, false);
 });
 
+test('Soft Limit migrates the retired session window and preserves saved subscription windows', () => {
+  for (const [stored, expected] of [
+    ['5 Hours', 'Weekly and Monthly'], ['Weekly', 'Weekly'], ['Monthly', 'Monthly'],
+    ['Weekly and Monthly', 'Weekly and Monthly'],
+  ]) {
+    for (const enabled of [true, false]) {
+      const state = restorePreviewState({
+        preferences: { softLimitWindow: stored, softLimitEnabled: enabled, softLimitThreshold: '78', betaUpdates: true },
+        activeAccounts: {},
+      });
+      assert.equal(state.preferences.softLimitWindow, expected);
+      assert.equal(state.preferences.softLimitEnabled, enabled);
+      assert.equal(state.preferences.softLimitThreshold, '78');
+      assert.deepEqual(restorePreviewState(state).preferences, state.preferences);
+    }
+  }
+});
+
+test('beta opt-out clears only Soft Limit consent, including previously stored settings', () => {
+  const initial = initialPreviewState();
+  const enabled = changePreference(changePreference(initial, 'betaUpdates', true), 'softLimitEnabled', true);
+  const configured = changePreference(changePreference(enabled, 'softLimitWindow', 'Monthly'), 'softLimitThreshold', '82');
+  const installed = { ...configured, terminalHelperInstalled: true };
+  const disabled = changePreference(installed, 'betaUpdates', false);
+  assert.equal(disabled.preferences.softLimitEnabled, false);
+  assert.equal(disabled.preferences.softLimitWindow, 'Monthly');
+  assert.equal(disabled.preferences.softLimitThreshold, '82');
+  assert.equal(disabled.terminalHelperInstalled, true);
+  assert.equal(changePreference(disabled, 'betaUpdates', true).preferences.softLimitEnabled, false);
+  for (const betaUpdates of [true, false]) {
+    for (const preferences of [{ betaUpdates, softLimitEnabled: true }, { softLimitEnabled: true, betaUpdates }]) {
+      const restored = restorePreviewState({ ...initial, preferences, terminalHelperInstalled: true });
+      assert.equal(restored.preferences.softLimitEnabled, betaUpdates);
+      assert.equal(restored.terminalHelperInstalled, true);
+    }
+  }
+  const legacy = restorePreviewState({ preferences: { softLimitEnabled: true }, activeAccounts: {} });
+  assert.equal(legacy.preferences.softLimitEnabled, false);
+  assert.equal(legacy.terminalHelperInstalled, false);
+});
+
+const antigravityConstants = Object.fromEntries([...source('Providers/Antigravity/AntigravityMetric.swift')
+  .matchAll(/static let (\w+) = "([^"]+)"/g)].map(([, key, value]) => [`AntigravityMetric.${key}`, value]));
+
+test('the preview lists every Antigravity and Kimi widget in native declaration order', () => {
+  for (const provider of ['Antigravity', 'Kimi']) {
+    const descriptors = source(`Providers/${provider}/${provider}Provider.swift`)
+      .match(/var widgetDescriptors: \[WidgetDescriptor\] \{([\s\S]*?)\n    \}/)?.[1];
+    assert.ok(descriptors, provider);
+    const native = [...descriptors.matchAll(/\bid:\s*("[^"]+"|AntigravityMetric\.\w+)/g)]
+      .map(([, id]) => id.startsWith('"') ? id.slice(1, -1) : antigravityConstants[id]);
+    assert.deepEqual(providerMetrics[provider.toLowerCase()].rows.map((row) => row.id), native, provider);
+  }
+});
+
+test('Soft Limit requires a supported subscription meter and the matching reported cycle', () => {
+  const week = 7 * 24;
+  for (const hours of [28 * 24, 29 * 24, 30 * 24 - 1, 31 * 24 + 1]) {
+    assert.equal(softLimitWindowFor('cursor.usage', hours), 'Monthly');
+    assert.equal(softLimitWindowFor('kiro.credits', hours), 'Monthly');
+  }
+  for (const hours of [week - 1, week, week + 1]) {
+    assert.equal(softLimitWindowFor('cursor.usage', hours), 'Weekly');
+  }
+  assert.equal(softLimitWindowFor('kimi.total', undefined), 'Monthly');
+  assert.equal(softLimitWindowFor('kimi.total', 5), undefined);
+  assert.equal(softLimitWindowFor('cursor.usage', undefined), undefined);
+  assert.equal(softLimitWindowFor('kiro.credits', week), undefined);
+  for (const hours of [5, 24, week - 2, week + 2, 28 * 24 - 2, 31 * 24 + 2, 90 * 24]) {
+    assert.equal(softLimitWindowFor('cursor.usage', hours), undefined);
+  }
+  for (const metric of ['codex.session', 'claude.last30', 'openrouter.month', 'codex.resetWatch']) {
+    assert.equal(softLimitWindowFor(metric, 30 * 24), undefined);
+  }
+});
+
 test('Soft Limit windows match every native provider declaration', () => {
-  const constants = Object.fromEntries([...source('Providers/Antigravity/AntigravityMetric.swift')
-    .matchAll(/static let (\w+) = "([^"]+)"/g)].map((match) => [`AntigravityMetric.${match[1]}`, match[2]]));
-  const native: Record<string, string> = {};
+  const native: Record<string, string[]> = {};
   const files = readdirSync(new URL('../../Sources/Egasu/Providers/', import.meta.url), { recursive: true, encoding: 'utf8' })
     .filter((path) => path.endsWith('Provider.swift'));
   for (const file of files) {
     const family = file.split('/')[0].toLowerCase();
     let metric: string | undefined;
-    for (const match of source(`Providers/${file}`).matchAll(/\bid:\s*("[^"]+"|AntigravityMetric\.\w+)|\.supportingSoftLimit\(\.(fiveHours|weekly)\)/g)) {
+    for (const match of source(`Providers/${file}`).matchAll(/\bid:\s*("[^"]+"|AntigravityMetric\.\w+)|\.supportingSoftLimit\(([^)]+)\)/g)) {
       if (match[1]) {
-        metric = match[1].startsWith('"') ? match[1].slice(1, -1).replace('\\(provider.id)', family) : constants[match[1]];
+        metric = match[1].startsWith('"') ? match[1].slice(1, -1).replace('\\(provider.id)', family) : antigravityConstants[match[1]];
       } else {
         assert.ok(metric, `The native metric ID must be resolved in ${file}`);
-        native[metric] = match[2] === 'fiveHours' ? '5 Hours' : 'Weekly';
+        const windows = [...match[2].matchAll(/\.(\w+)/g)].map(([, window]) => {
+          assert.ok(window === 'weekly' || window === 'monthly', `Unexpected quota period in ${file}: ${window}`);
+          return window === 'weekly' ? 'Weekly' : 'Monthly';
+        });
+        assert.ok(windows.length, `Missing quota period in ${file}`);
+        native[metric] = windows;
       }
     }
   }
-  assert.equal(Object.keys(native).length, 19, 'Every native Soft Limit declaration must be checked');
+  assert.ok(Object.values(native).flat().includes('Weekly'));
+  assert.ok(Object.values(native).flat().includes('Monthly'));
   assert.deepEqual(softLimitWindows, native);
 });
 
@@ -89,7 +232,7 @@ test('Settings includes the native Log Level options and app actions', () => {
   assert.equal(logLevel.kind, 'picker');
   if (logLevel.kind === 'picker') assert.deepEqual(logLevel.options, expected);
   const actions = settingGroups.flatMap((group) => group.rows).flatMap((row) => row.control.kind === 'action' ? [row.control.label] : []);
-  for (const action of ['Record Shortcut', 'Sync', 'Install…', 'Copy Log Path', 'Reveal in Finder', 'Check for Updates…']) assert.ok(actions.includes(action), action);
+  for (const action of ['Record Shortcut', 'Sync', 'Copy Log Path', 'Reveal in Finder', 'Check for Updates…']) assert.ok(actions.includes(action), action);
 });
 
 test('Language offers the three app languages and starts in English', () => {
@@ -113,50 +256,106 @@ test('public account examples are shared, generic, and have one active account',
   for (const family of accountFamilies) {
     assert.ok(family.profiles.every((profile) => /^Account \d+$/.test(profile.name)));
     assert.equal(family.profiles.filter((profile) => profile.id === family.activeAccount).length, 1);
-    assert.equal(settingGroups.find((group) => group.id === 'accounts')!.families, accountFamilies);
   }
 });
 
-test('the web preview starts with both Codex accounts and preserves an explicit single-card choice', () => {
+test('both accounts remain registered when the active account changes', () => {
   const initial = initialPreviewState();
-  assert.equal(initial.preferences.usageCards, 'Separate Cards');
-  assert.equal(accountFamilies.find((family) => family.id === 'codex')?.profiles.length, 2);
-  const single = changePreference(initial, 'usageCards', 'Single Card');
-  assert.equal(restorePreviewState(JSON.parse(JSON.stringify(single))).preferences.usageCards, 'Single Card');
-});
-
-test('dashboard selection does not switch the active account', () => {
-  const before = initialPreviewState();
-  const after = selectDashboardAccount(before, 'claude', 'account-2');
-  assert.equal(after.viewedAccounts.claude, 'account-2');
-  assert.equal(after.activeAccounts.claude, 'account-1');
-  assert.equal(before.viewedAccounts.claude, 'account-1');
-  assert.deepEqual(after.preferences, before.preferences);
-});
-
-test('confirmed Settings switching selects exactly one account and moves the dashboard once', () => {
-  const switched = activateAccount(initialPreviewState(), 'codex', 'account-2');
+  const switched = activateAccount(initial, 'codex', 'account-2');
   assert.equal(switched.activeAccounts.codex, 'account-2');
-  assert.equal(switched.viewedAccounts.codex, 'account-2');
-  const viewed = selectDashboardAccount(switched, 'codex', 'account-1');
-  assert.equal(viewed.activeAccounts.codex, 'account-2');
-  assert.equal(viewed.viewedAccounts.codex, 'account-1');
-  assert.equal(viewed.activeAccounts.claude, 'account-1');
+  assert.equal(switched.activeAccounts.claude, 'account-1');
+  assert.deepEqual(switched.accountOrder.codex, ['account-1', 'account-2']);
+  assert.deepEqual(restorePreviewState(JSON.parse(JSON.stringify(switched))), switched);
 });
 
-test('card presentation preserves both account choices across mode changes and reload', () => {
-  let state = activateAccount(initialPreviewState(), 'claude', 'account-2');
-  state = selectDashboardAccount(state, 'claude', 'account-1');
-  state = changePreference(state, 'usageCards', 'Separate Cards');
-  state = changePreference(state, 'showUsageAs', 'Left');
-  state = changePreference(state, 'resetTimes', 'Countdown');
-  const restored = restorePreviewState(JSON.parse(JSON.stringify(state)));
-  assert.deepEqual(restored, state);
-  const single = changePreference(restored, 'usageCards', 'Single Card');
-  assert.equal(single.viewedAccounts.claude, 'account-1');
-  assert.equal(single.activeAccounts.claude, 'account-2');
-  assert.equal(single.preferences.showUsageAs, 'Left');
-  assert.equal(single.preferences.resetTimes, 'Countdown');
+test('swapped account names restore regardless of saved entry order', () => {
+  let state = changePreference(initialPreviewState(), 'theme', 'Dark');
+  state = renameAccount(state, 'claude', 'account-1', 'Temporary');
+  state = renameAccount(state, 'claude', 'account-2', 'Account 1');
+  state = renameAccount(state, 'claude', 'account-1', 'Account 2');
+  assert.deepEqual(restorePreviewState(JSON.parse(JSON.stringify(state))), state);
+  const reversed = { ...state, accountNames: Object.fromEntries(Object.entries(state.accountNames).reverse()) };
+  assert.deepEqual(restorePreviewState(JSON.parse(JSON.stringify(reversed))), state);
+});
+
+test('restored account names keep normalization and reject final name conflicts', () => {
+  const state = initialPreviewState();
+  const restored = restorePreviewState({ ...state, accountNames: {
+    'claude:account-1': ' Account 2 ', 'claude:account-2': ' ', 'codex:account-1': 'Work',
+  } });
+  assert.deepEqual(restored.accountNames, {
+    'claude:account-1': 'Account 2', 'claude:account-2': 'claude.account-2@example.com', 'codex:account-1': 'Work',
+  });
+  for (const accountNames of [
+    { 'claude:account-1': 'Account 2' },
+    { 'claude:account-1': 'Work', 'claude:account-2': 'Work' },
+    { 'claude:account-1': 'Work', 'claude:account-2': ' work ' },
+    { 'claude:account-1': 'claude.account-2@example.com', 'claude:account-2': '' },
+  ]) {
+    assert.throws(() => restorePreviewState({ ...state, accountNames }), /already in use/);
+  }
+});
+
+test('canonically equivalent account names conflict during rename and restore', () => {
+  const decomposed = 'E\u0301quipe';
+  const state = renameAccount(initialPreviewState(), 'claude', 'account-1', decomposed);
+  assert.equal(restorePreviewState(state).accountNames['claude:account-1'], decomposed);
+  assert.throws(() => renameAccount(state, 'claude', 'account-2', 'équipe'), /already in use/);
+  assert.throws(() => restorePreviewState({
+    ...state, accountNames: { ...state.accountNames, 'claude:account-2': 'équipe' },
+  }), /already in use/);
+});
+
+test('rename and restore reject control characters but keep valid joined names', () => {
+  const initial = initialPreviewState();
+  const key = 'claude:account-1';
+  for (const name of ['Ops\u0000Team', 'Ops\tTeam', 'Ops\u0085Team', '\tOps', 'Ops\n', '\t']) {
+    assert.throws(() => renameAccount(initial, 'claude', 'account-1', name), /control characters/);
+    assert.throws(() => restorePreviewState({ ...initial, accountNames: { [key]: name } }), /control characters/);
+  }
+
+  const name = '팀 👩\u200d💻';
+  const renamed = renameAccount(initial, 'claude', 'account-1', `  ${name}  `);
+  assert.equal(renamed.accountNames[key], name);
+  assert.equal(restorePreviewState({ ...initial, accountNames: { [key]: `  ${name}  ` } }).accountNames[key], name);
+  assert.equal(renameAccount(initial, 'claude', 'account-1', '  ').accountNames[key], 'claude.account-1@example.com');
+});
+
+test('saved account order only accepts registered provider families', () => {
+  const initial = initialPreviewState();
+  const accountOrder = { ...initial.accountOrder, claude: ['account-2', 'account-1'] };
+  assert.deepEqual(restorePreviewState({ ...initial, accountOrder }).accountOrder, accountOrder);
+  for (const family of ['toString', 'valueOf', '__proto__']) {
+    assert.throws(() => restorePreviewState({
+      ...initial, accountOrder: { ...accountOrder, [family]: [] },
+    }), /Invalid preview account order/);
+  }
+});
+
+test('obsolete presentation settings migrate while supported preferences survive', () => {
+  const restored = restorePreviewState({
+    preferences: {
+      usageCards: 'Single Card', density: 'Default', increaseTransparency: true,
+      theme: 'Dark', showUsageAs: 'Left', allUsageLayout: 'Cards',
+      alwaysShowPacing: true, hideFromScreenShare: true, useItOrLoseIt: true,
+      underTenPercent: true, healthyToClose: true,
+    },
+    activeAccounts: { claude: 'account-2' }, viewedAccounts: { claude: 'account-1' },
+  });
+  assert.equal(restored.preferences.usageCards, undefined);
+  assert.equal(restored.preferences.density, undefined);
+  assert.equal(restored.preferences.increaseTransparency, undefined);
+  assert.equal(restored.preferences.paceMarks, true);
+  assert.equal(restored.preferences.privacyMode, true);
+  assert.equal(restored.preferences.useItOrLoseItNotification, true);
+  assert.equal(restored.preferences.criticalNotification, true);
+  assert.equal(restored.preferences.warningNotification, true);
+  assert.equal(restored.preferences.theme, 'Dark');
+  assert.equal(restored.preferences.showUsageAs, 'Left');
+  assert.equal(restored.activeAccounts.claude, 'account-2');
+  assert.equal(restored.preferences.allUsageLayout, 'Cards');
+  assert.deepEqual(restorePreviewState(JSON.parse(JSON.stringify(restored))), restored);
+  assert.throws(() => changePreference(restored, 'allUsageLayout', 'Compact'));
 });
 
 test('invalid stored values cannot inject settings or select unknown accounts', () => {
@@ -167,6 +366,13 @@ test('invalid stored values cannot inject settings or select unknown accounts', 
   assert.throws(() => activateAccount(state, 'codex', 'company'));
   assert.throws(() => restorePreviewState([]));
   assert.throws(() => restorePreviewState({ ...state, preferences: { ...state.preferences, theme: 'invalid' } }));
+  for (const accountNames of [
+    { 'claude:unknown': 'Work' }, { 'unknown:account-1': 'Work' }, { 'claude:account-1:extra': 'Work' },
+    { 'claude:account-1': false }, { 'claude:account-1': 'x'.repeat(61) },
+    { 'claude:account-1': 'Work/Home' }, { 'claude:account-1': 'Work\\Home' },
+  ]) {
+    assert.throws(() => restorePreviewState({ ...state, accountNames }));
+  }
 });
 
 test('time formatting handles noon, midnight, dates, and system preference', () => {

@@ -6,15 +6,15 @@ final class AccountProfilesStoreTests: XCTestCase {
     private var defaults: UserDefaults!
     private var suiteName: String!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         suiteName = "AccountProfilesStoreTests-\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         defaults.removePersistentDomain(forName: suiteName)
-        super.tearDown()
+        try await super.tearDown()
     }
 
     // MARK: - Add
@@ -235,6 +235,25 @@ final class AccountProfilesStoreTests: XCTestCase {
             XCTAssertEqual(error as? AccountProfileError, .registryUnreadable)
         }
         XCTAssertEqual(defaults.data(forKey: AccountProfilesStore.storageKey), original)
+    }
+
+    func testIdentityReplacementCancellationPreservesJournalWhenRegistryUnreadable() throws {
+        let store = AccountProfilesStore(defaults: defaults)
+        let profile = try store.add(family: "claude", label: "Profile", identityKey: "old")
+        let transaction = try store.beginIdentityReplacement(
+            profileID: profile.id, with: "new", replacesSharedAuthentication: true)
+        let validRegistry = try XCTUnwrap(defaults.data(forKey: AccountProfilesStore.storageKey))
+        let journal = try XCTUnwrap(defaults.data(forKey: AccountProfilesStore.identityReplacementKey))
+        defaults.set(Data("invalid".utf8), forKey: AccountProfilesStore.storageKey)
+        let broken = AccountProfilesStore(defaults: defaults)
+        XCTAssertThrowsError(try broken.cancelIdentityReplacement(transaction)) { error in
+            XCTAssertEqual(error as? AccountProfileError, .registryUnreadable)
+        }
+        XCTAssertEqual(defaults.data(forKey: AccountProfilesStore.identityReplacementKey), journal)
+        defaults.set(validRegistry, forKey: AccountProfilesStore.storageKey)
+        let restored = AccountProfilesStore(defaults: defaults)
+        try restored.cancelIdentityReplacement(transaction)
+        XCTAssertNil(try restored.pendingIdentityReplacement())
     }
 
     func testUnreadableIdentityReplacementJournalIsClearedAfterReportingFailure() throws {

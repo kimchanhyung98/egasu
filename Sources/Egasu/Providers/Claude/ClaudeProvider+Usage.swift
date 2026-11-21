@@ -4,18 +4,23 @@ extension ClaudeProvider {
     func fetchLiveUsage(
         state: inout ClaudeCredentialState,
         credentialGeneration: inout ClaudeCredentialGeneration,
+        rejectedGrant: inout ClaudeUsageStateStore.AuthenticationFailure?,
         requestedAt: Date
     ) async throws -> ClaudeMappedUsage {
         let config = try authStore.oauthConfig()
         let accountKey: String
         var verifiedThroughProfile = false
-        if let identity = state.accountIdentityKey, identity.contains("|") {
+        let identity = state.accountIdentityKey
+        if let identity, identity.contains("|") {
             let components = identity.split(separator: "|", omittingEmptySubsequences: false)
             guard components.count == 2,
                   components.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
                 AppLog.error(LogTag.plugin("claude"), "usage blocked: invalid account identity")
                 throw ClaudeUsageStateStore.StoreError.identityUnavailable
             }
+        }
+        // 공유 로그인과 계정 정보는 따로 기록되므로 사용량을 저장하기 전에 토큰 소유자 확인.
+        if let identity, identity.contains("|"), state.sharedLoginRoute == nil {
             accountKey = identity
         } else {
             if case .accountSnapshot = state.source, state.accountIdentityKey?.nilIfEmpty == nil {
@@ -23,7 +28,8 @@ extension ClaudeProvider {
                 throw ClaudeUsageStateStore.StoreError.identityUnavailable
             }
             accountKey = try await recoverUsageIdentity(
-                state: &state, credentialGeneration: &credentialGeneration, config: config
+                state: &state, credentialGeneration: &credentialGeneration, rejectedGrant: &rejectedGrant,
+                config: config
             )
             verifiedThroughProfile = true
         }
@@ -41,7 +47,10 @@ extension ClaudeProvider {
         if let completedAt = record.completedAt, completedAt <= now(),
            (completedAt > requestedAt || (lease.waited && completedAt == requestedAt)) {
             if let failure = record.lastFailure { throw failure }
-            if let failure = record.authenticationFailure?.error(matching: state.oauth, config: config) { throw failure }
+            if let failure = record.authenticationFailure?.error(matching: state.oauth, config: config) {
+                if failure == .sessionExpired { rejectedGrant = record.authenticationFailure }
+                throw failure
+            }
             if var cached = record.lastGood, record.retryAfter == nil, record.authenticationFailure == nil {
                 cached.liveQuotaObservedAt = nil
                 return cached
@@ -55,7 +64,8 @@ extension ClaudeProvider {
             if !verifiedThroughProfile, authStore.needsRefresh(state.oauth),
                let refreshToken = state.oauth.refreshToken, !refreshToken.isEmpty {
                 let refreshed = try await refreshAccessToken(
-                    state: &state, refreshToken: refreshToken, expectedGeneration: expectedGeneration, config: config
+                    state: &state, refreshToken: refreshToken, expectedGeneration: expectedGeneration,
+                    rejectedGrant: &rejectedGrant, config: config
                 )
                 state.oauth.accessToken = refreshed.accessToken
                 if refreshed.persisted { expectedGeneration = expectedGeneration.replacing(state) }
@@ -64,6 +74,7 @@ extension ClaudeProvider {
             var working = state
             defer { state = working }
             let response = try await ProviderAuthRetry.fetch(
+                provider: "claude",
                 token: working.oauth.accessToken ?? "",
                 attempt: { try await self.usageClient.fetchUsage(accessToken: $0, config: config) },
                 refreshAccessToken: {
@@ -72,7 +83,8 @@ extension ClaudeProvider {
                         throw ClaudeAuthError.tokenExpired
                     }
                     let refreshed = try await self.refreshAccessToken(
-                        state: &working, refreshToken: refreshToken, expectedGeneration: expectedGeneration, config: config
+                        state: &working, refreshToken: refreshToken, expectedGeneration: expectedGeneration,
+                        rejectedGrant: &rejectedGrant, config: config
                     )
                     if refreshed.persisted { expectedGeneration = expectedGeneration.replacing(working) }
                     return refreshed.accessToken
@@ -101,6 +113,13 @@ extension ClaudeProvider {
             record.succeeded(mapped, at: observedAt)
             let saved = record
             try await loadOffMainActor { try lease.save(saved) }
+            usageTimerCredentialState = working
+            usageTimerCredentialState?.sourceText = nil
+            let haikuLimits = mapped.lines.filter { $0.label == "Session" || $0.label == "Weekly" }
+            usageTimerObservations = UsageTimerObservation.hasExhaustedQuota(haikuLimits) ? [] : [UsageTimerObservation.from(
+                lines: mapped.lines, accountKey: UsageTimerObservation.accountKey(family: "claude", identity: accountKey),
+                timerID: "claude.session", observedAt: observedAt, startRule: .missingReset
+            )].compactMap { $0 }
             return mapped
         } catch {
             let failure: ClaudeUsageError? = switch error {
@@ -128,6 +147,7 @@ extension ClaudeProvider {
     private func recoverUsageIdentity(
         state: inout ClaudeCredentialState,
         credentialGeneration: inout ClaudeCredentialGeneration,
+        rejectedGrant: inout ClaudeUsageStateStore.AuthenticationFailure?,
         config: ClaudeOAuthConfig
     ) async throws -> String {
         // 신원 확인 전 토큰 갱신도 앱·CLI 사이에서 직렬화. 계정 잠금은 이 잠금을 해제한 뒤 획득.
@@ -143,6 +163,8 @@ extension ClaudeProvider {
         }
         do {
             let response = try await ProviderAuthRetry.fetch(
+                provider: "claude",
+                resource: "profile",
                 token: working.oauth.accessToken ?? "",
                 attempt: { try await self.usageClient.fetchProfile(accessToken: $0, config: config) },
                 refreshAccessToken: {
@@ -151,7 +173,8 @@ extension ClaudeProvider {
                         throw ClaudeAuthError.tokenExpired
                     }
                     let refreshed = try await self.refreshAccessToken(
-                        state: &working, refreshToken: refreshToken, expectedGeneration: expectedGeneration, config: config
+                        state: &working, refreshToken: refreshToken, expectedGeneration: expectedGeneration,
+                        rejectedGrant: &rejectedGrant, config: config
                     )
                     if refreshed.persisted { expectedGeneration = expectedGeneration.replacing(working) }
                     return refreshed.accessToken
@@ -175,6 +198,7 @@ extension ClaudeProvider {
             // 프로필 신원은 사용량 저장 키로만 사용. 로컬 credential 세대와 홈 메타데이터는 변경하지 않음.
             return identity
         } catch {
+            try ProviderAuthRetry.rethrowCancellation(error)
             AppLog.error(LogTag.plugin("claude"), "usage account verification failed")
             if error is DecodingError { throw ClaudeUsageError.invalidResponse }
             throw error
@@ -222,8 +246,23 @@ extension ClaudeProvider {
         state: inout ClaudeCredentialState,
         refreshToken: String,
         expectedGeneration: ClaudeCredentialGeneration,
+        rejectedGrant: inout ClaudeUsageStateStore.AuthenticationFailure?,
         config: ClaudeOAuthConfig
     ) async throws -> RefreshedAccess {
+        // 같은 조회의 다른 출처에 복사된 폐기 토큰은 한 번만 제출.
+        if rejectedGrant?.rejectsRefreshGrant(for: state.oauth, config: config) == true {
+            try await validateUsageCredentials(state, expected: expectedGeneration)
+            throw ClaudeAuthError.sessionExpired
+        }
+        let allowAccountInteraction = ProviderRefreshContext.isManual
+        let rotationCandidate = state
+        let rotation = try await loadOffMainActor { [authStore] in
+            try authStore.beginManagedRotation(
+                for: rotationCandidate, ifUnchanged: expectedGeneration,
+                allowAccountInteraction: allowAccountInteraction)
+        }
+        defer { withExtendedLifetime(rotation) {} }
+        try Task.checkCancellation()
         AppLog.info(LogTag.auth("claude"), "token refresh attempt")
         let decoded: ClaudeRefreshResponse
         do {
@@ -232,6 +271,8 @@ extension ClaudeProvider {
                 let body = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]
                 let errorCode = body?["error"] as? String ?? body?["error_description"] as? String
                 if errorCode == "invalid_grant" {
+                    try await validateUsageCredentials(state, expected: expectedGeneration)
+                    rejectedGrant = .init(ClaudeAuthError.sessionExpired, credentials: state.oauth, config: config)
                     throw ClaudeAuthError.sessionExpired
                 }
                 // 인식 못한 OAuth 에러 코드의 400/401은 만료 확정 아님(proxy/WAF/gateway 가능) —
@@ -243,6 +284,9 @@ extension ClaudeProvider {
             }
             // decoded.accessToken / refreshToken 로깅 금지 — rotation 발생 사실만 기록.
             decoded = try JSONDecoder().decode(ClaudeRefreshResponse.self, from: response.body)
+        } catch ClaudeAuthError.credentialsChanged {
+            AppDiagnostics.record(.credentialRefresh, result: .bindingChanged, providerID: provider.id)
+            throw ClaudeAuthError.credentialsChanged
         } catch {
             AppDiagnostics.failure(.credentialRefresh, error: error, providerID: provider.id, localContext: "token refresh request failed")
             throw error
@@ -258,7 +302,6 @@ extension ClaudeProvider {
         // loudly 실패: save 누락 시 구 refresh token이 디스크에 남아 다음 launch가 무효 토큰으로
         // "session expired" 오인; refresh된 토큰은 이번 세션에 유효하므로 로그 후 계속.
         let persisted: Bool
-        let allowAccountInteraction = ProviderRefreshContext.isManual
         do {
             guard try await Task.detached(priority: .utility, operation: { [authStore, state] in
                 try authStore.save(

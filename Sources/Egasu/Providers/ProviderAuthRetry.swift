@@ -1,15 +1,14 @@
 import Foundation
 
-/// OAuth형 provider 공통 authenticated-fetch 시퀀스: 시도 → 401/403이면 token refresh 후 1회 재시도 → 재차 401/403은 hard auth 실패. auth 실패가 아닌 응답(성공, 429, 5xx)은 그대로 반환 — 해석은 provider mapper 소관.
-/// `refreshAccessToken` closure가 provider별 refresh 전부(refresh token 로드, token endpoint 호출, body 해석, rotated credential 저장)를 소유. Devin은 의도적 미사용 — 401/403 시 token refresh가 아니라 auth source 전환.
+/// OAuth 조회에서 HTTP 401·403을 받으면 토큰을 갱신한 뒤 요청을 한 번만 재시도.
 @MainActor
 enum ProviderAuthRetry {
-    /// "요청 실패"가 아니라 "token 불량"을 뜻하는 status.
+    /// HTTP 401·403을 인증 실패로 분류. 토큰 갱신과 오류 처리는 호출부에서 결정.
     nonisolated static func isAuthFailure(_ response: HTTPResponse) -> Bool {
         response.statusCode == 401 || response.statusCode == 403
     }
 
-    /// 사용 가능한 body를 기대하는 응답의 triage: 401/403은 `authExpired`, 그 외 non-2xx는 `requestFailed(status)`, 2xx는 통과.
+    /// 인증 거절과 기타 HTTP 오류를 호출부의 오류 타입으로 구분.
     nonisolated static func requireSuccess(
         _ response: HTTPResponse,
         authExpired: Error,
@@ -19,8 +18,16 @@ enum ProviderAuthRetry {
         guard (200..<300).contains(response.statusCode) else { throw requestFailed(response.statusCode) }
     }
 
-    /// `attempt`는 최대 2회 호출. `retriedConnectionFailed`는 재시도 중 transport 실패용 별도 오류(Cursor) — 생략 시 `connectionFailed`.
+    /// 취소를 인증·통신 실패로 바꾸거나 실패 로그에 포함하지 않도록 원래 오류 전파.
+    nonisolated static func rethrowCancellation(_ error: Error) throws {
+        if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
+        try Task.checkCancellation()
+    }
+
+    /// 최초 조회와 재조회에서 발생한 통신 오류를 구분. 토큰 갱신과 저장은 호출부에서 처리.
     static func fetch(
+        provider: StaticString,
+        resource: StaticString = "usage",
         token: String,
         attempt: (_ accessToken: String) async throws -> HTTPResponse,
         refreshAccessToken: () async throws -> String,
@@ -28,25 +35,28 @@ enum ProviderAuthRetry {
         retriedConnectionFailed: Error? = nil,
         authExpired: Error
     ) async throws -> HTTPResponse {
-        let response: HTTPResponse
-        do {
-            response = try await attempt(token)
-        } catch {
-            throw connectionFailed
+        let tag = LogTag.auth(String(describing: provider))
+        func request(_ token: String, retry: Bool) async throws -> HTTPResponse {
+            try Task.checkCancellation()
+            do {
+                return try await attempt(token)
+            } catch {
+                try rethrowCancellation(error)
+                let stage = retry ? "retry" : "initial"
+                AppLog.warn(tag, "OAuth resource=\(resource) stage=\(stage) \(AppLog.errorDetails(error))")
+                throw retry ? (retriedConnectionFailed ?? connectionFailed) : connectionFailed
+            }
         }
+
+        let response = try await request(token, retry: false)
         guard isAuthFailure(response) else { return response }
 
-        AppLog.debug(.auth, "\(response.statusCode) -> refreshing token, retrying once")
+        try Task.checkCancellation()
+        AppLog.info(tag, "OAuth resource=\(resource) stage=initial status=\(response.statusCode) action=refresh")
         let refreshed = try await refreshAccessToken()
-
-        let retried: HTTPResponse
-        do {
-            retried = try await attempt(refreshed)
-        } catch {
-            throw retriedConnectionFailed ?? connectionFailed
-        }
+        let retried = try await request(refreshed, retry: true)
         if isAuthFailure(retried) {
-            AppLog.warn(.auth, "retry still unauthorized -> auth expired")
+            AppLog.warn(tag, "OAuth resource=\(resource) stage=retry status=\(retried.statusCode) result=rejected")
             throw authExpired
         }
         return retried

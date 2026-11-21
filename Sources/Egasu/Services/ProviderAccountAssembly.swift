@@ -1,11 +1,10 @@
 import Foundation
 
-/// launch 시점 계정 pass — 기본 home의 로그인 계정 read, custom config dir 스캔,
-/// account registry reconcile 후 카드별 identity map 노출.
-/// launch(앱)·invocation(CLI)당 1회 실행 — 실행 중 계정 swap은 다음 launch에 반영.
+/// 기본 홈과 추가 설정 경로에서 계정을 확인하고 등록 목록을 조정한 뒤 카드별 식별자 제공.
+/// 앱 시작과 계정 목록 재구성 시 실행. CLI는 단발 조회에서 사용.
 @MainActor
 struct ProviderAccountAssembly: Equatable {
-    /// 카드 id → 이번 launch에 로그인된 계정 identity — identity 미해석 카드는 부재.
+    /// 이 구성에서 확인한 카드 ID별 계정 식별자 — 확인하지 못한 카드는 제외.
     let identityKeysByCard: [String: String]
     /// family → bare/default 카드를 뒷받침하는 canonical home — identity와 같은 observer 결과에서 도출.
     var defaultHomePathsByFamily: [String: String] = [:]
@@ -36,14 +35,14 @@ struct ProviderAccountAssembly: Equatable {
 
     /// `waitsForLoginShell`: 메뉴바 앱은 true(Finder/Dock launch는 shell export 미상속 → login-shell 레이어 의존), one-shot CLI는 false.
     /// 앱은 UI가 rename을 관찰하는 동일 `accountsStore`(및 `accountProfiles`) 인스턴스 전달, CLI는 생략.
-    /// 첫 profile import는 Settings의 명시적 동작 — 이 launch read pass에서 실행 금지.
+    /// 첫 프로필 가져오기는 Accounts의 명시적 동작으로 수행.
     static func make(
         defaults: UserDefaults = .standard,
         accountsStore: ProviderAccountsStore? = nil,
         waitsForLoginShell: Bool,
         accountProfiles: AccountProfilesStore? = nil
     ) -> ProviderAccountAssembly {
-        // identity read는 provider auth store와 동일한 `ProcessEnvironmentReader` 경유 — identity 키를 세션 내내 snapshot에 고정해 identity와 usage가 같은 home 해석.
+        // 인증 저장소와 같은 `ProcessEnvironmentReader`를 사용하여 계정 식별자와 사용량이 같은 홈을 참조.
         // 첫 Finder/Dock launch(캡처 미완료·snapshot 부재)는 family별 read skip — override 부재로 오독 금지; process 환경에 override가 보이는 family는 해석 유지.
         let shellFactsReadable = !waitsForLoginShell
             || LoginShellEnvironment.shared.capturedSuccessfully
@@ -65,18 +64,12 @@ struct ProviderAccountAssembly: Equatable {
         let codexManaged = families.contains("codex")
             && !profileStore.profiles(family: "codex").isEmpty
             && FileManager.default.fileExists(atPath: sharedCodexAuthFile)
-        // managed Claude 전환은 `~/.claude`에 identity read 고정 — ambient CLAUDE_CONFIG_DIR로 관리 계정과 관찰 계정이 갈리는 것 방지.
-        let claudeManaged = families.contains("claude")
-            && !profileStore.profiles(family: "claude").isEmpty
         let managedProfiles = profileStore.profiles
         let snapshotProfileIDs = Set(managedProfiles.compactMap { profile in
             AccountCredentialVault().contains(profile: profile) ? profile.id : nil
         })
         return make(
-            observer: DefaultAccountObserver(
-                pinsClaudeSharedHome: claudeManaged,
-                pinsCodexSharedHome: codexManaged
-            ),
+            observer: DefaultAccountObserver(pinsCodexSharedHome: codexManaged),
             accountsStore: accountsStore ?? ProviderAccountsStore(defaults: defaults),
             families: families,
             claudeDiscovery: ClaudeConfigDirDiscovery(),
@@ -85,8 +78,7 @@ struct ProviderAccountAssembly: Equatable {
             snapshotProfileIDs: snapshotProfileIDs,
             codexSharedAuthHome: codexManaged
                 ? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex").path
-                : nil,
-            claudeManagedSwitchActive: claudeManaged
+                : nil
         )
     }
 
@@ -106,9 +98,12 @@ struct ProviderAccountAssembly: Equatable {
         accountProfiles: AccountProfilesStore? = nil,
         managedProfiles: [AccountProfile] = [],
         snapshotProfileIDs: Set<String> = [],
-        codexSharedAuthHome: String? = nil,
-        claudeManagedSwitchActive: Bool = false
+        codexSharedAuthHome: String? = nil
     ) -> ProviderAccountAssembly {
+        // 셸 환경 수집 전에도 등록된 Claude의 기본 카드는 공유 로그인만 사용.
+        let claudeManagedSwitchActive = managedProfiles.contains { $0.family == "claude" && !$0.isArchived }
+        var observer = observer
+        if claudeManagedSwitchActive { observer.pinsClaudeSharedHome = true }
         var identityKeys: [String: String] = [:]
         var defaultHomePaths: [String: String] = [:]
         var observations: [ProviderAccountsStore.AccountObservation] = []
@@ -130,7 +125,7 @@ struct ProviderAccountAssembly: Equatable {
                     label: label,
                     sources: [ProviderAccountSource(kind: .defaultHome, anchor: anchor, holdsDefaultSource: true)]
                 ))
-                AppLog.info(.config, "accounts: \(family) default identity resolved (\(ProviderAccountID.make(family: family, identityKey: identityKey)))")
+                AppLog.info(.config, "accounts: \(family) default identity resolved")
             case .unresolved(let reason):
                 // 실제 로그인이 계정을 식별 못 하는 빈도 관측용 로그.
                 AppLog.info(.config, "accounts: \(family) default identity unresolved — \(reason)")
@@ -149,7 +144,7 @@ struct ProviderAccountAssembly: Equatable {
                 AppLog.info(.config, "discovery: claude default login present but its identity is unreadable → skipping extra-account candidates this launch")
             } else {
                 let defaultKey = identityKeys["claude"]
-                let scan = claudeDiscovery.run()
+                let scan = claudeDiscovery.run(observedDefaultHome: defaultHomePaths["claude"])
                 for note in scan.notes {
                     AppLog.info(.config, "discovery: \(note)")
                 }
@@ -178,7 +173,7 @@ struct ProviderAccountAssembly: Equatable {
                     } else {
                         // 등록하지 않은 계정 — 카드도 record도 만들지 않음. Settings 등록이 노출의 유일한 경로.
                         foundClaudeAccounts.append((identityKey, findings.first?.label, findings))
-                        AppLog.info(.config, "discovery: config-dir login \(ProviderAccountID.make(family: "claude", identityKey: identityKey)) is not registered → not shown")
+                        AppLog.info(.config, "discovery: config-dir login is not registered → not shown")
                     }
                 }
             }

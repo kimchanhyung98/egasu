@@ -10,9 +10,14 @@ enum TelemetryPrivacy {
         "session", "weekly", "monthly", "daily", "today", "week", "month", "trend", "extra",
         "fable", "sonnet", "credits", "balance", "webSearches", "premium", "orgCredits", "orgSpend",
         "chat", "completions", "payAsYouGo", "auto", "api", "plan", "resets", "resetWatch",
-        "sonnetThinking", "gptOss", "geminiPro", "geminiFlash", "geminiWeekly", "claude", "claudeWeekly",
-        "rateLimitResets", "spark", "sparkWeekly", "usage", "onDemand", "requests", "yesterday", "last30", "keyLimit",
+        "sonnetThinking", "gptOss", "geminiPro", "geminiFlash", "geminiWeekly", "claude", "claudeWeekly", "argonWeekly",
+        "rateLimitResets", "spark", "sparkWeekly", "sparkMonthly", "usage", "onDemand", "requests", "yesterday",
+        "last30", "keyLimit",
+        "total", "extraBalance"
     ]
+
+    /// 알려진 이벤트 형식만 허용 — 값이 없거나 모르면 기존 형식 2 사용.
+    private static let schemaVersions: Set<Int> = [2, 3]
 
     static func providerFamily(_ cardID: String) -> String? {
         let family = ProviderAccountID.family(of: cardID)
@@ -36,18 +41,15 @@ enum TelemetryPrivacy {
         if let channel = source["build_channel"] as? String,
            ["development", "stable", "beta", "unknown"].contains(channel) { result["build_channel"] = channel }
         result["$lib"] = "posthog-ios"
-        result["schema_version"] = 2
+        result["schema_version"] = (source["schema_version"] as? Int).flatMap { schemaVersions.contains($0) ? $0 : nil } ?? 2
         if let day = source["day"] as? String,
            day.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil { result["day"] = day }
         switch event {
         case "app_daily_active":
             if let id = source["install_id"] as? String, UUID(uuidString: id) != nil { result["install_id"] = id }
             result["enabled_providers"] = unique((source["enabled_providers"] as? [String] ?? []).compactMap(providerFamily))
-            for key in ["enabled_metric_ids", "pinned_metric_ids", "expanded_metric_ids"] {
+            for key in ["enabled_metric_ids", "pinned_metric_ids"] {
                 result[key] = unique((source[key] as? [String] ?? []).compactMap(metricID))
-            }
-            if let style = source["menu_bar_style"] as? String, ["text", "bars"].contains(style) {
-                result["menu_bar_style"] = style
             }
         case "provider_refresh_daily":
             guard let id = source["provider_id"] as? String, let family = providerFamily(id) else { return nil }

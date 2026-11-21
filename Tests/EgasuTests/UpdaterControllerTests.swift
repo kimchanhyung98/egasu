@@ -4,6 +4,39 @@ import XCTest
 @testable import Egasu
 
 @MainActor
+final class UpdaterLabsTests: XCTestCase {
+    func testBetaChangesSynchronizeLabsWithoutAnUpdateFeed() async throws {
+        let suite = "EgasuTests.UpdaterLabs.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let updater = UpdaterController(defaults: defaults)
+        let settings = SoftLimitSettingsStore(defaults: defaults, labsAvailable: updater.betaChannelEnabled)
+        let revoked = expectation(description: "External beta change revokes consent")
+        updater.onBetaChannelChange = { available in
+            settings.setLabsAvailable(available)
+            if !available { revoked.fulfill() }
+        }
+
+        updater.betaChannelEnabled = true
+        XCTAssertTrue(defaults.bool(forKey: UpdaterController.betaChannelDefaultsKey))
+        settings.enabled = true
+        XCTAssertTrue(settings.isActive)
+        defaults.set(false, forKey: UpdaterController.betaChannelDefaultsKey)
+        await fulfillment(of: [revoked], timeout: 2)
+        XCTAssertFalse(updater.betaChannelEnabled)
+        XCTAssertFalse(settings.enabled)
+        updater.betaChannelEnabled = true
+        XCTAssertFalse(settings.isActive)
+        settings.enabled = true
+        updater.onBetaChannelChange = settings.setLabsAvailable
+        defaults.set(false, forKey: UpdaterController.betaChannelDefaultsKey)
+        defaults.set(true, forKey: UpdaterController.betaChannelDefaultsKey)
+        XCTAssertTrue(updater.betaChannelEnabled)
+        XCTAssertFalse(settings.isActive)
+    }
+}
+
+@MainActor
 final class UpdaterPresentationControllerTests: XCTestCase {
     func testBringToFrontUsesReliableActivationAfterChangingPolicy() {
         var policy = NSApplication.ActivationPolicy.accessory
@@ -61,6 +94,48 @@ final class UpdaterUserDriverDelegateTests: XCTestCase {
 
         XCTAssertTrue(sessionFinished)
         XCTAssertTrue(resolved)
+    }
+}
+
+@MainActor
+final class UpdaterChannelDelegateTests: XCTestCase {
+    func testReplacedUpdaterCannotStartChecksOrFinishTheCurrentCycle() throws {
+        let delegate = UpdaterChannelDelegate()
+        let old = makeUpdater(delegate: delegate)
+        let current = makeUpdater(delegate: delegate)
+        delegate.isCurrentUpdater = { $0 === current }
+        var finishedCount = 0
+        delegate.onUpdateCycleFinished = { finishedCount += 1 }
+
+        XCTAssertThrowsError(try delegate.updater(old, mayPerform: .updatesInBackground)) { error in
+            XCTAssertEqual((error as NSError).domain, SUSparkleErrorDomain)
+            XCTAssertEqual((error as NSError).code, Int(SUError.installationCanceledError.rawValue))
+        }
+        XCTAssertNoThrow(try delegate.updater(current, mayPerform: .updatesInBackground))
+        delegate.updater(old, didFinishUpdateCycleFor: .updatesInBackground, error: nil)
+        XCTAssertEqual(finishedCount, 0)
+        delegate.updater(current, didFinishUpdateCycleFor: .updatesInBackground, error: nil)
+        XCTAssertEqual(finishedCount, 1)
+    }
+
+    func testReplacingTheStandardDelegateReleasesOldPresentationCallbacks() {
+        weak var oldDelegate: UpdaterUserDriverDelegate?
+        var standard: SPUStandardUserDriver?
+        do {
+            let delegate = UpdaterUserDriverDelegate()
+            oldDelegate = delegate
+            delegate.onUpdateResolved = { XCTFail("A replaced delegate must not clear the current banner") }
+            standard = SPUStandardUserDriver(hostBundle: .main, delegate: delegate)
+        }
+
+        XCTAssertNil(oldDelegate)
+        standard?.dismissUpdateInstallation()
+    }
+
+    private func makeUpdater(delegate: UpdaterChannelDelegate) -> SPUUpdater {
+        SPUUpdater(
+            hostBundle: .main, applicationBundle: .main,
+            userDriver: SPUStandardUserDriver(hostBundle: .main, delegate: nil), delegate: delegate)
     }
 }
 

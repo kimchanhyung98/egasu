@@ -1,8 +1,8 @@
 import Foundation
 import Network
 
-/// provider HTTP 요청의 선택적 proxy 라우팅 — `~/.openusage/config.json`의 `{"proxy": {"enabled": true, "url": ...}}` 사용.
-/// 시작 시 1회 로드 — 파일 수정 후 앱 재시작 필요. 부재·비활성·무효·읽기 불가 config는 proxy off. URL 내장 credential 지원, loopback host는 항상 proxy 우회.
+/// 프로바이더 HTTP 요청의 선택 프록시 — ~/.openusage/config.json의 proxy 설정 사용.
+/// 최초 사용 시 한 번 로드 — 설정 변경은 재시작 후 적용, 없거나 읽기 불가·무효·비활성이면 사용 안 함.
 struct ProxyConfig: Equatable, Sendable {
     enum Scheme: String, Equatable, Sendable {
         case socks5
@@ -26,7 +26,7 @@ struct ProxyConfig: Equatable, Sendable {
 
     static let configPath = "~/.openusage/config.json"
 
-    /// 앱 전역 proxy — 첫 사용 시 디스크에서 정확히 1회 read.
+    /// 앱 전역 프록시 — 첫 사용 시 디스크에서 한 번 읽기.
     static let current: ProxyConfig? = load(
         text: try? String(
             contentsOfFile: NSString(string: configPath).expandingTildeInPath,
@@ -34,7 +34,7 @@ struct ProxyConfig: Equatable, Sendable {
         )
     )
 
-    /// config 파일 텍스트 파싱 — `proxy.enabled == true` + 유효한 socks5/http/https URL이 아니면 `nil`(원본이 문서화한 silent-disable 동작).
+    /// proxy.enabled가 true이고 유효한 socks5·http·https URL일 때만 설정 생성 — 나머지는 nil.
     static func load(text: String?) -> ProxyConfig? {
         guard let text,
               let data = text.data(using: .utf8),
@@ -57,7 +57,7 @@ struct ProxyConfig: Equatable, Sendable {
         )
     }
 
-    /// 이 config가 기술하는 Network framework proxy — loopback 항상 제외.
+    /// URL의 인증 정보를 적용한 Network 프록시 — localhost·127.0.0.1·::1은 항상 우회.
     func proxyConfiguration() -> ProxyConfiguration {
         let endpoint = NWEndpoint.hostPort(host: .init(host), port: .init(rawValue: port)!)
         var configuration: ProxyConfiguration

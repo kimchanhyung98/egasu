@@ -2,7 +2,7 @@ import XCTest
 @testable import Egasu
 
 @MainActor
-final class CodexWeeklyTimerCheckScheduleTests: XCTestCase {
+final class UsageTimerCheckScheduleTests: XCTestCase {
     func testLaunchChecksOnceAndThenUsesQuarterHourBoundaries() async {
         let timeline = Timeline(instant(10, 17), steps: [
             .init(at: instant(10, 30), event: .deadline),
@@ -200,7 +200,7 @@ final class CodexWeeklyTimerCheckScheduleTests: XCTestCase {
         let timeline = Timeline(instant(10, 17))
         let gate = WaitGate()
         let task = Task {
-            await CodexWeeklyTimerCheckSchedule.run(
+            await UsageTimerCheckSchedule.run(
                 now: { timeline.now },
                 calendar: { timeline.calendar },
                 wait: { deadline in
@@ -233,7 +233,7 @@ final class CodexWeeklyTimerCheckScheduleTests: XCTestCase {
         var completed: [String] = []
         let gate = WaitGate()
         let task = Task {
-            await CodexWeeklyTimerCheckSchedule.refreshAccounts(["slow", "fast"]) { providerID in
+            await UsageTimerCheckSchedule.refreshAccounts(["slow", "fast"]) { providerID in
                 if providerID == "slow" {
                     slowStarted.fulfill()
                     _ = await gate.wait()
@@ -254,7 +254,7 @@ final class CodexWeeklyTimerCheckScheduleTests: XCTestCase {
         let started = expectation(description: "First account started")
         var cancelled: Set<String> = []
         let task = Task {
-            await CodexWeeklyTimerCheckSchedule.refreshAccounts(["first", "second"]) { providerID in
+            await UsageTimerCheckSchedule.refreshAccounts(["first", "second"]) { providerID in
                 started.fulfill()
                 do { try await Task.sleep(for: .seconds(60)) }
                 catch is CancellationError { cancelled.insert(providerID) }
@@ -273,7 +273,7 @@ final class CodexWeeklyTimerCheckScheduleTests: XCTestCase {
     private final class Timeline {
         struct Step {
             let at: Date
-            let event: CodexWeeklyTimerCheckSchedule.Event
+            let event: UsageTimerCheckSchedule.Event
             var timeZone: TimeZone?
         }
 
@@ -293,7 +293,7 @@ final class CodexWeeklyTimerCheckScheduleTests: XCTestCase {
         }
 
         func run() async {
-            await CodexWeeklyTimerCheckSchedule.run(
+            await UsageTimerCheckSchedule.run(
                 now: { self.now },
                 calendar: { self.calendar },
                 wait: { deadline in
@@ -317,14 +317,14 @@ final class CodexWeeklyTimerCheckScheduleTests: XCTestCase {
     @MainActor
     private final class WaitGate {
         private var finished = false
-        private var continuation: CheckedContinuation<CodexWeeklyTimerCheckSchedule.Event?, Never>?
+        private var continuation: CheckedContinuation<UsageTimerCheckSchedule.Event?, Never>?
 
-        func wait() async -> CodexWeeklyTimerCheckSchedule.Event? {
+        func wait() async -> UsageTimerCheckSchedule.Event? {
             guard !finished else { return nil }
             return await withCheckedContinuation { continuation = $0 }
         }
 
-        func finish(_ event: CodexWeeklyTimerCheckSchedule.Event) {
+        func finish(_ event: UsageTimerCheckSchedule.Event) {
             finished = true
             continuation?.resume(returning: event)
             continuation = nil

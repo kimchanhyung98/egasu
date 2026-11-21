@@ -1,11 +1,11 @@
 import Foundation
 
-/// 자신이 공급할 widget을 등록하는 data source.
+/// 지표가 속한 프로바이더의 표시·집계 메타데이터.
 struct Provider: Identifiable, Hashable {
     let id: String
     let displayName: String
     let icon: IconSource
-    /// 카드 확장 영역에 버튼으로 표시되는 provider별 quick link — 기본값 빈 배열.
+    /// 대시보드의 프로바이더별 상태·외부 페이지 바로가기.
     let links: [ProviderLink]
     let usesDedicatedSpendLines: Bool
 
@@ -20,7 +20,7 @@ struct Provider: Identifiable, Hashable {
         self.usesDedicatedSpendLines = usesDedicatedSpendLines
     }
 
-    /// 렌더 가능한 link만 필터 — trim 후 비어 있지 않은 label·URL, `http(s)` scheme 한정.
+    /// 표시 가능한 링크만 선택 — 공백 제거 후 라벨·URL이 비어 있지 않고 http(s) 방식일 때만 허용.
     var visibleLinks: [ProviderLink] {
         links.compactMap { link in
             let label = link.label.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -33,7 +33,7 @@ struct Provider: Identifiable, Hashable {
     }
 }
 
-/// provider 카드의 외부 quick-link 버튼 하나 — label과 기본 브라우저로 여는 URL.
+/// 프로바이더의 외부 바로가기 — 라벨과 기본 브라우저에서 열 URL.
 struct ProviderLink: Hashable {
     let label: String
     let url: String

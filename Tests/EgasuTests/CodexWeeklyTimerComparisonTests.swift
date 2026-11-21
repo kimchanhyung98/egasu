@@ -63,7 +63,7 @@ final class CodexWeeklyTimerComparisonTests: XCTestCase {
         await settle { probe.finished.count == 1 }
         XCTAssertEqual(probe.verificationTimes.count, 3)
         XCTAssertEqual(probe.executed.count, 1)
-        XCTAssertEqual(probe.reports, ["Weekly timer message completed, but the server reset time could not be confirmed."])
+        XCTAssertEqual(probe.reports, ["Usage timer message completed, but the server reset time could not be confirmed."])
     }
 
     func testFailedMiddleReadBreaksConsecutivePostComparison() async throws {
@@ -283,7 +283,7 @@ final class CodexWeeklyTimerComparisonTests: XCTestCase {
         await settle { probe.finished.count == 1 }
         XCTAssertEqual(probe.verificationTimes.count, 3)
         XCTAssertEqual(probe.waits, [.seconds(65)])
-        XCTAssertEqual(probe.reports, ["Weekly timer message completed, but the server reset time could not be confirmed."])
+        XCTAssertEqual(probe.reports, ["Usage timer message completed, but the server reset time could not be confirmed."])
     }
 
     func testAllFailedPostReadsNeedTwoLateSamplesEvenIfResetMatchesBeforeMessage() async throws {

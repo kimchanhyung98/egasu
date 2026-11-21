@@ -33,19 +33,24 @@ final class ZAIProvider: ProviderRuntime {
         self.pricing = pricing
     }
 
+    var usageTimerObservations: [UsageTimerObservation] = []
+
     var widgetDescriptors: [WidgetDescriptor] {
         [
             .percent(id: "zai.session", provider: provider, title: "Session",
                      metricLabel: "Session")
-                .supportingSoftLimit(.fiveHours)
                 .exportingLimit("session", unit: "percent"),
             .percent(id: "zai.weekly", provider: provider, title: "Weekly",
                      metricLabel: "Weekly")
                 .supportingSoftLimit(.weekly)
                 .exportingLimit("weekly", unit: "percent"),
+            .percent(id: "zai.monthly", provider: provider, title: "Monthly")
+                .supportingSoftLimit(.monthly)
+                .exportingLimit("monthly", unit: "percent"),
             .boundedCount(id: "zai.webSearches", provider: provider, title: "Web Searches",
                           metricLabel: "Web Searches", limit: 1000, suffix: "searches",
                           periodDurationMs: ZAIUsageMapper.monthlyPeriodMs)
+            .supportingSoftLimit(.weekly, .monthly)
                 .exportingLimit("webSearches", unit: "searches")
         ]
     }
@@ -56,13 +61,18 @@ final class ZAIProvider: ProviderRuntime {
     }
 
     func refresh() async -> ProviderSnapshot {
+        usageTimerObservations = []
         let refreshedAt = now()
-        guard let auth = await loadOffMainActor({ [authStore] in authStore.loadAPIKey() }) else {
-            return ProviderSnapshot.error(provider: provider, error: ZAIAuthError.missingKey)
+        let auth: ZAIAuth
+        do {
+            auth = try await loadOffMainActor { [authStore] in try authStore.requireAPIKey() }
+        } catch {
+            return ProviderSnapshot.error(provider: provider, error: error)
         }
 
         // quota endpoint는 필수, subscription endpoint는 plan 이름용 best-effort — subscription 실패가 meter를 지우면 안 됨
         let quota = await load { try await usageClient.fetchQuota(apiKey: auth.apiKey) }
+        let observedAt = now()
         let subscription = await loadOptional { try await usageClient.fetchSubscription(apiKey: auth.apiKey) }
 
         switch quota {
@@ -75,16 +85,18 @@ final class ZAIProvider: ProviderRuntime {
             do {
                 let mapped = try ZAIUsageMapper.map(quotaBody: body, subscriptionBody: subscription)
                 let statistics = await loadStatistics(apiKey: auth.apiKey, at: refreshedAt)
-                if Task.isCancelled {
-                    return ProviderSnapshot.error(provider: provider, error: CancellationError())
-                }
+                let current = try await loadOffMainActor { [authStore] in try authStore.requireAPIKey() }
+                try Task.checkCancellation()
+                guard current == auth else { throw ZAIAuthError.credentialsChanged }
+                recordUsageTimer(lines: mapped.lines, apiKey: auth.apiKey, observedAt: observedAt)
                 return ProviderSnapshot.make(
                     provider: provider, plan: mapped.plan, lines: mapped.lines,
                     totalSpendLines: statistics.lines,
                     refreshedAt: refreshedAt,
                     warning: statistics.warnings.isEmpty ? nil : statistics.warnings.joined(separator: " "),
                     warningPresentation: statistics.warnings.isEmpty ? nil : statistics.warnings.map { LocalizedMessage($0) },
-                    isDegraded: statistics.isDegraded ? true : nil
+                    isDegraded: statistics.isDegraded ? true : nil,
+                    liveQuotaObservedAt: observedAt
                 )
             } catch {
                 return ProviderSnapshot.error(provider: provider, error: error)

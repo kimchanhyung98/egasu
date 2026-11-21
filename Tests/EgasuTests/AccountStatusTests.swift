@@ -16,12 +16,12 @@ final class AccountStatusTests: XCTestCase {
 
     func testExpiredCodexRefreshOverridesLocallyReadySnapshot() async throws {
         let profile = AccountProfile(
-            id: "expired", family: "codex", label: "ch", identityKey: "account-ch", createdAt: .distantPast
+            id: "expired", family: "codex", label: "Account 1", identityKey: "account-1", createdAt: .distantPast
         )
         let keychain = ServiceKeychain()
         try AccountCredentialVault(keychain: keychain).save(
             .init(
-                credential: #"{"tokens":{"access_token":"old-access","refresh_token":"old-refresh","account_id":"account-ch"},"last_refresh":"2000-01-01T00:00:00Z"}"#,
+                credential: #"{"tokens":{"access_token":"old-access","refresh_token":"old-refresh","account_id":"account-1"},"last_refresh":"2000-01-01T00:00:00Z"}"#,
                 claudeOAuthAccount: nil
             ),
             profile: profile

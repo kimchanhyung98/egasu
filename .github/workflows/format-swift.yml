@@ -1,0 +1,55 @@
+name: Format Swift
+
+on:
+  workflow_dispatch:
+  # 베타 작업 종료 후 자동 포매팅을 사용할 때 주석 해제.
+  # push:
+  #   branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: format-swift-main
+  cancel-in-progress: false
+
+jobs:
+  format:
+    if: github.repository == 'kimchanhyung98/egasu' && github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    permissions:
+      contents: write
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift format --version
+
+      - name: Format Swift sources
+        run: make format
+
+      - name: Check formatting
+        run: make format-check
+
+      # GITHUB_TOKEN의 push는 CI를 다시 실행하지 않으므로 정리한 소스를 여기서 검증.
+      - name: Build and test
+        run: make check
+
+      - name: Commit formatting
+        run: |
+          git add -- Package.swift ':(glob)Sources/**/*.swift' ':(glob)Tests/**/*.swift'
+          if git diff --cached --quiet; then
+            echo "Swift formatting is already up to date."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "style: format Swift sources"
+          # 실행 중 main이 바뀌면 push를 실패시켜 새 변경 보존. 최신 main에서 다시 수동 실행.
+          git push origin HEAD:refs/heads/main

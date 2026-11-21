@@ -16,7 +16,7 @@ final class LayoutPersistenceTests: XCTestCase {
         defaults.set(["claude.weekly"], forKey: "layout.expandedMetrics")
         defaults.set(["cursor.requests"], forKey: "layout.expandOnEnable")
         defaults.set(["claude"], forKey: "layout.expandedProviders")
-        defaults.set(MenuBarStyle.bars.rawValue, forKey: "layout.menuBarStyle")
+        defaults.set(["claude.weekly"], forKey: "layout.priorityPins")
 
         let persistence = LayoutPersistence(defaults: defaults, storageKey: "layout")
 
@@ -29,8 +29,13 @@ final class LayoutPersistenceTests: XCTestCase {
         XCTAssertEqual(persistence.loadPins(), ["claude.session"])
         XCTAssertEqual(persistence.loadExpandedMetrics(), ["claude.weekly"])
         XCTAssertEqual(persistence.loadExpandOnEnable(), ["cursor.requests"])
-        XCTAssertEqual(persistence.loadExpandedProviders(), ["claude"])
-        XCTAssertEqual(persistence.loadMenuBarStyle(), .bars)
+        XCTAssertTrue(persistence.hasOnDemandState)
+
+        persistence.clearOnDemandState()
+        XCTAssertFalse(persistence.hasOnDemandState, "On Demand 이전 뒤 캐럿 키 삭제")
+        XCTAssertNil(defaults.object(forKey: "layout.expandedProviders"))
+        XCTAssertEqual(persistence.loadPriorityPins(), ["claude.weekly"])
+        XCTAssertTrue(persistence.hasStoredPriorityPins)
     }
 
     func testSavesEveryExistingKeyAndFormat() throws {
@@ -41,11 +46,7 @@ final class LayoutPersistenceTests: XCTestCase {
         persistence.saveProviderOrder(["cursor", "claude"])
         persistence.saveMetricOrder(["claude": ["claude.weekly", "claude.session"]])
         persistence.saveSeededDefaults(["claude.session"])
-        persistence.savePins(["claude.session"])
-        persistence.saveExpandedMetrics(["claude.weekly"])
-        persistence.saveExpandOnEnable(["cursor.requests"])
-        persistence.saveExpandedProviders(["claude"])
-        persistence.saveMenuBarStyle(.bars)
+        persistence.savePriorityPins(["claude.weekly"])
 
         XCTAssertEqual(try decode([PlacedWidget].self, key: "layout", defaults: defaults).map(\.descriptorID), ["claude.session"])
         XCTAssertEqual(try decode([String].self, key: "layout.providerOrder", defaults: defaults), ["cursor", "claude"])
@@ -54,11 +55,22 @@ final class LayoutPersistenceTests: XCTestCase {
             ["claude.weekly", "claude.session"]
         )
         XCTAssertEqual(try decode([String].self, key: "layout.seededDefaults", defaults: defaults), ["claude.session"])
-        XCTAssertEqual(Set(defaults.stringArray(forKey: "layout.menuBarPins") ?? []), ["claude.session"])
-        XCTAssertEqual(Set(defaults.stringArray(forKey: "layout.expandedMetrics") ?? []), ["claude.weekly"])
-        XCTAssertEqual(Set(defaults.stringArray(forKey: "layout.expandOnEnable") ?? []), ["cursor.requests"])
-        XCTAssertEqual(Set(defaults.stringArray(forKey: "layout.expandedProviders") ?? []), ["claude"])
-        XCTAssertEqual(defaults.string(forKey: "layout.menuBarStyle"), MenuBarStyle.bars.rawValue)
+        XCTAssertEqual(Set(defaults.stringArray(forKey: "layout.priorityPins") ?? []), ["claude.weekly"])
+    }
+
+    func testAccountSwitchPreservesMetricOrderForProviderWithoutProfileMapping() {
+        let defaults = makeDefaults("UnmappedProviderOrder")
+        let persistence = LayoutPersistence(defaults: defaults, storageKey: "layout")
+        persistence.saveDisabledMetrics([])
+        persistence.reconcileAccountProfiles(["codex": "personal"], registry: .mock)
+        let claudeOrder = [
+            "claude.session", "claude.trend", "claude.weekly", "claude.today", "claude.extra"
+        ]
+        persistence.saveMetricOrder(["claude": claudeOrder])
+
+        XCTAssertTrue(persistence.reconcileAccountProfiles(["codex": "work"], registry: .mock))
+
+        XCTAssertEqual(persistence.loadMetricOrder()?["claude"], claudeOrder)
     }
 
     private func decode<T: Decodable>(_ type: T.Type, key: String, defaults: UserDefaults) throws -> T {
@@ -70,6 +82,7 @@ final class LayoutPersistenceTests: XCTestCase {
         let suite = "EgasuTests.LayoutPersistence.\(name).\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
+        addTeardownBlock { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
         return defaults
     }
 }

@@ -9,7 +9,10 @@ enum ProviderParse {
         do {
             return try JSONSerialization.jsonObject(with: data) as? [String: Any]
         } catch {
-            AppLog.warn(.http, "response body is not valid JSON (\(data.count) bytes): \(error.localizedDescription)")
+            AppLog.warn(
+                .http,
+                "response body is not valid JSON (\(data.count) bytes) \(AppLog.errorDetails(error, category: .decoding))"
+            )
             return nil
         }
     }

@@ -104,7 +104,7 @@ final class ProviderAccountAssemblyTests: XCTestCase {
         )
         let discovery = makeDiscovery(
             files: [
-                "/Users/dev/.claude-work/.claude.json": #"{"oauthAccount": {"accountUuid": "ACCT-2", "emailAddress": "work@example.com", "organizationName": "Sunstory"}}"#,
+                "/Users/dev/.claude-work/.claude.json": #"{"oauthAccount": {"accountUuid": "ACCT-2", "emailAddress": "work@example.com", "organizationName": "Company"}}"#,
                 "/Users/dev/.claude-work/.credentials.json": #"{"claudeAiOauth": {"accessToken": "at-2"}}"#,
             ],
             subdirectories: ["/Users/dev/.claude-work"]
@@ -124,6 +124,28 @@ final class ProviderAccountAssemblyTests: XCTestCase {
             assembly.hasUnregisteredClaudeLogins,
             "the other login still gates the Desktop fallback and pi totals"
         )
+        XCTAssertTrue(assembly.defaultClaudeExtraLogRoots.isEmpty)
+    }
+
+    func testWrapperKeepsTheExportedAccountSeparateFromSharedUsage() {
+        let home = URL(fileURLWithPath: "/Users/dev")
+        let other = "/Users/dev/.claude-work"
+        let environment = FakeEnvironment(["SHELL": "/bin/zsh", "CLAUDE_CONFIG_DIR": other])
+        let files = [
+            "/Users/dev/.zshrc": legacyClaudeZshBlock(home: home),
+            "/Users/dev/.claude/.claude.json": claudeUsageTestIdentity("active"),
+            other + "/.claude.json": claudeUsageTestIdentity("other"),
+            other + "/.credentials.json": #"{"claudeAiOauth":{"accessToken":"other"}}"#
+        ]
+        let observer = DefaultAccountObserver(
+            environment: environment, files: FakeFiles(files), keychain: FakeKeychain(), homeDirectory: { home })
+        var discovery = makeDiscovery(files: files, subdirectories: [other])
+        discovery.environment = environment
+        let assembly = ProviderAccountAssembly.make(
+            observer: observer, accountsStore: ProviderAccountsStore(defaults: makeScratchDefaults()),
+            families: ["claude"], claudeDiscovery: discovery)
+        XCTAssertEqual(assembly.identityKeysByCard["claude"], "active|test-org")
+        XCTAssertTrue(assembly.hasUnregisteredClaudeLogins)
         XCTAssertTrue(assembly.defaultClaudeExtraLogRoots.isEmpty)
     }
 
@@ -331,6 +353,8 @@ final class ProviderAccountAssemblyTests: XCTestCase {
         )
 
         let card = try XCTUnwrap(assembly.snapshotCards.first)
+        XCTAssertNil(assembly.identityKeysByCard["claude"])
+        XCTAssertTrue(assembly.claudeManagedSwitchActive, "a cold launch still pins the registered Claude login")
         XCTAssertEqual(assembly.snapshotCards.count, 1)
         XCTAssertEqual(card.family, "claude")
         XCTAssertEqual(card.profileID, personal.id)

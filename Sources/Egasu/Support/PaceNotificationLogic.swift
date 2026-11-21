@@ -1,218 +1,223 @@
 import Foundation
 
-/// 사용자 알림 대상 quota milestone 3종 — 각각 Settings의 per-trigger 토글 하나에 대응, reset window 내 독립 dedup.
+/// 사용량 알림 네 종류 — 조건별 설정과 관측 상태로 중복 방지·재알림 제어.
+/// Critical·Warning은 Priority 기준(남은 양), Burning Fast는 속도, Use It or Lose It은 초기화 직전 남은 양.
 enum PaceMilestone: String, CaseIterable, Hashable, Sendable {
-    /// 기간 내 quota 잔여 비율의 최초 10% 미만 하락.
-    case underTenPercent
-    /// pace 판정의 healthy(파랑) → close-to-limit(노랑) 악화.
-    case healthyToClose
-    /// pace 판정의 close-to-limit(노랑) → running-out(빨강) 악화.
+    /// 기존 Almost Out·Cutting It Close의 저장 키를 유지하여 알림 설정 보존.
+    case critical = "underTenPercent"
+    case warning = "healthyToClose"
     case closeToRunningOut
+    case useItOrLoseIt
 }
 
 extension PaceMilestone {
-    /// Settings 행과 알림 제목이 공유하는 사용자 표시 라벨(의도적으로 일치).
+    var settingKey: String { "openusage.notifications.\(rawValue)" }
+
+    /// 속도로 판정하는 알림 — 나머지는 남은 양 기준.
+    var isPace: Bool { self == .closeToRunningOut }
+
+    /// Priority 단계 알림 — 두 임계값을 한 번에 지나면 활성화된 조건 중 잔여 비율이 더 낮은 임계값 우선.
+    var isLevel: Bool { self == .critical || self == .warning }
+
+    /// Settings 행과 알림 제목 — 누른 알림이 Settings의 한 행으로 이어지게 같은 이름.
     var settingLabel: String {
         switch self {
-        case .underTenPercent: return L10n.metrics("Almost Out")
-        case .healthyToClose: return L10n.metrics("Cutting It Close")
-        case .closeToRunningOut: return L10n.metrics("Will Run Out")
+        case .critical: return L10n.metrics("Critical")
+        case .warning: return L10n.metrics("Warning")
+        case .closeToRunningOut: return L10n.dashboard("Burning Fast")
+        case .useItOrLoseIt: return L10n.metrics("Use It or Lose It")
         }
     }
 
-    /// 알림 제목 — 탭한 알림이 Settings의 한 행으로 되짚어지도록 setting 라벨과 동일.
     var notificationTitle: String { settingLabel }
 
-    /// 알림 본문 — 평이한 판정 문구. subtitle이 provider + metric을 실으므로 본문은 어떤 metric에도 맞는 일반형 유지.
-    var body: String {
-        switch self {
-        case .underTenPercent: return L10n.metrics("Under 10% usage remaining for this window.")
-        case .healthyToClose: return L10n.metrics("Projected to finish close to your limit.")
-        case .closeToRunningOut: return L10n.metrics("Projected to finish before the limit resets.")
-        }
-    }
-
-    /// 발화 조건을 설명하는 Settings 한 줄 tooltip(행 옆 (i)).
+    /// Settings 행 ⓘ 설명.
     var tooltip: String {
         switch self {
-        case .underTenPercent: return L10n.metrics("Alert when a limit drops below 10% remaining.")
-        case .healthyToClose: return L10n.metrics("Alert when a limit is projected to finish with little left.")
-        case .closeToRunningOut: return L10n.metrics("Alert when a limit is projected to finish before it resets.")
+        case .critical: return L10n.metrics("Alert when a limit drops critically low")
+        case .warning: return L10n.metrics("Alert when a limit requires your attention")
+        case .closeToRunningOut: return L10n.metrics("A limit may run out before its reset")
+        case .useItOrLoseIt: return L10n.metrics("Over 50% left a day before its reset")
+        }
+    }
+
+    /// 알림 본문 — 부제목이 프로바이더·지표를 실으므로 어떤 지표에도 맞는 일반형.
+    func body(_ limits: PriorityLimits) -> String {
+        switch self {
+        case .critical: return L10n.metrics("%lld%% or less left for this window.", limits.critical)
+        case .warning: return L10n.metrics("%lld%% or less left for this window.", limits.warning)
+        case .closeToRunningOut: return L10n.metrics("May run out before the limit resets.")
+        case .useItOrLoseIt: return L10n.metrics("Over 50% left, resets in under 24 hours.")
         }
     }
 }
 
-/// `MeterState`에서 파생되는 pace 심각도 bucket.
-/// 신뢰할 pace가 없는 상태(`noData`, absolute-band `level`, 새 session window)는 `untracked`;
-/// `.level`은 잔여 기반 Almost Out milestone은 여전히 발화 가능.
-enum PaceBucket: Hashable, Sendable {
-    /// 행동할 pace 없음(데이터 없음, 단순 level band, 미시작 session window).
-    case untracked
-    /// 파랑: 여유 ≥10%로 종료 예상.
+/// `MeterState`에서 파생한 속도 단계 — 믿을 만한 속도가 없으면 `untracked`.
+enum PaceBucket: Int, Comparable, Hashable, Sendable {
+    case untracked = -1
     case healthy
-    /// 노랑: 마지막 10% 이내 착지 예상.
     case close
-    /// 빨강: reset 전 소진 예상 또는 이미 소진.
     case runningOut
+
+    static func < (lhs: PaceBucket, rhs: PaceBucket) -> Bool { lhs.rawValue < rhs.rawValue }
 }
 
-/// metric(provider + descriptor) 하나의 dedup 상태 — refresh pass를 넘어 유지되어 milestone이 reset window당 1회만 발화.
+/// 지표별 중복 방지 상태 — 갱신 사이에 유지하며 새 주기·상태 회복 시 알림 조건별 재활성화.
 struct NotificationState: Equatable, Sendable {
-    /// fired flag가 속한 window의 reset 시각 — 새 window로 전진하면 fired set이 비워져 같은 milestone 재발화 가능.
+    /// 보낸 기록이 속한 주기의 초기화 시각 — 새 주기로 넘어가면 기록을 비움.
     var resetsAt: Date?
-    /// 현재 window에서 이미 알림된 milestone.
     var firedMilestones: Set<PaceMilestone> = []
-    /// 직전 평가에서 관측된 bucket — 악화 전이 감지용.
     var previousBucket: PaceBucket = .untracked
-    /// 직전 평가에서 잔여 10% 미만이었는지 — 10% 미만 진입을 edge로 만들고 10% 초과 회복 시 re-arm.
-    var wasUnderTenPercent: Bool = false
-    /// 최초의 실제(non-untracked) 관측이 baseline으로 기록되었는지 — 그 전에는 launch 시 이미 나쁜 metric도 발화 없이 기록만 함.
+    var previousSeverity: WidgetData.MeterSeverity = .normal
+    var positiveUsageObservedAt: Date?
+    /// 사용량이 먼저 0으로 돌아온 관측 — 이후 확인한 주기의 시작과 종료를 비교.
+    struct Recovery: Equatable, Sendable {
+        let lastPositiveAt: Date
+        let priorReset: Date
+    }
+    var pendingRecovery: Recovery?
+    /// 첫 실제 관측을 기준선으로 기록했는지 — 실행 직후 이미 나쁜 지표는 알리지 않음.
     var primed: Bool = false
 }
 
-/// 독립적인 milestone별 토글 3개의 현재 상태.
-struct PaceNotificationToggles: Sendable {
-    var underTenPercent: Bool
-    var healthyToClose: Bool
-    var closeToRunningOut: Bool
-
-    func isOn(_ milestone: PaceMilestone) -> Bool {
-        switch milestone {
-        case .underTenPercent: return underTenPercent
-        case .healthyToClose: return healthyToClose
-        case .closeToRunningOut: return closeToRunningOut
-        }
-    }
-}
-
-/// 순수 milestone 로직(SwiftUI·UserNotifications 없음) — 발화 규칙의 단위 테스트 유지.
-/// `WidgetDataStore.evaluateNotifications`가 metric별 현재 상태를 넘기고 반환된 milestone마다 알림 게시.
+/// 순수 알림 판정(SwiftUI·UserNotifications 없음) — 스위치와 무관하게 후보를 내고, 보낼지는 호출자가 결정.
 enum PaceNotificationLogic {
-    /// 평가 1회의 결과 — 지금 발화할 milestone과 다음을 위해 유지할 상태.
+    enum WindowChange {
+        case unchanged, newWindow, delayedRecovery
+    }
+
     struct Transition: Equatable {
         var fire: [PaceMilestone]
         var newState: NotificationState
     }
 
-    /// meter 상태의 pace bucket 매핑. 신뢰할 pace가 없는 상태는 `untracked`; `.level`은 잔여 기반 Almost Out은 발화 가능.
-    static func bucket(for state: WidgetData.MeterState) -> PaceBucket {
+    static func bucket(for state: WidgetData.MeterState, used: Double, hasPaceContext: Bool) -> PaceBucket {
         switch state {
-        case .noData, .level: return .untracked
+        case .noData: return .untracked
+        case .level: return used == 0 ? .healthy : .untracked
         case .healthy: return .healthy
         case .closeToLimit: return .close
-        case .runningOut, .spent: return .runningOut
+        case .runningOut: return .runningOut
+        case .spent: return hasPaceContext ? .runningOut : .untracked
         }
     }
 
-    /// 이 pass에서 발화할 milestone과 유지할 상태 결정.
-    /// dedup 규칙: 새 reset window(jitter 허용치 초과 전진)는 fired set 초기화; pace milestone은 악화 edge + 토글 on + window 내 미발화일 때만 발화.
-    /// `underTenPercent`는 최초 10% 미만 진입에 발화하고 회복 시 re-arm; `untracked`는 pace milestone 억제; 개선은 fired flag를 비워 재발화 허용.
+    /// 이번 평가의 알림 후보와 다음에 이어 갈 상태.
+    /// 후보 순서: Burning Fast → Critical → Warning → Use It or Lose It.
     static func transitions(
         state: WidgetData.MeterState,
-        /// 한도의 잔여 비율 0...1 — 표시 모드와 무관하게 "잔여" 의미 필수(호출자는 `WidgetData.remainingFraction` 전달).
-        fraction: Double,
+        severity: WidgetData.MeterSeverity,
+        used: Double,
         resetsAt: Date?,
+        windowChange: WindowChange,
+        hasPaceContext: Bool,
+        unusedNearReset: Bool,
         previous: NotificationState,
-        toggles: PaceNotificationToggles
+        now: Date
     ) -> Transition {
-        var next = previous
-
-        // 새 window: dedup 초기화. nil이거나 같으면 window 유지, jitter 허용치보다 늦어지면 새로 시작.
-        if resetWindowAdvanced(resetsAt: resetsAt, previousReset: previous.resetsAt) {
-            next.firedMilestones = []
-            next.wasUnderTenPercent = false
-            next.previousBucket = .untracked
-        }
-        next.resetsAt = resetsAt ?? previous.resetsAt
-
-        let currentBucket = bucket(for: state)
-
-        // 실 데이터 없는 tile은 기록 신호를 건드리지 않고 skip — 일시적 no-data가 개선/악화로 읽히면 안 됨(`.level`은 예외로 아래에서 처리).
+        // 데이터 없는 일시 상태는 기록을 건드리지 않음 — 개선·악화로 읽히면 안 됨.
         if state == .noData {
-            return Transition(fire: [], newState: next)
+            return Transition(fire: [], newState: previous)
         }
+        var next = carriedOver(previous, used: used, resetsAt: resetsAt, change: windowChange, now: now)
+        let currentBucket = bucket(for: state, used: used, hasPaceContext: hasPaceContext)
 
-        // launch 후 첫 실제 관측은 발화 없이 baseline만 기록 — 시작부터 나쁜 quota의 launch 직후 알림 방지; window 전진은 re-prime하지 않음.
+        // 실행 후 첫 관측은 기준선만 — 이미 초기화 직전인 지표는 이번 주기에 보낸 것으로 침.
         if !next.primed {
             next.primed = true
-            next.previousBucket = currentBucket
-            next.wasUnderTenPercent = fraction < 0.10
-            next.firedMilestones = []
+            // 처음부터 소진한 상태는 같은 주기의 기간 정보가 뒤늦게 채워져도 새 악화로 알리지 않음.
+            next.previousBucket = state == .spent ? .runningOut : currentBucket
+            next.previousSeverity = severity
+            next.firedMilestones = unusedNearReset ? [.useItOrLoseIt] : []
             return Transition(fire: [], newState: next)
         }
 
         var fire: [PaceMilestone] = []
+        func candidate(_ milestone: PaceMilestone) {
+            if !next.firedMilestones.contains(milestone) { fire.append(milestone) }
+        }
 
-        // pace 판정 edge — live-pace 상태 전용. 파랑→빨강 직행은 Will Run Out만 발화(둘 동시 발화 없음).
         if currentBucket != .untracked {
-            let previousSeverity = severity(next.previousBucket)
-            let currentSeverity = severity(currentBucket)
-            var paceFired = false
-            if currentBucket == .close, previousSeverity < severity(.close) {
-                if maybeFire(.healthyToClose, into: &fire, state: &next, toggles: toggles) { paceFired = true }
-            }
-            if currentSeverity >= severity(.runningOut), previousSeverity < severity(.runningOut) {
-                if maybeFire(.closeToRunningOut, into: &fire, state: &next, toggles: toggles) { paceFired = true }
-            }
-            // pace 개선은 무관해진 fired flag를 비워 이후 악화가 재발화되도록 함.
-            if currentSeverity < previousSeverity {
-                if currentSeverity <= severity(.healthy) { next.firedMilestones.remove(.healthyToClose) }
-                if currentSeverity <= severity(.close) { next.firedMilestones.remove(.closeToRunningOut) }
-            }
-            // 악화가 실제로 알림됐거나 악화가 없을 때만 기록 bucket 전진 — 잡히지 않은 crossing이 조용히 소비되지 않도록 함.
-            if currentSeverity <= previousSeverity || paceFired {
-                next.previousBucket = currentBucket
-            }
+            if currentBucket >= .runningOut, next.previousBucket < .runningOut { candidate(.closeToRunningOut) }
+            // 예상 기말 사용량이 한도의 90% 이하이거나 실제 사용량이 0이면 속도 알림 재활성화.
+            if currentBucket == .healthy { next.firedMilestones.remove(.closeToRunningOut) }
+            next.previousBucket = currentBucket
         }
 
-        // 잔여 10% 미만 edge — pace 판정과 독립적으로 추적, 데이터가 있는 모든 상태(pace 또는 `.level`) 대상. 같은 consume-guard 적용.
-        let underNow = fraction < 0.10
-        let underCrossed = underNow && !next.wasUnderTenPercent
-        var underFired = false
-        if underCrossed, maybeFire(.underTenPercent, into: &fire, state: &next, toggles: toggles) {
-            underFired = true
-        }
-        if !underNow {
-            // 10% 초과 회복 — 이후 하락이 다시 발화하도록 re-arm.
-            next.firedMilestones.remove(.underTenPercent)
-        }
-        if !underCrossed || underFired {
-            next.wasUnderTenPercent = underNow
-        }
+        if severity == .critical, next.previousSeverity != .critical { candidate(.critical) }
+        if severity != .normal, next.previousSeverity == .normal { candidate(.warning) }
+        if severity != .critical { next.firedMilestones.remove(.critical) }
+        if severity == .normal { next.firedMilestones.remove(.warning) }
+        next.previousSeverity = severity
+
+        if unusedNearReset { candidate(.useItOrLoseIt) }
 
         return Transition(fire: fire, newState: next)
     }
 
-    /// milestone이 이번 pass 발화 후보인지(토글 on, window 내 미발화) 판단 후 `fire`에 추가.
-    /// fired 마크는 하지 않음 — dedup 마크는 전달 성공 후에만 호출자가 commit해 실패한 전달이 edge를 소비하지 않도록 함.
-    @discardableResult
-    private static func maybeFire(
-        _ milestone: PaceMilestone,
-        into fire: inout [PaceMilestone],
-        state: inout NotificationState,
-        toggles: PaceNotificationToggles
-    ) -> Bool {
-        guard toggles.isOn(milestone), !state.firedMilestones.contains(milestone) else { return false }
-        fire.append(milestone)
-        return true
-    }
-
-    /// 전이 비교용 pace 심각도 서수(`untracked`는 `healthy` 아래).
-    private static func severity(_ bucket: PaceBucket) -> Int {
-        switch bucket {
-        case .untracked: return -1
-        case .healthy: return 0
-        case .close: return 1
-        case .runningOut: return 2
+    static func windowChange(
+        from previous: NotificationState, used: Double, resetsAt: Date?, period: TimeInterval?, now: Date
+    ) -> WindowChange {
+        guard let oldReset = previous.resetsAt, let resetsAt else { return .unchanged }
+        if let recovery = previous.pendingRecovery, let period,
+            resetsAt.timeIntervalSince(recovery.priorReset) > resetWindowJitterTolerance
+        {
+            let start = resetsAt.addingTimeInterval(-period)
+            if start >= recovery.lastPositiveAt.addingTimeInterval(-resetWindowJitterTolerance),
+                start < recovery.priorReset.addingTimeInterval(-resetWindowJitterTolerance),
+                start <= now.addingTimeInterval(resetWindowJitterTolerance)
+            {
+                return .delayedRecovery
+            }
         }
+        let usageReset = used == 0 && previous.positiveUsageObservedAt != nil
+        return resetWindowAdvanced(resetsAt: resetsAt, previousReset: oldReset, now: now, usageReset: usageReset)
+            ? .newWindow : .unchanged
     }
 
-    /// reset timestamp의 provider 측 millisecond jitter 허용치 — dedup은 유의미한 전진만 re-arm, UI는 정확한 timestamp 표시 유지.
+    static func carriedOver(
+        _ previous: NotificationState, used: Double, resetsAt: Date?, change: WindowChange, now: Date
+    ) -> NotificationState {
+        var next = previous
+        switch change {
+        case .newWindow:
+            next.firedMilestones = []
+            next.previousSeverity = .normal
+            next.previousBucket = .untracked
+            next.pendingRecovery = nil
+        case .delayedRecovery:
+            // 0 회복으로 이미 재활성화된 단계·속도 알림은 새 시각 도착 전에 전송됐을 수 있음.
+            next.firedMilestones.remove(.useItOrLoseIt)
+            next.pendingRecovery = nil
+        case .unchanged:
+            if used == 0, let positiveAt = previous.positiveUsageObservedAt, let priorReset = previous.resetsAt {
+                next.pendingRecovery = .init(lastPositiveAt: positiveAt, priorReset: priorReset)
+            }
+        }
+        next.resetsAt = resetsAt ?? previous.resetsAt
+        next.positiveUsageObservedAt = used > 0 ? now : nil
+        return next
+    }
+
+    static let useItOrLoseItLead: TimeInterval = 24 * 60 * 60
+
+    /// Use It or Lose It — 하루 초과 주기에서 24시간 안에 초기화되고 50% 넘게 남은 한도.
+    /// 세션과 달러 상한은 제외 — 지출 상한은 초기화 때 잃는 것이 없음.
+    static func isUnusedNearReset(_ data: WidgetData, now: Date) -> Bool {
+        guard data.hasData, !data.isForecast, data.kind != .dollars, let resetsAt = data.resetsAt,
+              let periodDurationMs = data.periodDurationMs, periodDurationMs > MetricPeriod.dayMs else { return false }
+        let untilReset = resetsAt.timeIntervalSince(now)
+        return untilReset > 0 && untilReset <= useItOrLoseItLead && Int((data.remainingFraction * 100).rounded()) > 50
+    }
+
+    /// 초기화 시각의 프로바이더 쪽 밀리초 흔들림 허용치 — 의미 있는 전진만 새 주기로.
     static let resetWindowJitterTolerance: TimeInterval = 1
 
-    static func resetWindowAdvanced(resetsAt: Date?, previousReset: Date?) -> Bool {
+    /// 시각만 밀리면 기존 주기 유지. 실제 0 회복과 시각 전진이 함께 관측되면 조기 초기화 허용.
+    static func resetWindowAdvanced(resetsAt: Date?, previousReset: Date?, now: Date, usageReset: Bool = false) -> Bool {
         guard let resetsAt else { return false }
         guard let previousReset else { return true }
         return resetsAt.timeIntervalSince(previousReset) > resetWindowJitterTolerance
+            && (previousReset <= now || usageReset)
     }
 }

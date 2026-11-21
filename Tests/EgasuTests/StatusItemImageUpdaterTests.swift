@@ -154,6 +154,76 @@ final class StatusItemImageUpdaterTests: XCTestCase {
         XCTAssertEqual(recorder.applied, ["updated-strip"])
     }
 
+    func testMenuBarStyleChangesUpdateTheExistingStatusImage() async throws {
+        let suite = "EgasuTests.MenuBarStyleObservation.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let display = DisplaySettingsStore(defaults: defaults)
+        let privacy = makePrivacyStore("styleSwitch", capture: CaptureFlag(isOn: false))
+        let gate = DelayGate()
+        let content = MenuBarContent(items: [.init(
+            id: "codex.weekly", icon: .providerMark("codex"), providerName: "Codex", badge: nil,
+            label: "Weekly", shortLabel: "Weekly", value: "42%", fraction: 0.42
+        )])
+        var images: [NSImage] = []
+        let updater = StatusItemImageUpdater(
+            privacy: privacy,
+            renderButtonImage: { _ in
+                .init(image: MenuBarStripRenderer.image(for: content, style: display.menuBarStyle)!, nextInvalidation: nil)
+            },
+            delay: { await gate.wait() },
+            apply: { images.append($0) }
+        )
+        updater.update()
+        let textWidth = try XCTUnwrap(images.last).size.width
+        for style in [MenuBarStyle.bars, .text] {
+            let count = images.count
+            display.menuBarStyle = style
+            await waitForPendingDelay(gate)
+            gate.releaseAll()
+            for _ in 0..<100 where images.count == count { await Task.yield() }
+            XCTAssertEqual(images.count, count + 1)
+            XCTAssertEqual(try XCTUnwrap(images.last).size.width, style == .bars ? 18 : textWidth)
+        }
+    }
+
+    func testExtraIndicatorsChangesUpdateTheExistingStatusImage() async throws {
+        let suite = "EgasuTests.MenuBarExtrasObservation.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let display = DisplaySettingsStore(defaults: defaults)
+        let privacy = makePrivacyStore("extrasSwitch", capture: CaptureFlag(isOn: false))
+        let gate = DelayGate()
+        var content = MenuBarContent(items: [.init(
+            id: "codex.weekly", icon: .providerMark("codex"), providerName: "Codex", badge: nil,
+            label: "Weekly", shortLabel: "Weekly", value: "42%", fraction: 0.42
+        )], overflow: 2)
+        content.updateAvailable = true
+        let original = content
+        var images: [NSImage] = []
+        let updater = StatusItemImageUpdater(
+            privacy: privacy,
+            renderButtonImage: { _ in
+                let shown = original.showingExtraIndicators(display.showsMenuBarExtras)
+                return .init(image: MenuBarStripRenderer.image(for: shown, style: .bars)!, nextInvalidation: nil)
+            },
+            delay: { await gate.wait() },
+            apply: { images.append($0) }
+        )
+        updater.update()
+        let fullWidth = try XCTUnwrap(images.last).size.width
+        XCTAssertGreaterThan(fullWidth, 18)
+        for shown in [false, true, false] {
+            let count = images.count
+            display.showsMenuBarExtras = shown
+            await waitForPendingDelay(gate)
+            gate.releaseAll()
+            for _ in 0..<100 where images.count == count { await Task.yield() }
+            XCTAssertEqual(images.count, count + 1)
+            XCTAssertEqual(try XCTUnwrap(images.last).size.width, shown ? fullWidth : 18)
+        }
+    }
+
     func testCaptureStartCancelsAPendingOrdinaryRender() async {
         let capture = CaptureFlag(isOn: false)
         let privacy = makePrivacyStore("cancelPending", capture: capture)

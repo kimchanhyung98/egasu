@@ -2,6 +2,59 @@ import XCTest
 @testable import Egasu
 
 final class CursorUsageSummaryMapperTests: XCTestCase {
+    func testMeasuredOverallBucketCompletesKnownMonthlyTotal() throws {
+        let summary: [String: Any] = [
+            "billingCycleStart": "2026-01-01T00:00:00Z",
+            "billingCycleEnd": "2026-02-01T00:00:00Z",
+            "individualUsage": [
+                "plan": ["limit": 500],
+                "overall": ["limit": 500, "used": 100]
+            ]
+        ]
+        let mapped = try CursorUsageSummaryMapper.map(
+            summary: summary, requestUsage: nil, planName: nil, unavailableMessage: "unavailable")
+
+        XCTAssertNotNil(progress(mapped.lines, "Total usage"))
+        XCTAssertTrue(mapped.incompleteQuotaWindows.isEmpty)
+    }
+
+    func testMissingUsageDoesNotMaskMeasuredSummaryOrImplyZero() throws {
+        let incompleteRequests = ["gpt-4": ["maxRequestUsage": 500]]
+        XCTAssertFalse(CursorUsageSummaryMapper.hasUsableRequestPayload(incompleteRequests))
+        let incompletePool = ["limitType": "team", "teamUsage": ["pooled": ["limit": 40_000]]] as [String: Any]
+        XCTAssertFalse(CursorUsageSummaryMapper.hasUsableSummaryPayload(incompletePool))
+        XCTAssertThrowsError(
+            try CursorUsageSummaryMapper.map(
+                summary: incompletePool, requestUsage: incompleteRequests, planName: "Team",
+                unavailableMessage: "unavailable"
+            ))
+        let summary = incompletePool.merging(["individualUsage": ["plan": ["totalPercentUsed": 0]]]) { _, new in new }
+        let measured = try CursorUsageSummaryMapper.map(
+            summary: summary, requestUsage: incompleteRequests, planName: "Team", unavailableMessage: "unavailable"
+        )
+        XCTAssertEqual(measured.lines.map(\.label), ["Total usage"])
+        XCTAssertEqual(progress(measured.lines, "Total usage")?.used, 0)
+        XCTAssertEqual(measured.incompleteQuotaWindows, [.weekly, .monthly])
+    }
+
+    func testDamagedRequestBucketDoesNotInvalidateACompleteWeeklyPlan() throws {
+        let summary: [String: Any] = [
+            "billingCycleStart": "2026-02-01T00:00:00Z", "billingCycleEnd": "2026-02-08T00:00:00Z",
+            "individualUsage": ["plan": ["autoPercentUsed": 10], "onDemand": ["limit": 200]]
+        ]
+        let measured = try CursorUsageSummaryMapper.map(
+            summary: summary, requestUsage: ["gpt-4": ["maxRequestUsage": 500]],
+            planName: "Team", unavailableMessage: "unavailable"
+        )
+        XCTAssertEqual(measured.lines.map(\.label), ["Auto usage"])
+        XCTAssertEqual(measured.incompleteQuotaWindows, [.monthly])
+        let noQuota = try CursorUsageSummaryMapper.map(
+            summary: summary, requestUsage: ["gpt-4": ["maxRequestUsage": 0]],
+            planName: "Team", unavailableMessage: "unavailable"
+        )
+        XCTAssertTrue(noQuota.incompleteQuotaWindows.isEmpty)
+    }
+
     func testCombinesLiveEnterpriseRequestAndIndividualOnDemandShapes() throws {
         let mapped = try CursorUsageSummaryMapper.map(
             summary: [
@@ -49,6 +102,33 @@ final class CursorUsageSummaryMapperTests: XCTestCase {
         XCTAssertEqual(onDemand.used, 0)
         XCTAssertEqual(onDemand.limit, 250)
         XCTAssertEqual(onDemand.format, .dollars)
+    }
+
+    func testWeeklyPlanAndMonthlyRequestPoolKeepTheirOwnCycles() throws {
+        let summary: [String: Any] = [
+            "billingCycleStart": "2026-02-01T00:00:00Z",
+            "billingCycleEnd": "2026-02-08T00:00:00Z",
+            "individualUsage": ["plan": ["totalPercentUsed": 92, "autoPercentUsed": 18]]
+        ]
+        var request: [String: Any] = [
+            "startOfMonth": "2026-02-01T00:00:00Z",
+            "gpt-4": ["numRequests": 2, "maxRequestUsage": 10]
+        ]
+        let mapped = try CursorUsageSummaryMapper.map(
+            summary: summary, requestUsage: request,
+            planName: "Enterprise", unavailableMessage: "unavailable")
+        XCTAssertEqual(progress(mapped.lines, "Auto usage")?.periodDurationMs, MetricPeriod.weekMs)
+        XCTAssertEqual(progress(mapped.lines, "Total usage")?.used, 92)
+        XCTAssertEqual(progress(mapped.lines, "Total usage")?.periodDurationMs, MetricPeriod.weekMs)
+        XCTAssertEqual(progress(mapped.lines, "Requests")?.periodDurationMs, 28 * MetricPeriod.dayMs)
+        XCTAssertEqual(progress(mapped.lines, "Requests")?.resetsAt, EgasuISO8601.date(from: "2026-03-01T00:00:00Z"))
+
+        request.removeValue(forKey: "startOfMonth")
+        let partial = try CursorUsageSummaryMapper.map(
+            summary: summary, requestUsage: request,
+            planName: "Enterprise", unavailableMessage: "unavailable")
+        XCTAssertNil(progress(partial.lines, "Requests")?.periodDurationMs)
+        XCTAssertEqual(progress(partial.lines, "Requests")?.used, 2)
     }
 
     func testFallsBackToPooledTotalAndTeamOnDemandWhenIndividualBucketsAreMissing() throws {
@@ -159,10 +239,9 @@ final class CursorEnterpriseProviderTests: XCTestCase {
     func testRefreshCombinesEnterpriseMetersAndStillAppendsUsageHistory() async throws {
         let now = try XCTUnwrap(EgasuISO8601.date(from: "2026-07-13T12:00:00.000Z"))
         let accessToken = makeSummaryCursorJWT(sub: "google-oauth2|enterprise-user")
-        let csv = """
-        Date,Model,Max Mode,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens,Cost
-        2026-07-13T10:00:00Z,composer-1,No,0,1000,0,100,Included
-        """
+        let body = try CursorEventFixture.page([
+            CursorEventFixture.event(date: now, tokens: 1_100, cents: 0, kind: "USAGE_EVENT_KIND_INCLUDED")
+        ])
         let http = RoutingHTTPClient { request in
             if request.url == CursorUsageClient.usageURL {
                 return HTTPResponse(
@@ -207,8 +286,8 @@ final class CursorEnterpriseProviderTests: XCTestCase {
                 }
                 """.utf8))
             }
-            if request.url.absoluteString.hasPrefix(CursorUsageClient.exportCSVURL.absoluteString) {
-                return HTTPResponse(statusCode: 200, headers: [:], body: Data(csv.utf8))
+            if request.url.absoluteString.hasPrefix(CursorUsageClient.usageEventsURL.absoluteString) {
+                return HTTPResponse(statusCode: 200, headers: [:], body: body)
             }
             return HTTPResponse(statusCode: 404, headers: [:], body: Data())
         }
@@ -226,6 +305,7 @@ final class CursorEnterpriseProviderTests: XCTestCase {
 
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertEqual(snapshot.plan, "Enterprise")
+        XCTAssertEqual(snapshot.liveQuotaObservedAt, now)
         XCTAssertEqual(progress(snapshot.lines, "Total usage")?.used, 37)
         XCTAssertEqual(progress(snapshot.lines, "Total usage")?.limit, 750)
         XCTAssertEqual(progress(snapshot.lines, "On-demand")?.limit, 250)
@@ -244,7 +324,7 @@ final class CursorEnterpriseProviderTests: XCTestCase {
                 $0.name == "user" && $0.value == "enterprise-user"
             } == true
         })
-        XCTAssertTrue(http.requests.contains { $0.url.absoluteString.hasPrefix(CursorUsageClient.exportCSVURL.absoluteString) })
+        XCTAssertTrue(http.requests.contains { $0.url.absoluteString.hasPrefix(CursorUsageClient.usageEventsURL.absoluteString) })
 
         let descriptors = provider.widgetDescriptors
         let runtime = TestProviderRuntime(
@@ -253,8 +333,9 @@ final class CursorEnterpriseProviderTests: XCTestCase {
             snapshot: snapshot
         )
         let defaults = isolatedDefaults("default-widget")
+        let registry = WidgetRegistry(providers: [provider.provider], descriptors: descriptors)
         let store = WidgetDataStore(
-            registry: WidgetRegistry(providers: [provider.provider], descriptors: descriptors),
+            registry: registry,
             providers: [runtime],
             cache: isolatedCache(defaults),
             defaults: defaults
@@ -263,8 +344,9 @@ final class CursorEnterpriseProviderTests: XCTestCase {
 
         let totalDescriptor = try XCTUnwrap(descriptors.first { $0.id == "cursor.usage" })
         let totalData = store.data(for: totalDescriptor)
-        XCTAssertTrue(DefaultLayout.metricIDs.contains("cursor.usage"))
-        XCTAssertFalse(DefaultLayout.metricIDs.contains("cursor.requests"))
+        let layout = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
+        XCTAssertTrue(layout.isMetricEnabled("cursor.usage"))
+        XCTAssertTrue(layout.isMetricEnabled("cursor.requests"))
         XCTAssertTrue(totalData.hasData)
         XCTAssertEqual(totalData.kind, .count)
         XCTAssertEqual(totalData.used, 37)

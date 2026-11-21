@@ -303,13 +303,16 @@ final class CodexScheduledResetTests: XCTestCase {
 
             for mode in [WidgetDisplayMode.used, .remaining] {
                 data.displayMode = mode
-                let content = MenuBarContentBuilder.build(
-                    groups: [ProviderMetrics(provider: provider, metrics: [descriptor])],
-                    data: { _ in data }, now: Self.now.addingTimeInterval(120)
+                let now = Self.now.addingTimeInterval(120)
+                let account = DashboardAccount(
+                    provider: provider, providerName: provider.displayName, name: nil,
+                    lines: [DashboardLine(descriptor: descriptor, data: data)]
                 )
-                let metric = try XCTUnwrap(content.groups.first?.metrics.first)
-                XCTAssertEqual(metric.value, "99%")
-                XCTAssertEqual(metric.fraction, 0.99, accuracy: 0.000_001)
+                let board = PriorityBoard.make(accounts: [account], pinned: [descriptor.id], now: now)
+                let content = MenuBarContentBuilder.build(board: board, limit: .upToThree, selection: .priority, now: now)
+                let item = try XCTUnwrap(content.items.first)
+                XCTAssertEqual(item.value, "99%")
+                XCTAssertEqual(try XCTUnwrap(item.fraction), 0.99, accuracy: 0.000_001)
                 XCTAssertEqual(content.nextInvalidation, scheduledFor?.addingTimeInterval(2 * 3_600))
             }
 
@@ -320,33 +323,6 @@ final class CodexScheduledResetTests: XCTestCase {
         }
     }
 
-    func testScheduledLabelsWrapAtDashboardWidthInsteadOfTruncating() throws {
-        let suiteName = "EgasuTests.ScheduledResetLayout.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        defaults.set(DensitySetting.regular.rawValue, forKey: DensitySetting.key)
-
-        for label in ["Scheduled 9월 12일 at 오후 4:00", "Cached forecast · Refresh failed"] {
-            var data = WidgetData(
-                title: "Reset Watch", icon: .providerMark("codex"), kind: .percent, used: 99, limit: 100)
-            data.forecast = .init(isScheduled: true)
-            data.subtitleOverride = label
-
-            func render(width: CGFloat) throws -> NSImage {
-                try XCTUnwrap(
-                    ShareCardRenderer.image(
-                        for: WidgetRowView(data: data)
-                            .frame(width: width)
-                            .environment(\.hoverTooltipsDisabled, true)
-                            .defaultAppStorage(defaults)))
-            }
-
-            let dashboard = try render(width: PanelHeightController.panelWidth - 28)
-            let wide = try render(width: ShareCardView.width - 32)
-            XCTAssertEqual(dashboard.size.width, PanelHeightController.panelWidth - 28)
-            XCTAssertGreaterThan(dashboard.size.height, wide.size.height, label)
-        }
-    }
 
     func testForecastTimeButtonTogglesSharedSettingWhenHostExposesAccessibility() throws {
         try withHosting(Button("Control") {}) { hosting in
@@ -372,10 +348,10 @@ final class CodexScheduledResetTests: XCTestCase {
             for mode in [ResetDisplayMode.absolute, .relative] {
                 store.resetDisplayMode = mode
                 let data = store.data(for: descriptor)
-                let label = try XCTUnwrap(data.boundedTrailingText())
+                let label = try XCTUnwrap(data.compactResetText())
                 try withHosting(
-                    WidgetRowView(data: data, onToggleResetDisplay: { store.resetDisplayMode.toggle() })
-                        .frame(width: PanelHeightController.panelWidth - 28)
+                    DashboardMetricRow(model: data.dashboardRow(), onToggleResetDisplay: { store.resetDisplayMode.toggle() })
+                        .frame(width: PanelMetrics.width - 28)
                         .environment(\.hoverTooltipsDisabled, true)
                         .defaultAppStorage(defaults)
                 ) { hosting in
@@ -386,8 +362,8 @@ final class CodexScheduledResetTests: XCTestCase {
                 XCTAssertEqual(store.resetDisplayMode, toggled)
                 XCTAssertEqual(defaults.string(forKey: "resetDisplayMode"), toggled.rawValue)
                 XCTAssertEqual(store.data(for: weekly).resetDisplayMode, toggled)
-                XCTAssertNotEqual(store.data(for: descriptor).boundedTrailingText(), label)
-                try withHosting(WidgetRowView(data: data).defaultAppStorage(defaults)) { hosting in
+                XCTAssertNotEqual(store.data(for: descriptor).compactResetText(), label)
+                withHosting(DashboardMetricRow(model: data.dashboardRow()).defaultAppStorage(defaults)) { hosting in
                     XCTAssertNil(accessibilityButton(named: label, in: hosting))
                 }
             }
@@ -398,7 +374,6 @@ final class CodexScheduledResetTests: XCTestCase {
         let suite = "EgasuTests.ForecastTimeLayout.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.set(DensitySetting.regular.rawValue, forKey: DensitySetting.key)
         var data = WidgetData(title: "Reset Watch", icon: .providerMark("codex"), kind: .percent, used: 99, limit: 100)
         data.forecast = .init(deadline: Date().addingTimeInterval(5 * 24 * 3600), isScheduled: true)
         let export = ProcessInfo.processInfo.environment["EGASU_RESET_DISPLAY_SCREENSHOTS"]
@@ -411,8 +386,8 @@ final class CodexScheduledResetTests: XCTestCase {
                     data.resetDisplayMode = mode
                     @MainActor func render(interactive: Bool) throws -> NSImage {
                         try XCTUnwrap(ShareCardRenderer.image(
-                            for: WidgetRowView(data: data, onToggleResetDisplay: interactive ? {} : nil)
-                                .frame(width: PanelHeightController.panelWidth - 28)
+                            for: DashboardMetricRow(model: data.dashboardRow(), onToggleResetDisplay: interactive ? {} : nil)
+                                .frame(width: PanelMetrics.width - 28)
                                 .background(Color.black)
                                 .environment(\.colorScheme, .dark)
                                 .environment(\.hoverTooltipsDisabled, true)

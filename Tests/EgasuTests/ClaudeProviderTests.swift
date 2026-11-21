@@ -19,7 +19,6 @@ final class ClaudeAuthStoreTests: XCTestCase {
         let fresh = ClaudeCredentialState(
             oauth: ClaudeOAuth(accessToken: "ACCESS_SECRET", refreshToken: "REFRESH_SECRET", expiresAt: 2_000_000_000_000),
             source: .keychainCurrentUser(service: "Claude Code-credentials"),
-            fullData: nil,
             inferenceOnly: false
         )
         XCTAssertEqual(fresh.diagnosticsLabel(now: now), "keychainCurrentUser refresh=yes expired=no")
@@ -29,7 +28,6 @@ final class ClaudeAuthStoreTests: XCTestCase {
         let lockedOut = ClaudeCredentialState(
             oauth: ClaudeOAuth(accessToken: "a", refreshToken: nil, expiresAt: 1),
             source: .file,
-            fullData: nil,
             inferenceOnly: false
         )
         XCTAssertEqual(lockedOut.diagnosticsLabel(now: now), "file refresh=no expired=yes")
@@ -38,7 +36,6 @@ final class ClaudeAuthStoreTests: XCTestCase {
         let unknownExpiry = ClaudeCredentialState(
             oauth: ClaudeOAuth(accessToken: "a", refreshToken: "", expiresAt: nil),
             source: .keychainLegacy(service: "svc"),
-            fullData: nil,
             inferenceOnly: false
         )
         XCTAssertEqual(unknownExpiry.diagnosticsLabel(now: now), "keychainLegacy refresh=no expired=unknown")
@@ -166,7 +163,6 @@ final class ClaudeAuthStoreTests: XCTestCase {
             ClaudeCredentialState(
                 oauth: ClaudeOAuth(accessToken: "token", scopes: scopes),
                 source: .keychainCurrentUser(service: "Claude Code-credentials"),
-                fullData: nil,
                 inferenceOnly: inferenceOnly
             )
         }
@@ -201,6 +197,18 @@ final class ClaudeAuthStoreTests: XCTestCase {
 }
 
 final class ClaudeUsageMapperTests: XCTestCase {
+    func testFableDoesNotHideALaterMalformedScopedLimit() throws {
+        let body = Data(
+            #"""
+            {"limits":[{"kind":"weekly_scoped","scope":{"model":{"display_name":"Fable"}},"percent":15},null]}
+            """#.utf8)
+        let mapped = try ClaudeUsageMapper.mapUsageResponse(
+            HTTPResponse(statusCode: 200, headers: [:], body: body), credentials: ClaudeOAuth())
+
+        XCTAssertEqual(progress(mapped.lines, "Fable")?.used, 15)
+        XCTAssertEqual(mapped.hasIncompleteWeeklyQuota, true)
+    }
+
     func testMapsUsageWindowsExtraUsageAndPlan() throws {
         let response = HTTPResponse(
             statusCode: 200,
@@ -376,7 +384,9 @@ final class ClaudeProviderTests: XCTestCase {
         let httpClient = FakeHTTPClient(response: HTTPResponse(
             statusCode: 200,
             headers: [:],
-            body: Data(#"{"five_hour":{"utilization":25,"resets_at":"2099-01-01T00:00:00.000Z"}}"#.utf8)
+                body: Data(
+                    #"{"five_hour":{"utilization":25,"resets_at":"2099-01-01T00:00:00.000Z"},"seven_day":{"utilization":60},"seven_day_sonnet":{}}"#
+                        .utf8)
         ))
         // 픽스처 라인에 costUSD 포함 → 타일은 계산이 아닌 전달된 달러 값
         let home = try ClaudeLogFixture.makeHome(files: [
@@ -403,6 +413,12 @@ final class ClaudeProviderTests: XCTestCase {
 
         let snapshot = await provider.refresh()
 
+        XCTAssertEqual(snapshot.incompleteQuotaWindows, [.weekly])
+        let observation = try XCTUnwrap(
+            SoftLimitObservation.project(
+                snapshot: snapshot, descriptors: provider.widgetDescriptors, window: .weekly, now: now))
+        XCTAssertEqual(observation.quotaState(thresholdPercent: 90, at: now), .unknown)
+        XCTAssertEqual(observation.quotaState(thresholdPercent: 60, at: now), .reached)
         XCTAssertEqual(snapshot.plan, "Pro")
         XCTAssertNotNil(snapshot.lines.first(where: { $0.label == "Session" }))
         XCTAssertEqual(values(snapshot.lines, "Today"),

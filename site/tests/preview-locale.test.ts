@@ -20,6 +20,7 @@ test('native resources translate nested reset times, usage, and account labels',
   assert.equal(ko('~29% left at reset'), '초기화 시 약 29% 남음');
   assert.equal(ko('3% used / 97% left'), '3% 사용 / 97% 남음');
   assert.equal(ko('Community vote share: 72%'), '커뮤니티 투표 비율: 72%');
+  assert.equal(translator('ja')('Community vote share: 72%'), 'コミュニティの投票の割合: 72%');
   assert.equal(ko('Claude Account 1'), 'Claude 계정 1');
   assert.equal(ko('Use Account 2 in this demo? Your Mac’s sign-in will stay unchanged.'),
     '이 미리보기의 사용 계정을 계정 2로 바꿀까요? Mac의 로그인 상태는 그대로 유지됩니다.');
@@ -34,6 +35,15 @@ test('native positional arguments preserve values in Korean and Japanese', () =>
   assert.equal(ko('$7.29/MTok'), '$7.29/MTok');
 });
 
+test('Soft Limit translates observed and estimated percentages in Korean and Japanese', () => {
+  const ko = translator('ko');
+  const ja = translator('ja');
+  assert.equal(ko('97.5% used · Soft limit reached'), '97.5% 사용 · 소프트 한도 도달');
+  assert.equal(ja('97.5% used · Soft limit reached'), '97.5% 使用 · ソフト上限に到達');
+  assert.equal(ko('Estimated usage: 40%'), '추정 사용량 40%');
+  assert.equal(ja('Estimated usage: 40%'), '推定使用率 40%');
+});
+
 test('standalone reset countdowns use native compact durations in Korean and Japanese', () => {
   const ko = translator('ko');
   const ja = translator('ja');
@@ -42,6 +52,8 @@ test('standalone reset countdowns use native compact durations in Korean and Jap
     ['11d 19h', '11일 19시간', '11日 19時間'],
     ['18h 30m', '18시간 30분', '18時間 30分'],
     ['4m', '4분', '4分'],
+    ['11mo 30d', '11개월 30일', '11か月 30日'],
+    ['1y 11mo', '1년 11개월', '1年 11か月'],
   ]) {
     assert.equal(ko(source), korean);
     assert.equal(ja(source), japanese);

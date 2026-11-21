@@ -1,10 +1,7 @@
 import Foundation
 
 extension WidgetDataStore {
-    enum ClaimRefreshBinding: Equatable {
-        case account(String)
-        case unresolvedCatalog(Int)
-    }
+    typealias ClaimRefreshBinding = ProviderRefreshCoordinator.ClaimBinding
 
     /// claim 완료 시점의 binding을 유지하며 pre-claim fetch가 끝나기를 대기.
     func refreshAfterClaim(

@@ -62,8 +62,8 @@ final class AccountUsageNotificationTests: XCTestCase {
             registry = WidgetRegistry.from(runtimes)
             profileIDs = AppContainer.accountProfileIDsByCardID(assembly: assembly, profiles: profiles)
             let settings = NotificationSettingsStore(defaults: defaults)
-            settings.underTenPercent = true
-            settings.healthyToClose = true
+            settings.critical = true
+            settings.warning = true
             settings.closeToRunningOut = true
             let recorder = recorder
             store = WidgetDataStore(
@@ -123,21 +123,24 @@ final class AccountUsageNotificationTests: XCTestCase {
                     )
                 )
 
-                await fixture.evaluate(used: 80)
+                await fixture.evaluate(used: 60)
                 XCTAssertTrue(fixture.recorder.posts.isEmpty)
-                await fixture.evaluate(used: 87)
+                await fixture.evaluate(used: 75)
                 await fixture.evaluate(used: 95)
 
+                // Warning(30% 이하) → Critical(10% 이하) + Will Run Out — Use It or Lose It은 초기화 직전 조건이라 제외.
+                let milestones: [PaceMilestone] = [.warning, .critical, .closeToRunningOut]
                 XCTAssertEqual(fixture.recorder.posts.count, 6)
                 for (cardID, profile) in [(family, personal), (snapshotID, work)] {
                     let posts = fixture.recorder.posts.filter { $0.id.hasPrefix(cardID + ".") }
-                    XCTAssertEqual(Set(posts.map(\.id)), Set(PaceMilestone.allCases.map { "\(cardID).\($0.rawValue)" }))
+                    XCTAssertEqual(Set(posts.map(\.id)), Set(milestones.map { "\(cardID).\($0.rawValue)" }))
                     XCTAssertEqual(Set(posts.map(\.subtitle)), ["\(family.capitalized) — \(profile.label) \(L10n.metrics("Session"))"])
                 }
             }
         }
     }
 
+    // 60% → 75% 사용: 남은 양이 Warning 기준(30%)을 지나 카드마다 알림 1건, 60%로 돌아가면 다시 알림 가능.
     func testRenamedProfilesAppearInSubsequentNotificationsWithoutRebuildingTheCatalog() async throws {
         for family in AccountProfilesStore.supportedFamilies {
             let defaults = makeDefaults()
@@ -153,14 +156,14 @@ final class AccountUsageNotificationTests: XCTestCase {
                     profileIDsByCard: [snapshotID: work.id]
                 )
             )
-            await fixture.evaluate(used: 80)
-            await fixture.evaluate(used: 87)
+            await fixture.evaluate(used: 60)
+            await fixture.evaluate(used: 75)
             XCTAssertEqual(fixture.recorder.posts.count, 2)
 
             try profiles.rename(profileID: personal.id, to: "개인용")
             try profiles.rename(profileID: work.id, to: "업무용")
-            await fixture.evaluate(used: 80)
-            await fixture.evaluate(used: 87)
+            await fixture.evaluate(used: 60)
+            await fixture.evaluate(used: 75)
 
             XCTAssertEqual(fixture.recorder.posts.count, 4)
             XCTAssertEqual(Set(fixture.recorder.posts.suffix(2).map(\.subtitle)), Set([
@@ -180,16 +183,16 @@ final class AccountUsageNotificationTests: XCTestCase {
                 defaults: defaults, profiles: profiles, accounts: ProviderAccountsStore(defaults: defaults),
                 cardIDs: [family], assembly: ProviderAccountAssembly(identityKeysByCard: [family: personal.identityKey])
             )
-            await fixture.evaluate(used: 80)
-            await fixture.evaluate(used: 87)
+            await fixture.evaluate(used: 60)
+            await fixture.evaluate(used: 75)
             XCTAssertEqual(fixture.recorder.posts.count, 1)
             XCTAssertTrue(try XCTUnwrap(fixture.recorder.posts.last).subtitle.contains("Personal"))
 
             fixture.replaceAccounts(with: ProviderAccountAssembly(identityKeysByCard: [family: work.identityKey]))
             await fixture.evaluate(used: 95)
             XCTAssertEqual(fixture.recorder.posts.count, 1, "replacement account's first sample must only prime its baseline")
-            await fixture.evaluate(used: 80)
-            await fixture.evaluate(used: 87)
+            await fixture.evaluate(used: 60)
+            await fixture.evaluate(used: 75)
 
             XCTAssertEqual(fixture.recorder.posts.count, 2)
             XCTAssertEqual(fixture.recorder.posts.last?.subtitle, "\(family.capitalized) — Work \(L10n.metrics("Session"))")
@@ -211,8 +214,8 @@ final class AccountUsageNotificationTests: XCTestCase {
             cardIDs: ["claude", "codex", "cursor", legacyID],
             assembly: ProviderAccountAssembly(identityKeysByCard: ["claude": "default", legacyID: "legacy"])
         )
-        await fixture.evaluate(used: 80)
-        await fixture.evaluate(used: 87)
+        await fixture.evaluate(used: 60)
+        await fixture.evaluate(used: 75)
 
         XCTAssertEqual(fixture.recorder.posts.count, 4)
         XCTAssertEqual(Set(fixture.recorder.posts.map(\.subtitle)), Set([

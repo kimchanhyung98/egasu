@@ -7,23 +7,55 @@ import AppKit
 enum Theme {
     static let iconGray = AnyShapeStyle(.secondary)
 
-    /// severity band별 meter fill — 수동 hex 없이 macOS 시스템 팔레트 사용으로 light/dark·접근성 설정 자동 추적.
+    /// 경고 단계의 막대 색 — 시스템 팔레트로 밝기·접근성 설정 반영.
     static func meterFill(_ severity: WidgetData.MeterSeverity) -> AnyShapeStyle {
-        AnyShapeStyle(meterColor(severity))
+        AnyShapeStyle(severityColor(severity))
     }
 
-    private static func meterColor(_ severity: WidgetData.MeterSeverity) -> Color {
+    static func severityTextColor(_ severity: WidgetData.MeterSeverity) -> Color {
         switch severity {
-        case .neutral: return Color(nsColor: .systemGray)
-        case .normal: return Color(nsColor: .systemBlue)
-        case .warning: return Color(nsColor: .systemYellow)
-        case .critical: return Color(nsColor: .systemRed)
+        case .neutral, .normal: severityColor(severity)
+        case .warning: adaptive(light: NSColor(red: 0.7, green: 0.37, blue: 0, alpha: 1), dark: .systemOrange)
+        case .critical: adaptive(light: NSColor(red: 0.84, green: 0, blue: 0.08, alpha: 1), dark: .systemRed)
         }
     }
 
-    static let notice = AnyShapeStyle(Color(nsColor: .systemOrange))
+    static let notice = AnyShapeStyle(severityColor(.warning))
 
     static let positive = AnyShapeStyle(Color(nsColor: .systemGreen))
+
+    enum Spacing {
+        static let xs: CGFloat = 4
+        static let s: CGFloat = 6
+        static let m: CGFloat = 8
+        static let l: CGFloat = 10
+        static let xl: CGFloat = 12
+        static let xxl: CGFloat = 14
+    }
+
+    static let panelBodyNSColor: NSColor = .windowBackgroundColor
+    static let panelBody = Color(nsColor: panelBodyNSColor)
+    static let hairline = adaptive(light: NSColor(white: 0, alpha: 0.05), dark: NSColor(white: 1, alpha: 0.06))
+    static let controlFill = adaptive(light: NSColor(white: 0, alpha: 0.06), dark: NSColor(white: 1, alpha: 0.1))
+    static let segmentThumb = adaptive(light: .white, dark: NSColor(white: 1, alpha: 0.18))
+    static let meterTrack = adaptive(light: NSColor(white: 0, alpha: 0.09), dark: NSColor(white: 1, alpha: 0.12))
+    static let paceMark = Color.primary.opacity(0.55)
+    static let skeleton = adaptive(light: NSColor(white: 0, alpha: 0.075), dark: NSColor(white: 1, alpha: 0.086))
+
+    static func severityColor(_ severity: WidgetData.MeterSeverity) -> Color {
+        switch severity {
+        case .neutral: Color(nsColor: .systemGray)
+        case .normal: Color(nsColor: .systemBlue)
+        case .warning: Color(nsColor: .systemOrange)
+        case .critical: Color(nsColor: .systemRed)
+        }
+    }
+
+    private static func adaptive(light: NSColor, dark: NSColor) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+        })
+    }
 
     // MARK: - Surfaces
 
@@ -32,9 +64,8 @@ enum Theme {
     static let trayNSColor: NSColor = .textBackgroundColor
     static var traySurface: Color { Color(nsColor: trayNSColor) }
 
-    /// grouped card를 `traySurface` 위로 띄우는 semantic fill — 시스템 자체의 `.fill.quaternary`.
-    /// 수동 튜닝 값 없음 — light/dark와 Increase Contrast 자동 추적.
-    static let cardFill = AnyShapeStyle(.fill.quaternary)
+    /// 카드의 시스템 채움 — 밝기·대비 설정에 맞춰 변경.
+    static let cardFill = Color(nsColor: .quaternarySystemFill)
 
     static let cardCornerRadius: CGFloat = 12
 
@@ -44,8 +75,7 @@ enum Theme {
 }
 
 extension View {
-    /// provider/settings 카드의 grouped-card surface — System Settings grouped-box look, borderless.
-    /// 불투명 page base를 먼저 그려 lifted drag preview가 떠 있는 동안에도 solid 유지.
+    /// 카드 표면 — 시스템 채움과 얇은 구분선.
     func cardSurface() -> some View {
         modifier(CardSurfaceModifier())
     }
@@ -54,6 +84,7 @@ extension View {
     /// 여러 행 provider preview는 hairline 없이 그림자만으로 분리감 표현.
     func liftedRowSurface() -> some View {
         cardSurface()
+            .background(Theme.panelBody, in: Theme.cardShape)
             .overlay { Theme.cardShape.strokeBorder(.separator, lineWidth: 0.5) }
     }
 
@@ -63,26 +94,22 @@ extension View {
             .toggleStyle(.switch)
             .controlSize(.small)
     }
+    func inlineGroupedForm() -> some View {
+        formStyle(.grouped)
+            .scrollDisabled(true)
+            .scrollContentBackground(.hidden)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.vertical, -16)
+    }
+
 }
 
-/// `cardSurface`의 구현 — 불투명 page base(`traySurface`) 위에 `.fill.quaternary` 합성, borderless grouped box.
-/// translucent 처리에서는 page base를 제거해 behind-window vibrancy가 비치되, grouped fill은 유지해 카드 구분 보존.
 private struct CardSurfaceModifier: ViewModifier {
-    @Environment(\.popoverSurfaceTreatment) private var treatment
-
     func body(content: Content) -> some View {
         content.background {
-            switch treatment {
-            case .opaque:
-                Theme.cardShape
-                    .fill(Theme.traySurface)
-                    .overlay { Theme.cardShape.fill(Theme.cardFill) }
-            case .translucent:
-                // translucent 모드: 카드가 frosted `.regularMaterial`을 직접 실어 텍스트 가독성 유지 — HIG의 표준 material, `glassEffect` 아님.
-                Theme.cardShape
-                    .fill(.regularMaterial)
-                    .overlay { Theme.cardShape.fill(Theme.cardFill) }
-            }
+            Theme.cardShape
+                .fill(Theme.cardFill)
+                .overlay { Theme.cardShape.strokeBorder(Theme.hairline, lineWidth: 0.5) }
         }
     }
 }

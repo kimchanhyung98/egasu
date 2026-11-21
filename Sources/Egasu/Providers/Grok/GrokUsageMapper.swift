@@ -6,8 +6,7 @@ struct GrokMappedUsage: Equatable, Sendable {
 }
 
 enum GrokUsageMapper {
-    /// credits-format billing 응답을 remote line(Weekly meter + pay-as-you-go badge)으로 매핑.
-    /// current period가 weekly가 아니면 Weekly 행 생략("No data") — 구 monthly-only 계정의 percent 오표기 방지.
+    /// 크레딧 청구 응답의 기간 단위에 맞는 구독 한도와 추가 지출 상태 생성.
     static func mapCreditsConfig(_ response: HTTPResponse) throws -> GrokMappedUsage {
         try ProviderAuthRetry.requireSuccess(
             response,
@@ -17,9 +16,15 @@ enum GrokUsageMapper {
         let config = try GrokCreditsConfigDecoder.decode(responseBody: response.body)
 
         var lines: [MetricLine] = []
-        if config.periodType == GrokCreditsConfigDecoder.weeklyPeriodType {
+        let label: String? =
+            switch config.periodType {
+            case GrokCreditsConfigDecoder.weeklyPeriodType: "Weekly limit"
+            case GrokCreditsConfigDecoder.monthlyPeriodType: "Monthly limit"
+            default: nil
+            }
+        if let label {
             lines.append(.progress(
-                label: "Weekly limit",
+                    label: label,
                 used: ProviderParse.clampPercent(config.usedPercent),
                 limit: 100,
                 format: .percent,
@@ -27,7 +32,7 @@ enum GrokUsageMapper {
                 periodDurationMs: config.periodDurationMs
             ))
         }
-        // `onDemandCap` 부재는 pay-as-you-go 없음(proto-JSON은 0 cap도 생략) — cap 0과 동일하게 Disabled badge
+        // `onDemandCap` 부재는 proto-JSON의 0 생략으로 처리하여 추가 지출 비활성 표시.
         let cap = Formatters.currency(ProviderParse.centsToDollars(config.onDemandCap))
         lines.append(.badge(
             label: "Pay as you go",
@@ -40,15 +45,25 @@ enum GrokUsageMapper {
         return GrokMappedUsage(lines: lines, metricPresentations: presentations)
     }
 
+    /// 요금제 이름은 선택 항목. 조회·해석 실패는 사용량과 별도로 기록.
     static func planName(from response: HTTPResponse) -> String? {
-        guard (200..<300).contains(response.statusCode),
-              let body = ProviderParse.jsonObject(response.body),
-              let plan = body["subscription_tier_display"] as? String
-        else {
+        guard (200..<300).contains(response.statusCode) else {
+            AppLog.warn(
+                LogTag.plugin("grok"),
+                "optional plan request failed status=\(response.statusCode) category=\(ErrorCategory.http(response.statusCode).rawValue)"
+            )
             return nil
         }
-        let trimmed = plan.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        guard let body = ProviderParse.jsonObject(response.body) else {
+            AppLog.warn(LogTag.plugin("grok"), "optional plan response invalid stage=decode category=decoding")
+            return nil
+        }
+        guard let field = body["subscription_tier_display"], !(field is NSNull) else { return nil }
+        guard let plan = field as? String else {
+            AppLog.warn(LogTag.plugin("grok"), "optional plan response invalid stage=tier_type category=decoding")
+            return nil
+        }
+        return plan.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
     }
 
 }

@@ -5,14 +5,15 @@
 리서치 문서는 조사 중에만 임시 허용하며, 조사 완료 후 확정 내용을 정식 문서에 반영하고 삭제.
 리뷰 보고서·TODO·작업 일지·검증 실행 기록은 저장하지 않음.
 
-앱이 하는 일과 그 동작 방식.
-이 문서들은 **화면 모양이 아니라 동작**을 다루며, 그 동작이 바뀔 때 함께 갱신 — 앱과 이 문서가 어긋난다면 그건 버그.
+앱의 현재 동작과 적용 조건, 제약을 설명.
+동작이 바뀌면 관련 문서를 함께 갱신.
 
 ## 앱
 
-- [대시보드](/docs/dashboard.md) — 팝오버: 행, 토글, 순서 바꾸기, 키보드 단축키
-- [메뉴 막대](/docs/menu-bar.md) — 지표를 메뉴 막대에 고정하기
-- [설정](/docs/settings.md) — 모든 옵션과 각 옵션이 바꾸는 것
+- [대시보드](/docs/dashboard.md) — Priority·All Usage 탭, 지표 표시·고정·순서, 키보드 단축키
+- [메뉴 막대](/docs/menu-bar.md) — 표시 기준 선택과 Priority 고정
+- [계정](/docs/accounts.md) — 계정 추가·전환·복구, API 키, 계정 이름·순서와 지표 설정
+- [설정](/docs/settings.md) — General·Display·Alerts·Advanced의 설정과 베타 업데이트를 켜면 열리는 Labs
 - [새로 고침과 캐싱](/docs/refreshing.md) — 데이터가 갱신되는 시점과 가져오기 실패 시 일어나는 일
 - [iCloud 동기화](/docs/icloud-sync.md) — 여러 Mac의 지출 기록을 합치는 방식
 - [구독과 모델 가격](/docs/pricing.md) — 프로바이더별 구독 이름·가격과 토큰 비용 계산 방식
@@ -23,7 +24,7 @@
 
 - [명령줄 인터페이스](/docs/cli.md) — 에이전트와 스크립트를 위한 1회 실행 캐시 조회와 강제 조회
 - [로컬 HTTP API](/docs/local-http-api.md) — `127.0.0.1:6736`에서 다른 앱이 사용량을 읽는 방법
-- [프록시](/docs/proxy.md) — 프로바이더 요청을 SOCKS5 또는 HTTP(S)로 라우팅
+- [프록시](/docs/proxy.md) — 프로바이더 사용량·공개 상태·모델 가격 조회와 Codex Reset Watch에 SOCKS5·HTTP·HTTPS 프록시 적용
 
 ## 프로바이더
 
@@ -44,7 +45,7 @@
 
 ## 개발자용
 
-앱이 어떻게 만들어졌고 어떻게 확장하는지.
+앱 구성과 기능 확장 방법.
 
 - [아키텍처](/docs/architecture.md) — 구성 루트, 스토어, 프로바이더 파이프라인, AppKit 브리지
 - [사용량 수집](/docs/usage-collection.md) — 지원 대상, 공통 사용 기록, 귀속·중복·가격·실패 처리 규칙

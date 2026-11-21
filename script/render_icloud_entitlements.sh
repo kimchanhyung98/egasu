@@ -33,9 +33,8 @@ esac
 /usr/libexec/PlistBuddy \
   -c "Set :com.apple.developer.ubiquity-container-identifiers:0 $UBIQUITY_ID" "$OUTPUT"
 
-# Xcode normally injects these identity entitlements while signing. This repository signs the
-# SwiftPM-built bundle directly with codesign, so derive them from the provisioning profile instead.
-# Without them taskgated rejects an otherwise valid signature before the app can launch.
+# codesign으로 SwiftPM 번들을 직접 서명하므로 Xcode가 넣는 신원 권한을 프로파일에서 추출.
+# 이 권한이 없으면 나머지 서명이 유효해도 taskgated가 실행 전 거부.
 /usr/libexec/PlistBuddy \
   -c "Add :com.apple.application-identifier string $APP_ID" \
   -c "Add :com.apple.developer.team-identifier string $TEAM_ID" \

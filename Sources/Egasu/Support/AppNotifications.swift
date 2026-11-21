@@ -40,10 +40,14 @@ final class AppNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     /// macOS 수준 거부 후 사용자가 재허용할 수 있도록 System Settings → Notifications 열기. 테스트에서는 no-op.
     func openSystemNotificationsSettings() {
-        guard !Self.isRunningUnderTests else { return }
-        if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") {
-            NSWorkspace.shared.open(url)
-        }
+        guard !Self.isRunningUnderTests, let url = Self.notificationSettingsURL(bundleID: Bundle.main.bundleIdentifier) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    nonisolated static func notificationSettingsURL(bundleID: String?) -> URL? {
+        let base = "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+        guard let bundleID, !bundleID.isEmpty else { return URL(string: base) }
+        return URL(string: "\(base)?id=\(bundleID)")
     }
 
     /// 즉시 알림 1건 게시. identifier는 매번 고유해 같은 metric의 반복 알림이 coalesce되지 않음.
@@ -61,7 +65,7 @@ final class AppNotifications: NSObject, UNUserNotificationCenterDelegate {
         content.title = title
         content.subtitle = subtitle
         content.body = body
-        // 동시 알림이 개별 배너 대신 "N more" 요약 하나로 묶이도록 단일 thread로 그룹화.
+        // 동시 알림을 같은 스레드로 묶어 여러 배너 대신 요약 표시.
         content.threadIdentifier = "openusage"
         if soundEnabled { content.sound = .default }
         let id = "openusage-\(idPrefix)-\(UUID().uuidString)"
@@ -71,7 +75,13 @@ final class AppNotifications: NSObject, UNUserNotificationCenterDelegate {
             let delivered = try await Self.deliver(
                 request,
                 isCurrent: isCurrent,
-                authorize: { await self.isAuthorizedForDelivery(idPrefix: idPrefix) },
+                authorize: {
+                    await Self.isAuthorizedForDelivery(
+                        idPrefix: idPrefix,
+                        authorization: self.ensureAuthorization(),
+                        authorizationStatus: { await center.notificationSettings().authorizationStatus }
+                    )
+                },
                 add: { try await center.add($0) },
                 remove: { id in
                     center.removePendingNotificationRequests(withIdentifiers: [id])
@@ -105,13 +115,15 @@ final class AppNotifications: NSObject, UNUserNotificationCenterDelegate {
         return true
     }
 
-    private func isAuthorizedForDelivery(idPrefix: String) async -> Bool {
-        if await ensureAuthorization().value { return true }
-        // 캐시된 거부는 stale일 수 있으므로 live 상태 재확인 — System Settings 재허용이 재시작 없이 반영됨.
-        let status = await centerProvider().notificationSettings().authorizationStatus
+    static func isAuthorizedForDelivery(
+        idPrefix: String,
+        authorization: Task<Bool, Never>,
+        authorizationStatus: @MainActor () async -> UNAuthorizationStatus
+    ) async -> Bool {
+        _ = await authorization.value
+        let status = await authorizationStatus()
         switch status {
         case .authorized, .provisional, .ephemeral:
-            authorizationTask = Task<Bool, Never> { true }
             return true
         default:
             AppLog.debug(.notifications, "skip \(idPrefix): not authorized")

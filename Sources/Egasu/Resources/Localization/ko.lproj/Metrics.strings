@@ -40,6 +40,7 @@
 "Chat" = "채팅";
 "Claude" = "Claude";
 "Claude Weekly" = "Claude 주간";
+"Argon Weekly" = "Argon 주간";
 "Codex Reset Watch" = "Codex 초기화 예측";
 "Completions" = "코드 완성";
 "Cost" = "비용";
@@ -77,10 +78,8 @@
 "M" = "30일";
 "MTok" = "MTok";
 "Monthly" = "월간";
-"No cost data for this period" = "이 기간의 비용 데이터 없음";
-"No cost-per-token data for this period" = "이 기간의 토큰당 비용 데이터 없음";
+"Monthly limit" = "월간 한도";
 "No data" = "데이터 없음";
-"No token data for this period" = "이 기간의 토큰 데이터 없음";
 "No usage data" = "사용량 데이터 없음";
 "No usage in this period" = "이 기간의 사용량 없음";
 "Not available" = "사용할 수 없음";
@@ -119,6 +118,7 @@
 "Sessions start after you send your first message." = "첫 메시지를 보내면 세션이 시작됩니다.";
 "Sonnet" = "Sonnet";
 "Spark" = "Spark";
+"Spark Monthly" = "Spark 월간";
 "Spark Weekly" = "Spark 주간";
 "T" = "오늘";
 "This Month" = "이번 달";
@@ -179,3 +179,32 @@
 "From your OpenCode logs and local tools" = "OpenCode 로그와 로컬 도구에서 수집";
 "From your Grok usage files and logs (estimated)" = "Grok 사용량 파일과 로그 기준 (추정)";
 "From your Grok usage files, logs, and local tools (estimated)" = "Grok 사용량 파일·로그·로컬 도구 기준 (추정)";
+
+"%lld%% or less left for this window." = "이번 기간에 %lld%% 이하 남았습니다.";
+"A limit may run out before its reset" = "초기화 전에 한도가 소진될 수 있을 때";
+"Alert when a limit drops critically low" = "한도가 위험할 만큼 줄어들면 알림";
+"Alert when a limit requires your attention" = "한도를 확인해야 할 때 알림";
+"Critical" = "위험";
+"May run out before the limit resets." = "한도가 초기화되기 전에 소진될 수 있습니다.";
+"Over 50% left a day before its reset" = "초기화 하루 전에 50% 넘게 남음";
+"Over 50% left, resets in under 24 hours." = "50% 넘게 남았고 24시간 안에 초기화됩니다.";
+"Use It or Lose It" = "초기화 전 사용";
+"Warning" = "경고";
+
+"%lldd" = "%lld일";
+"%lldmo" = "%lld개월";
+"%lldmo %lldd" = "%lld개월 %lld일";
+"%lldy" = "%lld년";
+"%lldy %lldmo" = "%lld년 %lld개월";
+"Soft limit at %lld%%" = "소프트 한도 %lld%%";
+
+"Failed" = "실패";
+
+"%@ didn't report any data for this range." = "%@에서 이 기간에 보고한 데이터가 없습니다.";
+"30 Days Ending %@" = "%@까지 30일";
+"Breakdown Unavailable" = "내역을 불러올 수 없음";
+"Copy %@ Usage" = "%@ 사용 내역 복사";
+"Loading Breakdown…" = "내역 불러오는 중…";
+"Refresh to load the details for this range." = "새로 고침하면 이 기간의 내역을 불러옵니다.";
+"Saved %@" = "%@ 기준";
+"Top Models" = "상위 모델";
