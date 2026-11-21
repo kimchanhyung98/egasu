@@ -226,6 +226,68 @@ final class ModelPricingStoreTests: XCTestCase {
         XCTAssertEqual(pricing.resolve(model: "fetched-model")?.inputPerMillion, 5, "304 keeps cached data")
     }
 
+    func testFreshStateWithMissingOrCorruptCatalogRefetchesWithoutETag() async throws {
+        let (store, _) = makeStore(handler: { Self.respond(to: $0) })
+        await store.refreshNow()
+        try FileManager.default.removeItem(at: tempDir.appendingPathComponent("litellm.json"))
+        try Data("broken".utf8).write(to: tempDir.appendingPathComponent("models_dev.json"))
+
+        let (revived, http) = makeStore { request in
+            XCTAssertNil(request.headers["If-None-Match"])
+            return Self.respond(to: request)
+        }
+        let fallback = await revived.current()
+        XCTAssertEqual(fallback.resolve(model: "bundled-model")?.inputPerMillion, 1)
+        XCTAssertNil(fallback.resolve(model: "fetched-dev-model"))
+        await revived.refreshNow()
+        XCTAssertEqual(http.requests.count, 2)
+        let repaired = await revived.current()
+        XCTAssertEqual(repaired.resolve(model: "fetched-model")?.inputPerMillion, 5)
+        XCTAssertEqual(repaired.resolve(model: "fetched-dev-model")?.inputPerMillion, 1)
+    }
+
+    func testCatalogLossDuringConditionalRequestRetriesAfterBackoffWithoutETag() async throws {
+        let base = Date(timeIntervalSince1970: 1_800_000_000)
+        let later = base.addingTimeInterval(7200)
+        let diagnostics = DiagnosticEventRecorder()
+        let directory = try XCTUnwrap(tempDir)
+        let (store, _) = makeStore(handler: { Self.respond(to: $0) }, now: { base })
+        await store.refreshNow()
+        let (aged, http) = makeStore(
+            handler: { request in
+                XCTAssertEqual(request.headers["If-None-Match"], "\"v1\"")
+                if request.url.absoluteString.contains("litellm") {
+                    try FileManager.default.removeItem(at: directory.appendingPathComponent("litellm.json"))
+                } else if request.url.host() == "models.dev" {
+                    try Data("broken".utf8).write(to: directory.appendingPathComponent("models_dev.json"))
+                } else {
+                    return Self.respond(to: request)
+                }
+                return HTTPResponse(statusCode: 304, headers: [:], body: Data())
+            }, now: { later })
+        await aged.refreshNow()
+        await aged.refreshNow()
+        XCTAssertEqual(http.requests.count, 3)
+        let failures = diagnostics.events.filter { $0.result == .failure }
+        XCTAssertTrue(failures.contains(DiagnosticEvent(.pricingLiteLLM, result: .failure, category: .decoding)))
+        XCTAssertTrue(failures.contains(DiagnosticEvent(.pricingModelsDev, result: .failure, category: .decoding)))
+        let lastGood = await aged.current()
+        XCTAssertEqual(lastGood.resolve(model: "fetched-model")?.inputPerMillion, 5)
+        let (retry, retryHTTP) = makeStore(
+            handler: { request in
+                XCTAssertNil(request.headers["If-None-Match"])
+                return Self.respond(to: request)
+            }, now: { later.addingTimeInterval(1801) })
+        await retry.refreshNow()
+        XCTAssertEqual(retryHTTP.requests.count, 2)
+        let (reloaded, _) = makeStore(
+            handler: { _ in throw URLError(.notConnectedToInternet) },
+            now: { later.addingTimeInterval(1801) })
+        let repaired = await reloaded.current()
+        XCTAssertEqual(repaired.resolve(model: "fetched-model")?.inputPerMillion, 5)
+        XCTAssertEqual(repaired.resolve(model: "fetched-dev-model")?.inputPerMillion, 1)
+    }
+
     func testFetchFailureKeepsServingCachedData() async throws {
         let (store, _) = makeStore(handler: { Self.respond(to: $0) })
         await store.refreshNow()
