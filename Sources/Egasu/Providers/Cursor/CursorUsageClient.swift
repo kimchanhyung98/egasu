@@ -10,6 +10,8 @@ struct CursorUsageClient: Sendable {
     static let planURL = URL(string: "https://api2.cursor.sh/aiserver.v1.DashboardService/GetPlanInfo")!
     static let refreshURL = URL(string: "https://api2.cursor.sh/oauth/token")!
     static let creditsURL = URL(string: "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCreditGrantsBalance")!
+    static let unifiedBalanceURL = URL(string: "https://api2.cursor.sh/aiserver.v1.DashboardService/GetComplatCreditBalance")!
+    static let usageStatusURL = URL(string: "https://cursor.com/api/dashboard/v2/usage-status?scope=user")!
     static let restUsageURL = URL(string: "https://cursor.com/api/usage")!
     static let usageSummaryURL = URL(string: "https://cursor.com/api/usage-summary")!
     static let stripeURL = URL(string: "https://cursor.com/api/auth/stripe")!
@@ -49,6 +51,14 @@ struct CursorUsageClient: Sendable {
         try await connectPost(Self.creditsURL, accessToken: accessToken)
     }
 
+    func fetchUnifiedBalance(accessToken: String) async throws -> HTTPResponse {
+        try await connectPost(Self.unifiedBalanceURL, accessToken: accessToken)
+    }
+
+    func fetchUsageStatus(accessToken: String) async throws -> HTTPResponse? {
+        try await sessionGet(Self.usageStatusURL, accessToken: accessToken)
+    }
+
     func fetchRequestBasedUsage(accessToken: String) async throws -> HTTPResponse? {
         guard let session = Self.session(from: accessToken) else { return nil }
         var components = URLComponents(url: Self.restUsageURL, resolvingAgainstBaseURL: false)
@@ -64,20 +74,17 @@ struct CursorUsageClient: Sendable {
     }
 
     func fetchUsageSummary(accessToken: String) async throws -> HTTPResponse? {
-        guard let session = Self.session(from: accessToken) else { return nil }
-        return try await http.send(HTTPRequest(
-            method: "GET",
-            url: Self.usageSummaryURL,
-            headers: ["Cookie": "WorkosCursorSessionToken=\(session.sessionToken)"],
-            timeout: 10
-        ))
+        try await sessionGet(Self.usageSummaryURL, accessToken: accessToken)
     }
 
     func fetchStripeBalance(accessToken: String) async throws -> HTTPResponse? {
+        try await sessionGet(Self.stripeURL, accessToken: accessToken)
+    }
+
+    private func sessionGet(_ url: URL, accessToken: String) async throws -> HTTPResponse? {
         guard let session = Self.session(from: accessToken) else { return nil }
         return try await http.send(HTTPRequest(
-            method: "GET",
-            url: Self.stripeURL,
+            method: "GET", url: url,
             headers: ["Cookie": "WorkosCursorSessionToken=\(session.sessionToken)"],
             timeout: 10
         ))
