@@ -177,6 +177,27 @@ final class ClaudeAuthStoreTests: XCTestCase {
         XCTAssertEqual(store.liveUsageAvailability(state(["user:inference"], inferenceOnly: true)), .inferenceOnlyToken)
     }
 
+    func testRefreshRequestsOnlyOriginallyGrantedScopes() async throws {
+        let store = ClaudeAuthStore(environment: FakeEnvironment(), files: FakeFiles(), keychain: FakeKeychain())
+        let config = try store.oauthConfig()
+        let cases: [([String]?, String?)] = [
+            (nil, nil),
+            ([], nil),
+            (["user:profile"], "user:profile"),
+            (["user:profile", "user:inference"], "user:profile user:inference")
+        ]
+        for (scopes, expected) in cases {
+            let client = ClaudeUsageClient(
+                httpClient: RoutingHTTPClient { request in
+                    let body = try XCTUnwrap(request.body)
+                    let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: String])
+                    XCTAssertEqual(fields["scope"], expected)
+                    return .init(statusCode: 200, headers: [:], body: Data())
+                })
+            _ = try await client.refreshToken("fixture", scopes: scopes, config: config)
+        }
+    }
+
     func testMalformedCustomOAuthURLThrowsInsteadOfCrashing() {
         // 잘못된 custom OAuth URL은 system-boundary 입력: crash나 prod fallback 대신 oauthConfig()의 명시적 throw
         let store = ClaudeAuthStore(
@@ -505,9 +526,13 @@ final class ClaudeProviderTests: XCTestCase {
 
     func testRetriesOnceAfter401AndPersistsRefreshedCredentials() async {
         let now = EgasuISO8601.date(from: "2026-02-20T16:00:00.000Z")!
+        let credential = """
+            {"claudeAiOauth":{"accessToken":"stale-token","refreshToken":"refresh-1","expiresAt":4102444800000,
+             "subscriptionType":"pro","scopes":["user:profile","user:inference"]}}
+            """
         let files = FakeFiles([
             "/tmp/claude/.claude.json": claudeUsageTestIdentity(),
-            "/tmp/claude/.credentials.json": #"{"claudeAiOauth":{"accessToken":"stale-token","refreshToken":"refresh-1","expiresAt":4102444800000,"subscriptionType":"pro","scopes":["user:profile"]}}"#
+            "/tmp/claude/.credentials.json": credential
         ])
         let httpClient = RoutingHTTPClient { request in
             if request.url.absoluteString.hasSuffix("/api/oauth/usage") {
@@ -521,11 +546,10 @@ final class ClaudeProviderTests: XCTestCase {
                     body: Data(#"{"five_hour":{"utilization":25,"resets_at":"2099-01-01T00:00:00.000Z"}}"#.utf8)
                 )
             }
-            return HTTPResponse(
-                statusCode: 200,
-                headers: [:],
-                body: Data(#"{"access_token":"fresh-token","refresh_token":"refresh-2","expires_in":3600}"#.utf8)
-            )
+            let rotation = """
+                {"access_token":"fresh-token","refresh_token":"refresh-2","expires_in":3600,"scope":"user:profile"}
+                """
+            return HTTPResponse(statusCode: 200, headers: [:], body: Data(rotation.utf8))
         }
         let provider = ClaudeProvider(
             authStore: ClaudeAuthStore(
@@ -549,6 +573,7 @@ final class ClaudeProviderTests: XCTestCase {
         let saved = files.files["/tmp/claude/.credentials.json"] ?? ""
         XCTAssertTrue(saved.contains("fresh-token"))
         XCTAssertTrue(saved.contains("refresh-2"))
+        XCTAssertEqual(ClaudeAuthStore.parseCredentials(saved)?.claudeAiOauth?.scopes, ["user:profile"])
     }
 
     func testFallsBackToVerifiedFileAfterKeychainAuthenticationFailure() async {

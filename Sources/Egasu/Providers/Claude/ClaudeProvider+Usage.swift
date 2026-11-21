@@ -1,6 +1,10 @@
 import Foundation
 
 extension ClaudeProvider {
+    struct ProfileScopeRemoved: Error {
+        let persisted: Bool
+    }
+
     func fetchLiveUsage(
         state: inout ClaudeCredentialState,
         credentialGeneration: inout ClaudeCredentialGeneration,
@@ -197,6 +201,8 @@ extension ClaudeProvider {
             }
             // 프로필 신원은 사용량 저장 키로만 사용. 로컬 credential 세대와 홈 메타데이터는 변경하지 않음.
             return identity
+        } catch let change as ProfileScopeRemoved {
+            throw change
         } catch {
             try ProviderAuthRetry.rethrowCancellation(error)
             AppLog.error(LogTag.plugin("claude"), "usage account verification failed")
@@ -266,7 +272,7 @@ extension ClaudeProvider {
         AppLog.info(LogTag.auth("claude"), "token refresh attempt")
         let decoded: ClaudeRefreshResponse
         do {
-            let response = try await usageClient.refreshToken(refreshToken, config: config)
+            let response = try await usageClient.refreshToken(refreshToken, scopes: state.oauth.scopes, config: config)
             if response.statusCode == 400 || response.statusCode == 401 {
                 let body = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]
                 let errorCode = body?["error"] as? String ?? body?["error_description"] as? String
@@ -292,6 +298,7 @@ extension ClaudeProvider {
             throw error
         }
         AppDiagnostics.record(.credentialRefresh, result: .success, providerID: provider.id)
+        if let scope = decoded.scope { state.oauth.scopes = scope.split(separator: " ").map(String.init) }
         state.oauth.accessToken = decoded.accessToken
         if let refreshToken = decoded.refreshToken {
             state.oauth.refreshToken = refreshToken
@@ -322,6 +329,10 @@ extension ClaudeProvider {
                                   localContext: "failed to persist rotated credentials; using the refreshed token for this session only")
         }
         AppLog.info(LogTag.auth("claude"), "token refresh ok (rotated)")
+        // 회전한 인증을 저장한 뒤 새 권한으로 프로필·사용량 재시도 여부 확인.
+        guard authStore.liveUsageAvailability(state) != .missingProfileScope else {
+            throw ProfileScopeRemoved(persisted: persisted)
+        }
         return RefreshedAccess(accessToken: decoded.accessToken, persisted: persisted)
     }
 
