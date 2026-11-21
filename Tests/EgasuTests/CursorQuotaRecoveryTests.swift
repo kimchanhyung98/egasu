@@ -4,6 +4,7 @@ import XCTest
 private actor CursorRecoveryResponses {
     enum Scenario: Sendable {
         case enterprise
+        case scopeChange(onDemand: Bool)
         case unified(hasWeekly: Bool)
     }
 
@@ -26,17 +27,34 @@ private actor CursorRecoveryResponses {
             }
         case "GetPlanInfo":
             switch scenario {
-            case .enterprise: text = #"{"planInfo":{"planName":"enterprise"}}"#
+            case .enterprise, .scopeChange: text = #"{"planInfo":{"planName":"enterprise"}}"#
             case .unified: text = #"{"isMerged":true,"planInfo":{"planName":"ultra"}}"#
             }
         case "usage-summary":
-            status = refreshCount == 2 ? 503 : 200
-            let percent = refreshCount == 1 ? 100 : 20
-            text =
-                #"{"billingCycleStart":"2027-01-12T00:00:00Z","billingCycleEnd":"2027-01-19T00:00:00Z","individualUsage":{"plan":{"totalPercentUsed":\#(percent)}}}"#
+            if case .scopeChange(let onDemand) = scenario {
+                let teamKey = onDemand ? "onDemand" : "pooled"
+                let personalKey = onDemand ? "onDemand" : "overall"
+                let teamUsed = refreshCount == 3 ? 10000 : 2000
+                let personalUsed = refreshCount == 1 ? 10000 : 2000
+                let individual =
+                    refreshCount == 1 || refreshCount == 4
+                    ? #""individualUsage":{"\#(personalKey)":{"used":\#(personalUsed),"limit":10000}},"#
+                    : ""
+                text =
+                    #"{"billingCycleStart":"2027-01-12T00:00:00Z","billingCycleEnd":"2027-01-19T00:00:00Z",\#(individual)"teamUsage":{"\#(teamKey)":{"used":\#(teamUsed),"limit":10000}}}"#
+            } else {
+                status = refreshCount == 2 ? 503 : 200
+                let percent = refreshCount == 1 ? 100 : 20
+                text =
+                    #"{"billingCycleStart":"2027-01-12T00:00:00Z","billingCycleEnd":"2027-01-19T00:00:00Z","individualUsage":{"plan":{"totalPercentUsed":\#(percent)}}}"#
+            }
         case "usage":
-            let used = refreshCount == 3 ? 10 : 2
-            text = #"{"startOfMonth":"2027-01-01T00:00:00Z","gpt-4":{"numRequests":\#(used),"maxRequestUsage":10}}"#
+            if case .scopeChange = scenario {
+                text = "{}"
+            } else {
+                let used = refreshCount == 3 ? 10 : 2
+                text = #"{"startOfMonth":"2027-01-01T00:00:00Z","gpt-4":{"numRequests":\#(used),"maxRequestUsage":10}}"#
+            }
         case "GetComplatCreditBalance":
             text = #"{"usdRemainingCents":"0"}"#
         case "usage-status":
@@ -104,6 +122,50 @@ extension CursorOptionalEndpointTests {
 
         _ = await store.refresh(providerID: "cursor", force: true, trigger: .manual)
         XCTAssertEqual(posts, ["cursor.quotaRecovered", "cursor.quotaRecovered"])
+    }
+
+    func testRecoveryComparesPersonalAndTeamPoolsSeparately() async throws {
+        for onDemand in [true, false] {
+            let metric = onDemand ? "cursor.onDemand" : "cursor.usage"
+            let label = onDemand ? "On-demand" : "Total usage"
+            var posts: [String] = []
+            let store = try makeRecoveryStore(.scopeChange(onDemand: onDemand), metrics: [metric]) {
+                id, _, _, _, current in
+                guard current() else { return false }
+                posts.append(id)
+                return true
+            }
+            // 개인 소진 → 팀 잔량 → 팀 소진 → 개인 회복 → 팀 회복.
+            for (used, expectedPosts) in [(100.0, 0), (20, 0), (100, 0), (20, 1), (20, 2)] {
+                _ = await store.refresh(providerID: "cursor", force: true, trigger: .manual)
+                let snapshot = try XCTUnwrap(store.localSnapshots["cursor"])
+                XCTAssertEqual(snapshot.liveQuotaAccountKey, "user")
+                XCTAssertEqual(progress(snapshot.lines, label)?.used, used)
+                XCTAssertEqual(posts, Array(repeating: "cursor.quotaRecovered", count: expectedPosts))
+            }
+        }
+    }
+
+    func testTeamSubscriptionKeepsItsScopeWhenOnlyPercentageIsAvailable() throws {
+        for plan: [String: Any] in [
+            ["limit": 10000, "totalSpend": 10000, "totalPercentUsed": 100], ["totalPercentUsed": 20]
+        ] {
+            let mapped = try CursorUsageMapper.mapUsage(
+                usage: ["planUsage": plan], planName: "team", creditGrants: nil, stripeBalanceCents: 0)
+            XCTAssertNotNil(progress(mapped.lines, "Total usage"))
+            XCTAssertEqual(mapped.recoveryScopes["Total usage"], .team)
+        }
+    }
+
+    func testMixedSpendingAndLimitScopesCannotSupplyARecoveryReading() throws {
+        let mapped = try CursorUsageMapper.mapUsage(
+            usage: [
+                "planUsage": ["totalPercentUsed": 30],
+                "spendLimitUsage": ["individualLimit": 10000, "pooledUsed": 2000]
+            ],
+            planName: "team", creditGrants: nil, stripeBalanceCents: 0)
+        XCTAssertEqual(progress(mapped.lines, "On-demand")?.used, 20)
+        XCTAssertEqual(mapped.recoveryScopes["On-demand"], .unverified)
     }
 
     func testMonthlyExtraUsageRecoversWithOrWithoutWeeklyQuota() async throws {

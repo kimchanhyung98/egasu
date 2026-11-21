@@ -495,6 +495,7 @@ final class CursorProvider: ProviderRuntime {
         )
         snapshot.producedByIdentityKey = CursorUsageClient.session(from: accessToken)?.userID
         snapshot.liveQuotaAccountKey = snapshot.producedByIdentityKey
+        snapshot.quotaRecoveryScopes = mapped.recoveryScopes
         return snapshot
     }
 }
