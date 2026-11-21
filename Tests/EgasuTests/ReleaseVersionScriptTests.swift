@@ -9,6 +9,38 @@ final class ReleaseVersionScriptTests: XCTestCase {
         XCTAssertEqual(try version(for: "v12.34.56-beta.1"), "12.34.56-beta.1")
     }
 
+    func testPromotionReusesThePublishedBuildAfterLateTagsAreAdded() throws {
+        let repo = try makeRepository(tag: "v1.0.0-beta.2")
+        let head = try runGit(["rev-parse", "HEAD"], in: repo)
+        try runGit(["update-ref", "refs/remotes/origin/main", head], in: repo)
+        func build(_ tag: String) throws -> String {
+            try callFunction("egasu_release_build", arguments: [repo.path, tag])
+        }
+        let beta = "v1.0.0-beta.2"
+        XCTAssertEqual(try build(beta), "1")
+        try runGit(["tag", "v1.0.0"], in: repo)
+        func publish(_ versions: [(String, String)]) throws {
+            let items = versions.map { version, build in
+                "<item><s:version>\(build)</s:version><s:shortVersionString>\(version)</s:shortVersionString><enclosure/></item>"
+            }.joined()
+            let feed = "<rss xmlns:s=\"http://www.andymatuschak.org/xml-namespaces/sparkle\"><channel>\(items)</channel></rss>"
+            try feed.write(to: repo.appendingPathComponent("appcast.xml"), atomically: true, encoding: .utf8)
+            try runGit(["add", "appcast.xml"], in: repo)
+            try runGit(["-c", "user.name=egasu Test", "-c", "user.email=test@example.com", "commit", "-qm", "feed"], in: repo)
+            try runGit(["update-ref", "refs/remotes/origin/gh-pages", "HEAD"], in: repo)
+            try runGit(["checkout", "--detach", head], in: repo)
+        }
+        try publish([("1.0.0-beta.2", "1")])
+        XCTAssertEqual(try build("v1.0.0"), "1.1")
+        try publish([("1.0.0-beta.2", "1"), ("1.0.0", "1.1")])
+        for tag in ["unrelated", "v1.0.0-beta.10"] { try runGit(["tag", tag], in: repo) }
+        XCTAssertEqual(try build(beta), "1")
+        XCTAssertEqual(try build("v1.0.0"), "1.1")
+        XCTAssertEqual(try developmentVersion(repositoryDirectory: repo), "1.0.0-dev")
+        XCTAssertThrowsError(try build("v1.0.0-beta.10"))
+        XCTAssertThrowsError(try build("v2.0.0"))
+    }
+
     func testRejectsTagsWithoutSemanticVersionPrefix() throws {
         for tag in [
             "0.9.5", "v0.9", "v0.9.5-beta..1", "v0.9.5-",

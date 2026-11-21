@@ -36,8 +36,20 @@ test('download links select the latest stable release and exclude other channels
   await expect(page.locator('[data-download-meta]')).toHaveText('v0.99.2');
 });
 
+test('download links order promotion suffixes numerically', async ({ page }) => {
+  const revisedURL = downloadURL.replace('v0.99.2', 'v0.99.3');
+  const earlier = stableFeed.replace('<sparkle:version>992<', '<sparkle:version>992.2<');
+  const newer = oldItem.replace('1422', '992.10').replace('>0.14.3<', '>0.99.3<').replace(oldDownloadURL, revisedURL);
+  await page.route('**/appcast.xml', route => route.fulfill({
+    contentType: 'application/xml', body: earlier.replace('</channel>', newer + '</channel>')
+  }));
+  await openHome(page);
+  await expect(page.locator('[data-download]').first()).toHaveAttribute('href', revisedURL);
+  await expect(page.locator('[data-download-meta]')).toHaveText('v0.99.3');
+});
+
 for (const invalid of [
-  { label: 'a fractional build', build: '9999.5', version: '0.99.9', url: downloadURL.replace('0.99.2', '0.99.9') },
+  { label: 'a malformed build suffix', build: '9999.5x', version: '0.99.9', url: downloadURL.replace('0.99.2', '0.99.9') },
   { label: 'a prerelease without a channel', build: '9999', version: '0.99.9-rc.1', url: downloadURL.replace('0.99.2', '0.99.9-rc.1') },
   { label: 'a URL escaping the release directory', build: '9999', version: '0.99.9', url: downloadURL.replace('v0.99.2/egasu.dmg', '../../../../other/repository') },
   { label: 'an old URL escaping the release directory', build: '9999', version: '0.99.9', url: oldDownloadURL.replace('v0.14.3/OpenUsage-0.14.3.dmg', '../../../../other/repository') },

@@ -33,7 +33,7 @@ jobs:
           # 요청한 태그 빌드. 태그 push에서는 `inputs.tag`가 비어 있어 trigger 태그를 기본 checkout.
           # workflow_dispatch에서는 기본 branch 대신 입력 태그로 고정.
           ref: ${{ inputs.tag }}
-          fetch-depth: 0          # CFBundleVersion인 commit 수 계산을 위한 전체 이력
+          fetch-depth: 0          # 빌드 번호 계산에 필요한 전체 이력과 릴리스 태그
           persist-credentials: true
 
       - name: Xcode 선택
@@ -137,6 +137,23 @@ jobs:
             exit 1
           fi
 
+      - name: 게시 이력에서 빌드 번호 선택
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          # 과거 태그의 앱을 재게시해도 실행 중인 워크플로와 같은 피드 도구 사용.
+          git show "$GITHUB_SHA:script/release_appcast.py" > "$RUNNER_TEMP/release_appcast.py"
+          previous="$RUNNER_TEMP/previous-appcast.xml"
+          if [ -f feed/appcast.xml ]; then
+            cp feed/appcast.xml "$previous"
+          else
+            printf '<rss><channel/></rss>\n' > "$previous"
+          fi
+          count="$(git rev-list --count HEAD)"
+          build="$(python3 "$RUNNER_TEMP/release_appcast.py" build "$previous" "$count" "$VERSION")"
+          echo "EGASU_BUILD=$build" >> "$GITHUB_ENV"
+          echo "OPENUSAGE_BUILD=$build" >> "$GITHUB_ENV"
+
       - name: DMG 빌드·서명·공증
         env:
           SPARKLE_PUBLIC_KEY: ${{ secrets.SPARKLE_PUBLIC_KEY }}
@@ -173,18 +190,11 @@ jobs:
           # 릴리스별 flag 동기화 없이 `--directory`만 필요.
           posthog-cli dsym upload --directory dist/dSYMs
 
-      - name: GitHub Releases에 DMG 게시
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ steps.meta.outputs.tag }}
-          name: ${{ steps.meta.outputs.app_name }} ${{ steps.meta.outputs.version }}
-          prerelease: ${{ steps.meta.outputs.prerelease }}
-          files: dist/${{ steps.meta.outputs.app_name }}-${{ steps.meta.outputs.version }}.dmg
-          generate_release_notes: true
-
       - name: Sparkle로 appcast 생성
         env:
           DMG: ${{ steps.meta.outputs.app_name }}-${{ steps.meta.outputs.version }}.dmg
+          APP_NAME: ${{ steps.meta.outputs.app_name }}
+          VERSION: ${{ steps.meta.outputs.version }}
           CHANNEL: ${{ steps.meta.outputs.channel }}
           # 태그별 GitHub Release asset base URL.
           # generate_appcast는 feed/의 새 DMG에만 prefix를 적용하고 기존 항목은 이전 태그 URL 유지.
@@ -193,12 +203,6 @@ jobs:
           # release.sh가 이미 받은 Sparkle SwiftPM artifact에서 generate_appcast 탐색.
           GA="$(find .build/artifacts -type f -name generate_appcast 2>/dev/null | head -n1)"
           [ -x "$GA" ] || { echo "generate_appcast not found under .build/artifacts" >&2; exit 1; }
-
-          # 항목 누락 검증을 위한 기존 feed 항목 수. 최초 릴리스는 0.
-          # Sparkle은 일반적으로 branch별 소수 버전만 유지하지만 이 feed는 이전 설치와 다른 channel 항목을
-          # 계속 제공하도록 의도적으로 append-only 구성.
-          before=0
-          [ -f feed/appcast.xml ] && before=$(grep -c "<item>" feed/appcast.xml || true)
 
           cp "dist/$DMG" "feed/$DMG"
 
@@ -214,14 +218,20 @@ jobs:
             "${channel_arg[@]}" \
             feed
 
-          # 병합 오류를 명확히 실패 처리. 새 DMG enclosure가 존재하고 같은 줄에 EdDSA 서명을 포함해야 함.
-          # SUPublicEDKey와 서명 key가 다르면 generate_appcast가 서명을 조용히 생략.
-          # 기존 항목이나 다른 channel 항목 누락 방지를 위해 전체 항목 수도 감소하면 안 됨.
-          after=$(grep -c "<item>" feed/appcast.xml || true)
-          grep -Eq "$DMG\"[^>]*sparkle:edSignature" feed/appcast.xml \
-            || { echo "New item for $DMG is missing or unsigned (SUPublicEDKey/private-key mismatch?)." >&2; exit 1; }
-          [ "$after" -ge "$before" ] || { echo "Appcast item count dropped ($before -> $after) — aborting." >&2; exit 1; }
-          echo "Appcast OK: $before -> $after items."
+          build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "dist/$APP_NAME.app/Contents/Info.plist")"
+          [ "$build" = "$EGASU_BUILD" ] || { echo "Packaged build differs from allocated build" >&2; exit 1; }
+          signature="$(python3 "$RUNNER_TEMP/release_appcast.py" verify "$RUNNER_TEMP/previous-appcast.xml" \
+            feed/appcast.xml "$build" "$VERSION" "$CHANNEL" "$DOWNLOAD_PREFIX$DMG")"
+          "$(dirname "$GA")/sign_update" --verify --ed-key-file - "dist/$DMG" "$signature" < "$SPARKLE_PRIVATE_KEY_FILE"
+
+      - name: GitHub Releases에 DMG 게시
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.app_name }} ${{ steps.meta.outputs.version }}
+          prerelease: ${{ steps.meta.outputs.prerelease }}
+          files: dist/${{ steps.meta.outputs.app_name }}-${{ steps.meta.outputs.version }}.dmg
+          generate_release_notes: true
 
       - name: Pages 디렉터리 조립
         run: |

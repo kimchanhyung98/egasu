@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { join, matchesGlob } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
@@ -188,7 +189,7 @@ test('main·PR의 사이트 변경은 게시 없이 Site CI에서 검증', () =>
   }
   for (const event of ['push', 'pull_request'] as const) {
     const filters = paths(event);
-    for (const path of ['site/src/scripts/app.ts', 'script/site_assemble.sh',
+    for (const path of ['site/src/scripts/app.ts', 'script/site_assemble.sh', 'script/release_appcast.py',
       'Sources/Egasu/Resources/ProviderIcons/codex.svg', 'Sources/Egasu/Resources/Localization/ko.lproj/Settings.strings',
       'Sources/Egasu/Stores/WidgetDataStore.swift', '.github/workflows/publish-site.yml']) {
       assert.equal(filters.some(pattern => matchesGlob(path, pattern)), true, `${event}: ${path}`);
@@ -196,4 +197,42 @@ test('main·PR의 사이트 변경은 게시 없이 Site CI에서 검증', () =>
     assert.equal(filters.some(pattern => matchesGlob('docs/settings.md', pattern)), false);
   }
   assert.doesNotMatch(workflow('site.yml'), /peaceiris\/actions-gh-pages|actions\/deploy-pages/);
+});
+
+test('같은 커밋의 정식 승격 시 버전·채널·서명·이전 항목 보존', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'egasu-promotion-'));
+  const url = 'https://example.com/releases/v1.0.0/egasu.dmg';
+  const item = (build: string, version: string, channel: string, asset: string, signature = 'signed') =>
+    `<item><s:version>${build}</s:version><s:shortVersionString>${version}</s:shortVersionString>` +
+    `${channel ? `<s:channel>${channel}</s:channel>` : ''}<enclosure s:edSignature="${signature}" url="${asset}"/></item>`;
+  const feed = (...items: string[]) =>
+    `<rss xmlns:s="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel>${items.join('')}</channel></rss>`;
+  const helper = fileURLToPath(new URL('../../script/release_appcast.py', import.meta.url));
+  const beta = item('25', '1.0.0-beta.1', 'beta', 'https://example.com/beta.dmg');
+  const stable = item('25.1', '1.0.0', '', url);
+  function verify(xml: string) {
+    writeFileSync(join(dir, 'feed/appcast.xml'), xml);
+    return spawnSync('python3', [helper, 'verify', 'previous-appcast.xml', 'feed/appcast.xml',
+      '25.1', '1.0.0', 'stable', url], { cwd: dir, encoding: 'utf8' }).status;
+  }
+  try {
+    mkdirSync(join(dir, 'feed'));
+    writeFileSync(join(dir, 'previous-appcast.xml'), feed(beta));
+    assert.equal(verify(feed(beta, stable)), 0);
+    for (const xml of [feed(stable), feed(beta, stable, stable), feed(beta, stable, item('25.2', '1.0.0', '', url)), feed(beta, item('25', '1.0.0', '', url)),
+      feed(beta, item('25.1', '1.0.0', 'beta', url)), feed(beta, item('25.1', '1.0.0', '', url, '')),
+      feed(beta, item('25.1', '1.0.0', '', 'https://example.com/other.dmg'))]) {
+      assert.notEqual(verify(xml), 0);
+    }
+    const historic = item('24', '1.0.0', '', 'https://example.com/old-name/egasu.dmg');
+    writeFileSync(join(dir, 'previous-appcast.xml'), feed(historic, stable));
+    const allocated = spawnSync('python3', [helper, 'build', 'previous-appcast.xml', '25', '1.0.0'],
+      { cwd: dir, encoding: 'utf8' });
+    assert.equal(allocated.status, 0, allocated.stderr);
+    assert.equal(allocated.stdout.trim(), '25.1');
+    assert.equal(verify(feed(historic, item('25.1', '1.0.0', '', url, 'new-signature'))), 0);
+    assert.notEqual(verify(feed(stable)), 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

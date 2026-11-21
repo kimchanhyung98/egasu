@@ -107,7 +107,7 @@ test('smoke selects stable builds with the same channel, version, and URL bounda
   const stable = item('992', '0.99.2');
   const oldPrefix = 'https://github.com/kimchanhyung98/openusage/releases/download/';
   const oldStable = item('1422', '0.14.3', '', 'v0.14.3/OpenUsage-0.14.3.dmg', oldPrefix);
-  const invalid = [item('9999', '0.99.9', 'nightly'), item('9999', '0.99.9-rc.1'), item('9999.5', '0.99.9'), item('9999', '0.99.9', '', '../../../../other/repository'), item('9999', '0.99.9', '', '../../../../other/repository', oldPrefix)];
+  const invalid = [item('9999', '0.99.9', 'nightly'), item('9999', '0.99.9-rc.1'), item('9999.5x', '0.99.9'), item('9999', '0.99.9', '', '../../../../other/repository'), item('9999', '0.99.9', '', '../../../../other/repository', oldPrefix)];
   try {
     const feed = join(directory, 'appcast.xml');
     writeFileSync(feed, `<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel>${stable}${invalid.join('')}</channel></rss>`);
@@ -124,5 +124,9 @@ test('smoke selects stable builds with the same channel, version, and URL bounda
     assert.equal(mixedResult.status, 0, mixedResult.stderr);
     assert.match(mixedResult.stdout, /stable 2/);
     assert.match(mixedResult.stdout, /0\.14\.3 \(build 1422\)/);
+    writeFileSync(feed, `<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel>${item('992.2', '0.99.2')}${item('992.10', '0.99.3')}</channel></rss>`);
+    const promoted = spawnSync('python3', ['-', feed, feed], { input: python, encoding: 'utf8', timeout: 5000 });
+    assert.equal(promoted.status, 0, promoted.stderr);
+    assert.match(promoted.stdout, /0\.99\.3 \(build 992\.10\)/);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
