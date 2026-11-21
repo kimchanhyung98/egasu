@@ -37,6 +37,28 @@ final class ZAIDetailMapperTests: XCTestCase {
         XCTAssertNil(day.costUSD)
     }
 
+    func testUnrepresentableCostPreservesCompleteDetailTokens() throws {
+        let data = Data(
+            #"""
+            {"provider":{"models":{
+                "zai/glm-test-extreme":{"cost":{"input":1e308,"output":1}},
+                "zai/glm-test-normal":{"cost":{"input":1,"output":1}}
+            }}}
+            """#.utf8)
+        let catalog = try PricingCatalogCodecs.catalogFromModelsDev(data)
+        let pricing = ModelPricing(supplement: PricingSupplement(), primary: PricingCatalog(), secondary: catalog)
+
+        let parsed = try map(
+            models: [
+                model("glm-test-normal", input: 1),
+                model("glm-test-extreme", input: 1, output: 2)
+            ], pricing: pricing)
+        let day = try XCTUnwrap(parsed.days["2026-11-02"])
+        XCTAssertEqual(day.tokens, 4)
+        XCTAssertTrue(day.tokensComplete)
+        XCTAssertNil(day.costUSD)
+    }
+
     func testAggregateBucketsMatchEveryModelAtEachAxisPosition() throws {
         let parsed = try map(buckets: [
             ["modelCode": "cached_input", "totalTokensUsage": [20, 40]],
@@ -64,12 +86,14 @@ final class ZAIDetailMapperTests: XCTestCase {
          "uncachedInputTokensUsage": [input], "outputTokensUsage": [output]]
     }
 
-    private func map(models: [[String: Any]]) throws -> ZAIDetailMapper.Parsed {
+    private func map(models: [[String: Any]], pricing: ModelPricing = TestPricing.bundled) throws
+        -> ZAIDetailMapper.Parsed
+    {
         let body = try JSONSerialization.data(withJSONObject: [
             "data": ["modelUsage": ["xTime": ["2026-11-02"], "modelDataList": models]]
         ])
         return try ZAIDetailMapper.map(
-            body, window: ZAIDetailWindow(days: ["2026-11-02"], hourly: false), pricing: TestPricing.bundled
+            body, window: ZAIDetailWindow(days: ["2026-11-02"], hourly: false), pricing: pricing
         )
     }
 
