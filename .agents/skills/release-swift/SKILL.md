@@ -16,7 +16,11 @@ Sparkle `appcast.xml`은 `gh-pages`에 기록한 뒤 Pages로 배포.
 - **Beta (Early Access):** suffixed tag like `v0.10.0-beta.1`. Marked a GitHub pre-release and added to Sparkle's `beta` channel. Only users with Early Access enabled get it; GitHub "Latest" is untouched.
 - **Stable:** plain tag like `v0.10.0`. Marked non-prerelease, becomes GitHub "Latest", and ships to everyone.
 
-The tag IS the version: `v0.10.0-beta.1` becomes `CFBundleShortVersionString = 0.10.0-beta.1`, and `CFBundleVersion` is the git commit count. There are no version files to bump.
+표시 버전은 태그에서 추출.
+예를 들어 `v0.10.0-beta.1`의 `CFBundleShortVersionString`은 `0.10.0-beta.1`.
+`CFBundleVersion`은 Git 커밋 수이며 같은 커밋에서 후속 버전을 게시하면 점과 순번 추가(예: `1899.1`).
+이미 공개된 DMG가 있으면 같은 태그의 워크플로가 해당 파일을 내려받아 원본 빌드 번호와 서명으로 피드 복구.
+같은 커밋의 다른 태그에 DMG만 공개되었으면 해당 태그의 릴리스 워크플로를 재실행해 appcast 복구 후 다음 태그 게시.
 
 ## Cutting a release
 

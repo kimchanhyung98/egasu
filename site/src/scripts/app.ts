@@ -207,7 +207,7 @@ function selectSpend(clicked: HTMLButtonElement, kind: 'period' | 'metric'): voi
 
 interface FeedItem {
   channel: string;
-  build: number;
+  build: number[];
   short: string;
   url: string;
   pub: number;
@@ -230,19 +230,23 @@ async function initDownload(): Promise<void> {
       .map((it) => {
         const ns = (name: string): string => it.getElementsByTagNameNS(SPARKLE_NS, name)[0]?.textContent?.trim() ?? '';
         const enclosure = it.querySelector('enclosure');
+        const build = ns('version');
         return {
           channel: ns('channel'),
-          build: Number(ns('version')),
+          build: /^[1-9]\d*(?:\.[1-9]\d*)?$/.test(build) ? build.split('.').map(Number) : [],
           short: ns('shortVersionString'),
           url: enclosure?.getAttribute('url') ?? '',
           pub: Date.parse(it.querySelector('pubDate')?.textContent ?? '') || 0,
         };
       })
       .filter((i) => i.channel === '' && /^\d+\.\d+\.\d+$/.test(i.short)
-        && Number.isSafeInteger(i.build) && i.build > 0
+        && i.build.length > 0 && i.build.every(Number.isSafeInteger)
         && DOWNLOAD_PREFIXES.some((prefix) => i.url.startsWith(prefix) && new URL(i.url).href.startsWith(prefix)));
     if (!items.length) throw new Error('Appcast contains no valid stable release');
-    const latest = items.reduce((a, b) => (b.build > a.build || (b.build === a.build && b.pub > a.pub) ? b : a));
+    const latest = items.reduce((a, b) => {
+      const order = b.build[0] - a.build[0] || (b.build[1] ?? 0) - (a.build[1] ?? 0) || b.pub - a.pub;
+      return order > 0 ? b : a;
+    });
     links.forEach((a) => {
       a.href = latest.url;
     });

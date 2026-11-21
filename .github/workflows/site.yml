@@ -16,6 +16,7 @@ on:
     paths:
       - 'site/**'
       - 'script/site_*.sh'
+      - 'script/release_appcast.py'
       - 'Sources/Egasu/**'
       - '.github/workflows/site.yml'
       - '.github/workflows/publish-site.yml'
@@ -27,6 +28,7 @@ on:
     paths:
       - 'site/**'
       - 'script/site_*.sh'
+      - 'script/release_appcast.py'
       - 'Sources/Egasu/**'
       - '.github/workflows/site.yml'
       - '.github/workflows/publish-site.yml'
