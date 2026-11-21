@@ -21,10 +21,15 @@ export const test = base.extend<{ runtimeErrors: string[]; expectXMLParserCsp: b
     await page.route('**/appcast.xml', (route) => route.fulfill({ contentType: 'application/xml', body: stableFeed }));
     await use(errors);
     expect(errors, 'No runtime errors').toEqual([]);
-    // Chromium의 XML parsererror 노드가 삽입하는 두 style만 잘못된 XML 검사에서 예상.
+    // 이전 Chromium은 잘못된 XML에 고정 스타일 두 개를 보고하고, 새 버전은 진단 없이 처리.
     const parserHashes = expectXMLParserCsp && browserName === 'chromium'
       ? ['ICa0DhwZQJsOd/Rn0N8H6FdQ71GfNL+op2zhAQ+Y4mM=', 'ZD0chCyBaNHl+4UwQHJIHGoYhKwMeyCXGgJTKW5/67E='] : [];
-    expect(cspErrors, 'Only explicitly expected XML parser diagnostics').toEqual(parserHashes.map((hash) => expect.stringContaining(`sha256-${hash}`)));
+    const webkitParserStyle = "Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline' does not appear in the style-src directive of the Content Security Policy.";
+    const unexpected = cspErrors.filter(message =>
+      !(expectXMLParserCsp && browserName === 'webkit' && message === webkitParserStyle)
+      && !parserHashes.some(hash => message.includes(`sha256-${hash}`)));
+    expect(cspErrors.length).toBeLessThanOrEqual(2);
+    expect(unexpected, 'Only explicitly expected XML parser diagnostics').toEqual([]);
   }, { auto: true }],
 });
 
