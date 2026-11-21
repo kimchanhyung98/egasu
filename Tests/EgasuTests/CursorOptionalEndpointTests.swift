@@ -387,6 +387,48 @@ final class CursorOptionalEndpointTests: XCTestCase {
         }
     }
 
+    func testMergedAccountUsesOneWeeklyPoolAndDashboardBilling() async throws {
+        let provider = makeProvider { request in
+            let json: String
+            switch request.url.lastPathComponent {
+            case "GetCurrentPeriodUsage":
+                json = #"{"enabled":true,"billingCycleStart":"1794728276119","billingCycleEnd":"1795333076119","planUsage":{"totalPercentUsed":23,"autoPercentUsed":23}}"#
+            case "GetPlanInfo": json = #"{"isMerged":true,"planInfo":{"planName":"ultra"}}"#
+            case "GetComplatCreditBalance": json = #"{"usdRemainingCents":"581149"}"#
+            case "usage-status":
+                XCTAssertEqual(request.url.query, "scope=user")
+                XCTAssertNotNil(request.headers["Cookie"])
+                json = #"{"availability":"available","monthlyUsage":{"usedCents":2500,"limitCents":10000,"periodStart":"2026-11-01T00:00:00Z","resetsAt":"2026-12-01T00:00:00Z"}}"#
+            case "get-filtered-usage-events": json = #"{"totalUsageEventsCount":0}"#
+            default:
+                XCTFail("Unexpected endpoint \(request.url.path)")
+                return HTTPResponse(statusCode: 404, headers: [:], body: Data())
+            }
+            return HTTPResponse(statusCode: 200, headers: [:], body: Data(json.utf8))
+        }
+        let snapshot = await provider.refresh()
+        XCTAssertEqual(progress(snapshot.lines, "Total usage")?.used, 23)
+        XCTAssertNil(snapshot.line(label: "Auto usage"))
+        XCTAssertEqual(progress(snapshot.lines, "On-demand")?.used, 25)
+        XCTAssertEqual(progress(snapshot.lines, "On-demand")?.limit, 100)
+        guard case .values(_, let values, _, _, _, _) = snapshot.line(label: "Credits") else {
+            return XCTFail("Missing prepaid balance")
+        }
+        XCTAssertEqual(values.first?.number, 5811.49)
+    }
+
+    func testAdditionalUsageDistinguishesDisabledUncappedAndInvalidBilling() throws {
+        XCTAssertNil(try CursorProvider.additionalUsage(["availability": "unavailable"]))
+        XCTAssertNil(try CursorProvider.additionalUsage(["monthlyUsage": ["additionalUsageOff": true]]))
+        XCTAssertNil(try CursorProvider.additionalUsage(["monthlyUsage": ["limitCents": 0, "usedCents": 250]]))
+        guard case .values(_, let values, _, _, _, _) = try CursorProvider.additionalUsage(
+            ["monthlyUsage": ["usedCents": 250, "limitCents": NSNull()]]) else { return XCTFail("Missing spend") }
+        XCTAssertEqual(values.first?.number, 2.5)
+        for monthly: [String: Any] in [["usedCents": -1], ["usedCents": 10, "limitCents": "invalid"]] {
+            XCTAssertThrowsError(try CursorProvider.additionalUsage(["monthlyUsage": monthly]))
+        }
+    }
+
     private nonisolated static var primaryUsageResponse: HTTPResponse {
         HTTPResponse(
             statusCode: 200,

@@ -26,7 +26,7 @@ DMG 하나로 Apple Silicon과 Intel Mac 모두 지원.
 
 - **[Claude](/docs/providers/claude.md)** — 세션·주간·모델별 한도, 추가 사용량, 로컬 기록의 일별 지출·토큰.
 - **[Codex](/docs/providers/codex.md)** — 기본·Spark 풀의 세션·주간·월간 한도, 추가 사용 및 한도 재설정 크레딧, 로컬 기록의 일별 지출·토큰.
-- **[Cursor](/docs/providers/cursor.md)** — 전체·Auto·API 사용량, 요청·크레딧, 추가 사용량, 서버 보고 기반 일별 추가 과금·토큰.
+- **[Cursor](/docs/providers/cursor.md)** — 일반 요금제의 전체·Auto·API 사용량, 통합 계정의 주간 공유 한도·선불 잔액·월간 추가 사용액, 서버 보고 기반 지출·토큰.
   이력 조회 실패 시 같은 계정으로 확인한 마지막 정상 이력 유지.
 - **[Antigravity](/docs/providers/antigravity.md)** — Gemini 풀과 Claude 등 다른 모델 풀의 5시간·주간 한도, 계정별 Argon 주간 한도와 로컬 사용 이력.
 - **[Copilot](/docs/providers/copilot.md)** — AI 크레딧, 추가 사용량, 조직 사용량·청구액, 채팅·코드 완성 할당량.
