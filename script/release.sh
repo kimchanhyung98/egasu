@@ -14,7 +14,7 @@ set -euo pipefail
 #                                서명용 private key와 일치할 때만 generate_appcast가 DMG에 서명
 #   EGASU_TAG                    릴리스 태그(예: v1.0.0)
 # 선택 환경 변수:
-#   EGASU_BUILD                  단조 증가하는 CFBundleVersion. 기본값은 git commit 수
+#   EGASU_BUILD                  단조 증가하는 CFBundleVersion. 기본값은 커밋 수와 같은 커밋의 릴리스 순번
 #   FEED_URL                     앱의 appcast URL. 기본값은 https://egasu.chanhyung.kim/appcast.xml
 #   공증 인증 정보: NOTARY_APPLE_ID / NOTARY_APP_PASSWORD / NOTARY_TEAM_ID
 #                                notarytool용 Apple ID, 앱 전용 비밀번호, team ID.
@@ -38,9 +38,9 @@ MIN_SYSTEM_VERSION="15.0"
 VERSION="$(egasu_release_version "$ROOT_DIR" "$EGASU_TAG")"
 # CFBundleShortVersionString에 pre-release 접미사를 포함한 전체 버전(예: "1.0.0-beta.1") 저장.
 # Sparkle 업데이트 안내와 앱 footer/About에 표시되는 문자열이므로 항상 동일해야 함.
-# Sparkle은 CFBundleVersion으로 빌드 비교. EGASU_BUILD, OPENUSAGE_BUILD, Git 커밋 수 순으로 선택.
+# Sparkle은 CFBundleVersion으로 빌드 비교. EGASU_BUILD, OPENUSAGE_BUILD, 태그별 기본 빌드 번호 순으로 선택.
 # Developer ID 공증은 숫자 형식을 요구하지 않음(Sparkle 문서의 beta short version 예: "2.0b1").
-BUILD="${EGASU_BUILD:-${OPENUSAGE_BUILD:-$(git rev-list --count HEAD)}}"
+BUILD="${EGASU_BUILD:-${OPENUSAGE_BUILD:-$(egasu_release_build "$ROOT_DIR" "$EGASU_TAG")}}"
 FEED_URL="${FEED_URL:-https://egasu.chanhyung.kim/appcast.xml}"
 DMG_NAME="$APP_NAME-$VERSION.dmg"
 

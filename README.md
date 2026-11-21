@@ -28,6 +28,7 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
 
 - **[Claude](/docs/providers/claude.md)** — 세션·주간·모델별 한도, 추가 사용량, 로컬 기록의 일별 지출·토큰.
   OAuth 갱신은 기존 로그인 권한 범위 유지.
+  CLI 인증 실패 후 남은 토큰에 조회 권한이 없으면 같은 계정의 Desktop 로그인 확인.
 - **[Codex](/docs/providers/codex.md)** — 기본·Spark 풀의 세션·주간·월간 한도, 추가 사용 및 한도 재설정 크레딧, 로컬 기록의 일별 지출·토큰.
 - **[Cursor](/docs/providers/cursor.md)** — 일반 요금제의 전체·Auto·API 사용량, 통합 계정의 주간 공유 한도·선불 잔액·월간 추가 사용액, 서버 보고 기반 지출·토큰.
   요금제 조회에 실패해도 청구 정보에서 통합 계정이 확인되면 통합 지표 표시.
@@ -179,9 +180,10 @@ The release workflow needs these repository secrets (Settings → Secrets and va
 
 Export the Developer ID Application cert (with its private key) from Keychain Access as a `.p12`, then `base64 -i DeveloperID.p12 | pbcopy`. App-specific passwords come from appleid.apple.com → Sign-In and Security → App-Specific Passwords. Generate the Sparkle EdDSA key pair once with Sparkle's `generate_keys` tool.
 
-워크플로는 GitHub Release에 DMG를 먼저 게시하고, 해당 DMG의 appcast 항목에 `sparkle:edSignature` 속성이 있는지 확인.
-검사에 실패하면 Pages의 appcast는 갱신되지 않으며, 이미 게시된 GitHub Release와 DMG는 공개 상태로 유지.
-GitHub Release와 DMG를 확인한 뒤 서명 설정이 원인이면 수정하고 같은 태그로 릴리스 워크플로를 다시 실행.
+워크플로는 새 DMG의 빌드 번호·버전·채널·다운로드 URL·서명과 기존 피드 항목 보존 여부를 확인한 뒤 GitHub Release와 Pages에 게시.
+같은 커밋에서 정식판으로 승격하면 베타보다 높은 빌드 번호 부여.
+같은 태그를 다시 실행하면 GitHub Release의 기존 DMG를 다운로드해 서명을 검증하고 피드 복구.
+서명 검사에 실패하면 서명 설정을 수정하고 같은 태그로 릴리스 워크플로 재실행.
 
 For iCloud Sync, store the original development and Developer ID provisioning profiles in 1Password as secure documents. Install the development profile on each registered Mac; base64-encode the Developer ID profile and store it only in the `APPLE_DEVELOPER_ID_ICLOUD_PROFILE` Actions secret. See [iCloud Sync](/docs/icloud-sync.md#개발-및-릴리스-설정) for the container identifiers, build command, and file-inspection command.
 

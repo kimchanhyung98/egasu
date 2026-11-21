@@ -78,9 +78,11 @@ for it in items:
     short = (it.findtext(NS + "shortVersionString") or "").strip()
     enc = it.find("enclosure")
     url = enc.get("url", "") if enc is not None else ""
-    try:
-        build = int(it.findtext(NS + "version") or "")
-    except ValueError:
+    raw_build = (it.findtext(NS + "version") or "").strip()
+    if not re.fullmatch(r"[1-9][0-9]{0,15}(?:\.[1-9][0-9]{0,15})?", raw_build):
+        continue
+    build = tuple(int(part) for part in raw_build.split("."))
+    if any(part > 9007199254740991 for part in build):
         continue
     try:
         pub = parsedate_to_datetime(it.findtext("pubDate") or "").timestamp()
@@ -89,13 +91,13 @@ for it in items:
     parts = urlsplit(url.replace("\\", "/"))
     normalized_path = posixpath.normpath(re.sub(r"%2e", ".", parts.path, flags=re.I))
     normalized = urlunsplit(parts._replace(path=normalized_path))
-    if ch == "" and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", short) and 0 < build <= 9007199254740991 and any(url.startswith(prefix) and normalized.startswith(prefix) for prefix in PREFIXES):
-        stable.append((build, pub, short, url))
+    if ch == "" and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", short) and any(url.startswith(prefix) and normalized.startswith(prefix) for prefix in PREFIXES):
+        stable.append((build, pub, short, url, raw_build))
 if not stable:
     sys.exit("FAIL appcast has no stable item")
-build, _, short, url = max(stable, key=lambda item: item[:2])
+_, _, short, url, raw_build = max(stable, key=lambda item: item[:2])
 print(f"ok   appcast items: {len(items)} (>= {want} from {source}), stable {len(stable)}")
-print(f"ok   latest by sparkle:version: {short} (build {build}) -> {url}")
+print(f"ok   latest by sparkle:version: {short} (build {raw_build}) -> {url}")
 PY
 
 # index.html의 로컬 자산과 외부 GitHub 링크가 모두 응답하는지.
