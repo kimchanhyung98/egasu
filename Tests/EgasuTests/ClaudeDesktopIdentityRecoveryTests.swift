@@ -3,6 +3,101 @@ import XCTest
 
 extension ClaudeDesktopAuthStoreTests {
     @MainActor
+    func testRestrictedStoredLoginUsesOnlyEligibleDesktopAfterFileAuthenticationFails() async throws {
+        let account = "11111111-1111-4111-8111-111111111111"
+        let now = now
+        let path = "/tmp/claude"
+        let other = "22222222-2222-4222-8222-222222222222"
+        for (desktopAccount, allowed, expectedUsage) in [
+            (account, true, true), (other, true, false), (account, false, false)
+        ] {
+            let fixture = try makeFixture(
+                activeOrganization: organization, activeAccountUUID: desktopAccount,
+                v2: [cacheKey(organization: organization): tokenEntry("desktop-token", expiresIn: 3_600)]
+            )
+            fixture.files.files["\(path)/.claude.json"] = """
+                {"oauthAccount":{"accountUuid":"\(account)","organizationUuid":"\(organization)"}}
+                """
+            fixture.files.files["\(path)/.credentials.json"] =
+                #"{"claudeAiOauth":{"accessToken":"revoked-file","expiresAt":4102444800000,"scopes":["user:profile"]}}"#
+            let restricted = #"{"claudeAiOauth":{"accessToken":"restricted","scopes":["user:inference"]}}"#
+            let http = RoutingHTTPClient { request in
+                if request.headers["Authorization"] == "Bearer revoked-file" {
+                    return HTTPResponse(statusCode: 401, headers: [:], body: Data())
+                }
+                XCTAssertEqual(request.headers["Authorization"], "Bearer desktop-token")
+                XCTAssertEqual(request.url.path, "/api/oauth/usage")
+                return HTTPResponse(
+                    statusCode: 200, headers: [:], body: Data(#"{"five_hour":{"utilization":25}}"#.utf8))
+            }
+            let runtime = ClaudeProvider(
+                authStore: ClaudeAuthStore(
+                    environment: FakeEnvironment(["CLAUDE_CONFIG_DIR": path]),
+                    files: fixture.files, keychain: FakeKeychain(restricted),
+                    desktop: fixture.store, allowsDesktopFallback: allowed, now: { now }),
+                usageClient: ClaudeUsageClient(httpClient: http), usageStateStore: isolatedClaudeUsageStore(),
+                logUsageScanner: ClaudeLogFixture.scanner(home: nil), includeSharedUsage: false,
+                now: { now }, pricing: { TestPricing.bundled })
+            let snapshot = await ProviderRefreshContext.$isManual.withValue(true) { await runtime.refresh() }
+            let paths = ["/api/oauth/profile"] + (expectedUsage ? ["/api/oauth/usage"] : [])
+            XCTAssertEqual(http.requests.map(\.url.path), paths)
+            XCTAssertEqual(fixture.keyReader.calls.isEmpty, !allowed)
+            XCTAssertEqual(snapshot.authenticationIssue, expectedUsage ? nil : .signInNeeded)
+            XCTAssertEqual(snapshot.line(label: "Session") != nil, expectedUsage)
+        }
+    }
+
+    @MainActor
+    func testNewKeychainLoginWinsBeforeAndDuringRestrictedDesktopFallback() async throws {
+        let account = "11111111-1111-4111-8111-111111111111"
+        let other = "22222222-2222-4222-8222-222222222222"
+        let now = now
+        for switchDuringDesktop in [false, true] {
+            let fixture = try makeFixture(
+                activeOrganization: organization, activeAccountUUID: switchDuringDesktop ? account : other,
+                v2: [cacheKey(organization: organization): tokenEntry("desktop", expiresIn: 3_600)])
+            fixture.files.files["/tmp/claude/.claude.json"] = """
+                {"oauthAccount":{"accountUuid":"\(account)","organizationUuid":"\(organization)"}}
+                """
+            fixture.files.files["/tmp/claude/.credentials.json"] =
+                #"{"claudeAiOauth":{"accessToken":"file","scopes":["user:profile"]}}"#
+            let keychain = FakeKeychain(#"{"claudeAiOauth":{"accessToken":"restricted","scopes":["user:inference"]}}"#)
+            let fresh = #"{"claudeAiOauth":{"accessToken":"new-cli","scopes":["user:profile"]}}"#
+            let http = RoutingHTTPClient { request in
+                switch request.headers["Authorization"] {
+                case "Bearer file":
+                    if !switchDuringDesktop { keychain.value = fresh }
+                    return HTTPResponse(statusCode: 401, headers: [:], body: Data())
+                case "Bearer desktop":
+                    keychain.value = fresh
+                    return HTTPResponse(
+                        statusCode: 200, headers: [:], body: Data(#"{"five_hour":{"utilization":5}}"#.utf8))
+                default:
+                    XCTAssertEqual(request.headers["Authorization"], "Bearer new-cli")
+                    return HTTPResponse(
+                        statusCode: 200, headers: [:], body: Data(#"{"five_hour":{"utilization":70}}"#.utf8))
+                }
+            }
+            let provider = ClaudeProvider(
+                authStore: ClaudeAuthStore(
+                    environment: FakeEnvironment(["CLAUDE_CONFIG_DIR": "/tmp/claude"]), files: fixture.files,
+                    keychain: keychain, desktop: fixture.store, now: { now }),
+                usageClient: ClaudeUsageClient(httpClient: http), usageStateStore: isolatedClaudeUsageStore(),
+                logUsageScanner: ClaudeLogFixture.scanner(home: nil), includeSharedUsage: false,
+                now: { now }, pricing: { TestPricing.bundled })
+
+            let snapshot = await provider.refresh()
+
+            let expected = ["Bearer file"] + (switchDuringDesktop ? ["Bearer desktop"] : []) + ["Bearer new-cli"]
+            XCTAssertEqual(http.requests.compactMap { $0.headers["Authorization"] }, expected)
+            XCTAssertEqual(
+                snapshot.line(label: "Session"),
+                .progress(
+                    label: "Session", used: 70, limit: 100, format: .percent, periodDurationMs: MetricPeriod.sessionMs))
+        }
+    }
+
+    @MainActor
     func testLosingCLIProfileScopeFallsBackToDesktopDuringSameRefresh() async throws {
         let account = "11111111-1111-4111-8111-111111111111"
         let fixture = try makeFixture(
