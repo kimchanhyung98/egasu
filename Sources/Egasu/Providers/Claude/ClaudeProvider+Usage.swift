@@ -115,11 +115,18 @@ extension ClaudeProvider {
             try await loadOffMainActor { try lease.save(saved) }
             usageTimerCredentialState = working
             usageTimerCredentialState?.sourceText = nil
+            let verifiedKey = UsageTimerObservation.accountKey(family: "claude", identity: accountKey)
+            mapped.liveQuotaAccountKey = verifiedKey
             let haikuLimits = mapped.lines.filter { $0.label == "Session" || $0.label == "Weekly" }
-            usageTimerObservations = UsageTimerObservation.hasExhaustedQuota(haikuLimits) ? [] : [UsageTimerObservation.from(
-                lines: mapped.lines, accountKey: UsageTimerObservation.accountKey(family: "claude", identity: accountKey),
-                timerID: "claude.session", observedAt: observedAt, startRule: .missingReset
-            )].compactMap { $0 }
+            usageTimerObservations =
+                UsageTimerObservation.hasExhaustedQuota(haikuLimits)
+                ? []
+                : [
+                    UsageTimerObservation.from(
+                        lines: mapped.lines, accountKey: verifiedKey,
+                        timerID: "claude.session", observedAt: observedAt, startRule: .missingReset
+                    )
+                ].compactMap { $0 }
             return mapped
         } catch {
             let failure: ClaudeUsageError? = switch error {

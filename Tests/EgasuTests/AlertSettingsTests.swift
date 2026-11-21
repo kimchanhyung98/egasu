@@ -15,6 +15,9 @@ final class AlertSettingsTests: XCTestCase {
         defaults.set(true, forKey: "openusage.notifications.healthyToClose")
 
         let settings = NotificationSettingsStore(defaults: defaults)
+        XCTAssertFalse(settings.quotaRecovered)
+        settings.quotaRecovered = true
+        XCTAssertTrue(NotificationSettingsStore(defaults: defaults).isOn(.quotaRecovered))
         XCTAssertTrue(settings.critical)
         XCTAssertTrue(settings.warning)
         XCTAssertFalse(settings.closeToRunningOut)

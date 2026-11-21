@@ -68,6 +68,19 @@ final class CursorUsageHistoryRecoveryTests: XCTestCase {
         XCTAssertNotNil(snapshot.line(label: "Total usage"))
     }
 
+    func testLiveQuotaWithoutBillingCycleCanNotifyWithoutProvidingASoftLimit() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.defaults.removePersistentDomain(forName: fixture.suite) }
+        _ = await fixture.store.refresh(providerID: "cursor", force: true)
+        let snapshot = try XCTUnwrap(fixture.store.localSnapshots["cursor"])
+        XCTAssertEqual(snapshot.liveQuotaAccountKey, "history-fixture")
+        XCTAssertEqual(snapshot.liveQuotaObservedAt, fixture.clock.now)
+        XCTAssertNil(
+            SoftLimitObservation.project(
+                snapshot: snapshot, descriptors: CursorProvider().widgetDescriptors, window: .all,
+                now: fixture.clock.now))
+    }
+
     func testAccountChangeDoesNotReusePreviousHistory() async throws {
         let fixture = try makeFixture()
         defer { fixture.defaults.removePersistentDomain(forName: fixture.suite) }
@@ -157,6 +170,7 @@ final class CursorUsageHistoryRecoveryTests: XCTestCase {
         XCTAssertEqual(switched, .refreshed)
         XCTAssertNil(fixture.store.providerErrors["cursor"])
         XCTAssertEqual(fixture.store.snapshots["cursor"]?.producedByIdentityKey, "new-login")
+        XCTAssertEqual(fixture.store.snapshots["cursor"]?.liveQuotaAccountKey, "new-login")
     }
 
     func testWaitingBatchDoesNotShowAQueuedCursorRefreshForItsFreshAccountCache() async throws {

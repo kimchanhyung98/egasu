@@ -69,6 +69,7 @@ final class CodexResetClaimBindingTests: XCTestCase {
         let binding = try XCTUnwrap(CodexResetClaimBinding(authState: original))
         XCTAssertTrue(binding.matches(original))
 
+        XCTAssertNil(binding.verifiedAccountKey)
         var changed = original
         changed.auth.tokens?.accessToken = "opaque-B"
         XCTAssertFalse(binding.matches(changed))
@@ -180,12 +181,15 @@ final class CodexResetClaimBindingTests: XCTestCase {
             quotaObservedAt: observedAt, usageRetryAfter: retryAfter
         )
         snapshot.codexResetClaimBinding = try XCTUnwrap(CodexResetClaimBinding(authState: Self.state()))
+        snapshot.liveQuotaAccountKey = try XCTUnwrap(snapshot.codexResetClaimBinding?.verifiedAccountKey)
         let data = try JSONEncoder().encode(snapshot)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let decoded = try JSONDecoder().decode(ProviderSnapshot.self, from: data)
 
         XCTAssertNil(json["codexResetClaimBinding"])
         XCTAssertNil(decoded.codexResetClaimBinding)
+        XCTAssertNil(json["liveQuotaAccountKey"])
+        XCTAssertNil(decoded.liveQuotaAccountKey)
         XCTAssertEqual(decoded.providerID, snapshot.providerID)
         XCTAssertEqual(decoded.quotaObservedAt, observedAt)
         XCTAssertEqual(decoded.usageRetryAfter, retryAfter)

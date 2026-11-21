@@ -322,6 +322,7 @@ final class ClaudeProvider: ProviderRuntime {
             isDegraded: refreshIsDegraded ? true : nil,
             incompleteQuotaWindows: mapped.hasIncompleteWeeklyQuota == true ? [.weekly] : nil,
             liveQuotaObservedAt: mapped.liveQuotaObservedAt,
+            liveQuotaAccountKey: mapped.liveQuotaAccountKey,
             quotaObservedAt: mapped.quotaObservedAt,
             usageRetryAfter: mapped.retryAfter
         )

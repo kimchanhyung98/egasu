@@ -208,3 +208,7 @@
 "Refresh to load the details for this range." = "새로 고침하면 이 기간의 내역을 불러옵니다.";
 "Saved %@" = "%@ 기준";
 "Top Models" = "상위 모델";
+
+"Quota Available Again" = "한도 회복";
+"Notify when fresh Claude, Codex, or Cursor usage confirms the same account has quota again" = "Claude·Codex·Cursor에서 같은 계정의 소진된 한도를 다시 사용할 수 있으면 알림";
+"This quota is available again." = "이 한도를 다시 사용할 수 있습니다.";

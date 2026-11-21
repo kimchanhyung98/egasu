@@ -422,6 +422,11 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
         XCTAssertNil(badge(snapshot.lines, "Error"))
         XCTAssertEqual(httpClient.requests.count, 2)
         XCTAssertTrue(httpClient.requests.last?.headers["Authorization"]?.contains("desktop-token") == true)
+        XCTAssertEqual(
+            snapshot.liveQuotaAccountKey,
+            UsageTimerObservation.accountKey(
+                family: "claude", identity: "11111111-1111-4111-8111-111111111111|\(organization)"
+            ))
     }
 
     @MainActor

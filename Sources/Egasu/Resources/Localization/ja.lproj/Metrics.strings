@@ -208,3 +208,7 @@
 "Refresh to load the details for this range." = "更新するとこの期間の内訳を読み込みます。";
 "Saved %@" = "%@時点";
 "Top Models" = "上位モデル";
+
+"Quota Available Again" = "利用枠の回復";
+"Notify when fresh Claude, Codex, or Cursor usage confirms the same account has quota again" = "Claude、Codex、Cursorで同じアカウントの使用量を取得し、利用枠の回復を確認したときに通知";
+"This quota is available again." = "この利用枠が再び使えるようになりました。";

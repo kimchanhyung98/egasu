@@ -208,3 +208,7 @@
 "Refresh to load the details for this range." = "Refresh to load the details for this range.";
 "Saved %@" = "Saved %@";
 "Top Models" = "Top Models";
+
+"Quota Available Again" = "Quota Available Again";
+"Notify when fresh Claude, Codex, or Cursor usage confirms the same account has quota again" = "Notify when fresh Claude, Codex, or Cursor usage confirms the same account has quota again";
+"This quota is available again." = "This quota is available again.";
