@@ -215,7 +215,7 @@ test('같은 커밋의 DMG만 공개된 경우 원래 태그 복구 후 승격',
   function run(version: string) {
     writeFileSync(envFile, '');
     return f.run('release.yml', '게시 이력에서 빌드 번호 선택', {
-      VERSION: version, RUNNER_TEMP: f.root, GITHUB_REPOSITORY: 'fixture/project',
+      VERSION: version, DMG: `egasu-${version}.dmg`, RUNNER_TEMP: f.root, GITHUB_REPOSITORY: 'fixture/project',
       GITHUB_SHA: f.git(f.checkout, 'rev-parse', 'HEAD'), GITHUB_ENV: envFile,
       PATH: `${f.root}:${process.env.PATH}`,
     });
@@ -223,12 +223,13 @@ test('같은 커밋의 DMG만 공개된 경우 원래 태그 복구 후 승격',
   function build(version: string, expected: string) {
     const result = run(version);
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(readFileSync(envFile, 'utf8'), `EGASU_BUILD=${expected}\nOPENUSAGE_BUILD=${expected}\n`);
+    assert.equal(readFileSync(envFile, 'utf8'), `PUBLIC_DMG=false\nEGASU_BUILD=${expected}\nOPENUSAGE_BUILD=${expected}\n`);
   }
   try {
     f.git(f.checkout, 'tag', `v${stable}`);
     const results = join(f.root, 'releases-fixture.json');
     writeFileSync(join(f.root, 'gh'), '#!/bin/sh\n' +
+      'if [ "$1 $2" = "release download" ]; then cp "$RUNNER_TEMP/public.dmg" "dist/$7"; exit $?; fi\n' +
       '[ "$*" = "api --paginate --slurp repos/fixture/project/releases?per_page=100" ] || exit 22\n' +
       'cat "$RUNNER_TEMP/releases-fixture.json"\n', { mode: 0o755 });
     assert.notEqual(run(stable).status, 0);
@@ -242,14 +243,20 @@ test('같은 커밋의 DMG만 공개된 경우 원래 태그 복구 후 승격',
       assert.match(blocked.stderr, /Rerun v1\.2\.4-beta\.1 first/);
       assert.equal(readFileSync(envFile, 'utf8'), '');
     }
-    build(beta, '1');
+    writeFileSync(join(f.root, 'public.dmg'), 'original signed bytes');
+    writeFileSync(results, JSON.stringify([[release(beta)]]));
+    assert.equal(run(beta).status, 0);
+    assert.equal(readFileSync(envFile, 'utf8'), 'PUBLIC_DMG=true\n');
+    assert.equal(readFileSync(join(f.checkout, 'dist', `egasu-${beta}.dmg`), 'utf8'), 'original signed bytes');
     mkdirSync(join(f.checkout, 'feed'));
     writeFileSync(join(f.checkout, 'feed/appcast.xml'), '<rss xmlns:s="http://www.andymatuschak.org/xml-namespaces/sparkle">' +
       `<channel><item><s:version>1</s:version><s:shortVersionString>${beta}</s:shortVersionString>` +
       '<s:channel>beta</s:channel><enclosure/></item></channel></rss>');
     build(stable, '1.1');
     writeFileSync(results, JSON.stringify([[release(stable)]]));
-    build(beta, '1');
+    assert.notEqual(run(beta).status, 0);
+    writeFileSync(results, JSON.stringify([[release(beta), release(stable)]]));
+    assert.equal(run(beta).status, 0);
   } finally { f.cleanup(); }
 });
 
@@ -264,10 +271,10 @@ test('같은 커밋의 정식 승격 시 버전·채널·서명·이전 항목 �
   const helper = fileURLToPath(new URL('../../script/release_appcast.py', import.meta.url));
   const beta = item('25', '1.0.0-beta.1', 'beta', 'https://example.com/beta.dmg');
   const stable = item('25.1', '1.0.0', '', url);
-  function verify(xml: string) {
+  function verify(xml: string, ...mode: string[]) {
     writeFileSync(join(dir, 'feed/appcast.xml'), xml);
     return spawnSync('python3', [helper, 'verify', 'previous-appcast.xml', 'feed/appcast.xml',
-      '25.1', '1.0.0', 'stable', url], { cwd: dir, encoding: 'utf8' }).status;
+      '25.1', '1.0.0', 'stable', url, ...mode], { cwd: dir, encoding: 'utf8' }).status;
   }
   try {
     mkdirSync(join(dir, 'feed'));
@@ -278,15 +285,66 @@ test('같은 커밋의 정식 승격 시 버전·채널·서명·이전 항목 �
       feed(beta, item('25.1', '1.0.0', '', 'https://example.com/other.dmg'))]) {
       assert.notEqual(verify(xml), 0);
     }
+    for (const changed of [
+      beta.replace('<enclosure', '<s:minimumSystemVersion>99.0</s:minimumSystemVersion><enclosure'),
+      beta.replace('<enclosure', '<enclosure length="1"'),
+    ]) assert.notEqual(verify(feed(changed, stable)), 0);
+    const newer = item('26', '1.0.1', '', 'https://example.com/newer');
+    writeFileSync(join(dir, 'previous-appcast.xml'), feed(beta, newer));
+    assert.notEqual(verify(feed(beta, newer, stable)), 0);
+    assert.equal(verify(feed(beta, newer, stable), 'public'), 0);
     const historic = item('24', '1.0.0', '', 'https://example.com/old-name/egasu.dmg');
     writeFileSync(join(dir, 'previous-appcast.xml'), feed(historic, stable));
     const allocated = spawnSync('python3', [helper, 'build', 'previous-appcast.xml', '25', '1.0.0'],
       { cwd: dir, encoding: 'utf8' });
     assert.equal(allocated.status, 0, allocated.stderr);
     assert.equal(allocated.stdout.trim(), '25.1');
-    assert.equal(verify(feed(historic, item('25.1', '1.0.0', '', url, 'new-signature'))), 0);
+    assert.notEqual(verify(feed(historic, item('25.1', '1.0.0', '', url, 'new-signature')), 'public'), 0);
     assert.notEqual(verify(feed(stable)), 0);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('공개 DMG 재실행은 기존 에셋을 내려받고 DMG 빌드와 Release 업로드 생략', () => {
+  const yaml = workflow('release.yml');
+  assert.match(yaml, /gh release download/);
+  for (const name of ['DMG 빌드·서명·공증', 'GitHub Releases에 DMG 게시']) {
+    const section = yaml.split('      - name: ' + name + '\n')[1].split('      - name:')[0];
+    assert.match(section, /if: env.PUBLIC_DMG != 'true'/);
+  }
+});
+
+test('이미 게시한 태그는 공개 파일로 기존 서명을 확인하고 피드 원문을 유지', () => {
+  const f = fixture();
+  try {
+    const version = '1.2.3', dmg = `egasu-${version}.dmg`;
+    const prefix = 'https://github.com/kimchanhyung98/egasu/releases/download/v1.2.3/';
+    const legacy = prefix.replace('/egasu/releases/', '/openusage/releases/');
+    const xml = '<rss xmlns:s="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><item>' +
+      '<s:version>17</s:version><s:shortVersionString>1.2.3</s:shortVersionString>' +
+      `<enclosure url="${legacy}${dmg}" s:edSignature="known" length="14"/></item></channel></rss>`;
+    const bin = join(f.checkout, '.build/artifacts/sparkle/bin');
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(bin, 'generate_appcast'), '#!/bin/sh\nexit 9\n', { mode: 0o755 });
+    writeFileSync(join(bin, 'sign_update'), '#!/bin/sh\n' +
+      '[ "$1 $2 $3 $5" = "--verify --ed-key-file - known" ] && [ "$(cat "$4")" = "original bytes" ]\n', { mode: 0o755 });
+    mkdirSync(join(f.checkout, 'dist'));
+    mkdirSync(join(f.checkout, 'feed'));
+    writeFileSync(join(f.checkout, 'feed/appcast.xml'), xml);
+    writeFileSync(join(f.root, 'previous-appcast.xml'), xml);
+    writeFileSync(join(f.root, 'fixture-signing-key'), 'fixture only');
+    copyFileSync(join(f.checkout, 'script/release_appcast.py'), join(f.root, 'release_appcast.py'));
+    const run = () => f.run('release.yml', 'Sparkle로 appcast 생성', {
+      RUNNER_TEMP: f.root, PUBLIC_DMG: 'true', VERSION: version, DMG: dmg, APP_NAME: 'egasu',
+      EGASU_BUILD: '17', CHANNEL: 'stable', DOWNLOAD_PREFIX: prefix,
+      SPARKLE_PRIVATE_KEY_FILE: join(f.root, 'fixture-signing-key'),
+    });
+    writeFileSync(join(f.checkout, 'dist', dmg), 'original bytes');
+    const result = run();
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(join(f.checkout, 'feed/appcast.xml'), 'utf8'), xml);
+    writeFileSync(join(f.checkout, 'dist', dmg), 'different bytes');
+    assert.notEqual(run().status, 0);
+  } finally { f.cleanup(); }
 });

@@ -16,6 +16,7 @@ class Item(NamedTuple):
     channel: str
     url: str
     signature: str
+    xml: str
 
 
 def read_feed(source):
@@ -32,7 +33,8 @@ def read_feed(source):
         if not build or not version:
             raise SystemExit("Appcast item has no build or release version")
         items.append(Item(build, version, (entry.findtext(NS + "channel") or "stable").strip(),
-                          enclosure.get("url"), enclosure.get(NS + "edSignature")))
+                          enclosure.get("url"), enclosure.get(NS + "edSignature"),
+                          ET.canonicalize(ET.tostring(entry, encoding="unicode"), strip_text=True)))
     return items
 
 
@@ -54,18 +56,26 @@ def published_release(previous, version):
                key=lambda item: parts(item.build), default=None)
 
 
-def check_public_peers(previous, version, tags, release_pages):
-    if published_release(previous, version):
-        return
+def public_dmg_exists(previous, version, tags, release_pages, dmg):
     missing = set(tags) - {f"v{version}"} - {f"v{row.version}" for row in previous}
+    pending = []
+    found = False
     for page in release_pages:
         for release in page:
             tag = release["tag_name"]
-            if tag not in missing or release["draft"]:
+            if release["draft"]:
                 continue
-            dmg_names = {f"{name}-{tag[1:]}.dmg" for name in ("egasu", "OpenUsage")}
-            if any(asset["state"] == "uploaded" and asset["name"] in dmg_names for asset in release["assets"]):
-                raise SystemExit(f"Public DMG for {tag} is missing from the appcast. Rerun {tag} first.")
+            uploaded = {asset["name"] for asset in release["assets"] if asset["state"] == "uploaded"}
+            if tag == f"v{version}":
+                found = dmg in uploaded
+            elif tag in missing and any(f"{name}-{tag[1:]}.dmg" in uploaded for name in ("egasu", "OpenUsage")):
+                pending.append(tag)
+    if not found:
+        if published_release(previous, version):
+            raise SystemExit("Published appcast DMG is missing from the release")
+        if pending:
+            raise SystemExit(f"Public DMG for {pending[0]} is missing from the appcast. Rerun {pending[0]} first.")
+    return found
 
 
 def select_build(previous, count, version):
@@ -84,13 +94,16 @@ def select_build(previous, count, version):
     return f"{count}.{max(suffixes) + 1}" if suffixes else str(count)
 
 
-def verify(previous, current, build, version, channel, url):
-    """재게시 대상의 서명·URL은 교체 가능. 나머지 피드 항목은 모두 보존."""
+def verify(previous, current, build, version, channel, url, mode="new"):
+    """기존 DMG 서명과 다른 피드 항목 전체를 보존."""
+    parts(build)
+    if mode not in ("new", "public"):
+        raise SystemExit("Unknown publication mode")
     matching = [row for row in current if row.build == build]
     if len(matching) != 1 or matching[0][:4] != (build, version, channel, url) or not (matching[0].signature or "").strip():
         raise SystemExit("New appcast build, version, channel, download URL or signature mismatch")
     published = published_release(previous, version)
-    if published and (published.build != build or published.channel != channel):
+    if published and published != matching[0]:
         raise SystemExit("Published appcast identity changed on retry")
     retained = Counter(previous)
     if published:
@@ -98,7 +111,7 @@ def verify(previous, current, build, version, channel, url):
     if +retained != Counter(current) - Counter(matching):
         raise SystemExit("Other appcast items lost, added or changed")
     # 베타 채널은 정식판도 받으므로 이미 공개된 정식판보다 낮은 빌드는 게시 불가.
-    if not published and any(parts(row.build) >= parts(build) for row in previous
+    if not published and mode != "public" and any(parts(row.build) >= parts(build) for row in previous
                             if row.channel == channel or row.channel == "stable"):
         raise SystemExit("New appcast build must advance its channel")
     return matching[0].signature
@@ -110,12 +123,22 @@ if __name__ == "__main__":
     if command == "build":
         count, version = args
         print(select_build(previous, int(count), version))
-    elif command == "check-peers":
-        version, tag_path, releases_path = args
+    elif command == "public-dmg":
+        version, tag_path, releases_path, dmg = args
         with open(tag_path) as tags, open(releases_path) as releases:
-            check_public_peers(previous, version, tags.read().splitlines(), json.load(releases))
+            found = public_dmg_exists(previous, version, tags.read().splitlines(), json.load(releases), dmg)
+            print("true" if found else "false")
+    elif command == "existing-signature":
+        build, version, channel, url = args
+        published = published_release(previous, version)
+        if published:
+            legacy_url = url.replace("https://github.com/kimchanhyung98/egasu/releases/",
+                                     "https://github.com/kimchanhyung98/openusage/releases/", 1)
+            if published.url not in (url, legacy_url):
+                raise SystemExit("Published download URL does not match release asset")
+            print(verify(previous, previous, build, version, channel, published.url, "public"))
     elif command == "verify":
-        current, build, version, channel, url = args
-        print(verify(previous, read_feed(current), build, version, channel, url))
+        current, *fields = args
+        print(verify(previous, read_feed(current), *fields))
     else:
         raise SystemExit(f"Unknown appcast command: {command}")

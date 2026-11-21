@@ -141,6 +141,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.meta.outputs.version }}
+          DMG: ${{ steps.meta.outputs.app_name }}-${{ steps.meta.outputs.version }}.dmg
         run: |
           # 과거 태그의 앱을 재게시해도 실행 중인 워크플로와 같은 피드 도구 사용.
           git show "$GITHUB_SHA:script/release_appcast.py" > "$RUNNER_TEMP/release_appcast.py"
@@ -152,11 +153,14 @@ jobs:
           fi
           tags="$RUNNER_TEMP/commit-tags"
           git tag --points-at HEAD --list 'v[0-9]*' > "$tags"
-          if grep -Fxv "v$VERSION" "$tags" >/dev/null; then
-            # DMG만 공개된 다른 태그의 번호는 피드 복구까지 예약.
-            releases="$RUNNER_TEMP/github-releases.json"
-            gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$releases"
-            python3 "$RUNNER_TEMP/release_appcast.py" check-peers "$previous" "$VERSION" "$tags" "$releases"
+          releases="$RUNNER_TEMP/github-releases.json"
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$releases"
+          public="$(python3 "$RUNNER_TEMP/release_appcast.py" public-dmg "$previous" "$VERSION" "$tags" "$releases" "$DMG")"
+          echo "PUBLIC_DMG=$public" >> "$GITHUB_ENV"
+          if [ "$public" = true ]; then
+            mkdir -p dist
+            gh release download "v$VERSION" --repo "$GITHUB_REPOSITORY" --pattern "$DMG" --dir dist
+            exit 0
           fi
           count="$(git rev-list --count HEAD)"
           build="$(python3 "$RUNNER_TEMP/release_appcast.py" build "$previous" "$count" "$VERSION")"
@@ -164,6 +168,7 @@ jobs:
           echo "OPENUSAGE_BUILD=$build" >> "$GITHUB_ENV"
 
       - name: DMG 빌드·서명·공증
+        if: env.PUBLIC_DMG != 'true'
         env:
           SPARKLE_PUBLIC_KEY: ${{ secrets.SPARKLE_PUBLIC_KEY }}
           # notarytool용 Apple ID, 앱 전용 비밀번호, team ID.
@@ -182,6 +187,7 @@ jobs:
       # fork 등에서 POSTHOG_CLI_API_KEY가 없으면 명확한 경고 후 생략해 릴리스를 차단하지 않음.
       # key가 있으면 업로드 실패 시 단계를 실패시켜 symbol 없는 배포 방지.
       - name: PostHog에 dSYM 업로드
+        if: env.PUBLIC_DMG != 'true'
         env:
           POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
           POSTHOG_CLI_PROJECT_ID: ${{ secrets.POSTHOG_CLI_PROJECT_ID }}
@@ -199,6 +205,27 @@ jobs:
           # 릴리스별 flag 동기화 없이 `--directory`만 필요.
           posthog-cli dsym upload --directory dist/dSYMs
 
+      - name: 공개 DMG의 서명과 앱 버전 확인
+        if: env.PUBLIC_DMG == 'true'
+        env:
+          APP_NAME: ${{ steps.meta.outputs.app_name }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          dmg="dist/$APP_NAME-$VERSION.dmg"
+          requirement="anchor apple generic and certificate leaf[subject.OU] = \"$TEAM_ID\""
+          codesign --verify --strict -R="$requirement" "$dmg"
+          mount="$RUNNER_TEMP/published-dmg"
+          mkdir -p "$mount"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" "$dmg"
+          trap 'hdiutil detach "$mount"' EXIT
+          app="$mount/$APP_NAME.app"
+          codesign --verify --deep --strict -R="$requirement and identifier \"com.kimchanhyung98.openusage\"" "$app"
+          plist="$app/Contents/Info.plist"
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")" = "$VERSION" ]
+          echo "EGASU_BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist")" >> "$GITHUB_ENV"
+          swift package resolve
+
       - name: Sparkle로 appcast 생성
         env:
           DMG: ${{ steps.meta.outputs.app_name }}-${{ steps.meta.outputs.version }}.dmg
@@ -213,6 +240,15 @@ jobs:
           GA="$(find .build/artifacts -type f -name generate_appcast 2>/dev/null | head -n1)"
           [ -x "$GA" ] || { echo "generate_appcast not found under .build/artifacts" >&2; exit 1; }
 
+          previous="$RUNNER_TEMP/previous-appcast.xml"
+          helper="$RUNNER_TEMP/release_appcast.py"
+          if [ "$PUBLIC_DMG" = true ]; then
+            signature="$(python3 "$helper" existing-signature "$previous" "$EGASU_BUILD" "$VERSION" "$CHANNEL" "$DOWNLOAD_PREFIX$DMG")"
+            if [ -n "$signature" ]; then
+              "$(dirname "$GA")/sign_update" --verify --ed-key-file - "dist/$DMG" "$signature" < "$SPARKLE_PRIVATE_KEY_FILE"
+              exit 0
+            fi
+          fi
           cp "dist/$DMG" "feed/$DMG"
 
           # pre-release 태그는 Early Access(beta) channel, 일반 태그는 전체 사용자에게 배포.
@@ -227,13 +263,19 @@ jobs:
             "${channel_arg[@]}" \
             feed
 
-          build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "dist/$APP_NAME.app/Contents/Info.plist")"
-          [ "$build" = "$EGASU_BUILD" ] || { echo "Packaged build differs from allocated build" >&2; exit 1; }
-          signature="$(python3 "$RUNNER_TEMP/release_appcast.py" verify "$RUNNER_TEMP/previous-appcast.xml" \
-            feed/appcast.xml "$build" "$VERSION" "$CHANNEL" "$DOWNLOAD_PREFIX$DMG")"
+          mode=new
+          if [ "$PUBLIC_DMG" = true ]; then
+            mode=public
+          else
+            build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "dist/$APP_NAME.app/Contents/Info.plist")"
+            [ "$build" = "$EGASU_BUILD" ] || { echo "Packaged build differs from allocated build" >&2; exit 1; }
+          fi
+          signature="$(python3 "$helper" verify "$previous" \
+            feed/appcast.xml "$EGASU_BUILD" "$VERSION" "$CHANNEL" "$DOWNLOAD_PREFIX$DMG" "$mode")"
           "$(dirname "$GA")/sign_update" --verify --ed-key-file - "dist/$DMG" "$signature" < "$SPARKLE_PRIVATE_KEY_FILE"
 
       - name: GitHub Releases에 DMG 게시
+        if: env.PUBLIC_DMG != 'true'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.meta.outputs.tag }}

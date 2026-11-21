@@ -175,7 +175,7 @@ Export the Developer ID Application cert (with its private key) from Keychain Ac
 
 워크플로는 새 DMG의 빌드 번호·버전·채널·다운로드 URL·서명과 기존 피드 항목 보존 여부를 확인한 뒤 GitHub Release와 Pages에 게시.
 같은 커밋에서 정식판으로 승격하면 베타보다 높은 빌드 번호 부여.
-이미 게시한 버전은 기존 빌드 번호 재사용.
+같은 태그를 다시 실행하면 GitHub Release의 기존 DMG를 다운로드해 서명을 검증하고 피드 복구.
 서명 검사에 실패하면 서명 설정을 수정하고 같은 태그로 릴리스 워크플로 재실행.
 
 For iCloud Sync, store the original development and Developer ID provisioning profiles in 1Password as secure documents. Install the development profile on each registered Mac; base64-encode the Developer ID profile and store it only in the `APPLE_DEVELOPER_ID_ICLOUD_PROFILE` Actions secret. See [iCloud Sync](/docs/icloud-sync.md#개발-및-릴리스-설정) for the container identifiers, build command, and file-inspection command.
