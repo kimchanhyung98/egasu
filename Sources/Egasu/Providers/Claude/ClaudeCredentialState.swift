@@ -100,7 +100,19 @@ struct ClaudeCredentialGeneration: Equatable, Sendable {
 struct ClaudeCredentialLoad: Sendable {
     var candidates: [ClaudeCredentialState]
     var desktopStatus: ClaudeDesktopCredentialStatus
-    var credentialError: Error? = nil
+    var credentialError: Error?
+    let generation: ClaudeCredentialGeneration
+
+    init(
+        candidates: [ClaudeCredentialState], desktopStatus: ClaudeDesktopCredentialStatus,
+        credentialError: Error? = nil, storedCandidates: [ClaudeCredentialState]? = nil
+    ) {
+        self.candidates = candidates
+        self.desktopStatus = desktopStatus
+        self.credentialError = credentialError
+        // 조회에서 제외된 로그인도 계정 검증과 회전 저장의 기준으로 유지.
+        generation = ClaudeCredentialGeneration(storedCandidates ?? candidates)
+    }
 }
 
 enum ClaudeAuthError: Error, LocalizedError, Equatable {
