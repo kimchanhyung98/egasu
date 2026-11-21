@@ -24,6 +24,16 @@ final class ProxyConfigTests: XCTestCase {
     func testMissingPortFallsBackToSchemeDefault() {
         XCTAssertEqual(ProxyConfig.load(text: #"{"proxy":{"enabled":true,"url":"socks5://host"}}"#)?.port, 1080)
         XCTAssertEqual(ProxyConfig.load(text: #"{"proxy":{"enabled":true,"url":"https://host"}}"#)?.port, 443)
+        XCTAssertEqual(ProxyConfig.load(text: #"{"proxy":{"enabled":true,"url":"https://[::1]:"}}"#)?.port, 443)
+    }
+
+    func testExplicitInvalidPortDoesNotBecomeTheDefaultPort() {
+        for port in ["0", "-1", "invalid", "65536", "9999999999999999999999999"] {
+            XCTAssertNil(ProxyConfig.load(text: #"{"proxy":{"enabled":true,"url":"http://[::1]:\#(port)"}}"#))
+        }
+        XCTAssertNil(ProxyConfig.load(text: #"{"proxy":{"enabled":true,"url":"http://host:65536"}}"#))
+        XCTAssertEqual(ProxyConfig.load(text: #"{"proxy":{"enabled":true,"url":"http://host:1"}}"#)?.port, 1)
+        XCTAssertEqual(ProxyConfig.load(text: #"{"proxy":{"enabled":true,"url":"http://[::1]:65535"}}"#)?.port, 65535)
     }
 
     func testDisabledMissingOrInvalidConfigTurnsProxyOff() {
