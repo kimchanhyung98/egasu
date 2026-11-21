@@ -62,6 +62,22 @@ test('display settings and separate account cards survive a reload', async ({ pa
   await expect(app.locator('[data-card="claude-account-2"]')).toBeVisible();
 });
 
+test('pinned-only guidance is beside the setting when the saved pin cannot show', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('openusage.site.preview.v1', JSON.stringify({
+    preferences: { menuBarItems: 'Pinned Only' }, activeAccounts: {}, enabledProviders: ['antigravity'],
+    pinnedMetrics: ['claude.fable@account-1'],
+  })));
+  await openHome(page);
+  await openSettings(page);
+  const app = page.locator('[data-mock]');
+  await app.getByRole('tab', { name: 'Display', exact: true }).click();
+  await expect(app.locator('[data-menu-bar-preview]')).toHaveText('◉');
+  const row = app.locator('.am-item').filter({ has: page.getByRole('button', { name: 'Menu Bar Items', exact: true }) });
+  await expect(row.getByRole('button', {
+    name: 'Choose Priority or Pinned Only, then pin metrics in All Usage to show them in the menu bar.', exact: true,
+  })).toBeVisible();
+});
+
 test('menu bar preview applies pinned selection and filters text values in Bars mode', async ({ page }) => {
   await openHome(page);
   const app = page.locator('[data-mock]');

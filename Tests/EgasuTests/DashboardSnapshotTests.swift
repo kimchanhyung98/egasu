@@ -5,7 +5,7 @@ import XCTest
 /// All Usage의 행·계정·언어·표시 방식 렌더 검증.
 @MainActor
 final class DashboardSnapshotTests: XCTestCase {
-    private let now = Date()
+    let now = Date()
 
     func testReducedMotionDetailUsesParentScopedDismissalWithoutAnimation() {
         let controller = ReducedMotionPopoverController(isPresented: .constant(false))
@@ -145,7 +145,7 @@ final class DashboardSnapshotTests: XCTestCase {
         return DashboardFamily(id: "codex", provider: provider, displayName: "Codex", accounts: [first, secondAccount])
     }
 
-    private func meter(_ title: String, used: Double, resetIn: TimeInterval, period: Int = 7 * 86_400_000) -> WidgetData
+    func meter(_ title: String, used: Double, resetIn: TimeInterval, period: Int = 7 * 86_400_000) -> WidgetData
     {
         var data = WidgetData(title: title, icon: .providerMark("codex"), kind: .percent, used: used, limit: 100)
         data.resetsAt = now.addingTimeInterval(resetIn)
@@ -153,7 +153,7 @@ final class DashboardSnapshotTests: XCTestCase {
         return data
     }
 
-    private func line(_ id: String, _ data: WidgetData) -> DashboardLine {
+    func line(_ id: String, _ data: WidgetData) -> DashboardLine {
         DashboardLine(
             descriptor: WidgetDescriptor(
                 id: id, providerID: ProviderAccountID.providerID(ofMetric: id), metricLabel: data.title, sample: data),
@@ -179,7 +179,7 @@ final class DashboardSnapshotTests: XCTestCase {
         return try XCTUnwrap(image.cgImage(forProposedRect: &rect, context: nil, hints: nil))
     }
 
-    private func export(_ image: NSImage, name: String) throws {
+    func export(_ image: NSImage, name: String) throws {
         guard let folder = ProcessInfo.processInfo.environment["EGASU_DASHBOARD_SNAPSHOTS"] else { return }
         let url = URL(fileURLWithPath: folder, isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)

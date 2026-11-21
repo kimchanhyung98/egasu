@@ -244,6 +244,11 @@ final class PriorityBoardTests: XCTestCase {
             accounts: [account("codex", lines: [line("codex.weekly", used: 10, resetIn: 3 * 86_400)])], now: now)
         XCTAssertEqual(reported.summary, .allClear)
         XCTAssertTrue(reported.showsClearRow)
+        XCTAssertTrue(reported.offersAllUsage)
+        let pinned = PriorityBoard.make(
+            accounts: [account("codex", lines: [line("codex.weekly", used: 10, resetIn: 3 * 86_400)])],
+            pinned: ["codex.weekly"], now: now)
+        XCTAssertFalse(pinned.offersAllUsage)
     }
 
     func testWaitingAndNoticesDecideSummary() {

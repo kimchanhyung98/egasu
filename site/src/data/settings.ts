@@ -59,7 +59,9 @@ export const settingGroups: SettingGroup[] = [
   { id: 'menuBar', title: 'Menu Bar Icons', tab: 'Display', rows: [
     { id: 'iconStyle', label: 'Icon Style', control: { kind: 'picker', value: 'Text', options: ['Text', 'Bars'] } },
     { id: 'menuBarLimit', label: 'Max Items In Menu Bar', control: { kind: 'picker', value: 'Up to 3', options: ['App Icon Only', 'Up to 1', 'Up to 2', 'Up to 3', 'Up to 4', 'Up to 5'] } },
-    { id: 'menuBarItems', label: 'Menu Bar Items', control: { kind: 'picker', value: 'Running Out', options: ['Running Out', 'Priority', 'Pinned Only'] } },
+    { id: 'menuBarItems', label: 'Menu Bar Items',
+      info: 'Choose Priority or Pinned Only, then pin metrics in All Usage to show them in the menu bar.',
+      control: { kind: 'picker', value: 'Running Out', options: ['Running Out', 'Priority', 'Pinned Only'] } },
     { id: 'menuBarExtras', label: 'Show Extra Indicators', control: { kind: 'toggle', on: true }, info: 'Show the +N count and update indicator in the menu bar' },
   ] },
   { id: 'layout', title: 'Appearance', tab: 'Display', rows: [

@@ -278,14 +278,19 @@ test('a saved dashboard without providers only shows its provider empty state', 
   await expect(app.locator('[data-priority-copy]')).toBeHidden();
 });
 
-test('All Usage explains how to restore hidden metrics on an enabled account', async ({ page }) => {
+test('Priority links to All Usage when every quota is hidden', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('openusage.site.preview.v1', JSON.stringify({
-    preferences: { defaultTab: 'All Usage' }, activeAccounts: {}, enabledProviders: ['antigravity'],
+    preferences: { defaultTab: 'Priority' }, activeAccounts: {}, enabledProviders: ['antigravity'],
     hiddenMetrics: ['geminiPro', 'geminiWeekly', 'claude', 'claudeWeekly'].map((id) => `antigravity.${id}@default`),
   })));
   await openHome(page);
   const app = page.locator('[data-mock]');
-  const notice = app.getByText('No usage to show. Check visible metrics in Accounts.', { exact: true });
+  const priority = app.getByRole('tabpanel', { name: 'Priority', exact: true });
+  const viewAll = priority.getByRole('button', { name: 'View All Usage', exact: true });
+  await expect(viewAll).toBeVisible();
+  await viewAll.click();
+  const notice = app.locator('[data-dashboard-panel="All Usage"]')
+    .getByText('No usage to show. Check visible metrics in Accounts.', { exact: true });
   await expect(notice).toBeVisible();
   await expect(app.getByText('Add an Account', { exact: true })).toBeHidden();
   await app.locator('[data-options]').click();
@@ -296,6 +301,10 @@ test('All Usage explains how to restore hidden metrics on an enabled account', a
   await app.locator('.am-scr:not([hidden]) .am-back').click();
   await expect(notice).toBeHidden();
   await expect(app.locator('[data-row="antigravity.geminiPro"]')).toBeVisible();
+  await app.getByRole('tab', { name: 'Priority', exact: true }).click();
+  await expect(priority.getByText('No Matching Limits', { exact: true })).toBeVisible();
+  await viewAll.click();
+  await expect(app.getByRole('tabpanel', { name: 'All Usage', exact: true })).toBeVisible();
 });
 
 test('keyboard unpinning restores focus when the Priority row disappears', async ({ page }) => {

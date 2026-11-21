@@ -81,20 +81,31 @@ struct SettingsNote: View {
 /// 메뉴형 선택 행.
 struct SettingsPicker<Value: Hashable>: View {
     let label: String
+    let info: String?
     @Binding var selection: Value
     let options: [Value]
     let title: (Value) -> String
 
-    init(_ label: String, selection: Binding<Value>, options: [Value], title: @escaping (Value) -> String) {
+    init(
+        _ label: String, selection: Binding<Value>, options: [Value], info: String? = nil,
+        title: @escaping (Value) -> String
+    ) {
         self.label = label
+        self.info = info
         _selection = selection
         self.options = options
         self.title = title
     }
 
     var body: some View {
-        Picker(label, selection: $selection) {
+        Picker(selection: $selection) {
             ForEach(options, id: \.self) { Text(title($0)).tag($0) }
+        } label: {
+            if let info {
+                SettingsTitle(title: label, info: info)
+            } else {
+                Text(label)
+            }
         }
     }
 }

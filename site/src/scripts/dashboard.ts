@@ -67,7 +67,10 @@ export function renderDashboard(mock: HTMLElement, state: PreviewState): void {
     });
   }
   mock.querySelector<HTMLElement>('[data-all-clear]')!.hidden = !board.allClear;
+  mock.querySelector<HTMLElement>('[data-clear-view-all]')!.hidden =
+    board.pinned.length > 0 || board.usedUp.length > 0 || board.useItOrLoseIt.length > 0;
   mock.querySelector<HTMLElement>('[data-no-limits]')!.hidden = !board.noLimits;
+  mock.querySelector<HTMLElement>('[data-hidden-priority-limits]')!.hidden = !board.hiddenLimits;
   mock.querySelector<HTMLElement>('[data-priority-notices]')!.hidden = !board.pending.length;
   mock.querySelectorAll<HTMLElement>('[data-priority-notice]').forEach((notice) => {
     notice.hidden = !board.pending.includes(notice.dataset.priorityNotice!);
