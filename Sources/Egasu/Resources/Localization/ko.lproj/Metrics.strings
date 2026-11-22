@@ -7,6 +7,7 @@
 "%@ credits" = "%@ 크레딧";
 "%@ left" = "%@ 남음";
 "%@ limit" = "한도 %@";
+"%@ · Limit %@" = "%@ · 한도 %@";
 "%@ purchased" = "%@ 구매";
 "%@ reports a major outage for %@." = "%@에서 %@의 대규모 장애를 보고했습니다.";
 "%@ reports a partial outage for %@." = "%@에서 %@의 일부 장애를 보고했습니다.";
