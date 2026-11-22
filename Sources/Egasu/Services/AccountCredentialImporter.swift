@@ -334,6 +334,9 @@ struct AccountCredentialImporter {
             }
             appliedRevision = applied.revision
             if let failure = applied.failure { throw failure }
+            let current = try await loadOffMainActor { [switcher] in
+                try switcher.readClaudeSwitchState(allowInteraction: false)
+            }
             guard !Task.isCancelled, registryMatches(), try store.pendingIdentityReplacement() == transaction,
                 try switcher.switchJournal.load() == nil
             else { throw ClaudeAuthError.credentialsChanged }
@@ -342,7 +345,6 @@ struct AccountCredentialImporter {
                     applied.revision, family: "claude",
                     {
                         appliedRevision = AccountCredentialMutationLock.revision(for: "claude")
-                        let current = try switcher.readClaudeSwitchState(allowInteraction: false)
                         if let generation = transaction?.externalClaudeGeneration {
                             guard try current.fingerprint() == generation.sharedFingerprint else {
                                 throw ClaudeAuthError.credentialsChanged

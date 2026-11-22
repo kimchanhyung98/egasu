@@ -53,21 +53,12 @@ final class AccountSnapshotUsageTests: XCTestCase {
             XCTAssertEqual(result, .noUsableAuthentication)
             XCTAssertEqual(
                 keychain.interactionRequests, hasInterruptedReplacement ? [false, true, true] : [false, true])
-            let base = ClaudeAuthStore.baseKeychainServiceName(environment: FakeEnvironment())
-            var expectedReads: [SnapshotUsageKeychain.NativeRead] = [
-                .init(service: base, forCurrentUser: true, allowsInteraction: true, isMainThread: false),
-                .init(service: base, forCurrentUser: false, allowsInteraction: true, isMainThread: false)
-            ]
             if hasInterruptedReplacement {
-                expectedReads.insert(
-                    .init(
-                        service: workspaceService, forCurrentUser: true, allowsInteraction: true, isMainThread: false),
-                    at: 0)
                 let saved = try XCTUnwrap(keychain.currentUserValues[workspaceService])
                 let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(saved.utf8)) as? [String: Any])
                 XCTAssertEqual((fields["mcpOAuth"] as? [String: String])?["server"], "existing")
             }
-            XCTAssertEqual(keychain.nativeReads, expectedReads)
+            XCTAssertTrue(keychain.nativeReads.isEmpty, "Claude Code 형식 항목은 앱 승인 없이 CLI 도구로 조회")
             XCTAssertNil(try store.pendingIdentityReplacement())
             XCTAssertEqual(
                 store.profile(id: profile.id)?.identityKey,

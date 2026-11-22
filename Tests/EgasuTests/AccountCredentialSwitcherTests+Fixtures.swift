@@ -121,7 +121,7 @@ final class SwitcherTestKeychain: KeychainAccessing, @unchecked Sendable {
     var failingCurrentUserServices: Set<String> = []
     var onRejectedWrite: (() throws -> Void)?
     var afterSharedWrite: ((SwitcherTestKeychain, String) throws -> Void)?
-    var onSharedRead: ((Bool) throws -> Void)?
+    var onSharedRead: (() throws -> Void)?
 
     struct WriteFailure: Error {}
 
@@ -148,9 +148,9 @@ final class SwitcherTestKeychain: KeychainAccessing, @unchecked Sendable {
 
     func readGenericPasswordForCurrentUser(service: String) throws -> String? { currentUserValues[service] }
 
-    func readGenericPasswordForCurrentUser(service: String, allowInteraction: Bool) throws -> String? {
-        try onSharedRead?(allowInteraction)
-        return currentUserValues[service]
+    func readCLISharedPassword(service: String, forCurrentUser: Bool) throws -> String? {
+        try onSharedRead?()
+        return forCurrentUser ? currentUserValues[service] : values[service]
     }
 
     func writeGenericPasswordForCurrentUser(service: String, value: String) throws {

@@ -1,4 +1,5 @@
 import XCTest
+import os
 @testable import Egasu
 
 @MainActor
@@ -301,13 +302,22 @@ final class AccountClaudeReSignInRecoveryTests: XCTestCase {
         let replacement = AccountSwitchRecoveryFixture.entry("c")
         let record = try beginReplacement(in: fixture, replacement: replacement, identity: "acct-c|org-c")
         try fixture.switcher.saveSnapshot(replacement, for: fixture.a)
+        try fixture.switcher.applySharedAuthentication(replacement, family: "claude")
+        let reads = OSAllocatedUnfairLock(initialState: 0)
         let keychain = fixture.keychain
         let base = fixture.baseService
         let external = fixture.entryB
         let account = try XCTUnwrap(external.claudeOAuthAccount)
         let state = fixture.root.appendingPathComponent(".claude.json")
         keychain.beforeRead = { service in
-            guard service == base, Thread.isMainThread else { return }
+            guard service == base else { return }
+            XCTAssertFalse(Thread.isMainThread)
+            // 복구 적용과 결과 검증 뒤 확정 직전의 네 번째 조회에서 외부 로그인을 교체.
+            let finalRead = reads.withLock {
+                $0 += 1
+                return $0 == 4
+            }
+            guard finalRead else { return }
             keychain.beforeRead = nil
             keychain.currentUserValues[base] = external.credential
             try Data(#"{"oauthAccount":\#(account)}"#.utf8).write(to: state)

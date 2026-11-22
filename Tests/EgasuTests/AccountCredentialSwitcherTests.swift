@@ -37,7 +37,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         try external.write(to: outside)
         let entry = AccountCredentialVault.Entry(
             credential: claudeCredential(token: "a"), claudeOAuthAccount: claudeAccount("a"))
-        f.keychain.onSharedRead = { _ in XCTFail("Invalid workspace files must be rejected before reading Keychain") }
+        f.keychain.onSharedRead = { XCTFail("Invalid workspace files must be rejected before reading Keychain") }
         for target in [outside, f.home.appendingPathComponent("missing.json")] {
             try FileManager.default.createSymbolicLink(at: credential, withDestinationURL: target)
             XCTAssertThrowsError(try f.switcher.writeWorkspaceAuthentication(entry, for: account)) {

@@ -125,15 +125,22 @@ extension AccountCredentialImporter {
         in store: AccountProfilesStore, allowInteraction: Bool
     ) async throws -> Bool {
         let revision = store.authenticationRevision
+        let preferred = store.preferredProfileID(family: profile.family)
         let familyRevision = AccountCredentialMutationLock.revision(for: profile.family)
+        func registryMatches() throws -> Bool {
+            guard !Task.isCancelled, !store.hasUnreadableRegistry, store.profile(id: profile.id) == profile,
+                store.authenticationRevision == revision, try store.pendingIdentityReplacement() == transaction
+            else { return false }
+            if profile.family == "claude" {
+                return try store.preferredProfileID(family: profile.family) == preferred
+                    && switcher.switchJournal.load() == nil
+            }
+            return true
+        }
         let savedSnapshot = try await loadOffMainActor { [switcher] in
             try switcher.loadSnapshot(for: profile, allowInteraction: allowInteraction)
         }
-        guard !Task.isCancelled,
-            try store.pendingIdentityReplacement() == transaction,
-            store.profile(id: profile.id) == profile,
-            store.authenticationRevision == revision
-        else { return false }
+        guard try registryMatches() else { return false }
         if profile.family == "codex" {
             return try AccountCredentialMutationLock.withUnchangedRevision(familyRevision) {
                 _ = try finishInterruptedIdentityReplacement(
@@ -169,18 +176,18 @@ extension AccountCredentialImporter {
             }
             return result
         }
-        guard let recovery, !Task.isCancelled, try store.pendingIdentityReplacement() == transaction,
-            store.profile(id: profile.id) == profile, store.authenticationRevision == revision
-        else { return false }
+        guard let recovery else { return false }
+        if let shared = recovery.shared {
+            let current = try await loadOffMainActor { [switcher] in
+                try switcher.readClaudeSwitchState(allowInteraction: false)
+            }
+            guard current == shared else { throw ClaudeAuthError.credentialsChanged }
+        }
+        guard try registryMatches() else { return false }
         guard
             try AccountCredentialMutationLock.withUnchangedRevision(
                 recovery.revision, family: profile.family,
                 {
-                    if let shared = recovery.shared,
-                        try switcher.readClaudeSwitchState(allowInteraction: false) != shared
-                    {
-                        throw ClaudeAuthError.credentialsChanged
-                    }
                     try finishIdentityReplacementRecord(
                         transaction, profile: profile, hasReplacement: recovery.hasReplacement, in: store)
                 })
