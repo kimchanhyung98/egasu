@@ -18,20 +18,24 @@ enum AccountNamePrivacy {
 
     static func switchErrorMessage(_ error: Swift.Error, name: String, email: String?, conceals: Bool) -> String {
         let shownName = displayName(name, email: email, conceals: conceals)
-        var shownError = error
-        if conceals, let switchError = error as? AccountCredentialSwitcher.Error {
-            switch switchError {
+        let message: String
+        if conceals {
+            switch error as? AccountCredentialSwitcher.Error {
             case .missingSnapshot:
-                shownError = AccountCredentialSwitcher.Error.missingSnapshot(shownName)
+                message = UserFacingErrors.message(AccountCredentialSwitcher.Error.missingSnapshot(shownName))
             case .snapshotIdentityMismatch:
-                shownError = AccountCredentialSwitcher.Error.snapshotIdentityMismatch(shownName)
+                message = UserFacingErrors.message(AccountCredentialSwitcher.Error.snapshotIdentityMismatch(shownName))
             case .switchVerificationFailed:
-                shownError = AccountCredentialSwitcher.Error.switchVerificationFailed(shownName)
+                message = UserFacingErrors.message(AccountCredentialSwitcher.Error.switchVerificationFailed(shownName))
             default:
-                break
+                message =
+                    UserFacingErrors.presentation(error).staticText
+                    ?? L10n.accounts("Check this account's sign-in status in Accounts.")
             }
+        } else {
+            message = UserFacingErrors.message(error)
         }
-        return L10n.accounts("Couldn't switch to %@: %@", shownName, UserFacingErrors.message(shownError))
+        return L10n.accounts("Couldn't switch to %@: %@", shownName, message)
     }
 
     static func maskedEmail(_ email: String?) -> String? {

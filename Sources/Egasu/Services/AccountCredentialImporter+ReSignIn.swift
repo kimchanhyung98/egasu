@@ -8,7 +8,8 @@ extension AccountCredentialImporter {
         profileID: String,
         in store: AccountProfilesStore,
         isActive: Bool,
-        signInAttemptID: String? = nil
+        signInAttemptID: String? = nil,
+        expectedIdentityKey: String? = nil
     ) throws -> AccountProfile {
         if store.profile(id: profileID)?.family == "claude", try switcher.switchJournal.load() != nil {
             throw AccountIdentityReplacementError.pendingTransaction
@@ -36,7 +37,22 @@ extension AccountCredentialImporter {
             throw ImportError.noSignIn(family: profile.family)
         }
 
+        if let expectedIdentityKey,
+            profile.identityKey != expectedIdentityKey || credential.identityKey != expectedIdentityKey
+        {
+            throw ImportError.differentAccount
+        }
+
         let previousSnapshot = try switcher.loadSnapshot(for: profile, allowInteraction: true)
+        if let expectedIdentityKey, profile.family == "codex" {
+            guard let previousSnapshot,
+                let previousAuth = CodexAuthStore.parseAuth(previousSnapshot.credential),
+                DefaultAccountObserver.codexIdentity(for: previousAuth)?.identityKey == expectedIdentityKey,
+                let newAuth = CodexAuthStore.parseAuth(credential.entry.credential),
+                let sameUser = Self.codexReSignInUsersMatch(previousAuth, newAuth)
+            else { throw ImportError.reSignInIdentityUnavailable }
+            guard sameUser else { throw ImportError.differentAccount }
+        }
         let isolatedCodexAttempt: (id: String, previousWorkspaceAuth: String?)?
         if profile.family == "codex", let signInAttemptID {
             let path = try codexWorkspaceAuthPath(profileID: profile.id)
@@ -90,6 +106,37 @@ extension AccountCredentialImporter {
             }
             throw error
         }
+    }
+
+    /// 워크스페이스 ID는 여러 사용자가 공유. 두 로그인에서 확인할 수 있는 가장 강한 사용자 식별자를 비교.
+    private static func codexReSignInUsersMatch(_ previous: CodexAuth, _ replacement: CodexAuth) -> Bool? {
+        func userID(_ auth: CodexAuth) -> String? {
+            for token in [auth.tokens?.idToken, auth.tokens?.accessToken] {
+                let claims = token.flatMap(ProviderParse.jwtPayload)?["https://api.openai.com/auth"] as? [String: Any]
+                if let id = (claims?["chatgpt_user_id"] as? String ?? claims?["user_id"] as? String)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                {
+                    return id
+                }
+            }
+            return nil
+        }
+
+        if let previousID = userID(previous), let replacementID = userID(replacement) {
+            return previousID == replacementID
+        }
+        if let previousKey = CodexWeeklyTimerIdentity.accountKey(for: previous),
+            let replacementKey = CodexWeeklyTimerIdentity.accountKey(for: replacement)
+        {
+            return previousKey == replacementKey
+        }
+        guard
+            let previousEmail = DefaultAccountObserver.codexIdentity(for: previous)?.label?
+                .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+            let replacementEmail = DefaultAccountObserver.codexIdentity(for: replacement)?.label?
+                .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        else { return nil }
+        return previousEmail.caseInsensitiveCompare(replacementEmail) == .orderedSame
     }
 
     /// 중단된 identity 교체 journal을 snapshot 기준으로 완결하거나 쓰기 전 상태로 폐기.

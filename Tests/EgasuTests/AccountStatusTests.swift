@@ -307,6 +307,33 @@ final class AccountStatusTests: XCTestCase {
         ), .sessionExpired(CodexAuthError.sessionExpired.localizedDescription))
     }
 
+    func testDashboardActionUsesTheSavedLoginWhenTheSharedHomeShowsTheSameProfile() async throws {
+        let profile = AccountProfile(
+            id: "c", family: "codex", label: "c", identityKey: "identity", createdAt: .distantPast)
+        let shared = AccountStatusRuntime()
+        let saved = AccountStatusRuntime(id: AccountUsageCardPlanner.cardID(family: "codex", profileID: profile.id))
+        let mapping = [shared.provider.id: profile.id, saved.provider.id: profile.id]
+        let sharedReady = shared.snapshot
+        let savedReady = saved.snapshot
+        let expired = ProviderSnapshot.error(provider: saved.provider, error: CodexAuthError.sessionExpired)
+        let defaults = makeDefaults()
+        let store = WidgetDataStore(
+            registry: WidgetRegistry.from([shared, saved]), providers: [shared, saved],
+            cache: ProviderSnapshotCache(userDefaults: defaults), defaults: defaults)
+        for savedIsExpired in [true, false] {
+            shared.snapshot =
+                savedIsExpired ? sharedReady : .error(provider: shared.provider, error: CodexAuthError.sessionExpired)
+            saved.snapshot = savedIsExpired ? expired : savedReady
+            await store.refreshAll(force: true)
+            let savedCardID = AccountUsageCardPlanner.statusCardID(for: profile, profileIDsByCard: mapping)
+            let status = store.accountStatus(for: savedCardID, localState: nil)
+            let action = DashboardMenus.profileAction(
+                for: profile, status: status, isSelected: false, displayName: profile.label, isBusy: false)
+            XCTAssertEqual(action?.command, savedIsExpired ? .signInAgain(profile.id) : .switchAccount(profile.id))
+            XCTAssertNotEqual(status.canSwitch, store.accountStatus(for: shared.provider.id, localState: nil).canSwitch)
+        }
+    }
+
     func testAChangedSharedHomeIdentityDoesNotInheritThePreviousAccountsError() async {
         let runtime = AccountStatusRuntime()
         runtime.snapshot = .error(provider: runtime.provider, error: CodexAuthError.sessionExpired)

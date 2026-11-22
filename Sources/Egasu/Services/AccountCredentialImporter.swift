@@ -11,11 +11,17 @@ struct AccountCredentialImporter {
 
     enum ImportError: LocalizedError, Equatable {
         case noSignIn(family: String)
+        case differentAccount
+        case reSignInIdentityUnavailable
         case identityUnreadable(family: String)
         case verificationFailed(family: String)
 
         var errorDescription: String? {
             switch self {
+            case .differentAccount:
+                "You signed in to a different account. Try again with the account you selected."
+            case .reSignInIdentityUnavailable:
+                "egasu couldn't verify the Codex user. Open the account in Accounts to sign in again."
             case .noSignIn(let family):
                 "No \(family) sign-in was found to import."
             case .identityUnreadable(let family):

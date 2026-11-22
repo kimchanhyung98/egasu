@@ -47,6 +47,14 @@ enum L10n {
         string(key, table: "Errors", arguments: arguments)
     }
 
+    static func registeredText(_ key: String, table: String) -> String? {
+        let missing = "<missing egasu translation>"
+        guard let english = bundles[.english]?.localizedString(forKey: key, value: missing, table: table),
+            english != missing
+        else { return nil }
+        return bundles[language]?.localizedString(forKey: key, value: english, table: table) ?? english
+    }
+
     static func string(_ key: String, table: String, arguments: [CVarArg] = []) -> String {
         let english = bundles[.english]?.localizedString(forKey: key, value: key, table: table) ?? key
         let format = bundles[language]?.localizedString(forKey: key, value: english, table: table) ?? english

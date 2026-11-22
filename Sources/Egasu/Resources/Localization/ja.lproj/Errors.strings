@@ -145,7 +145,7 @@
 "Not logged in to Kimi. Run `kimi` to authenticate." = "Kimi にログインしていません。`kimi` を実行して認証してください。";
 "Not logged in to Kiro. Run `kiro-cli login` and try again." = "Kiro にログインしていません。`kiro-cli login` を実行して、もう一度お試しください。";
 "Not logged in. Run `claude` to authenticate." = "ログインしていません。`claude` を実行して認証してください。";
-"Not logged in. Run `codex` to authenticate." = "ログインしていません。`codex` を実行して認証してください。";
+"This Codex account isn't signed in." = "この Codex アカウントにはサインインしていません。";
 "Not logged in. Sign in via Cursor app or run `agent login`." = "ログインしていません。Cursor アプリでログインするか、`agent login` を実行してください。";
 "Only tasks on the connected local Codex App Server are protected. Other Codex sessions may still run." = "接続中のローカルCodexアプリサーバーのタスクのみが保護されます。他のCodexセッションは実行し続ける場合があります。";
 "OpenCode not detected. Log in with OpenCode Go or use OpenCode locally first." = "OpenCode が見つかりません。先に OpenCode Go にログインするか、ローカルで OpenCode を使用してください。";
@@ -179,7 +179,7 @@
 "Session Expired" = "セッション期限切れ";
 "Claude could not renew this login. For a saved account, open Accounts and choose Sign In Again. Otherwise, run `claude auth login`." = "Claude のログイン情報を更新できません。登録済みのアカウントは「アカウント」で「再ログイン」を選んでください。未登録の場合は `claude auth login` を実行してください。";
 "egasu could not identify the Claude sign-in location from your shell configuration. Check the old OpenUsage Claude block in your login shell, then try again." = "シェル設定から Claude のログイン情報の保存先を特定できません。ログインシェルの設定で以前の OpenUsage の Claude ブロックを確認し、もう一度お試しください。";
-"Session expired. Run `codex` to log in again." = "セッションの有効期限が切れました。`codex` を実行してログインし直してください。";
+"This Codex account's sign-in has expired." = "この Codex アカウントのサインインの有効期限が切れました。";
 "Session expired. Sign in via Cursor app or run `agent login`." = "セッションの有効期限が切れました。Cursor アプリでログインするか、`agent login` を実行してください。";
 "Sign in again to restore usage." = "使用量を再取得するには、もう一度ログインしてください。";
 "Sign in to GitHub Copilot in your editor, or run gh auth login, and try again." = "エディタで GitHub Copilot にログインするか、gh auth login を実行してから、もう一度お試しください。";
@@ -245,11 +245,11 @@
 "This Mac wrote a newer usage-history format. Update egasu." = "この Mac は新しい形式で使用履歴を保存しました。egasu をアップデートしてください。";
 "This account is currently selected. Select another account before removing it." = "現在選択中のアカウントです。削除する前に、別のアカウントを選択してください。";
 "This process runner does not support standard input." = "このプロセス実行機能は標準入力に対応していません。";
-"Token conflict. Run `codex` to log in again." = "トークンが競合しています。`codex` を実行してログインし直してください。";
+"The Codex refresh token has already been used." = "Codex の更新トークンはすでに使用されています。";
 "Token expired. Run `claude` to log in again." = "トークンの有効期限が切れました。`claude` を実行してログインし直してください。";
-"Token expired. Run `codex` to log in again." = "トークンの有効期限が切れました。`codex` を実行してログインし直してください。";
+"The Codex token has expired." = "Codex のトークンの有効期限が切れました。";
 "Token expired. Sign in via Cursor app or run `agent login`." = "トークンの有効期限が切れました。Cursor アプリでログインするか、`agent login` を実行してください。";
-"Token revoked. Run `codex` to log in again." = "トークンが取り消されました。`codex` を実行してログインし直してください。";
+"The Codex token has been revoked." = "Codex のトークンは失効しました。";
 "Tokscale finished with status %@. Review the command output and try again." = "Tokscaleがステータス%@で終了しました。コマンドの出力を確認して、もう一度試してください。";
 "Tokscale login finished with status %@. Review the command output and try again." = "Tokscaleのログインがステータス%@で終了しました。コマンドの出力を確認して、もう一度試してください。";
 "Total usage limit missing from API response." = "API の応答に合計使用量の上限が含まれていません。";
@@ -337,3 +337,5 @@
 "Unlock your Keychain and restart egasu. Allow access to the Claude login if macOS asks." = "キーチェーンのロックを解除して egasu を再起動してください。macOS に求められたら、Claude ログインへのアクセスを許可してください。";
 
 "OpenCode sign-in changed during refresh. Refresh this account and try again." = "更新中に OpenCode のログインが切り替わりました。このアカウントをもう一度更新してください。";
+"You signed in to a different account. Try again with the account you selected." = "別のアカウントでサインインしました。選択したアカウントで再度サインインしてください。";
+"egasu couldn't verify the Codex user. Open the account in Accounts to sign in again." = "Codex のユーザーを確認できませんでした。「アカウント」で対象のアカウントを開き、再度サインインしてください。";

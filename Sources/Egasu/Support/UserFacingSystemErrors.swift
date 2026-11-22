@@ -262,6 +262,10 @@ extension AccountCredentialImporter.ImportError: UserPresentableError {
         switch self {
         case .noSignIn(let family):
             .init("No %@ sign-in was found to import.", [family])
+        case .differentAccount:
+            .init("You signed in to a different account. Try again with the account you selected.")
+        case .reSignInIdentityUnavailable:
+            .init("egasu couldn't verify the Codex user. Open the account in Accounts to sign in again.")
         case .identityUnreadable(let family):
             .init("The current %@ sign-in doesn't name its account, so it can't be imported.", [family])
         case .verificationFailed(let family):

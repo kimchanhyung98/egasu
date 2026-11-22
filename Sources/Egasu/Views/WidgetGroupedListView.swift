@@ -21,7 +21,9 @@ struct WidgetGroupedListView: View {
     @State private var activeAccountID: String?
     @State private var activeFamilyID: String?
     @State private var pendingAccountSwitch: AccountProfile?
-    @State private var accountSwitchError: String?
+    @State private var accountAlert: AccountActionAlert?
+    @State private var signInTask: Task<Void, Never>?
+    @State private var signedInProfileID = TransientNotice<String?>(clearedValue: nil, timeout: .seconds(2.5))
 
     private var layoutStyle: DashboardLayoutStyle { dataStore.displaySettings.dashboardLayout }
 
@@ -39,24 +41,22 @@ struct WidgetGroupedListView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .onPreferenceChange(ReorderFramePreferenceKey.self) { rowFrames = $0 }
         .animation(Motion.spring, value: families.map(\.id))
-        .accountSwitchConfirmation(selection: $pendingAccountSwitch, error: $accountSwitchError)
-        .alert(
-            L10n.dashboard("Couldn't Switch Account"),
-            isPresented: isAccountSwitchErrorPresented,
-            presenting: accountSwitchError
-        ) { _ in
-            Button(L10n.dashboard("OK"), role: .cancel) {}
-        } message: { error in
-            Text(error)
+        .accountSwitchConfirmation(selection: $pendingAccountSwitch, onError: { accountAlert = $0 })
+        .background {
+            if let accountAlert, pendingAccountSwitch == nil, !container.accountSwitch.isSwitching, popover.popoverShown
+            {
+                DashboardAccountAlertSheet(alert: accountAlert, concealsAccountNames: concealsAccountNames) { profile in
+                    self.accountAlert = nil
+                    if let profile { signInAgain(profile) }
+                }
+                .id(accountAlert.recoveryProfile?.id)
+                .frame(width: 0, height: 0)
+            }
         }
-    }
-
-    /// 전환 확인창이 닫힌 뒤 오류 표시.
-    private var isAccountSwitchErrorPresented: Binding<Bool> {
-        Binding(
-            get: { accountSwitchError != nil && pendingAccountSwitch == nil },
-            set: { if !$0 { accountSwitchError = nil } }
-        )
+        .onDisappear { signInTask?.cancel() }
+        .onChange(of: popover.popoverShown) { _, shown in
+            if !shown { signedInProfileID.clear() }
+        }
     }
 
     private func section(_ family: DashboardFamily) -> some View {
@@ -92,6 +92,7 @@ struct WidgetGroupedListView: View {
             DashboardAccountCaption(
                 account: dataStore.showsAccountEmails ? account.showingEmail : account,
                 plan: dataStore.plan(for: account.id), status: accountStatus,
+                signInFeedback: signInFeedback(for: account.id),
                 onToggleName: { dataStore.showsAccountEmails.toggle() }
             )
                 .highPriorityGesture(accountDragGesture(for: account, in: family), including: family.accounts.count > 1 ? .all : .subviews)
@@ -137,25 +138,58 @@ struct WidgetGroupedListView: View {
     private func accountMenu(_ account: DashboardAccount, status: DashboardAccountStatus) -> DashboardMenus.Sections {
         DashboardMenus.account(
             account,
-            status: status.menuText,
-            switchTitle: switchTitle(for: account.id),
+            staleness: status.staleness,
+            profileAction: profileAction(for: account.id),
             canRename: renaming.canRename(account.id),
             renameDisabled: concealsAccountNames,
             refreshDisabled: refreshBlocked([account.id])
         )
     }
 
-    /// 사용 중이 아닌 등록 계정의 "Use {Provider}: {name}" — 전환 진행 중이면 비활성.
-    private func switchTitle(for accountID: String) -> (title: String, profileID: String, isDisabled: Bool)? {
-        guard let profile = AccountCardPresentationPlanner.switchProfile(
-            providerID: accountID, mode: .separateCards,
-            profileID: container.accountProfileID(for: accountID),
-            profiles: container.accountProfiles.profiles
-        ), container.accountProfiles.preferredProfileID(family: profile.family) != profile.id else { return nil }
+    private func profileAction(for accountID: String) -> DashboardMenuItem? {
+        guard
+            let profile = AccountCardPresentationPlanner.switchProfile(
+                providerID: accountID, mode: .separateCards,
+                profileID: container.accountProfileID(for: accountID),
+                profiles: container.accountProfiles.profiles
+            )
+        else { return nil }
         let name = AccountNamePrivacy.displayName(
-            profile.label, email: container.accountLoginEmail(for: profile), conceals: concealsAccountNames
-        )
-        return (L10n.dashboard("Use %@: %@", profile.family.capitalized, name), profile.id, container.accountSwitch.isSwitching)
+            profile.label, email: container.accountLoginEmail(for: profile), conceals: concealsAccountNames)
+        return DashboardMenus.profileAction(
+            for: profile, status: container.accountStatus(for: profile, localState: nil),
+            isSelected: container.accountProfiles.preferredProfileID(family: profile.family) == profile.id,
+            displayName: name, isBusy: accountActionIsBusy)
+    }
+
+    private var accountActionIsBusy: Bool {
+        container.accountSwitch.isSwitching || popover.signingInAgainAccountID != nil
+            || container.accountProfiles.hasUnreadableRegistry
+    }
+
+    private func signInFeedback(for cardID: String) -> String? {
+        guard let profileID = container.accountProfileID(for: cardID) else { return nil }
+        if popover.signingInAgainAccountID == profileID { return L10n.accounts("Signing In…") }
+        return signedInProfileID.value == profileID ? L10n.accounts("Signed In") : nil
+    }
+
+    private func signInAgain(_ profile: AccountProfile) {
+        guard !accountActionIsBusy, profile.family == "codex",
+            let current = container.accountProfiles.profile(id: profile.id),
+            current.identityKey == profile.identityKey,
+            !container.accountStatus(for: current, localState: nil).canSwitch
+        else { return }
+        signInTask = container.startReSignIn(for: current, expectedIdentityKey: current.identityKey) { issues in
+            if !issues.isEmpty {
+                let retry =
+                    issues.allSatisfy(\.allowsRetry)
+                    && container.accountProfiles.profile(id: current.id)?.identityKey == current.identityKey
+                    && !container.accountStatus(for: current, localState: nil).canSwitch
+                accountAlert = .signInFailed(current, issues: issues, allowsRetry: retry)
+            } else {
+                signedInProfileID.present(current.id)
+            }
+        }
     }
 
     private func refreshBlocked(_ accountIDs: [String]) -> Bool {
@@ -184,8 +218,10 @@ struct WidgetGroupedListView: View {
             guard !concealsAccountNames else { return }
             renaming.begin(accountID)
         case .switchAccount(let profileID):
-            guard !container.accountSwitch.isSwitching else { return }
+            guard !accountActionIsBusy else { return }
             pendingAccountSwitch = container.accountProfiles.profile(id: profileID)
+        case .signInAgain(let profileID):
+            if let profile = container.accountProfiles.profile(id: profileID) { signInAgain(profile) }
         }
     }
 

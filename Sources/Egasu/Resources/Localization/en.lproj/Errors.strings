@@ -145,7 +145,7 @@
 "Not logged in to Kimi. Run `kimi` to authenticate." = "Not logged in to Kimi. Run `kimi` to authenticate.";
 "Not logged in to Kiro. Run `kiro-cli login` and try again." = "Not logged in to Kiro. Run `kiro-cli login` and try again.";
 "Not logged in. Run `claude` to authenticate." = "Not logged in. Run `claude` to authenticate.";
-"Not logged in. Run `codex` to authenticate." = "Not logged in. Run `codex` to authenticate.";
+"This Codex account isn't signed in." = "This Codex account isn't signed in.";
 "Not logged in. Sign in via Cursor app or run `agent login`." = "Not logged in. Sign in via Cursor app or run `agent login`.";
 "Only tasks on the connected local Codex App Server are protected. Other Codex sessions may still run." = "Only tasks on the connected local Codex App Server are protected. Other Codex sessions may still run.";
 "OpenCode not detected. Log in with OpenCode Go or use OpenCode locally first." = "OpenCode not detected. Log in with OpenCode Go or use OpenCode locally first.";
@@ -179,7 +179,7 @@
 "Session Expired" = "Session Expired";
 "Claude could not renew this login. For a saved account, open Accounts and choose Sign In Again. Otherwise, run `claude auth login`." = "Claude could not renew this login. For a saved account, open Accounts and choose Sign In Again. Otherwise, run `claude auth login`.";
 "egasu could not identify the Claude sign-in location from your shell configuration. Check the old OpenUsage Claude block in your login shell, then try again." = "egasu could not identify the Claude sign-in location from your shell configuration. Check the old OpenUsage Claude block in your login shell, then try again.";
-"Session expired. Run `codex` to log in again." = "Session expired. Run `codex` to log in again.";
+"This Codex account's sign-in has expired." = "This Codex account's sign-in has expired.";
 "Session expired. Sign in via Cursor app or run `agent login`." = "Session expired. Sign in via Cursor app or run `agent login`.";
 "Sign in again to restore usage." = "Sign in again to restore usage.";
 "Sign in to GitHub Copilot in your editor, or run gh auth login, and try again." = "Sign in to GitHub Copilot in your editor, or run gh auth login, and try again.";
@@ -245,11 +245,11 @@
 "This Mac wrote a newer usage-history format. Update egasu." = "This Mac wrote a newer usage-history format. Update egasu.";
 "This account is currently selected. Select another account before removing it." = "This account is currently selected. Select another account before removing it.";
 "This process runner does not support standard input." = "This process runner does not support standard input.";
-"Token conflict. Run `codex` to log in again." = "Token conflict. Run `codex` to log in again.";
+"The Codex refresh token has already been used." = "The Codex refresh token has already been used.";
 "Token expired. Run `claude` to log in again." = "Token expired. Run `claude` to log in again.";
-"Token expired. Run `codex` to log in again." = "Token expired. Run `codex` to log in again.";
+"The Codex token has expired." = "The Codex token has expired.";
 "Token expired. Sign in via Cursor app or run `agent login`." = "Token expired. Sign in via Cursor app or run `agent login`.";
-"Token revoked. Run `codex` to log in again." = "Token revoked. Run `codex` to log in again.";
+"The Codex token has been revoked." = "The Codex token has been revoked.";
 "Tokscale finished with status %@. Review the command output and try again." = "Tokscale finished with status %@. Review the command output and try again.";
 "Tokscale login finished with status %@. Review the command output and try again." = "Tokscale login finished with status %@. Review the command output and try again.";
 "Total usage limit missing from API response." = "Total usage limit missing from API response.";
@@ -337,3 +337,5 @@
 "Unlock your Keychain and restart egasu. Allow access to the Claude login if macOS asks." = "Unlock your Keychain and restart egasu. Allow access to the Claude login if macOS asks.";
 
 "OpenCode sign-in changed during refresh. Refresh this account and try again." = "OpenCode sign-in changed during refresh. Refresh this account and try again.";
+"You signed in to a different account. Try again with the account you selected." = "You signed in to a different account. Try again with the account you selected.";
+"egasu couldn't verify the Codex user. Open the account in Accounts to sign in again." = "egasu couldn't verify the Codex user. Open the account in Accounts to sign in again.";

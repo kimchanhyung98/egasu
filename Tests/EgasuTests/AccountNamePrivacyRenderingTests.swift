@@ -89,6 +89,101 @@ final class AccountNamePrivacyRenderingTests: XCTestCase {
         XCTAssertTrue(editableFields(in: host).isEmpty)
     }
 
+    func testPresentedRecoveryAlertChangesPrivacyInPlaceAndRetriesTheSameProfile() async throws {
+        let profile = AccountProfile(
+            id: "c", family: "codex", label: "Private Alias", identityKey: "workspace", createdAt: .distantPast)
+        let path = "/fixture/private-account/auth.json"
+        let mismatch = AccountCredentialImporter.ImportError.differentAccount
+        let issue = AccountReSignInIssue.failed(AccountSignInWorkspace.WorkspaceError.outsideOwnedRoot(path))
+        let alert = AccountActionAlert.signInFailed(profile, issues: [issue, .failed(mismatch)], allowsRetry: true)
+        var dismissed: [String?] = []
+        func content(_ concealed: Bool) -> some View {
+            Color.clear.background {
+                DashboardAccountAlertSheet(alert: alert, concealsAccountNames: concealed) { dismissed.append($0?.id) }
+            }
+        }
+        let host = NSHostingView(rootView: content(false))
+        let window = makeWindow(host: host)
+        defer { window.close() }
+        try await settle(host)
+        let sheet = try XCTUnwrap(window.attachedSheet)
+        for concealed in [false, true, false] {
+            host.rootView = content(concealed)
+            try await settle(host)
+            XCTAssertIdentical(window.attachedSheet, sheet)
+            let views = alertFields(in: try XCTUnwrap(sheet.contentView))
+            let text = views.compactMap { ($0 as? NSTextField)?.stringValue }.joined(separator: "\n")
+            XCTAssertEqual(text.contains(profile.label), !concealed)
+            XCTAssertEqual(text.contains(path), !concealed)
+            XCTAssertTrue(text.contains(UserFacingErrors.message(mismatch)))
+            XCTAssertTrue(dismissed.isEmpty)
+        }
+        let buttons = alertFields(in: try XCTUnwrap(sheet.contentView)).compactMap { $0 as? NSButton }
+        let retry = try XCTUnwrap(buttons.first { $0.title == L10n.accounts("Sign In Again…") })
+        XCTAssertTrue(retry.sendAction(try XCTUnwrap(retry.action), to: retry.target))
+        for _ in 0..<50 where dismissed.isEmpty { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(dismissed, [profile.id])
+    }
+
+    func testAccountAlertOKDismissesWithoutRetrying() async throws {
+        let profile = AccountProfile(
+            id: "c", family: "codex", label: "Work", identityKey: "workspace", createdAt: .distantPast)
+        let alert = AccountActionAlert.signInRequired(profile, detail: "Expired", concealedDetail: "Expired")
+        var dismissed: [String?] = []
+        let host = NSHostingView(
+            rootView: Color.clear.background {
+                DashboardAccountAlertSheet(alert: alert, concealsAccountNames: false) { dismissed.append($0?.id) }
+            })
+        let window = makeWindow(host: host)
+        defer { window.close() }
+        try await settle(host)
+        let sheet = try XCTUnwrap(window.attachedSheet)
+        let buttons = alertFields(in: try XCTUnwrap(sheet.contentView)).compactMap { $0 as? NSButton }
+        let ok = try XCTUnwrap(buttons.first { $0.title == L10n.dashboard("OK") })
+        XCTAssertEqual(ok.keyEquivalent, "\u{1b}")
+        XCTAssertTrue(ok.sendAction(try XCTUnwrap(ok.action), to: ok.target))
+        for _ in 0..<50 where dismissed.isEmpty { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(dismissed, [nil])
+    }
+
+    func testDismantlingAnAccountAlertLeavesAnotherSheetOpen() async throws {
+        let profile = AccountProfile(
+            id: "c", family: "codex", label: "Work", identityKey: "workspace", createdAt: .distantPast)
+        let alert = AccountActionAlert.signInRequired(profile, detail: "Expired", concealedDetail: "Expired")
+        var dismissed = false
+        func content(_ show: Bool) -> some View {
+            Color.clear.background {
+                if show {
+                    DashboardAccountAlertSheet(alert: alert, concealsAccountNames: false) { _ in dismissed = true }
+                }
+            }
+        }
+        let host = NSHostingView(rootView: content(false))
+        let window = makeWindow(host: host)
+        defer { window.close() }
+        let other = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 100, height: 50),
+            styleMask: [.titled], backing: .buffered, defer: false)
+        other.isReleasedWhenClosed = false
+        window.beginSheet(other, completionHandler: nil)
+        host.rootView = content(true)
+        try await settle(host)
+        XCTAssertIdentical(window.attachedSheet, other)
+        XCTAssertEqual(window.sheets.count, 2)
+        host.rootView = content(false)
+        try await settle(host)
+        XCTAssertIdentical(window.attachedSheet, other)
+        XCTAssertEqual(window.sheets, [other])
+        window.endSheet(other)
+        for _ in 0..<50 where window.attachedSheet === other { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertNil(window.attachedSheet)
+        XCTAssertFalse(dismissed)
+    }
+
+    private func alertFields(in view: NSView) -> [NSView] {
+        [view] + view.subviews.flatMap { alertFields(in: $0) }
+    }
+
     private func caption(renaming: AccountRenameStore, concealed: Bool) -> some View {
         DashboardAccountCaption(
             account: DashboardAccount(provider: MockData.codex, providerName: "Codex", name: "Private Alias", lines: []),

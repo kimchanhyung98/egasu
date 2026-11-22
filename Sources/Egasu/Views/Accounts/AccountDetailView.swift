@@ -14,9 +14,7 @@ struct AccountDetailView: View {
     var body: some View {
         if let provider = container.accountManagementProvider(id: accountID) {
             VStack(alignment: .leading, spacing: PanelMetrics.sectionSpacing) {
-                if let problem = dataStore.headerNotice(for: accountID) {
-                    ProblemCard(message: problem)
-                }
+                if let problemMessage { ProblemCard(message: problemMessage) }
                 AccountMetricSettingsCard(
                     title: L10n.accounts("Account Settings"),
                     metrics: layout.accountSettingsMetrics(for: accountID),
@@ -43,6 +41,15 @@ struct AccountDetailView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var problemMessage: String? {
+        guard let message = dataStore.headerNotice(for: accountID) else { return nil }
+        let profiles = container.accountProfiles
+        guard accountID == "codex", !profiles.hasUnreadableRegistry, profiles.profiles(family: "codex").isEmpty,
+            !dataStore.accountStatus(for: accountID, localState: nil).canSwitch
+        else { return message }
+        return message + " " + L10n.accounts("To sign in to the default terminal account, run `codex login`.")
     }
 
     /// Claude·Codex 등록 계정 — 이름·전환·다시 로그인·삭제를 계정 단위로 관리.

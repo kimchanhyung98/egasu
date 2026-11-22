@@ -100,6 +100,73 @@ final class CodexReSignInIsolationTests: XCTestCase {
         XCTAssertEqual(try switcher.loadSnapshot(for: personal), original)
     }
 
+    func testDashboardRecoveryChecksIdentityBeforeSavingAndLeavesTheActiveLoginAlone() throws {
+        let yAuth = entry(token: "active", account: "y", user: "user-y")
+        let y = try addProfile(label: "y", entry: yAuth)
+        let cAuth = entry(token: "expired", account: "c", user: "user-c", email: "c@example.com")
+        let c = try addProfile(label: "c", entry: cAuth)
+        store.setPreferred(family: "codex", profileID: y.id)
+        try switcher.applySharedAuthentication(yAuth, family: "codex")
+        let revision = store.authenticationRevision
+        let attempt = try workspace.prepareReauthentication(family: "codex", profileID: c.id)
+        let authFile = attempt.directory.appendingPathComponent("auth.json")
+        func recover(expected: String) throws {
+            try importer.completeReSignIn(
+                profileID: c.id, in: store, isActive: false, signInAttemptID: attempt.attemptID,
+                expectedIdentityKey: expected)
+        }
+        let differentUser = entry(token: "wrong", account: "c", user: "user-y", email: "c@example.com")
+        let unverifiableUser = entry(token: "unknown", account: "c")
+        for (replacement, expected, expectedError) in [
+            (yAuth, c.identityKey, AccountCredentialImporter.ImportError.differentAccount),
+            (yAuth, y.identityKey, .differentAccount),
+            (differentUser, c.identityKey, .differentAccount),
+            (unverifiableUser, c.identityKey, .reSignInIdentityUnavailable)
+        ] {
+            try workspace.writePrivateFile(replacement.credential, to: authFile)
+            XCTAssertThrowsError(try recover(expected: expected)) { error in
+                XCTAssertEqual(error as? AccountCredentialImporter.ImportError, expectedError)
+            }
+            XCTAssertEqual(store.authenticationRevision, revision)
+            XCTAssertNil(try store.pendingIdentityReplacement())
+            XCTAssertEqual(try switcher.loadSnapshot(for: c), cAuth)
+            XCTAssertEqual(try importer.readWorkspaceCredential(family: "codex", profileID: c.id)?.entry, cAuth)
+            XCTAssertEqual(try switcher.loadSnapshot(for: y), yAuth)
+            XCTAssertEqual(try switcher.readSharedAuthentication(family: "codex"), yAuth)
+            XCTAssertEqual(store.preferredProfileID(family: "codex"), y.id)
+        }
+        let fresh = entry(token: "fresh", account: "c", user: "user-c", email: "renamed-c@example.com")
+        try workspace.writePrivateFile(fresh.credential, to: authFile)
+        try recover(expected: c.identityKey)
+
+        XCTAssertEqual(try switcher.loadSnapshot(for: c), fresh)
+        XCTAssertEqual(try importer.readWorkspaceCredential(family: "codex", profileID: c.id)?.entry, fresh)
+        XCTAssertEqual(try switcher.loadSnapshot(for: y), yAuth)
+        XCTAssertEqual(try switcher.readSharedAuthentication(family: "codex"), yAuth)
+        XCTAssertEqual(store.preferredProfileID(family: "codex"), y.id)
+    }
+
+    func testDashboardRecoveryAcceptsOlderClaimsWithTheSameSubjectOrEmail() throws {
+        for (workspaceID, subject, email) in [
+            ("subject", "legacy-user" as String?, nil),
+            ("email", nil, "Legacy@Example.com")
+        ] {
+            let saved = entry(token: "expired", account: workspaceID, subject: subject, email: email)
+            let current = entry(
+                token: "fresh", account: workspaceID, user: "modern-user", subject: subject, email: email?.lowercased())
+            let profile = try addProfile(label: workspaceID, entry: saved)
+            let attempt = try workspace.prepareReauthentication(family: "codex", profileID: profile.id)
+            try workspace.writePrivateFile(
+                current.credential, to: attempt.directory.appendingPathComponent("auth.json"))
+
+            try importer.completeReSignIn(
+                profileID: profile.id, in: store, isActive: false, signInAttemptID: attempt.attemptID,
+                expectedIdentityKey: profile.identityKey)
+
+            XCTAssertEqual(try switcher.loadSnapshot(for: profile), current)
+        }
+    }
+
     func testRemovingAnAccountAlsoRemovesItsAbandonedLoginAttempt() throws {
         let personal = try addProfile(
             label: "personal", entry: entry(token: "saved-personal", account: "personal-account")
@@ -196,9 +263,29 @@ final class CodexReSignInIsolationTests: XCTestCase {
         return profile
     }
 
-    private func entry(token: String, account: String) -> AccountCredentialVault.Entry {
-        .init(
-            credential: #"{"tokens":{"access_token":"\#(token)","refresh_token":"refresh-\#(token)","account_id":"\#(account)"}}"#,
+    private func entry(
+        token: String, account: String, user: String? = nil, subject: String? = nil, email: String? = nil
+    ) -> AccountCredentialVault.Entry {
+        var payload: [String: Any] = [:]
+        if let user { payload["https://api.openai.com/auth"] = ["chatgpt_user_id": user] }
+        payload["sub"] = subject
+        payload["email"] = email
+        let idToken: String?
+        if let data = try? JSONSerialization.data(withJSONObject: payload), !payload.isEmpty {
+            let base64URL = data.base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+            idToken = "e30.\(base64URL).sig"
+        } else {
+            idToken = nil
+        }
+        let auth = CodexAuth(
+            tokens: .init(
+                accessToken: token, refreshToken: "refresh-\(token)", idToken: idToken, accountID: account),
+            lastRefresh: nil, apiKey: nil)
+        return .init(
+            credential: String(decoding: try! JSONEncoder().encode(auth), as: UTF8.self),
             claudeOAuthAccount: nil
         )
     }

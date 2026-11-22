@@ -3,13 +3,15 @@ import SwiftUI
 extension View {
     func accountSwitchConfirmation(
         selection: Binding<AccountProfile?>,
-        error: Binding<String?>,
+        onError: @escaping (AccountActionAlert?) -> Void,
         localStates: [String: AccountSignInProbe.State] = [:],
         allowsRecoveryRetry: Bool = false
     ) -> some View {
-        modifier(AccountSwitchConfirmation(
-            selection: selection, error: error, localStates: localStates, allowsRecoveryRetry: allowsRecoveryRetry
-        ))
+        modifier(
+            AccountSwitchConfirmation(
+                selection: selection, onError: onError, localStates: localStates,
+                allowsRecoveryRetry: allowsRecoveryRetry
+            ))
     }
 }
 
@@ -17,7 +19,7 @@ private struct AccountSwitchConfirmation: ViewModifier {
     @Environment(AppContainer.self) private var container
     @Environment(\.concealsAccountNames) private var concealsAccountNames
     @Binding var selection: AccountProfile?
-    @Binding var error: String?
+    let onError: (AccountActionAlert?) -> Void
     let localStates: [String: AccountSignInProbe.State]
     let allowsRecoveryRetry: Bool
 
@@ -41,7 +43,7 @@ private struct AccountSwitchConfirmation: ViewModifier {
                 Button(L10n.accounts("Use %@: %@", profile.family.capitalized, displayName(for: profile))) {
                     switchTo(profile)
                 }
-                .disabled(container.accountSwitch.isSwitching)
+                .disabled(container.accountSwitch.isSwitching || container.popover.signingInAgainAccountID != nil)
                 Button(L10n.accounts("Cancel"), role: .cancel) {}
             } message: { profile in
                 Text(
@@ -60,7 +62,7 @@ private struct AccountSwitchConfirmation: ViewModifier {
     }
 
     private func switchTo(_ profile: AccountProfile) {
-        guard !container.accountSwitch.isSwitching else { return }
+        guard !container.accountSwitch.isSwitching, container.popover.signingInAgainAccountID == nil else { return }
         let providerIDs = AccountSwitchCoordinator.providerIDs(to: profile, from: store.preferredProfile(family: profile.family))
         container.accountSwitch.start(
             profileID: profile.id,
@@ -70,23 +72,25 @@ private struct AccountSwitchConfirmation: ViewModifier {
             let status = container.accountStatus(for: profile, localState: localStates[profile.id])
             let isRecoveryRetry = try allowsRecoveryRetry && profile.family == "claude" && switcher.hasPendingSwitch()
             guard status.canSwitch || isRecoveryRetry else {
-                error = status.message ?? L10n.accounts("Sign in again before switching to this account.")
+                onError(
+                    .signInRequired(
+                        profile, detail: status.message,
+                        concealedDetail: container.signInReasonWithoutAccountDetails(for: profile)))
                 let category: ErrorCategory = if case .sessionExpired = status { .authExpired } else { .notLoggedIn }
-                AppDiagnostics.record(.accountSwitch, result: .failure, category: category, providerID: profile.family,
-                                      localContext: "Account switch requires sign-in; account switch not applied")
+                AppDiagnostics.record(
+                    .accountSwitch, result: .failure, category: category, providerID: profile.family,
+                    localContext: "Account switch requires sign-in; account switch not applied")
                 return
             }
             try await switcher.switchAuthentication(to: profile, in: store)
             let refreshes = container.refreshAccountCatalog()
             await container.refreshSharedRuntime(afterSwitchingTo: profile)
             for (providerID, refresh) in refreshes where providerIDs.contains(providerID) { await refresh.value }
-            error = nil
+            onError(nil)
             AppDiagnostics.record(.accountSwitch, result: .success, providerID: profile.family)
         } onFailure: { switchError in
             AppDiagnostics.failure(.accountSwitch, error: switchError, providerID: profile.family)
-            error = AccountNamePrivacy.switchErrorMessage(
-                switchError, name: profile.label, email: container.accountLoginEmail(for: profile), conceals: concealsAccountNames
-            )
+            onError(.switchFailed(profile, email: container.accountLoginEmail(for: profile), error: switchError))
         }
     }
 }
