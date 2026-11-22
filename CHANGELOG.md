@@ -2,6 +2,45 @@
 
 This changelog starts with v0.8.0, the first release of this fork.
 
+## v1.0.0-beta.5
+
+### New Features
+
+- Codex Business의 개인 크레딧 사용량·상한을 일반 월간 한도 바로 아래 표시. All Usage의 Minimal·Cards에서 상한과 사용률·잔여율 표시. 계정별 고정·숨김, CLI와 로컬 HTTP 조회 지원. [#221](https://github.com/kimchanhyung98/egasu/pull/221) · [#232](https://github.com/kimchanhyung98/egasu/pull/232) by @kimchanhyung98
+- OpenCode Go 서버에서 세션·주간·월간 사용률과 초기화 시각 조회. Soft Limit은 주간·월간 실측값 사용. [#223](https://github.com/kimchanhyung98/egasu/pull/223) by @kimchanhyung98
+- Cursor 통합 계정에서 주간 공유 한도, 선불 잔액, 월간 추가 지출을 각각 표시. [#220](https://github.com/kimchanhyung98/egasu/pull/220) by @kimchanhyung98
+- Claude·Codex·Cursor에서 같은 계정의 소진된 한도를 다시 사용할 수 있을 때 알림 선택 가능. [#224](https://github.com/kimchanhyung98/egasu/pull/224) by @kimchanhyung98
+- 빈 Priority 화면에서 전체 사용량으로 이동. 메뉴 막대 표시 설정의 ⓘ에서 지표 고정 방법 안내. [#225](https://github.com/kimchanhyung98/egasu/pull/225) by @kimchanhyung98
+- macOS Spotlight가 앱을 색인한 뒤 `openusage`와 `usage`로 egasu 검색 가능. [#216](https://github.com/kimchanhyung98/egasu/pull/216) by @kimchanhyung98
+
+### Bug Fixes
+
+- 가격표 본문이 없거나 손상됐으면 다시 다운로드. 사용할 수 없는 304 응답 뒤에도 마지막 정상 가격을 유지하고 본문 재조회. [#231](https://github.com/kimchanhyung98/egasu/pull/231) by @kimchanhyung98
+- 공개 가격표의 잘못된 단가 제외. 개별 비용을 계산할 수 없는 기록도 유효한 토큰은 유지하고 비용만 미확정 처리. [#230](https://github.com/kimchanhyung98/egasu/pull/230) by @kimchanhyung98
+- Claude의 조회 권한이 없는 저장 로그인 뒤에도 같은 계정의 Desktop 로그인으로 사용량 조회. 조회 중 CLI 로그인이 바뀌면 새 로그인 우선. [#228](https://github.com/kimchanhyung98/egasu/pull/228) by @kimchanhyung98
+- Cursor 회복 알림에서 구독·요청 수와 개인·팀 한도를 각각 비교. 주간 지표가 없어도 월간 추가 지출 상한의 회복 감지. [#229](https://github.com/kimchanhyung98/egasu/pull/229) by @kimchanhyung98
+- Claude OAuth 갱신 시 기존 권한 범위를 유지하고 서버가 반환한 범위 저장. 조회 권한이 없으면 사용 가능한 다른 로그인 확인. 대체 로그인이 없으면 로컬 기록과 재로그인 안내 표시. [#219](https://github.com/kimchanhyung98/egasu/pull/219) by @kimchanhyung98
+- Cursor 조회 중 로그인이 바뀌면 이전 계정의 사용량·잔액 폐기. [#220](https://github.com/kimchanhyung98/egasu/pull/220) by @kimchanhyung98
+- OpenCode Go 인증 JSON·파일·환경 변수의 우선순위를 OpenCode와 일치시킴. 키가 바뀐 응답과 시작 시 이전 한도 캐시 제외. 프로젝트·플러그인의 키 재지정은 미지원. [#223](https://github.com/kimchanhyung98/egasu/pull/223) by @kimchanhyung98
+- 프록시 설정의 유효 포트를 1~65535로 제한. 포트를 생략하면 해당 방식의 기본값 사용. [#217](https://github.com/kimchanhyung98/egasu/pull/217) by @kimchanhyung98
+- 같은 커밋의 베타·정식 승격에 별도 Sparkle 빌드 번호 부여. 재시도는 공개 DMG를 재사용하고 과거 피드 항목과 서명 보존. 후속 버전 게시 후에도 DMG만 공개된 이전 태그의 피드 복구 가능. [#226](https://github.com/kimchanhyung98/egasu/pull/226) by @kimchanhyung98
+
+### Chores
+
+- 프로바이더 추가 안내의 OpenCode 예시 갱신. 최신 Codex·Cursor·OpenCode Go·Priority 안내 이미지 무손실 압축. [#222](https://github.com/kimchanhyung98/egasu/pull/222) by @imgbot, @kimchanhyung98
+- 오프라인 사용량 추정에 쓰는 LiteLLM·models.dev 번들 가격표 갱신. [#227](https://github.com/kimchanhyung98/egasu/pull/227) · [#233](https://github.com/kimchanhyung98/egasu/pull/233) by @kimchanhyung98
+- 사이트 CI에서 검증할 커밋의 잠금 파일로 Playwright 1.65.0 컨테이너 선택. [#168](https://github.com/kimchanhyung98/egasu/pull/168) by @dependabot, @kimchanhyung98
+- Copilot의 GitHub 인증 출처와 Z.ai API 호스트 안내 보완. [#218](https://github.com/kimchanhyung98/egasu/pull/218) by @kimchanhyung98
+- Astro를 7.4.11로 갱신. [#167](https://github.com/kimchanhyung98/egasu/pull/167) by @dependabot
+- PostHog SDK를 3.97.0으로 갱신. [#169](https://github.com/kimchanhyung98/egasu/pull/169) by @dependabot
+- Kimi·실험실·숨긴 지표 안내 이미지 용량 최적화. [#215](https://github.com/kimchanhyung98/egasu/pull/215) by @imgbot
+
+---
+
+### Changelog
+
+**Full Changelog**: [v1.0.0-beta.4...v1.0.0-beta.5](https://github.com/kimchanhyung98/egasu/compare/ed0a6826c565131a6225be0cb208c14710226d1a...f9cfe8df9cde0735f2d43d9a0dad9eadef0e6aea)
+
 ## v1.0.0-beta.4
 
 ### New Features
