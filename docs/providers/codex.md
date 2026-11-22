@@ -22,7 +22,7 @@ Flex 잔액과 별도이며, 서버가 기간 길이를 보내지 않으면 초�
 | Individual Credits | Business 계정에 설정된 개인 크레딧 상한과 사용량 |
 | Spark / Spark Weekly / Spark Monthly | GPT-5.3-Codex-Spark 모델의 5시간·주간·월간 한도 중 계정 응답에 있는 기간 |
 | Reset Watch | 확률과 시각으로 표시하는 전역 재설정 예측 — 선택적이며 기본값은 꺼짐(아래 참조) |
-| Rate Limit Resets | 온디맨드 속도 제한 재설정 크레딧 — 개수로 표시(예: `2 available`)하고 가장 빠른 만료를 색상 점으로 표시하며, 값에 마우스를 올리면 크레딧별 만료 타임라인 제공 |
+| Rate Limit Resets | 온디맨드 속도 제한 재설정 크레딧 — 개수로 표시(예: `2 available`)하고 가장 빠른 만료를 색상 점으로 표시하며, 값에 마우스를 올리면 만료 시각별 수량 확인 가능 |
 | Extra Usage | Flex 크레딧 — 달러 + 크레딧 형식 그대로 표시(예: `$31.84 · 796 credits`) |
 | Today / Yesterday / Last 30 Days | 로컬 지출 — 비용, 토큰 또는 둘 다(아래 참조) |
 
@@ -451,18 +451,26 @@ Codex 행은 별도의 "Not started" 상태를 추정하지 않고 일반 재설
 사용 속도 예측은 실제 사용량이 있고 유의미한 계산이 가능할 만큼 기간이 지난 뒤에만 시작.
 
 "Rate Limit Resets" 행에는 온디맨드 재설정 크레딧 개수(예: `2 available`)와 가장 빠른 만료의 색상 점 표시 — 1주 초과는 파랑, 1주 이내는 노랑, 48시간 이내는 빨강.
-egasu는 크레딧별 만료를 나열하는 전용 엔드포인트 `GET https://chatgpt.com/backend-api/wham/rate-limit-reset-credits`도 가능한 범위에서 호출하며, 값에 마우스를 올리면 팝오버에 가장 빠른 순서대로 각 재설정의 타임라인 표시 — 번호가 붙은 색상 점, 정확한 만료 시각(`Jul 12 at 5:30 PM`), 오른쪽 끝의 카운트다운(`12d 18h`).
+egasu는 크레딧별 만료를 나열하는 전용 엔드포인트 `GET https://chatgpt.com/backend-api/wham/rate-limit-reset-credits`도 가능한 범위에서 호출.
+값에 마우스를 올리면 팝오버에 만료가 빠른 순서대로 번호가 붙은 색상 점, 만료 시각(`Jul 12 at 5:30 PM`), 카운트다운(`12d 18h`) 표시.
+같은 시각에 만료되는 크레딧은 한 행에 수량을 함께 표시.
+일부 크레딧의 만료 시각을 확인할 수 없으면 타임라인 아래에 해당 수량 표시.
 사용 가능한 크레딧이 없으면 All Usage에서 해당 행 숨김.
 마지막 크레딧을 사용하는 동안에는 상세 팝오버를 닫기 전까지 `0 available` 행과 사용 결과를 확인 가능.
 전용 호출 실패 시 사용량 본문의 개수(`rate_limit_reset_credits.available_count`)로 대체; 본문에는 크레딧별 만료 정보가 없으므로, 팝오버에 개수(`N available`)와 만료 시각을 알 수 없다는 안내를 표시해 크레딧이 없는 것으로 오해하지 않도록 처리.
 
+![만료 시각별 수량과 만료 미확인 수량을 표시하는 상세](/docs/assets/codex-reset-credits-detail.png)
+
+합성 초기화권으로 렌더링한 상세 예시.
+
 ### 팝오버에서 재설정 사용
 
 팝오버에서 재설정 크레딧을 바로 사용할 수 있으며 Codex CLI의 "Usage limit resets" 선택기와 같은 요청 수행.
-타임라인의 크레딧에 마우스를 올리면 **Use** 버튼이 나타나고, 클릭 시 해당 크레딧이 인라인 확인 문구("Immediately reset your usage limits. This can't be undone.")와 **Reset** / **Cancel**로 확장.
-확인하면 선택한 크레딧으로 5시간·주간 한도 재설정 요청.
+타임라인의 만료 행에 마우스를 올리면 **Use** 버튼이 나타나고, 클릭 시 한 회 사용을 확인하는 문구("Immediately reset your usage limits. This can't be undone.")와 **Reset** / **Cancel** 표시.
+확인하면 해당 만료 시각의 크레딧 한 회로 5시간·주간 한도 재설정 요청.
 사용 성공 후 같은 계정의 한도와 남은 개수 재조회.
 재조회 성공 시 미터와 남은 개수 갱신.
+재조회 실패 시 마지막 조회에서 확인한 크레딧 개수 유지.
 성공 문구("Reset claimed. Enjoy!")는 크레딧 사용 성공을 의미.
 후속 조회가 실패하거나 생략돼도 사용 성공 결과 유지.
 사용 요청이나 후속 갱신 중 해당 카드가 제거되거나 계정 신원이 바뀌면 이전 카드 ID로 교체 계정을 갱신하지 않고 남은 후속 작업 생략.

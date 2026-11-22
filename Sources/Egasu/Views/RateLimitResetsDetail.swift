@@ -3,7 +3,7 @@ import SwiftUI
 /// Codex reset credit의 만료 타임라인과 claim 흐름.
 /// confirm 진입 때 credit별 idempotency key를 발급해 재시도에 재사용하며, `claim`이 없으면 읽기 전용.
 struct RateLimitResetsDetail: View {
-    /// 행의 "N available" 개수 — 빈 `expiries`의 중의성 해소 전용: 0이면 empty state, >0이면 만료 시각 미fetch.
+    /// 행의 전체 보유 수. 만료 시각이 없는 크레딧 수를 계산할 때 사용.
     let count: Int
     let expiries: [Date]
     /// cursor의 popover 내부 여부 보고 — trigger가 inline 값→popover 이동 중 popover를 유지.
@@ -15,13 +15,12 @@ struct RateLimitResetsDetail: View {
     /// 지정 만료 시각의 credit을 주어진 idempotency key로 claim — `nil`이면 timeline이 read-only.
     var claim: ((_ expiry: Date, _ redeemRequestID: String) async -> ResetClaimOutcome)?
 
-    @State private var claimedExpiries: Set<Date> = []
     @State private var confirmation: Confirmation?
     @State private var claimingExpiry: Date?
     @State private var activeClaimID: UUID?
     @State private var claimTask: Task<Void, Never>?
     @State private var hoveredExpiry: Date?
-    /// credit별 idempotency key — confirm 최초 진입 시 발급, 해당 credit의 모든 retry에 재사용(CLI의 double-spend 보호와 동일).
+    /// 만료 행의 요청 키는 첫 확인에서 만들고 실패 재시도에 재사용.
     @State private var redeemRequestIDs: [Date: String] = [:]
     @State private var banner: Banner?
     /// 이 popover 세션에서 "더 reset할 것 없음"을 학습했는지 — claim 성공 또는 `nothing_to_reset` 거절(credit 미소비) 후 true.
@@ -35,11 +34,9 @@ struct RateLimitResetsDetail: View {
     /// confirm 대기 또는 claim 진행 중 — 다른 node를 얼려 claim이 한 번에 하나만 일어나게 보장.
     private var claimInProgress: Bool { confirmingExpiry != nil || claimingExpiry != nil }
 
-    private var visibleExpiries: [Date] {
-        expiries.filter { !claimedExpiries.contains($0) }
-    }
-
     var body: some View {
+        let content = Self.content(count: count, expiries: expiries)
+        let showDetachedClaim = claimingExpiry.map { !expiries.contains($0) } ?? false
         VStack(alignment: .leading, spacing: 8) {
             if let banner {
                 bannerView(banner)
@@ -47,17 +44,19 @@ struct RateLimitResetsDetail: View {
             }
             // claim의 강제 refresh가 outcome 도착 전에 in-flight credit을 `expiries`에서 제거할 수 있음 —
             // spinner가 banner로 넘어갈 때까지 "Resetting…" 행 유지, 그 동안 empty/unknown 상태는 모순이라 억제.
-            if let claimingExpiry, !visibleExpiries.contains(claimingExpiry) {
+            if showDetachedClaim {
                 claimingRow().transition(.opacity)
-                if case .timeline(let entries) = Self.content(count: count - claimedExpiries.count, expiries: visibleExpiries) {
-                    timeline(entries)
+            }
+            switch content {
+            case .timeline(let entries, let unknownCount):
+                timeline(entries)
+                if unknownCount > 0, !showDetachedClaim {
+                    unknownExpiriesState(unknownCount)
                 }
-            } else {
-                switch Self.content(count: count - claimedExpiries.count, expiries: visibleExpiries) {
-                case .timeline(let entries): timeline(entries)
-                case .unknownExpiries(let count): unknownExpiriesState(count)
-                case .empty: emptyState
-                }
+            case .unknownExpiries(let count):
+                if !showDetachedClaim { unknownExpiriesState(count) }
+            case .empty:
+                if !showDetachedClaim { emptyState }
             }
         }
         .padding(14)
@@ -118,10 +117,9 @@ struct RateLimitResetsDetail: View {
 
     private func timeline(_ entries: [Entry]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            // identity는 index가 아닌 만료 시각 — claim 후 renumber 시 한 행만 떠나고 나머지가 slide up하도록 유지.
-            ForEach(entries, id: \.date) { entry in
-                let isFirst = entry.id == 0
-                let isLast = entry.id == entries.count - 1
+            ForEach(entries) { entry in
+                let isFirst = entry.number == 1
+                let isLast = entry.number == entries.count
                 HStack(alignment: .top, spacing: 10) {
                     rail(for: entry, isFirst: isFirst, isLast: isLast, dotCenterY: dotCenterY(for: entry))
                     node(entry)
@@ -193,6 +191,12 @@ struct RateLimitResetsDetail: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
+            if entry.quantity > 1 {
+                Text(verbatim: "×\(entry.quantity.formatted())")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+            }
             Spacer(minLength: 8)
             trailing(entry)
         }
@@ -348,7 +352,6 @@ struct RateLimitResetsDetail: View {
         claimingExpiry = nil
         activeClaimID = nil
         hoveredExpiry = nil
-        claimedExpiries = []
         redeemRequestIDs = [:]
         banner = nil
         nothingToReset = false
@@ -362,17 +365,17 @@ struct RateLimitResetsDetail: View {
         let claim: (Date, String) async -> ResetClaimOutcome
     }
 
+    /// 사용 결과는 배너와 버튼 상태에 반영. 보유 수량은 부모 스냅샷 사용.
     private func apply(_ outcome: ResetClaimOutcome, for date: Date) {
         switch outcome {
         case .success:
-            claimedExpiries.insert(date)
             nothingToReset = true
             banner = .init(text: L10n.dashboard("Reset claimed. Enjoy!"), icon: "checkmark.circle.fill", tint: .green)
         case .nothingToReset:
             nothingToReset = true
             banner = .init(text: L10n.dashboard("Your usage doesn't need a reset yet"), icon: "info.circle.fill", tint: .accentColor)
         case .noCredit:
-            claimedExpiries.insert(date)
+            redeemRequestIDs[date] = nil
             banner = .init(text: L10n.dashboard("That reset is no longer available"), icon: "exclamationmark.triangle.fill", tint: .orange)
         case .failed:
             banner = .init(text: L10n.dashboard("Couldn't reset usage. Please try again."), icon: "xmark.circle.fill", tint: .red)
@@ -387,7 +390,7 @@ struct RateLimitResetsDetail: View {
 
     /// body가 렌더링할 내용 — count/expiries에서 1회 해석해 empty/count-only/timeline 선택을 unit-test 가능하게 분리.
     enum Content: Equatable {
-        case timeline([Entry])
+        case timeline([Entry], unknownCount: Int)
         case unknownExpiries(count: Int)
         case empty
     }
@@ -395,39 +398,45 @@ struct RateLimitResetsDetail: View {
     /// 빈 `expiries`의 중의성 해소 — `count == 0`이면 empty state, 양수 count면 만료 fetch 실패로 개수만 표시.
     static func content(count: Int, expiries: [Date], now: Date = Date()) -> Content {
         let entries = entries(from: expiries, now: now)
-        if !entries.isEmpty { return .timeline(entries) }
+        if !entries.isEmpty { return .timeline(entries, unknownCount: max(0, count - expiries.count)) }
         if count > 0 { return .unknownExpiries(count: count) }
         return .empty
     }
 
     /// timeline node 한 개의 표시 문자열 — pure/static이라 view 없이 unit-test 가능.
     struct Entry: Identifiable, Equatable {
-        let id: Int
+        var id: Date { date }
         let number: Int
-        let date: Date       // credit의 만료 시각 — claim 흐름의 identity
+        let date: Date  // 만료 행과 사용 요청의 식별자.
+        let quantity: Int
         let severity: WidgetData.MeterSeverity
         let time: String
         let countdown: String?
 
         var accessibilityLabel: String {
+            let label: String
             if let countdown {
-                return L10n.dashboard("Reset %d, %@, expires in %@", number, time, countdown)
+                label = L10n.dashboard("Reset %d, %@, expires in %@", number, time, countdown)
+            } else {
+                label = L10n.dashboard("Reset %d, %@", number, time)
             }
-            return L10n.dashboard("Reset %d, %@", number, time)
+            return quantity > 1 ? "\(label), \(L10n.dashboard("%d available", quantity))" : label
         }
     }
 
     /// 만료 시각들로 timeline entry 구성 — 임박 순 정렬, 1부터 번호, 정확 시각 + countdown 쌍.
     /// 임박 판정은 relative 기준(≤5분에 `soon` 수렴) — exact 시각과 countdown이 서로 모순되지 않게 통일.
     static func entries(from expiries: [Date], now: Date = Date()) -> [Entry] {
-        expiries.sorted().enumerated().map { index, date in
+        let groups = Dictionary(grouping: expiries, by: { $0 }).sorted { $0.key < $1.key }
+        return groups.enumerated().map { index, group in
+            let (date, credits) = group
             let relative = Formatters.whenLabel(at: date, mode: .relative, now: now)
             let absolute = Formatters.whenLabel(at: date, mode: .absolute, now: now)
             let imminent = (relative == nil || relative == Formatters.imminent)
             return Entry(
-                id: index,
                 number: index + 1,
                 date: date,
+                quantity: credits.count,
                 severity: WidgetData.expirySeverity(secondsRemaining: date.timeIntervalSince(now)),
                 time: (imminent || absolute == nil) ? L10n.dashboard("Expiring soon") : absolute!,
                 countdown: imminent ? nil : relative
