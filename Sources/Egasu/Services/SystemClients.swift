@@ -360,6 +360,8 @@ protocol KeychainAccessing: Sendable {
     func writeGenericPasswordForCurrentUser(service: String, value: String) throws
     /// Claude Code 공유 항목의 CLI 접근 승인을 유지하는 저장.
     func writeCLISharedPassword(service: String, value: String, forCurrentUser: Bool) throws
+    /// Claude Code 공유 항목 읽기 — 작성 도구인 `security`로 조회해 앱 승인·partition 상태에 비의존.
+    func readCLISharedPassword(service: String, forCurrentUser: Bool) throws -> String?
     /// 명시적 account(`-a`) 스코프의 generic password read — 타 앱이 특정 account 이름으로 저장한 item용.
     func readGenericPassword(service: String, account: String) throws -> String?
     /// secret을 읽지 않고 generic password item의 마지막 수정 시각 조회.
@@ -374,6 +376,12 @@ extension KeychainAccessing {
         } else {
             try writeGenericPassword(service: service, value: value)
         }
+    }
+
+    func readCLISharedPassword(service: String, forCurrentUser: Bool) throws -> String? {
+        try forCurrentUser
+            ? readGenericPasswordForCurrentUser(service: service)
+            : readGenericPassword(service: service)
     }
 
     func readGenericPasswordForCurrentUser(service: String) throws -> String? {
@@ -479,6 +487,13 @@ struct SecurityKeychainAccessor: KeychainAccessing {
         try readPassword(["find-generic-password", "-a", account, "-s", service, "-w"], service: service)
     }
 
+    func readCLISharedPassword(service: String, forCurrentUser: Bool) throws -> String? {
+        let accountArguments = forCurrentUser ? ["-a", currentUserAccount()] : []
+        return try readPassword(
+            ["find-generic-password"] + accountArguments + ["-s", service, "-w"],
+            service: service, isSharedCredential: true)
+    }
+
     func genericPasswordModificationDate(service: String) throws -> Date? {
         try modificationDate(service: service, account: nil)
     }
@@ -513,7 +528,9 @@ struct SecurityKeychainAccessor: KeychainAccessing {
         }
     }
 
-    private func readPassword(_ arguments: [String], service: String) throws -> String? {
+    private func readPassword(
+        _ arguments: [String], service: String, isSharedCredential: Bool = false
+    ) throws -> String? {
         let result = try processRunner.run(
             executable: "/usr/bin/security",
             arguments: arguments,
@@ -522,11 +539,19 @@ struct SecurityKeychainAccessor: KeychainAccessing {
         )
         guard result.succeeded else {
             if result.exitCode == Self.itemNotFoundExitCode { return nil }
+            if isSharedCredential {
+                AppLog.warn(.keychain, "shared keychain credential read failed (exit \(result.exitCode))")
+                throw KeychainError.readFailed("")
+            }
             // 잠김·거부 Keychain 진단용 로그 — caller가 `try?`로 nil 처리해도 여기서 기록 필수.
             AppLog.warn(.keychain, "read failed for service '\(service)' (exit \(result.exitCode))")
             throw KeychainError.readFailed(result.stderr)
         }
         let value = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        if isSharedCredential, value.isEmpty {
+            AppLog.warn(.keychain, "shared keychain credential is empty")
+            throw KeychainError.invalidData
+        }
         return value.isEmpty ? nil : value
     }
 

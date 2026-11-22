@@ -48,6 +48,12 @@ Desktop 사용이 제한되거나 사용할 수 없으면 남은 토큰의 권�
 3. 작동하는 Claude Code 로그인이 없을 때 Claude Desktop의 암호화된 로그인 캐시
 4. `CLAUDE_CODE_OAUTH_TOKEN` 환경 변수
 
+Claude Code 형식의 Keychain 항목은 Claude Code와 같은 `/usr/bin/security` 도구로 읽음.
+도구에 접근을 허용한 항목은 Claude Code가 토큰을 갱신하거나 다시 로그인해도 egasu의 접근 권한 재승인 불필요.
+로그인 Keychain이 잠겼거나 항목 접근 권한이 변경된 경우 macOS 승인 창이 표시될 수 있음.
+도구의 읽기 제한 시간은 5초이며, 실패 시 파일 로그인으로 대체하지 않고 오류 표시.
+egasu가 만든 계정별 저장본만 앱의 Keychain 접근 사용.
+
 등록한 계정 중 현재 선택한 계정은 터미널과 같은 위치에서 인증과 계정 정보를 확인.
 일반 Claude CLI는 기본 Keychain과 `~/.claude.json`을 사용하며, 파일에만 로그인이 있으면 `~/.claude/.credentials.json` 사용.
 로그인 셸에 이전 OpenUsage가 설치한 기본 Claude 함수가 남아 있으면 `~/.claude` 경로 전용 Keychain의 현재 macOS 사용자 항목과 `~/.claude/.claude.json` 사용.

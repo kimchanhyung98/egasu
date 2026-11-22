@@ -72,6 +72,53 @@ final class KeychainAccessorTests: XCTestCase {
         XCTAssertEqual(try accessor.readGenericPassword(service: "Test"), "secret-token")
     }
 
+    func testCLISharedReadDistinguishesMissingAndEmptyItems() throws {
+        let missing = ProcessResult(exitCode: 44, stdout: "", stderr: "")
+        let empty = ProcessResult(exitCode: 0, stdout: " \n", stderr: "")
+        let accessor: any KeychainAccessing = SecurityKeychainAccessor(
+            processRunner: SequenceRunner(results: [missing, empty, empty]))
+
+        XCTAssertNil(try accessor.readCLISharedPassword(service: "Shared", forCurrentUser: false))
+        XCTAssertThrowsError(try accessor.readCLISharedPassword(service: "Shared", forCurrentUser: false)) {
+            guard case KeychainError.invalidData = $0 else { return XCTFail("Expected invalidData") }
+        }
+        XCTAssertNil(try accessor.readGenericPassword(service: "Shared"))
+    }
+
+    func testCLISharedReadRejectsEmptyCurrentUserItemBeforeClaudeFallbacks() {
+        let runner = RecordingRunner()
+        let accessor = SecurityKeychainAccessor(processRunner: runner)
+        let path = "/fixture/.credentials.json"
+        let files = FakeFiles([path: #"{"claudeAiOauth":{"accessToken":"file-token"}}"#])
+        let environment = FakeEnvironment()
+        let service = ClaudeAuthStore.baseKeychainServiceName(environment: environment)
+        let account =
+            ProcessInfo.processInfo.environment["USER"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? NSUserName()
+        let expected = RecordingRunner.Call(
+            executable: "/usr/bin/security",
+            arguments: ["find-generic-password", "-a", account, "-s", service, "-w"])
+
+        XCTAssertThrowsError(
+            try ClaudeSharedLoginRoute.plain.readCredential(
+                keychain: accessor, files: files, filePath: path, environment: environment, allowInteraction: false
+            )
+        ) {
+            guard case KeychainError.invalidData = $0 else { return XCTFail("Expected invalidData") }
+        }
+        XCTAssertEqual(runner.calls, [expected])
+    }
+
+    func testCLISharedReadKeepsToolOutputOutOfErrors() {
+        let failure = ProcessResult(exitCode: 51, stdout: "fixture-stdout", stderr: "fixture-stderr")
+        let accessor = SecurityKeychainAccessor(processRunner: StubRunner(result: failure))
+
+        XCTAssertThrowsError(try accessor.readCLISharedPassword(service: "Shared", forCurrentUser: false)) {
+            guard case KeychainError.readFailed(let message) = $0 else { return XCTFail("Expected readFailed") }
+            XCTAssertTrue(message.isEmpty)
+        }
+    }
+
     func testWritesUseSecurityFrameworkWithoutPuttingSecretsInProcessArguments() throws {
         let runner = RecordingRunner()
         let writer = RecordingPasswordWriter()

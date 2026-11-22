@@ -11,10 +11,8 @@ final class AccountExternalLoginCommitTests: XCTestCase {
             let keychain = fixture.keychain
             let sharedService = fixture.baseService
             keychain.beforeRead = { service in
-                if Thread.isMainThread {
-                    XCTAssertEqual(service, sharedService)
-                    XCTAssertTrue(keychain.noninteractiveReadServices.contains(service))
-                }
+                // 메인 스레드는 Claude Code 공유 항목의 최종 확인만 수행.
+                if Thread.isMainThread { XCTAssertEqual(service, sharedService) }
             }
             fixture.keychain.beforeWrite = { _, _ in XCTAssertFalse(Thread.isMainThread) }
 

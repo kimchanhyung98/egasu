@@ -53,8 +53,8 @@ final class AccountReadinessInteractionTests: XCTestCase {
             let vault = AccountCredentialVault.service(family: "claude", profileID: profile.id)
             XCTAssertEqual(keychain.reads.map(\.service), [vault, service, service, vault, service, service])
             XCTAssertEqual(keychain.reads.map(\.forCurrentUser), [true, true, false, true, true, false])
-            XCTAssertTrue(keychain.reads.allSatisfy { $0.allowInteraction == allowInteraction })
-            XCTAssertEqual(keychain.legacyReads, 0)
+            XCTAssertTrue(keychain.reads.filter { $0.service == vault }.allSatisfy { $0.allowInteraction == allowInteraction })
+            XCTAssertEqual(keychain.legacyReads, 4, "Claude Code 형식 공유 항목은 CLI 도구로 조회")
             XCTAssertEqual(keychain.writeCount, initialWrites)
             XCTAssertEqual(defaults.data(forKey: AccountProfilesStore.storageKey), initialRegistry)
             XCTAssertNil(try profiles.pendingIdentityReplacement())
@@ -86,7 +86,7 @@ final class AccountReadinessInteractionTests: XCTestCase {
         XCTAssertEqual(state, .needsSignIn)
     }
 
-    func testSelectedClaudeUsesTheRequestedInteractionPolicyForEverySharedKeychainRead() throws {
+    func testSelectedClaudeReadsTheSharedLoginWithTheCLIToolAndKeepsTheSnapshotPolicy() throws {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent("ReadinessInteraction-\(UUID())")
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: home) }
@@ -108,9 +108,10 @@ final class AccountReadinessInteractionTests: XCTestCase {
 
             let sharedReads = keychain.reads.filter { $0.service == service }
             XCTAssertEqual(sharedReads.map(\.forCurrentUser), [true, false], "사용자 범위와 서비스 범위 모두 확인")
-            XCTAssertTrue(sharedReads.allSatisfy { $0.allowInteraction == allowInteraction })
-            XCTAssertTrue(keychain.reads.allSatisfy { $0.allowInteraction == allowInteraction }, "저장 인증도 같은 정책 사용")
-            XCTAssertEqual(keychain.legacyReads, 0, "수동 승인과 자동 조회는 같은 앱의 Keychain 접근 사용")
+            XCTAssertEqual(keychain.legacyReads, 2, "Claude Code 형식 항목은 승인 정책과 무관하게 CLI 도구로 조회")
+            XCTAssertTrue(
+                keychain.reads.filter { $0.service != service }.allSatisfy { $0.allowInteraction == allowInteraction },
+                "저장 인증은 요청한 정책 사용")
         }
     }
 }

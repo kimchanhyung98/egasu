@@ -89,8 +89,8 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
             ClaudeAuthStore.baseKeychainServiceName(environment: environment)
         ]
         var credentials = try services.map { service in
-            try keychain.readGenericPasswordForCurrentUser(service: service, allowInteraction: allowInteraction)
-                ?? keychain.readGenericPassword(service: service, allowInteraction: allowInteraction)
+            try keychain.readCLISharedPassword(service: service, forCurrentUser: true)
+                ?? keychain.readCLISharedPassword(service: service, forCurrentUser: false)
         }
         credentials.append(try readTextIfPresent(URL(fileURLWithPath: home).appendingPathComponent(".credentials.json")))
         let stateURLs = [
@@ -280,8 +280,7 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
                 in: existingFile, with: entry.credential)
             let service = ClaudeAuthStore.scopedKeychainServiceName(
                 forConfigDirLiteral: directory.path, environment: environment)
-            let existing = try keychain.readGenericPasswordForCurrentUser(
-                service: service, allowInteraction: allowInteraction)
+            let existing = try keychain.readCLISharedPassword(service: service, forCurrentUser: true)
             let keychainCredential = try ClaudeAccountLoginCredentials.replacingLogin(
                 in: existing, with: entry.credential)
             try keychain.writeCLISharedPassword(

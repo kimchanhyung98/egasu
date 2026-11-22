@@ -421,7 +421,7 @@ final class AccountSwitchJournalSourceTests: XCTestCase {
         return record
     }
 
-    func testRecoveryUsesTheRefreshInteractionPolicyForBothKeychainReads() async throws {
+    func testRecoveryReadsTheSharedLoginWithTheCLIToolInBothRefreshModes() async throws {
         for isManual in [false, true] {
             let fixture = try AccountSwitchRecoveryFixture(test: self)
             _ = try fixture.stageIntent()
@@ -433,9 +433,8 @@ final class AccountSwitchJournalSourceTests: XCTestCase {
             }
 
             XCTAssertEqual(result, .updated(profileID: fixture.b.id))
-            XCTAssertEqual(
-                Array(fixture.keychain.noninteractiveReadServices.dropFirst(before)),
-                isManual ? [] : [fixture.baseService, fixture.baseService])
+            XCTAssertFalse(
+                fixture.keychain.noninteractiveReadServices.dropFirst(before).contains(fixture.baseService))
             XCTAssertNil(try fixture.journal.load())
         }
     }

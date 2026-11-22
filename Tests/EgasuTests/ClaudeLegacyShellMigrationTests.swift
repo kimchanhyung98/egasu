@@ -85,7 +85,7 @@ extension AccountCredentialSwitcherTests {
     func testShellMigrationFreshInstallSkipsCredentialsAndAddsNoFunction() async throws {
         let f = try makeFixture()
         let defaults = try shellMigrationDefaults()
-        f.keychain.onSharedRead = { _ in XCTFail("A fresh installation must not read Claude credentials") }
+        f.keychain.onSharedRead = { XCTFail("A fresh installation must not read Claude credentials") }
         try await ClaudeLegacyShellMigration.runIfNeeded(defaults: defaults, switcher: f.switcher)
         XCTAssertTrue(defaults.bool(forKey: ClaudeLegacyShellMigration.completedKey))
         XCTAssertFalse(FileManager.default.fileExists(atPath: f.home.appendingPathComponent(".zshrc").path))
@@ -139,7 +139,7 @@ extension AccountCredentialSwitcherTests {
             launchSnapshot: { snapshot })
         let switcher = AccountCredentialSwitcher(
             keychain: f.keychain, environment: reader, homeDirectory: f.home, workspace: f.workspace)
-        f.keychain.onSharedRead = { _ in XCTFail("An unknown OAuth scope must not read Keychain") }
+        f.keychain.onSharedRead = { XCTFail("An unknown OAuth scope must not read Keychain") }
         await assertMigrationFails(defaults: defaults, switcher: switcher, expecting: .shellEnvironmentUnavailable)
         XCTAssertEqual(try text(rc), legacyClaudeZshBlock(home: f.home))
         XCTAssertFalse(defaults.bool(forKey: ClaudeLegacyShellMigration.completedKey))
@@ -167,7 +167,7 @@ extension AccountCredentialSwitcherTests {
                 baseClaudeService(): claudeCredential(token: "default"), scoped: claudeCredential(token: "legacy")
             ]
             let before = f.keychain.currentUserValues
-            f.keychain.onSharedRead = { _ in XCTFail("Changed shell scope must be detected before reading Keychain") }
+            f.keychain.onSharedRead = { XCTFail("Changed shell scope must be detected before reading Keychain") }
 
             await assertMigrationFails(defaults: defaults, switcher: switcher, expecting: .shellEnvironmentChanged)
 
@@ -183,10 +183,7 @@ extension AccountCredentialSwitcherTests {
         let f = try makeFixture()
         let defaults = try shellMigrationDefaults()
         let rc = try installOldClaudeFunction(f)
-        f.keychain.onSharedRead = { allowsPrompt in
-            XCTAssertTrue(allowsPrompt)
-            throw KeychainError.readFailed("fixture denial")
-        }
+        f.keychain.onSharedRead = { throw KeychainError.readFailed("fixture denial") }
         await assertMigrationFails(defaults: defaults, switcher: f.switcher)
         XCTAssertFalse(defaults.bool(forKey: ClaudeLegacyShellMigration.completedKey))
         XCTAssertEqual(try text(rc), legacyClaudeZshBlock(home: f.home))
@@ -266,7 +263,7 @@ extension AccountCredentialSwitcherTests {
                 try Data((block + "\n" + setting).utf8).write(to: fish)
             }
             let previous = try Data(contentsOf: rc)
-            f.keychain.onSharedRead = { _ in XCTFail("Redirected profiles must not migrate a login") }
+            f.keychain.onSharedRead = { XCTFail("Redirected profiles must not migrate a login") }
 
             await assertMigrationFails(defaults: defaults, switcher: switcher, expecting: .configDirectoryOverride)
 
