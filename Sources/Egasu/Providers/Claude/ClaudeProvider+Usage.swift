@@ -121,6 +121,9 @@ extension ClaudeProvider {
             usageTimerCredentialState?.sourceText = nil
             let verifiedKey = UsageTimerObservation.accountKey(family: "claude", identity: accountKey)
             mapped.liveQuotaAccountKey = verifiedKey
+            if let identity, !identity.contains("|"), let token = working.oauth.accessToken {
+                mapped.legacySwitchIdentity = .init(identityKey: accountKey, accessToken: token)
+            }
             let haikuLimits = mapped.lines.filter { $0.label == "Session" || $0.label == "Weekly" }
             usageTimerObservations =
                 UsageTimerObservation.hasExhaustedQuota(haikuLimits)

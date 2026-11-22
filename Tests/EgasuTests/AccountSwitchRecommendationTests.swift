@@ -89,6 +89,16 @@ final class AccountSwitchRecommendationTests: XCTestCase {
         XCTAssertEqual(quota.nextCandidateReset(at: now), now.addingTimeInterval(30))
     }
 
+    func testClaudeUsageAboveOneHundredStillTriggersAndCannotSupplyCandidate() {
+        let quota = AccountSwitchQuota.claude(lines: [
+            .progress(
+                label: "Session", used: 105.5, limit: 100, format: .percent,
+                resetsAt: now.addingTimeInterval(100))
+        ])
+        XCTAssertTrue(quota.needsSwitch(at: now))
+        XCTAssertNil(quota.nextCandidateReset(at: now))
+    }
+
     func testCodexBasePeriodsIgnoreSparkAndRejectIncompleteOrAmbiguousWindows() throws {
         let session = ["limit_window_seconds": 18000, "reset_after_seconds": 45, "used_percent": 20]
         let monthly = ["limit_window_seconds": 2_592_000, "used_percent": 95]
@@ -125,6 +135,10 @@ final class AccountSwitchRecommendationTests: XCTestCase {
             refreshedAt: now, liveQuotaObservedAt: now, liveQuotaAccountKey: "verified")
         snapshot.codexSwitchIdentity = account.identityKey
         snapshot.codexSwitchQuota = quota
+        snapshot.codexResetClaimBinding = recommendationCodexBinding(
+            account: account.identityKey,
+            source: .file(path: AccountCredentialSwitcher().sharedHomePath(family: "codex") + "/auth.json"))
+        snapshot.liveQuotaAccountKey = snapshot.codexResetClaimBinding?.verifiedAccountKey
         let runtime = TestProviderRuntime(provider: provider, descriptors: [], snapshot: snapshot)
         func store(for identity: String) -> WidgetDataStore {
             WidgetDataStore(
@@ -250,6 +264,7 @@ final class AccountSwitchRecommendationTests: XCTestCase {
     }
 
     func testLongNameFitsSameSingleRowAsShortNameInEachLanguage() throws {
+        var rowHeight: Int?
         for language in LanguageSetting.allCases {
             try L10n.withLanguage(language) {
                 @MainActor func render(_ name: String) throws -> CGImage {
@@ -261,6 +276,11 @@ final class AccountSwitchRecommendationTests: XCTestCase {
                 let long = try render(String(repeating: "가나다", count: 20))
                 XCTAssertEqual(long.width, 280)
                 XCTAssertEqual(long.height, short.height)
+                if let rowHeight {
+                    XCTAssertEqual(short.height, rowHeight, "The suggestion must remain one row in every language")
+                } else {
+                    rowHeight = short.height
+                }
             }
         }
     }

@@ -25,6 +25,7 @@ extension AppContainer {
         for family: String, at now: Date, confirming profileID: String? = nil
     ) -> AccountSwitchRecommendation? {
         guard AccountProfilesStore.isSupportedFamily(family), enablement.isEnabled(family),
+            popover.signingInAgainAccountID == nil,
             !accountProfiles.hasUnreadableRegistry, !accountSwitch.isSwitching || accountSwitch.profileID == profileID,
             let current = accountProfiles.preferredProfile(family: family), accountProfileID(for: family) == current.id
         else { return nil }

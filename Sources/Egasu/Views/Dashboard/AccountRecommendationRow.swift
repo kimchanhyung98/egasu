@@ -22,11 +22,18 @@ struct AccountRecommendationRow: View {
                 }
             }
             .onChange(of: suggestion) { _, current in
+                guard !container.accountSwitch.isSwitching, container.popover.signingInAgainAccountID == nil else {
+                    return
+                }
                 if current != dismissed { dismissed = nil }
             }
         }
         .accountSwitchConfirmation(
             selection: $selection, onError: onError,
+            validateTarget: { [pending] entry in
+                guard let pending else { throw AccountSwitchRecommendation.NoLongerAvailable() }
+                try pending.validateTarget(entry)
+            },
             validateDeparture: { [pending] identity in
                 guard let pending else { throw AccountSwitchRecommendation.NoLongerAvailable() }
                 try pending.validate(
@@ -62,7 +69,8 @@ struct AccountRecommendationControls: View {
             Text(L10n.dashboard("Suggested"))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
-                .frame(width: 56, alignment: .leading)
+                .lineLimit(1)
+                .frame(width: 64, alignment: .leading)
             Button(action: select) {
                 HStack(spacing: 0) {
                     Text(verbatim: parts.first ?? "").fixedSize()
@@ -82,7 +90,7 @@ struct AccountRecommendationControls: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(L10n.dashboard("Dismiss"))
-            .frame(width: 56, alignment: .trailing)
+            .frame(width: 64, alignment: .trailing)
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)

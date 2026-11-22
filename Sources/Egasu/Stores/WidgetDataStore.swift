@@ -32,6 +32,8 @@ final class WidgetDataStore {
     private static let meterStyleKey = "meterStyle"
     private static let resetDisplayModeKey = "resetDisplayMode"
     private static let showsAccountEmailsKey = "showsAccountEmails"
+    private static let sharedCodexHome = URL(
+        fileURLWithPath: AccountCredentialSwitcher().sharedHomePath(family: "codex"))
     static let defaultSlowProviderRefreshThreshold: TimeInterval = 10
     static let defaultProviderRefreshTimeout: TimeInterval = 120
 
@@ -370,14 +372,35 @@ final class WidgetDataStore {
         else { return nil }
         switch profile.family {
         case "claude":
-            let accountKey = UsageTimerObservation.accountKey(family: "claude", identity: profile.identityKey)
+            var quota = AccountSwitchQuota.claude(lines: snapshot.lines)
+            if !profile.identityKey.contains("|") {
+                guard let verified = snapshot.legacyClaudeSwitchIdentity,
+                    verified.identityKey.hasPrefix(profile.identityKey + "|")
+                else { return nil }
+                quota.legacyClaudeIdentity = verified
+            }
+            let identity = quota.legacyClaudeIdentity?.identityKey ?? profile.identityKey
+            let accountKey = UsageTimerObservation.accountKey(family: "claude", identity: identity)
             guard snapshot.liveQuotaAccountKey == accountKey else { return nil }
+            return quota
         case "codex":
-            guard snapshot.codexSwitchIdentity == profile.identityKey else { return nil }
+            guard snapshot.codexSwitchIdentity == profile.identityKey,
+                let binding = snapshot.codexResetClaimBinding,
+                binding.verifiedAccountKey == snapshot.liveQuotaAccountKey
+            else { return nil }
+            if cardID == "codex" {
+                guard case .file(let path) = binding.source else { return nil }
+                let file = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+                let home = file.deletingLastPathComponent().standardizedFileURL
+                guard file.lastPathComponent == "auth.json",
+                    home.path == Self.sharedCodexHome.path
+                        || home.resolvingSymlinksInPath().path == Self.sharedCodexHome.resolvingSymlinksInPath().path
+                else { return nil }
+            }
+            return snapshot.codexSwitchQuota
         default:
             return nil
         }
-        return snapshot.accountSwitchQuota
     }
 
     private func freshLocalQuota(for id: String, at now: Date) -> ProviderSnapshot? {

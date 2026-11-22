@@ -6,12 +6,14 @@ extension View {
         onError: @escaping (AccountActionAlert?) -> Void,
         localStates: [String: AccountSignInProbe.State] = [:],
         allowsRecoveryRetry: Bool = false,
+        validateTarget: ((AccountCredentialVault.Entry) throws -> Void)? = nil,
         validateDeparture: ((String?) throws -> Void)? = nil
     ) -> some View {
         modifier(
             AccountSwitchConfirmation(
                 selection: selection, onError: onError, localStates: localStates,
-                allowsRecoveryRetry: allowsRecoveryRetry, validateDeparture: validateDeparture
+                allowsRecoveryRetry: allowsRecoveryRetry, validateTarget: validateTarget,
+                validateDeparture: validateDeparture
             ))
     }
 }
@@ -23,6 +25,7 @@ private struct AccountSwitchConfirmation: ViewModifier {
     let onError: (AccountActionAlert?) -> Void
     let localStates: [String: AccountSignInProbe.State]
     let allowsRecoveryRetry: Bool
+    let validateTarget: ((AccountCredentialVault.Entry) throws -> Void)?
     let validateDeparture: ((String?) throws -> Void)?
 
     private var store: AccountProfilesStore { container.accountProfiles }
@@ -70,7 +73,6 @@ private struct AccountSwitchConfirmation: ViewModifier {
             profileID: profile.id,
             waitForRefreshes: { await container.waitForAccountSwitchWork(providerIDs: providerIDs) }
         ) {
-            try validateDeparture?(store.preferredProfile(family: profile.family)?.identityKey)
             let switcher = AccountSelectionSwitcher()
             let status = container.accountStatus(for: profile, localState: localStates[profile.id])
             let isRecoveryRetry = try allowsRecoveryRetry && profile.family == "claude" && switcher.hasPendingSwitch()
@@ -85,7 +87,8 @@ private struct AccountSwitchConfirmation: ViewModifier {
                     localContext: "Account switch requires sign-in; account switch not applied")
                 return
             }
-            try await switcher.switchAuthentication(to: profile, in: store, validateDeparture: validateDeparture)
+            try await switcher.switchAuthentication(
+                to: profile, in: store, validateTarget: validateTarget, validateDeparture: validateDeparture)
             let refreshes = container.refreshAccountCatalog()
             await container.refreshSharedRuntime(afterSwitchingTo: profile)
             for (providerID, refresh) in refreshes where providerIDs.contains(providerID) { await refresh.value }

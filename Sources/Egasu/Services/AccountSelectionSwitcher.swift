@@ -22,6 +22,15 @@ struct AccountSelectionSwitcher {
         to selected: AccountProfile, in store: AccountProfilesStore,
         validateDeparture: ((String?) throws -> Void)? = nil
     ) async throws {
+        try await switchAuthentication(
+            to: selected, in: store, validateTarget: nil, validateDeparture: validateDeparture)
+    }
+
+    func switchAuthentication(
+        to selected: AccountProfile, in store: AccountProfilesStore,
+        validateTarget: ((AccountCredentialVault.Entry) throws -> Void)?,
+        validateDeparture: ((String?) throws -> Void)?
+    ) async throws {
         guard store.profile(id: selected.id) == selected else {
             throw AccountProfileError.profileNotFound(selected.id)
         }
@@ -38,7 +47,9 @@ struct AccountSelectionSwitcher {
         var previousRecord = try journal.load()
         var interruptedState: AccountSwitchJournal.SharedState?
         if let record = previousRecord {
-            guard validateDeparture == nil else { throw AccountCredentialSwitcher.Error.switchRecoveryRequired }
+            guard validateDeparture == nil, validateTarget == nil else {
+                throw AccountCredentialSwitcher.Error.switchRecoveryRequired
+            }
             let state = try await readSwitchState(in: store, expecting: record)
             if let profileID = selection(for: record, state: state, in: store) {
                 try await finish(record, selecting: profileID, observed: state, in: store)
@@ -138,6 +149,13 @@ struct AccountSelectionSwitcher {
         do {
             AccountCredentialMutationLock.acquire(family: "claude")
             defer { AccountCredentialMutationLock.release(family: "claude") }
+            if let validateTarget {
+                guard let latest = try switcher.loadSnapshot(for: selected, allowInteraction: true), latest == target
+                else {
+                    throw AccountSwitchRecommendation.NoLongerAvailable()
+                }
+                try validateTarget(latest)
+            }
             guard try switcher.readClaudeSwitchState() == state else { throw ClaudeAuthError.credentialsChanged }
             try validateDeparture?(verifiedIdentity)
             try journal.save(record, replacing: previousRecord)

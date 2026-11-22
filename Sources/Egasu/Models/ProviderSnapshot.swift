@@ -47,6 +47,7 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
     /// 검증한 Codex 기본 한도와 등록 신원. 표시용 대체값·디스크 캐시와 분리.
     var codexSwitchQuota: AccountSwitchQuota?
     var codexSwitchIdentity: String?
+    var legacyClaudeSwitchIdentity: LegacyClaudeRecommendationIdentity?
     var usageRetryAfter: Date?
 
     var freshnessDate: Date { quotaObservedAt ?? refreshedAt }

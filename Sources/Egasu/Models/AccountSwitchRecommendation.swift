@@ -1,5 +1,23 @@
 import Foundation
 
+/// 조직을 저장하지 않은 Claude 로그인은 이번 조회에서 검증한 조직과 토큰에만 연결.
+struct LegacyClaudeRecommendationIdentity: Hashable, Sendable {
+    let identityKey: String
+    private let tokenFingerprint: String
+
+    init(identityKey: String, accessToken: String) {
+        self.identityKey = identityKey
+        tokenFingerprint = AccountSwitchJournal.fingerprint(accessToken)
+    }
+
+    func matches(_ entry: AccountCredentialVault.Entry) -> Bool {
+        guard let token = ClaudeAuthStore.parseCredentials(entry.credential)?.claudeAiOauth?.accessToken else {
+            return false
+        }
+        return AccountSwitchJournal.fingerprint(token) == tokenFingerprint
+    }
+}
+
 /// 기본 구독 한도의 이번 응답만 비교. 서버가 생략한 기간은 해당 요금제에 없는 기간으로 처리.
 struct AccountSwitchQuota: Hashable, Sendable {
     enum Period: Hashable, Sendable {
@@ -13,12 +31,13 @@ struct AccountSwitchQuota: Hashable, Sendable {
 
     var windows: [Period: Window] = [:]
     var incomplete = false
+    var legacyClaudeIdentity: LegacyClaudeRecommendationIdentity?
 
     static func claude(lines: [MetricLine]) -> Self {
         var result = Self()
         for line in lines {
             guard line.label == "Session" || line.label == "Weekly" else { continue }
-            guard case .progress(_, let used, 100, .percent, let reset, _, _) = line, (0...100).contains(used) else {
+            guard case .progress(_, let used, 100, .percent, let reset, _, _) = line, used.isFinite, used >= 0 else {
                 result.incomplete = true
                 continue
             }
@@ -60,28 +79,42 @@ extension ProviderSnapshot {
 struct AccountSwitchRecommendation: Equatable {
     let current: AccountProfile
     let target: AccountProfile
+    var legacyCurrentIdentityKey: String?
+    var legacyTargetIdentity: LegacyClaudeRecommendationIdentity?
 
     struct NoLongerAvailable: Error {}
 
     func validate(departure: String?, latest: Self?) throws {
-        guard departure == current.identityKey, latest == self else { throw NoLongerAvailable() }
+        guard departure == (legacyCurrentIdentityKey ?? current.identityKey), latest == self else {
+            throw NoLongerAvailable()
+        }
+    }
+
+    func validateTarget(_ entry: AccountCredentialVault.Entry) throws {
+        if let legacyTargetIdentity, !legacyTargetIdentity.matches(entry) { throw NoLongerAvailable() }
     }
 
     static func choose(
         current: AccountProfile, profiles: [AccountProfile], at now: Date,
         quota: (AccountProfile) -> AccountSwitchQuota?
     ) -> Self? {
-        guard quota(current)?.needsSwitch(at: now) == true else { return nil }
-        var best: (AccountProfile, Date)?
+        guard let currentQuota = quota(current), currentQuota.needsSwitch(at: now) else { return nil }
+        let currentIdentity = currentQuota.legacyClaudeIdentity?.identityKey ?? current.identityKey
+        var best: (recommendation: Self, reset: Date)?
         for profile in profiles
         where profile.family == current.family && !profile.isArchived
-            && profile.id != current.id && profile.identityKey != current.identityKey
+            && profile.id != current.id
         {
-            guard let reset = quota(profile)?.nextCandidateReset(at: now),
-                best.map({ reset < $0.1 }) ?? true
+            guard let reading = quota(profile),
+                (reading.legacyClaudeIdentity?.identityKey ?? profile.identityKey) != currentIdentity,
+                let reset = reading.nextCandidateReset(at: now), best.map({ reset < $0.reset }) ?? true
             else { continue }
-            best = (profile, reset)
+            let recommendation = Self(
+                current: current, target: profile,
+                legacyCurrentIdentityKey: currentQuota.legacyClaudeIdentity?.identityKey,
+                legacyTargetIdentity: reading.legacyClaudeIdentity)
+            best = (recommendation, reset)
         }
-        return best.map { Self(current: current, target: $0.0) }
+        return best?.recommendation
     }
 }
