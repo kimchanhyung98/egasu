@@ -162,6 +162,7 @@ swift test             # run the test suite
 앱·사이트·가격표는 `main` 이력에 포함된 버전 태그를 기준으로 게시.
 `main` 푸시는 CI 검증만 수행하며, 수동 게시에도 대상 태그 필수.
 Pages 재배포는 해당 태그의 성공한 게시 실행 결과 사용.
+Pages 배포 작업만 재시도하면 기존 업로드 산출물 재사용.
 자세한 조건은 [게시 버전 보호](/docs/updates.md#유지-관리자-게시-버전-보호) 참조.
 
 ### Release setup (one-time)
