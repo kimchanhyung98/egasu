@@ -36,13 +36,14 @@ enum CursorUsageSummaryMapper {
     ) throws -> CursorMappedUsage {
         let cycle = billingCycle(summary)
         var lines: [MetricLine] = []
+        var recoveryScopes: [String: QuotaRecoveryScope] = [:]
 
         let requests = CursorUsageMapper.includedRequests(in: requestUsage)
         let hasWeeklySummary =
             cycle.periodDurationMs.map { SoftLimitWindow.weekly.matches(periodDurationMs: $0, allowsDSTOffset: true) }
             ?? false
         if requests == nil || hasWeeklySummary {
-            appendSummaryTotal(summary, cycle: cycle, to: &lines)
+            recoveryScopes["Total usage"] = appendSummaryTotal(summary, cycle: cycle, to: &lines)
         }
         if let requests {
             let labels = lines.isEmpty ? ["Total usage", "Requests"] : ["Requests"]
@@ -56,7 +57,7 @@ enum CursorUsageSummaryMapper {
             }
         }
         appendStructuredPercentages(summary, cycle: cycle, to: &lines)
-        appendOnDemand(summary, cycle: cycle, to: &lines)
+        recoveryScopes["On-demand"] = appendOnDemand(summary, cycle: cycle, to: &lines)
 
         guard !lines.isEmpty else {
             throw CursorUsageError.requestBasedUnavailable(unavailableMessage)
@@ -66,7 +67,8 @@ enum CursorUsageSummaryMapper {
             plan: planLabel(planName) ?? planLabel(summary?["membershipType"] as? String),
             lines: lines,
             incompleteQuotaWindows: incompleteQuotaWindows(
-                summary: summary, requestUsage: requestUsage, cycle: cycle, lines: lines)
+                summary: summary, requestUsage: requestUsage, cycle: cycle, lines: lines),
+            recoveryScopes: recoveryScopes
         )
     }
 
@@ -110,14 +112,14 @@ enum CursorUsageSummaryMapper {
         _ summary: [String: Any]?,
         cycle: CursorUsageMapper.BillingCycle,
         to lines: inout [MetricLine]
-    ) {
+    ) -> QuotaRecoveryScope? {
         let individual = summary?["individualUsage"] as? [String: Any]
         let team = summary?["teamUsage"] as? [String: Any]
         let limitType = (summary?["limitType"] as? String)?.lowercased()
 
         if limitType == "team", let pooled = dollarMeter(team?["pooled"]) {
             appendDollarProgress(pooled, label: "Total usage", cycle: cycle, to: &lines)
-            return
+            return .team
         }
         if let percent = CursorPlanUsageFacts.percent((individual?["plan"] as? [String: Any])?["totalPercentUsed"]) {
             lines.append(.progress(
@@ -128,15 +130,17 @@ enum CursorUsageSummaryMapper {
                 resetsAt: cycle.resetsAt,
                 periodDurationMs: cycle.periodDurationMs
             ))
-            return
+            return nil
         }
         if let overall = dollarMeter(individual?["overall"]) {
             appendDollarProgress(overall, label: "Total usage", cycle: cycle, to: &lines)
-            return
+            return nil
         }
         if let pooled = dollarMeter(team?["pooled"]) {
             appendDollarProgress(pooled, label: "Total usage", cycle: cycle, to: &lines)
+            return .team
         }
+        return nil
     }
 
     private static func appendStructuredPercentages(
@@ -163,13 +167,13 @@ enum CursorUsageSummaryMapper {
         _ summary: [String: Any]?,
         cycle: CursorUsageMapper.BillingCycle,
         to lines: inout [MetricLine]
-    ) {
+    ) -> QuotaRecoveryScope? {
         let individual = summary?["individualUsage"] as? [String: Any]
         let team = summary?["teamUsage"] as? [String: Any]
         if appendOnDemandBucket(individual?["onDemand"], cycle: cycle, to: &lines) {
-            return
+            return nil
         }
-        _ = appendOnDemandBucket(team?["onDemand"], cycle: cycle, to: &lines)
+        return appendOnDemandBucket(team?["onDemand"], cycle: cycle, to: &lines) ? .team : nil
     }
 
     /// 비활성 항목, 유효한 상한과 양수 사용액이 모두 없는 항목은 건너뜀. 지표 추가 여부로 팀 집계 전환 판단.

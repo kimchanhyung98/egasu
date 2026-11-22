@@ -75,7 +75,7 @@ struct NotificationState: Equatable, Sendable {
     var firedMilestones: Set<PaceMilestone> = []
     var previousBucket: PaceBucket = .untracked
     var previousSeverity: WidgetData.MeterSeverity = .normal
-    var exhaustedAccount: String?
+    var exhaustedAccounts: [QuotaRecoveryScope: String] = [:]
     var positiveUsageObservedAt: Date?
     /// 사용량이 먼저 0으로 돌아온 관측 — 이후 확인한 주기의 시작과 종료를 비교.
     struct Recovery: Equatable, Sendable {

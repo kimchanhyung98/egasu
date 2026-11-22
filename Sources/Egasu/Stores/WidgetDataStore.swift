@@ -377,10 +377,14 @@ final class WidgetDataStore {
             now.timeIntervalSince(observed) < RefreshSetting.interval(for: id),
             !cache.isQuotaInvalidated(providerID: id, observedAt: observed),
             let line = snapshot.line(label: descriptor.metricLabel),
-            case let .progress(_, used, limit, _, reset, _, _) = line,
+            resource.matches(line), case let .progress(_, used, limit, format, reset, _, _) = line,
             used.isFinite, used >= 0, limit.isFinite, limit > 0, reset.map({ $0 > now }) != false
         else { return nil }
-        return .init(account: account, isExhausted: used >= limit)
+        // Cursor 요청 수 대체값은 Requests 행에서만 관측해 Total Usage의 구독 기준선을 보존.
+        if descriptor.id == "cursor.usage", format == .count(suffix: "requests") { return nil }
+        let scope = snapshot.quotaRecoveryScopes[descriptor.metricLabel] ?? .account
+        guard scope != .unverified else { return nil }
+        return .init(account: account, isExhausted: used >= limit, scope: scope)
     }
 
     /// 프로바이더별 현재 조회 결과 — 일괄 조회 요약에 사용.
