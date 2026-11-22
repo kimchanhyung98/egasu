@@ -53,7 +53,8 @@ final class AccountReadinessInteractionTests: XCTestCase {
             let vault = AccountCredentialVault.service(family: "claude", profileID: profile.id)
             XCTAssertEqual(keychain.reads.map(\.service), [vault, service, service, vault, service, service])
             XCTAssertEqual(keychain.reads.map(\.forCurrentUser), [true, true, false, true, true, false])
-            XCTAssertTrue(keychain.reads.filter { $0.service == vault }.allSatisfy { $0.allowInteraction == allowInteraction })
+            XCTAssertTrue(
+                keychain.reads.filter { $0.service == vault }.allSatisfy { $0.allowInteraction == allowInteraction })
             XCTAssertEqual(keychain.legacyReads, 4, "Claude Code 형식 공유 항목은 CLI 도구로 조회")
             XCTAssertEqual(keychain.writeCount, initialWrites)
             XCTAssertEqual(defaults.data(forKey: AccountProfilesStore.storageKey), initialRegistry)
