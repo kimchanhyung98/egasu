@@ -21,15 +21,9 @@ struct WidgetGroupedListView: View {
     @State private var activeAccountID: String?
     @State private var activeFamilyID: String?
     @State private var pendingAccountSwitch: AccountProfile?
-    @State private var accountAlert: AccountAlert?
+    @State private var accountAlert: AccountActionAlert?
     @State private var signInTask: Task<Void, Never>?
     @State private var signedInProfileID = TransientNotice<String?>(clearedValue: nil, timeout: .seconds(2.5))
-
-    private struct AccountAlert {
-        var title: String
-        var message: String
-        var recoveryProfile: AccountProfile?
-    }
 
     private var layoutStyle: DashboardLayoutStyle { dataStore.displaySettings.dashboardLayout }
 
@@ -47,41 +41,22 @@ struct WidgetGroupedListView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .onPreferenceChange(ReorderFramePreferenceKey.self) { rowFrames = $0 }
         .animation(Motion.spring, value: families.map(\.id))
-        .accountSwitchConfirmation(selection: $pendingAccountSwitch, onError: showSwitchError) { profile, message in
-            accountAlert = AccountAlert(
-                title: reSignInTitle(for: profile),
-                message: message,
-                recoveryProfile: profile)
-        }
-        .alert(
-            accountAlert?.title ?? "", isPresented: isAccountAlertPresented, presenting: accountAlert
-        ) { alert in
-            if let profile = alert.recoveryProfile {
-                Button(L10n.accounts("Sign In Again…")) { signInAgain(profile) }
+        .accountSwitchConfirmation(selection: $pendingAccountSwitch, onError: { accountAlert = $0 })
+        .background {
+            if let accountAlert, pendingAccountSwitch == nil, !container.accountSwitch.isSwitching, popover.popoverShown
+            {
+                DashboardAccountAlertSheet(alert: accountAlert, concealsAccountNames: concealsAccountNames) { profile in
+                    self.accountAlert = nil
+                    if let profile { signInAgain(profile) }
+                }
+                .id(accountAlert.recoveryProfile?.id)
+                .frame(width: 0, height: 0)
             }
-            Button(L10n.dashboard("OK"), role: .cancel) {}
-        } message: { alert in
-            Text(alert.message)
         }
         .onDisappear { signInTask?.cancel() }
         .onChange(of: popover.popoverShown) { _, shown in
             if !shown { signedInProfileID.clear() }
         }
-    }
-
-    private func showSwitchError(_ message: String?) {
-        accountAlert = message.map { AccountAlert(title: L10n.dashboard("Couldn't Switch Account"), message: $0) }
-    }
-
-    private func reSignInTitle(for profile: AccountProfile) -> String {
-        concealsAccountNames ? L10n.accounts("Sign In Again") : L10n.accounts("Sign In Again to %@", profile.label)
-    }
-
-    private var isAccountAlertPresented: Binding<Bool> {
-        Binding(
-            get: { accountAlert != nil && pendingAccountSwitch == nil && !container.accountSwitch.isSwitching },
-            set: { if !$0 { accountAlert = nil } }
-        )
     }
 
     private func section(_ family: DashboardFamily) -> some View {
@@ -210,11 +185,7 @@ struct WidgetGroupedListView: View {
                     issues.allSatisfy(\.allowsRetry)
                     && container.accountProfiles.profile(id: current.id)?.identityKey == current.identityKey
                     && !container.accountStatus(for: current, localState: nil).canSwitch
-                accountAlert = AccountAlert(
-                    title: reSignInTitle(for: current),
-                    message: issues.map { $0.message(concealsAccountNames: concealsAccountNames) }.joined(
-                        separator: "\n"),
-                    recoveryProfile: retry ? current : nil)
+                accountAlert = .signInFailed(current, issues: issues, allowsRetry: retry)
             } else {
                 signedInProfileID.present(current.id)
             }

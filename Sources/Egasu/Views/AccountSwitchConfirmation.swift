@@ -3,16 +3,14 @@ import SwiftUI
 extension View {
     func accountSwitchConfirmation(
         selection: Binding<AccountProfile?>,
-        onError: @escaping (String?) -> Void,
+        onError: @escaping (AccountActionAlert?) -> Void,
         localStates: [String: AccountSignInProbe.State] = [:],
-        allowsRecoveryRetry: Bool = false,
-        onSignInRequired: ((AccountProfile, String) -> Void)? = nil
+        allowsRecoveryRetry: Bool = false
     ) -> some View {
         modifier(
             AccountSwitchConfirmation(
                 selection: selection, onError: onError, localStates: localStates,
-                allowsRecoveryRetry: allowsRecoveryRetry,
-                onSignInRequired: onSignInRequired
+                allowsRecoveryRetry: allowsRecoveryRetry
             ))
     }
 }
@@ -21,10 +19,9 @@ private struct AccountSwitchConfirmation: ViewModifier {
     @Environment(AppContainer.self) private var container
     @Environment(\.concealsAccountNames) private var concealsAccountNames
     @Binding var selection: AccountProfile?
-    let onError: (String?) -> Void
+    let onError: (AccountActionAlert?) -> Void
     let localStates: [String: AccountSignInProbe.State]
     let allowsRecoveryRetry: Bool
-    let onSignInRequired: ((AccountProfile, String) -> Void)?
 
     private var store: AccountProfilesStore { container.accountProfiles }
 
@@ -75,15 +72,10 @@ private struct AccountSwitchConfirmation: ViewModifier {
             let status = container.accountStatus(for: profile, localState: localStates[profile.id])
             let isRecoveryRetry = try allowsRecoveryRetry && profile.family == "claude" && switcher.hasPendingSwitch()
             guard status.canSwitch || isRecoveryRetry else {
-                let fallback = L10n.accounts("Sign in again before switching to this account.")
-                if profile.family == "codex", let onSignInRequired {
-                    let reason =
-                        concealsAccountNames
-                        ? container.signInReasonWithoutAccountDetails(for: profile) : status.message
-                    onSignInRequired(profile, reason ?? fallback)
-                } else {
-                    onError(status.message ?? fallback)
-                }
+                onError(
+                    .signInRequired(
+                        profile, detail: status.message,
+                        concealedDetail: container.signInReasonWithoutAccountDetails(for: profile)))
                 let category: ErrorCategory = if case .sessionExpired = status { .authExpired } else { .notLoggedIn }
                 AppDiagnostics.record(
                     .accountSwitch, result: .failure, category: category, providerID: profile.family,
@@ -98,11 +90,7 @@ private struct AccountSwitchConfirmation: ViewModifier {
             AppDiagnostics.record(.accountSwitch, result: .success, providerID: profile.family)
         } onFailure: { switchError in
             AppDiagnostics.failure(.accountSwitch, error: switchError, providerID: profile.family)
-            onError(
-                AccountNamePrivacy.switchErrorMessage(
-                    switchError, name: profile.label, email: container.accountLoginEmail(for: profile),
-                    conceals: concealsAccountNames
-                ))
+            onError(.switchFailed(profile, email: container.accountLoginEmail(for: profile), error: switchError))
         }
     }
 }

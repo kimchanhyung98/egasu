@@ -43,7 +43,9 @@ struct RegisteredAccountRows: View {
                     .cardSurface()
                     // 확인창은 뷰마다 하나 — 복구 전환은 이 행에 붙임.
                     .accountSwitchConfirmation(
-                        selection: $recoverySelection, onError: { actionError = $0 }, allowsRecoveryRetry: true)
+                        selection: $recoverySelection,
+                        onError: { actionError = $0?.text(concealsAccountNames: false).message },
+                        allowsRecoveryRetry: true)
             }
             VStack(spacing: 0) {
                 HStack(spacing: 8) {
@@ -86,7 +88,8 @@ struct RegisteredAccountRows: View {
             }
             .cardSurface()
             .accountSwitchConfirmation(
-                selection: $pendingSelection, onError: { actionError = $0 }, localStates: localStates)
+                selection: $pendingSelection, onError: { actionError = $0?.text(concealsAccountNames: false).message },
+                localStates: localStates)
             if let message = actionError ?? status.message {
                 Text(message)
                     .font(.caption)

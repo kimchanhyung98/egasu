@@ -99,6 +99,28 @@ final class DashboardMenusTests: XCTestCase {
         XCTAssertEqual(commands, [.refresh([cardID]), .manageAccounts])
     }
 
+    func testSwitchAlertsChooseDetailsAtPresentationTime() {
+        let profile = AccountProfile(
+            id: "c", family: "codex", label: "Private Alias", identityKey: "workspace", createdAt: .distantPast)
+        let path = "/fixture/private-account/auth.json"
+        let cause = UserFacingErrors.message(CodexAuthError.sessionExpired)
+        let required = AccountActionAlert.signInRequired(profile, detail: cause + " " + path, concealedDetail: cause)
+        let failed = AccountActionAlert.switchFailed(
+            profile, email: "test@gmail.com", error: KeychainError.readFailed(path))
+        for concealed in [false, true, false] {
+            let signIn = required.text(concealsAccountNames: concealed)
+            XCTAssertEqual(signIn.title.contains(profile.label), !concealed)
+            XCTAssertEqual(signIn.message.contains(path), !concealed)
+            XCTAssertTrue(signIn.message.contains(cause))
+            let failure = failed.text(concealsAccountNames: concealed)
+            XCTAssertEqual(failure.message.contains(profile.label), !concealed)
+            XCTAssertEqual(failure.message.contains(path), !concealed)
+            XCTAssertEqual(failure.message.contains("t**t@g***l.com"), concealed)
+        }
+        XCTAssertEqual(required.recoveryProfile?.id, profile.id)
+        XCTAssertNil(failed.recoveryProfile)
+    }
+
     private var account: DashboardAccount {
         DashboardAccount(
             provider: Provider(id: cardID, displayName: "Codex", icon: .providerMark("codex")),

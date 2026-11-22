@@ -72,6 +72,7 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
   행 우클릭으로 지표 숨기기·Priority 고정·새로 고침·Accounts 관리 연결.
   등록한 Codex 계정의 로그인이 만료되면 해당 행의 **Sign In Again…**에서 복구.
   다른 계정을 기본 터미널에서 사용하려면 복구 후 **Use Codex**로 전환.
+  계정명 가림 상태 변경을 이미 열린 대시보드 계정 알림에도 즉시 반영.
   [프로바이더 섹션 공유 이미지](/docs/dashboard.md#공유)는 표시 중인 모든 계정과 지표 순서를 반영.
 - **[계정 전환](/docs/cli.md#계정).** Claude·Codex의 기본 인증 저장소를 쓰는 새 CLI 세션에 선택한 로그인 적용.
   업데이트 후 첫 실행에서 이전 OpenUsage의 Claude 셸 함수를 확인하고 [CLI 로그인 이전](/docs/accounts.md#이전-claude-셸-함수-정리)을 완료하면 해당 함수 제거.
