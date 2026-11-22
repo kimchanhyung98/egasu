@@ -18,6 +18,28 @@ struct DashboardMetricRow: View {
 
     var body: some View {
         Group {
+            if let summary = model.limitSummary {
+                VStack(alignment: .leading, spacing: 0) {
+                    row
+                    Text(summary)
+                        .font(Self.resetFont)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.bottom, 4)
+                }
+            } else {
+                row
+            }
+        }
+        .font(Self.font)
+        .frame(maxWidth: .infinity, minHeight: DashboardGrid.rowHeight, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var row: some View {
+        Group {
             switch model.mark {
             case .bar(let fill, let severity, let value, let reset, let isUsedUp):
                 Group {
@@ -94,9 +116,6 @@ struct DashboardMetricRow: View {
                 }
             }
         }
-        .font(Self.font)
-        .frame(maxWidth: .infinity, minHeight: DashboardGrid.rowHeight, alignment: .leading)
-        .accessibilityElement(children: .combine)
     }
 
     private var label: some View {

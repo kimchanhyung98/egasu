@@ -66,7 +66,7 @@ struct DashboardLiveRow: View {
     private func row(now: Date) -> some View {
         let data = line.data.presented(at: now)
         return DashboardMetricRow(
-            model: data.dashboardRow(now: now),
+            model: line.dashboardRow(now: now),
             chartPoints: data.chartPoints,
             layoutStyle: layoutStyle,
             onToggleMeterStyle: data.hasMeterStyleToggle ? onToggleMeterStyle : nil,

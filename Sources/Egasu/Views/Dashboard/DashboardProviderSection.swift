@@ -253,7 +253,7 @@ struct DashboardAccountRows: View {
             } else {
                 DashboardLineStack(account: account, layoutStyle: layoutStyle) { line in
                     DashboardMetricRow(
-                        model: line.data.dashboardRow(), chartPoints: line.data.chartPoints, layoutStyle: layoutStyle,
+                        model: line.dashboardRow(), chartPoints: line.data.chartPoints, layoutStyle: layoutStyle,
                         valueTooltip: line.data.isChart ? line.data.chartNote : nil
                     )
                 }

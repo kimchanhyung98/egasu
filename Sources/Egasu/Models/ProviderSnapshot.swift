@@ -1,5 +1,9 @@
 import Foundation
 
+enum QuotaRecoveryScope: Hashable, Sendable {
+    case account, team, unverified
+}
+
 /// provider refresh 1회의 최신 정규화 출력.
 struct ProviderSnapshot: Hashable, Sendable, Codable {
     let providerID: String
@@ -36,6 +40,8 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
     var liveQuotaObservedAt: Date?
     /// 현재 quota 응답에서 확인한 계정. 디스크 캐시·공유 출력에서 제외.
     var liveQuotaAccountKey: String?
+    /// 계정 단독 한도가 아닌 행의 집계 범위. 현재 응답의 회복 판정에만 사용.
+    var quotaRecoveryScopes: [String: QuotaRecoveryScope] = [:]
     /// 마지막 정상 한도 조회 시각 — 캐시 재사용 중에도 보존하며 자동 전환용 관측과 구분.
     var quotaObservedAt: Date?
     var usageRetryAfter: Date?

@@ -7,6 +7,7 @@
 "%@ credits" = "%@ クレジット";
 "%@ left" = "残り %@";
 "%@ limit" = "上限 %@";
+"%@ · Limit %@" = "%@ · 上限 %@";
 "%@ purchased" = "%@ 購入済み";
 "%@ reports a major outage for %@." = "%@ から %@ の大規模障害が報告されています。";
 "%@ reports a partial outage for %@." = "%@ から %@ の一部障害が報告されています。";
