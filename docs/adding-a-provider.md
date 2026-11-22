@@ -14,7 +14,7 @@ egasu에 새 AI 프로바이더를 추가하는 방법.
 
 대부분의 프로바이더는 공식 CLI나 앱에 저장된 로그인 정보 사용.
 OpenRouter처럼 API 키 관리를 지원하는 프로바이더는 egasu에서 키 입력 가능.
-OpenCode처럼 로컬 기록만 수집하는 프로바이더는 사용량 조회용 HTTP 클라이언트 불필요.
+로컬 기록만 수집하는 프로바이더는 사용량 조회용 HTTP 클라이언트 불필요.
 
 모든 프로바이더는 `refresh()`와 `hasLocalCredentials()` 구현 필요.
 `hasLocalCredentials()`는 인증 정보나 사용 기록 등 로컬 사용 흔적을 확인하는 저비용 검사.
