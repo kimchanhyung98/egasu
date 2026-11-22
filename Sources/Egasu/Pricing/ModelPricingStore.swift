@@ -108,8 +108,8 @@ actor ModelPricingStore {
     private func rebuildPricing() {
         pricing = ModelPricing(
             supplement: loadSupplement(),
-            primary: loadCatalog(.litellm, parse: PricingCatalogCodecs.catalogFromCompact),
-            secondary: loadCatalog(.modelsDev, parse: PricingCatalogCodecs.catalogFromCompact)
+            primary: loadCatalog(.litellm),
+            secondary: loadCatalog(.modelsDev)
         )
     }
 
@@ -172,7 +172,7 @@ actor ModelPricingStore {
     }
 
     /// catalog = bundled snapshot 위에 fetch cache merge — cache entry 우선, live feed가 지운 snapshot 전용 model은 생존.
-    private func loadCatalog(_ source: SourceID, parse: (Data) throws -> PricingCatalog) -> PricingCatalog {
+    private func loadCatalog(_ source: SourceID) -> PricingCatalog {
         var catalog = PricingCatalog()
         let resourceName = source == .litellm ? "pricing_litellm_snapshot" : "pricing_models_dev_snapshot"
         if let bundled = bundledData(resourceName) {
@@ -184,14 +184,25 @@ actor ModelPricingStore {
         } else {
             AppLog.error("pricing", "bundled \(resourceName).json missing")
         }
-        if let cached = readCache(source) {
-            do {
-                catalog = catalog.merging(try parse(cached))
-            } catch {
-                AppLog.warn("pricing", "cached \(source.rawValue) catalog unreadable, using bundled: \(error.localizedDescription)")
-            }
+        if let cached = decodedCachedCatalog(source) {
+            return catalog.merging(cached)
         }
-        return catalog
+        sourceStates[source]?.etag = nil
+        sourceStates[source]?.fetchedAt = nil
+        let previous = source == .litellm ? pricing.primary : pricing.secondary
+        return previous.entries.isEmpty ? catalog : previous
+    }
+
+    private func decodedCachedCatalog(_ source: SourceID) -> PricingCatalog? {
+        guard let data = readCache(source) else { return nil }
+        do {
+            let cached = try PricingCatalogCodecs.catalogFromCompact(data)
+            guard !cached.entries.isEmpty else { throw PricingCodecError.noUsableEntries }
+            return cached
+        } catch {
+            AppLog.warn("pricing", "cached \(source.rawValue) catalog unreadable: \(error.localizedDescription)")
+            return nil
+        }
     }
 
     // MARK: - Refresh
@@ -253,9 +264,11 @@ actor ModelPricingStore {
                 AppDiagnostics.record(operation, result: .success)
                 return true
             case 304:
-                if source == .supplement,
-                   request.headers["If-None-Match"] == nil || decodedCachedSupplement() == nil {
+                let hasCache =
+                    source == .supplement ? decodedCachedSupplement() != nil : decodedCachedCatalog(source) != nil
+                guard request.headers["If-None-Match"] != nil, hasCache else {
                     state.etag = nil
+                    state.fetchedAt = nil
                     throw PricingFetchError.unusableNotModified
                 }
                 state.fetchedAt = now()
@@ -341,7 +354,7 @@ private enum PricingFetchError: Error, LocalizedError, CategorizedError {
     var errorDescription: String? {
         switch self {
         case .httpStatus(let code): return "HTTP \(code)"
-        case .unusableNotModified: return "Pricing response did not include a usable supplement"
+        case .unusableNotModified: return "Pricing response did not include a usable price table"
         }
     }
 }
