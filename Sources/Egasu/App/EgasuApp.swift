@@ -6,6 +6,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItemController: StatusItemController?
     private var singleInstanceLock: SingleInstanceLock.Token?
     private var isAwaitingProcessShutdown = false
+    private var terminationSignalSource: DispatchSourceSignal?
     private let updater = UpdaterController()
 
     public override init() {
@@ -20,6 +21,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     public func applicationDidFinishLaunching(_ notification: Notification) {
         // 다른 로그보다 먼저 bootstrap — 세션 첫 라인 캡처.
         AppLog.bootstrap()
+        // SIGTERM도 정상 종료 경로로 처리 — 개발 스크립트·`kill` 종료에서도 회전 저장 대기.
+        terminationSignalSource = TerminationSignalHandler.install { NSApp.terminate(nil) }
         // 커널 수준 single-instance lock (#874) — workspace guard snapshot이 놓치는 근접 동시 런치도 차단.
         var holdsLock = false
         if let bundleID = Bundle.main.bundleIdentifier {
@@ -134,13 +137,22 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         updater.start()
     }
 
-    /// Runner 소유 process group 정리까지 app 종료 지연.
+    /// 진행 중인 Claude 토큰 회전 저장과 Runner 소유 process group 정리까지 app 종료 지연.
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !isAwaitingProcessShutdown else { return .terminateLater }
-        guard let container, container.hasRunningBackgroundProcesses else { return .terminateNow }
+        TokenRotationShutdownGuard.beginTermination()
+        let hasActiveRotation = !TokenRotationShutdownGuard.isIdle
+        guard hasActiveRotation || container?.hasRunningBackgroundProcesses == true else { return .terminateNow }
         isAwaitingProcessShutdown = true
         Task { @MainActor in
-            await container.shutdownBackgroundProcesses()
+            if hasActiveRotation {
+                await TokenRotationShutdownGuard.waitForIdle(warnAfter: .seconds(20)) {
+                    AppLog.warn(.lifecycle, "still waiting for a Claude token rotation before quitting")
+                }
+            }
+            if let container, container.hasRunningBackgroundProcesses {
+                await container.shutdownBackgroundProcesses()
+            }
             self.isAwaitingProcessShutdown = false
             sender.reply(toApplicationShouldTerminate: true)
         }

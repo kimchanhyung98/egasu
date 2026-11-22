@@ -80,20 +80,6 @@ INFO_PLIST="$APP_CONTENTS/Info.plist"
 ENTITLEMENTS="$ROOT_DIR/script/Egasu.dev.entitlements.plist"
 SIGN_ENTITLEMENTS="$ROOT_DIR/script/Egasu.local.entitlements.plist"
 
-# 이름 변경 전후의 이 checkout 개발 앱만 종료. 설치된 운영 앱은 별도 경로에서 계속 실행.
-python3 - "$APP_BINARY" "$DIST_DIR/Egasu.app/Contents/MacOS/Egasu" "$DIST_DIR/OpenUsage.app/Contents/MacOS/OpenUsage" <<'PY'
-import os, signal, subprocess, sys
-executables = {os.path.realpath(path) for path in sys.argv[1:]}
-names = {os.path.basename(path) for path in sys.argv[1:]}
-for line in subprocess.check_output(["/bin/ps", "-axo", "pid=,comm="], text=True).splitlines():
-    pid, executable = line.strip().split(None, 1)
-    if os.path.basename(executable) in names and os.path.realpath(executable) in executables:
-        try:
-            os.kill(int(pid), signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-PY
-
 echo "==> swift build ($CONFIG)"
 swift build -c "$CONFIG"
 BUILD_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
@@ -108,6 +94,37 @@ if [ ! -x "$BUILD_CLI_BINARY" ]; then
   echo "missing built CLI: $BUILD_CLI_BINARY" >&2
   exit 1
 fi
+
+# 빌드 성공 뒤 이름 변경 전후의 이 checkout 개발 앱만 종료. 설치된 운영 앱은 별도 경로에서 계속 실행.
+# 종료 대기 시간 초과 시 기존 앱 번들을 유지하고 빌드 스크립트 중단.
+python3 - "$APP_BINARY" "$DIST_DIR/Egasu.app/Contents/MacOS/Egasu" "$DIST_DIR/OpenUsage.app/Contents/MacOS/OpenUsage" <<'PY'
+import os, signal, subprocess, sys, time
+executables = {os.path.realpath(path) for path in sys.argv[1:]}
+names = {os.path.basename(path) for path in sys.argv[1:]}
+pids = []
+for line in subprocess.check_output(["/bin/ps", "-axo", "pid=,comm="], text=True).splitlines():
+    pid, executable = line.strip().split(None, 1)
+    if os.path.basename(executable) in names and os.path.realpath(executable) in executables:
+        try:
+            os.kill(int(pid), signal.SIGTERM)
+            pids.append(int(pid))
+        except ProcessLookupError:
+            pass
+
+def running(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+
+deadline = time.monotonic() + 25
+while pids and time.monotonic() < deadline:
+    time.sleep(0.25)
+    pids = [pid for pid in pids if running(pid)]
+if pids:
+    sys.exit("Development app did not quit within 25 seconds; keeping the existing bundle.")
+PY
 
 echo "==> staging $APP_BUNDLE"
 rm -rf "$APP_BUNDLE"

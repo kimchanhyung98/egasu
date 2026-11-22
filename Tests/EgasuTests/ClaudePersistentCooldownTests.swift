@@ -122,6 +122,47 @@ final class ClaudePersistentCooldownTests: XCTestCase {
         XCTAssertNil(shared.liveQuotaObservedAt)
     }
 
+    func testCancellingUsageRefreshKeepsAnInFlightTokenRotationUntilSaved() async {
+        let tokenStarted = expectation(description: "Token refresh request reached the server")
+        let providerFinished = expectation(description: "Provider finished processing the response")
+        let gate = UsageGate()
+        let path = "/tmp/claude/.credentials.json"
+        let files = credentials()
+        files.files[path] = """
+            {"claudeAiOauth":{"accessToken":"old","refreshToken":"refresh","expiresAt":1,"scopes":["user:profile"]}}
+            """
+        let http = RoutingHTTPClient { request in
+            XCTAssertEqual(request.url.path, "/v1/oauth/token")
+            tokenStarted.fulfill()
+            await gate.wait()
+            try Task.checkCancellation()
+            return HTTPResponse(
+                statusCode: 200, headers: [:],
+                body: Data(#"{"access_token":"new","refresh_token":"new-refresh","expires_in":3600}"#.utf8))
+        }
+        let runtime = provider(files: files, http: http, store: isolatedClaudeUsageStore())
+        let refresh = Task {
+            await ProviderRefreshDeadline.run(timeout: .seconds(10)) {
+                let snapshot = await runtime.refresh()
+                providerFinished.fulfill()
+                return snapshot
+            }
+        }
+        await fulfillment(of: [tokenStarted], timeout: 2)
+
+        refresh.cancel()
+        if case .cancelled = await refresh.value {} else { XCTFail("Expected the usage refresh caller to cancel") }
+        XCTAssertFalse(TokenRotationShutdownGuard.isIdle)
+        await gate.open()
+        await fulfillment(of: [providerFinished], timeout: 2)
+
+        let saved = ClaudeAuthStore.parseCredentials(files.files[path] ?? "")?.claudeAiOauth
+        XCTAssertEqual(saved?.accessToken, "new")
+        XCTAssertEqual(saved?.refreshToken, "new-refresh")
+        XCTAssertEqual(http.requests.count, 1)
+        XCTAssertTrue(TokenRotationShutdownGuard.isIdle)
+    }
+
     func testInvalidProfileDoesNotSendUsageRequest() async {
         let store = isolatedClaudeUsageStore()
         defer { try? FileManager.default.removeItem(at: store.directory) }
