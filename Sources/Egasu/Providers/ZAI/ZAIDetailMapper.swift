@@ -83,10 +83,8 @@ enum ZAIDetailMapper {
                             input: input[index].value, cacheRead: cached[index].value, output: output[index].value
                         )
                         let cost = rates.costDollars(for: breakdown, applyLongContextRates: false)
-                        guard cost.isFinite, cost >= 0, (current + cost).isFinite else {
-                            throw ZAIUsageError.invalidResponse
-                        }
-                        day.costUSD = current + cost
+                        let totalCost = current + cost
+                        day.costUSD = cost.isFinite && cost >= 0 && totalCost.isFinite ? totalCost : nil
                     } else {
                         day.costUSD = nil
                     }

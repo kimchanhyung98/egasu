@@ -45,7 +45,7 @@ final class ModelPricing: Sendable {
         return resolved
     }
 
-    /// 모델과 토큰 내역으로 USD 비용 계산 — 단가가 없으면 nil.
+    /// 모델과 토큰 내역으로 USD 비용 계산 — 유한한 비음수로 계산할 수 없으면 nil.
     /// 요청 경계가 없는 집계 자료는 긴 문맥 요율 적용 생략 가능.
     func estimatedCostDollars(
         model: String,
@@ -54,7 +54,8 @@ final class ModelPricing: Sendable {
         source: Source = .api
     ) -> Double? {
         guard let rates = resolve(model: model, source: source) else { return nil }
-        return rates.costDollars(for: tokens, applyLongContextRates: applyLongContextRates)
+        let cost = rates.costDollars(for: tokens, applyLongContextRates: applyLongContextRates)
+        return cost.isFinite && cost >= 0 ? cost : nil
     }
 
     /// Cursor 별도 요율은 보충 파일의 정확 항목·등록 별칭으로만 조회 — 공급 경로 접두사를 공개 카탈로그 유사 매칭에 전달하지 않음.

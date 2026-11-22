@@ -11,29 +11,32 @@ enum PricingCatalogCodecs {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw PricingCodecError.notAnObject
         }
+        let tokensPerMillion = 1_000_000.0
         var entries: [String: ModelRates] = [:]
         for (key, value) in root {
             guard let entry = value as? [String: Any],
-                  let input = doubleValue(entry["input_cost_per_token"]),
-                  let output = doubleValue(entry["output_cost_per_token"]) else { continue }
-            let cacheWrite = doubleValue(entry["cache_creation_input_token_cost"])
-            let cacheRead = doubleValue(entry["cache_read_input_token_cost"])
-            var rates = ModelRates(
-                inputPerMillion: input * 1_000_000,
-                outputPerMillion: output * 1_000_000,
-                cacheWritePerMillion: (cacheWrite ?? input) * 1_000_000,
-                cacheReadPerMillion: (cacheRead ?? input * 0.1) * 1_000_000,
-                cacheReadIsExplicit: cacheRead != nil
+                let input = catalogRate(entry["input_cost_per_token"], scale: tokensPerMillion),
+                let output = catalogRate(entry["output_cost_per_token"], scale: tokensPerMillion)
+            else { continue }
+            let cacheWrite = catalogRate(entry["cache_creation_input_token_cost"], scale: tokensPerMillion)
+            let cacheRead = catalogRate(entry["cache_read_input_token_cost"], scale: tokensPerMillion)
+            let providerSpecific = entry["provider_specific_entry"] as? [String: Any]
+            entries[key] = ModelRates(
+                inputPerMillion: input,
+                outputPerMillion: output,
+                cacheWritePerMillion: cacheWrite ?? input,
+                cacheReadPerMillion: cacheRead ?? input * 0.1,
+                inputAbove200kPerMillion: catalogRate(
+                    entry["input_cost_per_token_above_200k_tokens"], scale: tokensPerMillion),
+                outputAbove200kPerMillion: catalogRate(
+                    entry["output_cost_per_token_above_200k_tokens"], scale: tokensPerMillion),
+                cacheWriteAbove200kPerMillion: catalogRate(
+                    entry["cache_creation_input_token_cost_above_200k_tokens"], scale: tokensPerMillion),
+                cacheReadAbove200kPerMillion: catalogRate(
+                    entry["cache_read_input_token_cost_above_200k_tokens"], scale: tokensPerMillion),
+                cacheReadIsExplicit: cacheRead != nil,
+                fastMultiplier: catalogRate(providerSpecific?["fast"]) ?? 1
             )
-            rates.inputAbove200kPerMillion = doubleValue(entry["input_cost_per_token_above_200k_tokens"]).map { $0 * 1_000_000 }
-            rates.outputAbove200kPerMillion = doubleValue(entry["output_cost_per_token_above_200k_tokens"]).map { $0 * 1_000_000 }
-            rates.cacheWriteAbove200kPerMillion = doubleValue(entry["cache_creation_input_token_cost_above_200k_tokens"]).map { $0 * 1_000_000 }
-            rates.cacheReadAbove200kPerMillion = doubleValue(entry["cache_read_input_token_cost_above_200k_tokens"]).map { $0 * 1_000_000 }
-            if let providerSpecific = entry["provider_specific_entry"] as? [String: Any],
-               let fast = doubleValue(providerSpecific["fast"]) {
-                rates.fastMultiplier = fast
-            }
-            entries[key] = rates
         }
         guard !entries.isEmpty else { throw PricingCodecError.noUsableEntries }
         return PricingCatalog(entries: entries)
@@ -55,14 +58,16 @@ enum PricingCatalogCodecs {
                 guard entries[modelID] == nil,
                       let model = value as? [String: Any],
                       let cost = model["cost"] as? [String: Any],
-                      let input = doubleValue(cost["input"]),
-                      let output = doubleValue(cost["output"]) else { continue }
+                    let input = catalogRate(cost["input"]),
+                    let output = catalogRate(cost["output"])
+                else { continue }
+                let cacheRead = catalogRate(cost["cache_read"])
                 entries[modelID] = ModelRates(
                     inputPerMillion: input,
                     outputPerMillion: output,
-                    cacheWritePerMillion: doubleValue(cost["cache_write"]) ?? input,
-                    cacheReadPerMillion: doubleValue(cost["cache_read"]) ?? input * 0.1,
-                    cacheReadIsExplicit: cost["cache_read"] != nil
+                    cacheWritePerMillion: catalogRate(cost["cache_write"]) ?? input,
+                    cacheReadPerMillion: cacheRead ?? input * 0.1,
+                    cacheReadIsExplicit: cacheRead != nil
                 )
             }
         }
@@ -70,9 +75,13 @@ enum PricingCatalogCodecs {
         return PricingCatalog(entries: entries)
     }
 
-    private static func doubleValue(_ value: Any?) -> Double? {
-        if let number = value as? NSNumber { return number.doubleValue }
-        return nil
+    private static func catalogRate(_ value: Any?, scale: Double = 1) -> Double? {
+        guard value is NSNumber, let number = ProviderParse.number(value) else { return nil }
+        return validRate(number * scale)
+    }
+
+    private static func validRate(_ value: Double) -> Double? {
+        value.isFinite && value >= 0 ? value : nil
     }
 
     // MARK: - Compact format (bundled snapshots + disk cache)
@@ -82,17 +91,19 @@ enum PricingCatalogCodecs {
         var entries: [String: ModelRates] = [:]
         entries.reserveCapacity(file.models.count)
         for (key, model) in file.models {
+            guard let input = validRate(model.i), let output = validRate(model.o) else { continue }
+            let cacheRead = validRate(model.cr)
             entries[key] = ModelRates(
-                inputPerMillion: model.i,
-                outputPerMillion: model.o,
-                cacheWritePerMillion: model.cw,
-                cacheReadPerMillion: model.cr,
-                inputAbove200kPerMillion: model.ia,
-                outputAbove200kPerMillion: model.oa,
-                cacheWriteAbove200kPerMillion: model.cwa,
-                cacheReadAbove200kPerMillion: model.cra,
-                cacheReadIsExplicit: model.cre ?? true,
-                fastMultiplier: model.fast ?? 1
+                inputPerMillion: input,
+                outputPerMillion: output,
+                cacheWritePerMillion: validRate(model.cw) ?? input,
+                cacheReadPerMillion: cacheRead ?? input * 0.1,
+                inputAbove200kPerMillion: model.ia.flatMap(validRate),
+                outputAbove200kPerMillion: model.oa.flatMap(validRate),
+                cacheWriteAbove200kPerMillion: model.cwa.flatMap(validRate),
+                cacheReadAbove200kPerMillion: model.cra.flatMap(validRate),
+                cacheReadIsExplicit: cacheRead != nil && (model.cre ?? true),
+                fastMultiplier: model.fast.flatMap(validRate) ?? 1
             )
         }
         return PricingCatalog(entries: entries, retrievedAt: file.retrievedAt)
