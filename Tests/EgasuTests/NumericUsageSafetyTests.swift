@@ -123,6 +123,53 @@ final class NumericUsageSafetyTests: XCTestCase {
         XCTAssertNotNil(mixed.usageHistory)
     }
 
+    func testUnrepresentableEstimatedCostsKeepNativeAndSharedTokens() throws {
+        let model = "large-rate-model"
+        let data = Data(#"{"provider":{"models":{"large-rate-model":{"cost":{"input":1e308,"output":1}}}}}"#.utf8)
+        let catalog = try PricingCatalogCodecs.catalogFromModelsDev(data)
+        let pricing = ModelPricing(
+            supplement: PricingSupplement(exactFastMultipliers: [model: 2]),
+            primary: PricingCatalog(), secondary: catalog)
+        let tokens = TokenBreakdown(input: 1, output: 2)
+
+        XCTAssertEqual(pricing.resolve(model: model)?.inputPerMillion, 1e308)
+        XCTAssertNil(pricing.estimatedCostDollars(model: model, tokens: tokens))
+        XCTAssertNil(CodexUsagePricing.estimate(model: model, tokens: tokens, pricing: pricing))
+
+        let claude = ClaudeLogUsageScanner.aggregate(
+            entries: [
+                .init(timestamp: date, tokens: tokens, messageID: nil, requestID: nil, costUSD: nil, model: model)
+            ], since: .distantPast, pricing: pricing)
+        let codex = CodexLogUsageScanner.aggregate(
+            events: [
+                .init(timestamp: date, model: model, input: 1, cached: 0, output: 2, reasoning: 0, total: 3)
+            ], since: .distantPast, pricing: pricing)
+        let pi = UsageRecordFixture.history(
+            records: [
+                UsageRecordFixture.record(
+                    timestamp: date, providerID: "codex", model: model, cost: nil, tokens: tokens, total: 3)
+            ], providerID: "codex", since: .distantPast, pricing: pricing,
+            costEstimator: CodexUsagePricing.estimateRecord)
+        let omp = UsageRecordFixture.history(
+            records: [
+                UsageRecord(
+                    sourceID: "omp", formatID: "omp-session", kind: "message", timestamp: date,
+                    providerID: "anthropic", model: model, serviceTier: "priority", tokens: tokens, totalTokens: 3)
+            ], providerID: "claude", since: .distantPast, pricing: pricing)
+
+        let day = DailyUsageAccumulator.dayKey(from: date)
+        for scan in [claude, codex, pi, omp] {
+            XCTAssertEqual(scan.series.daily, [DailyUsageEntry(date: day, totalTokens: 3, costUSD: nil)])
+            XCTAssertEqual(
+                scan.modelUsage?.daily.first?.models,
+                [
+                    ModelUsageEntry(model: model, totalTokens: 3, costUSD: nil)
+                ])
+            XCTAssertEqual(scan.unknownModelsByDay, [day: [model]])
+            XCTAssertEqual(scan.rejectedNumericRows, 0)
+        }
+    }
+
     func testAccumulatorRejectsOverflowAtomicallyAcrossDaysAndModels() {
         for (day, model) in [("2026-09-12", "a"), ("2026-09-12", "b"), ("2026-09-11", "a")] {
             var accumulator = DailyUsageAccumulator()

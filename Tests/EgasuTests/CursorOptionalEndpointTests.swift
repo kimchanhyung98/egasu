@@ -114,7 +114,7 @@ final class CursorOptionalEndpointTests: XCTestCase {
         XCTAssertTrue(logs.contains("optional plan response contained invalid plan metadata"), logs)
     }
 
-    func testEnterpriseOnDemandSpendAloneDoesNotSupplyASubscriptionObservation() async {
+    func testEnterpriseOnDemandSpendAloneDoesNotSupplyASubscriptionObservation() async throws {
         let provider = makeProvider { request in
             switch request.url {
             case CursorUsageClient.usageURL:
@@ -137,7 +137,10 @@ final class CursorOptionalEndpointTests: XCTestCase {
 
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertEqual(progress(snapshot.lines, "On-demand")?.used, 5)
-        XCTAssertNil(snapshot.liveQuotaObservedAt)
+        let observed = try XCTUnwrap(snapshot.liveQuotaObservedAt)
+        XCTAssertNil(
+            SoftLimitObservation.project(
+                snapshot: snapshot, descriptors: provider.widgetDescriptors, window: .all, now: observed))
     }
 
     func testMissingPrepaidBalanceMetadataIsLoggedWithoutDiscardingPrimaryUsage() async throws {
@@ -477,7 +480,7 @@ final class CursorOptionalEndpointTests: XCTestCase {
         )
     }
 
-    private func makeProvider(
+    func makeProvider(
         accessToken: String = makeCursorJWT(includeSubject: true),
         pricing: ModelPricing = TestPricing.bundled,
         handler: @escaping @Sendable (HTTPRequest) async throws -> HTTPResponse
@@ -514,7 +517,7 @@ final class CursorOptionalEndpointTests: XCTestCase {
         return (snapshot, logs)
     }
 
-    private func progress(
+    func progress(
         _ lines: [MetricLine],
         _ label: String
     ) -> (used: Double, limit: Double)? {

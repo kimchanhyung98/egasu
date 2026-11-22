@@ -296,6 +296,102 @@ final class ModelPricingTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(restored.entries["missing"]).cacheReadIsExplicit)
     }
 
+    func testPublicCatalogsSkipInvalidRequiredRatesAndKeepValidModels() throws {
+        let liteLLM = Data(
+            """
+            {
+                "lite-bool": {"input_cost_per_token": true, "output_cost_per_token": 0.000005},
+                "lite-negative": {"input_cost_per_token": 0.000005, "output_cost_per_token": -0.000002},
+                "lite-overflow": {"input_cost_per_token": 1e303, "output_cost_per_token": 0.000005},
+                "lite-string": {"input_cost_per_token": "0.000005", "output_cost_per_token": 0.00001},
+                "lite-free": {"input_cost_per_token": 0, "output_cost_per_token": 0},
+                "lite-paid": {"input_cost_per_token": 0.000005, "output_cost_per_token": 0.00001}
+            }
+            """.utf8)
+        let modelsDev = Data(
+            """
+            {"provider":{"models":{
+                "dev-bool": {"cost":{"input":1,"output":false}},
+                "dev-negative": {"cost":{"input":-2.5,"output":4.5}},
+                "dev-string": {"cost":{"input":"1","output":2}},
+                "dev-free": {"cost":{"input":0,"output":0}},
+                "dev-paid": {"cost":{"input":2,"output":4}}
+            }}}
+            """.utf8)
+        let primary = try PricingCatalogCodecs.catalogFromLiteLLM(liteLLM)
+        let secondary = try PricingCatalogCodecs.catalogFromModelsDev(modelsDev)
+        let pricing = ModelPricing(
+            supplement: PricingSupplement(),
+            primary: try PricingCatalogCodecs.catalogFromCompact(PricingCatalogCodecs.compactData(from: primary)),
+            secondary: try PricingCatalogCodecs.catalogFromCompact(PricingCatalogCodecs.compactData(from: secondary))
+        )
+
+        XCTAssertEqual(Set(pricing.primary.entries.keys), ["lite-free", "lite-paid"])
+        XCTAssertEqual(Set(pricing.secondary.entries.keys), ["dev-free", "dev-paid"])
+        let tokens = TokenBreakdown(input: 1_000_000, output: 1_000_000)
+        for model in [
+            "lite-bool", "lite-negative", "lite-overflow", "lite-string", "dev-bool", "dev-negative", "dev-string"
+        ] {
+            XCTAssertNil(pricing.estimatedCostDollars(model: model, tokens: tokens), model)
+        }
+        XCTAssertEqual(pricing.estimatedCostDollars(model: "lite-free", tokens: tokens), 0)
+        XCTAssertEqual(pricing.estimatedCostDollars(model: "dev-free", tokens: tokens), 0)
+        XCTAssertEqual(
+            try XCTUnwrap(pricing.estimatedCostDollars(model: "lite-paid", tokens: tokens)), 15, accuracy: 1e-9)
+        XCTAssertEqual(pricing.estimatedCostDollars(model: "dev-paid", tokens: tokens), 6)
+    }
+
+    func testPublicCatalogsUseDefaultsForInvalidOptionalRates() throws {
+        let liteLLM = Data(
+            """
+            {"lite-model":{
+                "input_cost_per_token":0.000005,"output_cost_per_token":0.00003,
+                "cache_creation_input_token_cost":true,"cache_read_input_token_cost":-0.000002,
+                "input_cost_per_token_above_200k_tokens":1e303,
+                "output_cost_per_token_above_200k_tokens":-0.00003,
+                "cache_creation_input_token_cost_above_200k_tokens":false,
+                "cache_read_input_token_cost_above_200k_tokens":"NaN",
+                "provider_specific_entry":{"fast":-2}
+            }}
+            """.utf8)
+        let modelsDev = Data(
+            """
+            {"provider":{"models":{
+                "dev-model":{"cost":{"input":5,"output":30,"cache_write":-1,"cache_read":true}},
+                "dev-free-cache":{"cost":{"input":5,"output":30,"cache_read":0}}
+            }}}
+            """.utf8)
+        let expected = ModelRates(
+            inputPerMillion: 5, outputPerMillion: 30, cacheWritePerMillion: 5,
+            cacheReadPerMillion: 0.5, cacheReadIsExplicit: false)
+        let liteRates = try XCTUnwrap(PricingCatalogCodecs.catalogFromLiteLLM(liteLLM).entries["lite-model"])
+        let dev = try PricingCatalogCodecs.catalogFromModelsDev(modelsDev)
+        let freeCache = try XCTUnwrap(dev.entries["dev-free-cache"])
+
+        XCTAssertEqual(liteRates, expected)
+        XCTAssertEqual(dev.entries["dev-model"], expected)
+        XCTAssertEqual(freeCache.cacheReadPerMillion, 0)
+        XCTAssertTrue(freeCache.cacheReadIsExplicit)
+    }
+
+    func testCompactCatalogRejectsPreviouslyCachedNegativeRates() throws {
+        let data = Data(
+            """
+            {"models":{
+                "invalid-model":{"i":-2,"o":30,"cw":5,"cr":0.5},
+                "valid-model":{"i":5,"o":30,"cw":-2,"cr":-1,"ia":-3,"oa":-4,"cwa":-2,"cra":-1,"fast":-2}
+            }}
+            """.utf8)
+        let catalog = try PricingCatalogCodecs.catalogFromCompact(data)
+
+        XCTAssertNil(catalog.entries["invalid-model"])
+        XCTAssertEqual(
+            catalog.entries["valid-model"],
+            ModelRates(
+                inputPerMillion: 5, outputPerMillion: 30, cacheWritePerMillion: 5,
+                cacheReadPerMillion: 0.5, cacheReadIsExplicit: false))
+    }
+
     func testLegacyCompactCatalogTreatsUnmarkedCacheReadAsExplicit() throws {
         // `cre` 도입 이전 snapshot은 source/synthesized 구분 불가 — 생략을 explicit으로 취급해 기존 동작 유지
         let legacy = Data(#"{"models":{"gpt-test":{"i":5,"o":30,"cw":5,"cr":0.5}}}"#.utf8)

@@ -10,6 +10,7 @@ final class QuotaNotificationEvaluator {
     struct RecoveryReading: Equatable {
         let account: String
         let isExhausted: Bool
+        var scope: QuotaRecoveryScope = .account
     }
 
     /// store가 이미 resolve한 이번 pass의 enabled·bounded·visible metric 하나
@@ -75,14 +76,13 @@ final class QuotaNotificationEvaluator {
             )
             // 같은 계정의 직접 관측만 비교. 조회 실패·추정값·타이머 경과는 회복 신호에서 제외.
             if !isOn(.quotaRecovered) {
-                result.newState.exhaustedAccount = nil
+                result.newState.exhaustedAccounts.removeAll()
             } else if let reading = metric.recoveryReading {
+                result.newState.exhaustedAccounts = previous.exhaustedAccounts.filter { $0.value == reading.account }
                 if reading.isExhausted {
-                    result.newState.exhaustedAccount = reading.account
-                } else if previous.exhaustedAccount == reading.account {
+                    result.newState.exhaustedAccounts[reading.scope] = reading.account
+                } else if result.newState.exhaustedAccounts[reading.scope] != nil {
                     result.fire.append(.quotaRecovered)
-                } else {
-                    result.newState.exhaustedAccount = nil
                 }
             }
             if !result.fire.isEmpty || resetAdvanced || Self.isPositiveResetMovement(resetDelta) {
@@ -113,7 +113,9 @@ final class QuotaNotificationEvaluator {
                     continue metricLoop
                 }
                 if delivered {
-                    if milestone == .quotaRecovered { next.exhaustedAccount = nil }
+                    if milestone == .quotaRecovered, let reading = metric.recoveryReading {
+                        next.exhaustedAccounts.removeValue(forKey: reading.scope)
+                    }
                     if milestone.isPace { paceDelivered = true }
                     if milestone.isLevel { levelDelivered = true }
                     next.firedMilestones.insert(milestone)
