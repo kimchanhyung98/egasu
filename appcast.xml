@@ -3,6 +3,15 @@
     <channel>
         <title>OpenUsage</title>
         <item>
+            <title>1.0.0-beta.5</title>
+            <pubDate>Sun, 22 Nov 2026 10:10:21 +0000</pubDate>
+            <sparkle:channel>beta</sparkle:channel>
+            <sparkle:version>2005</sparkle:version>
+            <sparkle:shortVersionString>1.0.0-beta.5</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/kimchanhyung98/egasu/releases/download/v1.0.0-beta.5/egasu-1.0.0-beta.5.dmg" length="37092856" type="application/octet-stream" sparkle:edSignature="/K9/fOpIBuzlVcNqLBZF2IdAnGXPAUdBnvJMb+6lRLo4yqw2ciX2LL5bIaBRsYGubMYZ6IfH88dCEJ/Di4BpDg=="/>
+        </item>
+        <item>
             <title>1.0.0-beta.4</title>
             <pubDate>Fri, 20 Nov 2026 12:47:09 +0000</pubDate>
             <sparkle:channel>beta</sparkle:channel>
