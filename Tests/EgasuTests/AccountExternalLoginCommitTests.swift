@@ -1,4 +1,5 @@
 import XCTest
+import os
 @testable import Egasu
 
 @MainActor
@@ -8,12 +9,7 @@ final class AccountExternalLoginCommitTests: XCTestCase {
             let fixture = try AccountSwitchRecoveryFixture(test: self, synchronize: { persistsSelection })
             let rotated = AccountSwitchRecoveryFixture.entry("a", token: "rotated-access-a")
             fixture.keychain.currentUserValues[fixture.baseService] = rotated.credential
-            let keychain = fixture.keychain
-            let sharedService = fixture.baseService
-            keychain.beforeRead = { service in
-                // 메인 스레드는 Claude Code 공유 항목의 최종 확인만 수행.
-                if Thread.isMainThread { XCTAssertEqual(service, sharedService) }
-            }
+            fixture.keychain.beforeRead = { _ in XCTAssertFalse(Thread.isMainThread) }
             fixture.keychain.beforeWrite = { _, _ in XCTAssertFalse(Thread.isMainThread) }
 
             let result = await ProviderRefreshContext.$isManual.withValue(true) {
@@ -72,19 +68,65 @@ final class AccountExternalLoginCommitTests: XCTestCase {
         let base = fixture.baseService
         let state = fixture.root.appendingPathComponent(".claude.json")
         let account = try XCTUnwrap(external.claudeOAuthAccount)
+        let reads = OSAllocatedUnfairLock(initialState: 0)
+        let started = expectation(description: "final shared credential read")
+        let gate = SwitchRecoveryReadGate(started: started)
         keychain.beforeRead = { service in
-            guard service == base, Thread.isMainThread else { return }
-            keychain.beforeRead = nil
-            keychain.currentUserValues[base] = external.credential
-            try Data(#"{"oauthAccount":\#(account)}"#.utf8).write(to: state)
+            guard service == base else { return }
+            XCTAssertFalse(Thread.isMainThread)
+            // 계정 검증 세 번과 적용 전 확인을 마친 뒤 선택 확정 직전의 조회를 대기.
+            let finalRead = reads.withLock {
+                $0 += 1
+                return $0 == 5
+            }
+            if finalRead { try gate.pauseOnce() }
         }
-
-        let result = await claudeReconciliationResult(fixture.importer, in: fixture.store)
+        defer { gate.release() }
+        let task = Task { await claudeReconciliationResult(fixture.importer, in: fixture.store) }
+        await fulfillment(of: [started], timeout: 3)
+        keychain.currentUserValues[base] = external.credential
+        try Data(#"{"oauthAccount":\#(account)}"#.utf8).write(to: state)
+        gate.release()
+        let result = await task.value
+        keychain.beforeRead = nil
 
         XCTAssertThrowsError(try result.get()) { XCTAssertEqual($0 as? ClaudeAuthError, .credentialsChanged) }
         XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.a.id)
         XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), external)
         try fixture.assertSavedAccountsUnchanged()
+    }
+
+    func testSelectionChangedDuringFinalSwitchRecoveryReadKeepsJournal() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let other = try fixture.store.add(family: "claude", label: "other", identityKey: "acct-c|org-c")
+        let record = try fixture.stageIntent()
+        try fixture.switcher.applySharedAuthentication(fixture.entryB, family: "claude")
+        let started = expectation(description: "final switch recovery read")
+        let gate = SwitchRecoveryReadGate(started: started)
+        let base = fixture.baseService
+        let reads = OSAllocatedUnfairLock(initialState: 0)
+        fixture.keychain.beforeRead = { service in
+            guard service == base else { return }
+            XCTAssertFalse(Thread.isMainThread)
+            let finalRead = reads.withLock {
+                $0 += 1
+                return $0 == 2
+            }
+            if finalRead { try gate.pauseOnce() }
+        }
+        defer { gate.release() }
+        let task = Task { try await fixture.selectionSwitcher.recoverInterruptedSwitchAfterStartup(in: fixture.store) }
+        await fulfillment(of: [started], timeout: 3)
+        fixture.store.setPreferred(family: "claude", profileID: other.id)
+        gate.release()
+        do {
+            _ = try await task.value
+            XCTFail("Selection changed during the final recovery read")
+        } catch {
+            XCTAssertEqual(error as? AccountIdentityReplacementError, .pendingTransaction)
+        }
+        XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), other.id)
+        XCTAssertEqual(try fixture.journal.load(), record)
     }
 
     func testSelectionChangedDuringWorkspaceUpdateKeepsNewSelectionAndRestoresSnapshot() async throws {

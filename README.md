@@ -76,7 +76,8 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
   계정 전환 시 셸 설정 파일과 터미널 환경 유지.
   Claude 첫 등록·외부 로그인과 전환 중 보존할 변경된 인증은 토큰의 계정·조직을 검증한 뒤 저장본에 반영.
   선택된 Claude 공유 로그인은 사용량 조회에서도 계정·조직 일치 검증.
-  Claude Code 공유 Keychain은 CLI와 같은 도구로 읽으며, egasu 계정별 저장본은 앱의 접근 권한으로 조회.
+  외부 로그인 반영과 시작 시 계정 복구는 Claude Code 공유 Keychain을 백그라운드에서 CLI와 같은 도구로 확인.
+  egasu 계정별 저장본은 앱의 접근 권한으로 조회.
 - **[구독 타이머](/docs/refreshing.md#구독-타이머-자동-시작).** Codex·Claude·Antigravity·Kimi·Z.ai의 지원 한도를 확인하고 짧은 구독 메시지로 시작 유도.
   Codex CLI 탐색 시 로그인 셸의 `PATH` 사용.
   Claude·Antigravity·Kimi·Z.ai는 CLI 준비가 끝난 뒤 서버 한도를 다시 조회.
