@@ -23,7 +23,8 @@ egasu에서는 기존 `script/build_and_run.sh`를 기본 빌드·실행 경로�
 1. Detect whether the repo uses an Xcode workspace, Xcode project, or SwiftPM package.
 2. If the workspace is not inside git yet, run `git init` at the project root so git-backed editor features unlock.
 3. 기존 스크립트의 모드와 개발 번들·서명 계약 확인.
-   `build`는 개발 앱 종료·빌드·배치·서명만 수행하며, 나머지 모드는 실행까지 수행.
+   `build`는 Swift 빌드 성공 후 기존 개발 앱의 정상 종료를 기다린 뒤 배치·서명만 수행.
+   나머지 모드는 실행까지 수행.
 4. For SwiftPM, keep raw executable launch only for true CLI tools; for AppKit/SwiftUI GUI apps, create a project-local `.app` bundle and launch it with `/usr/bin/open -n`.
 5. `./script/build_and_run.sh [run|build|logs|verify]` 사용.
    `--` 접두사와 `debug`·`telemetry` 모드는 미지원.
@@ -34,7 +35,9 @@ egasu에서는 기존 `script/build_and_run.sh`를 기본 빌드·실행 경로�
 ## Guardrails
 
 - Do not initialize a nested git repo inside an existing parent checkout.
-- Keep the no-flag script path simple: kill, build, run.
+- egasu 인자 생략 경로는 Swift 빌드 → 기존 개발 앱 정상 종료 대기 → 배치·서명 → 실행 순서.
+- Swift 컴파일 실패 시 실행 앱 유지.
+- 종료 대기 25초 초과 시 기존 번들을 유지하고 중단.
 - 세부 진단 로그는 `log stream --info` 사용.
   시작 로그 확인은 별도 터미널에서 스트림을 먼저 시작한 뒤 `run` 실행.
 - `TelemetryRecorder` 이벤트는 가짜 sink·진단 observer·stub transport 테스트로 별도 확인.

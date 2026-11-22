@@ -14,7 +14,7 @@ egasu에서는 기존 `script/build_and_run.sh`를 기본 빌드·실행 경로�
 
 Prefer shell-first workflows:
 
-- `./script/build_and_run.sh` as the single kill + build + run entrypoint once it exists
+- 기존 `./script/build_and_run.sh`를 단일 빌드·실행 경로로 사용.
 - `xcodebuild` for Xcode workspaces or projects
 - `swift build` plus raw executable launch inside that script for true SwiftPM command-line tools
 - `swift build` plus project-local `.app` bundle staging and `/usr/bin/open -n` launch for SwiftPM AppKit/SwiftUI GUI apps
@@ -51,12 +51,14 @@ simulator-specific workflows onto pure macOS tasks.
      1. stop the existing running app/process if present,
      2. build the macOS target,
      3. `build`를 제외한 모드에서 새 앱 또는 실행 파일 시작.
-   - 모드별 계약:
-     - `run`: 기존 개발 앱 종료 후 빌드·서명·실행.
-     - `build`: 기존 개발 앱 종료 후 빌드·배치·서명만 수행.
+   - egasu 모드별 계약:
+     - `run`: Swift 빌드 성공 후 기존 개발 앱의 정상 종료를 기다린 뒤 배치·서명·실행.
+     - `build`: Swift 빌드 성공 후 기존 개발 앱의 정상 종료를 기다린 뒤 배치·서명만 수행.
      - `logs`: 빌드·실행 후 프로세스 로그 스트리밍.
      - `verify`: 빌드·실행 후 현재 checkout의 `APP_BINARY`와 실행 파일 경로가 같은 프로세스 확인.
-   - Keep the default no-flag path simple: kill, build, run.
+   - egasu 인자 생략 경로는 Swift 빌드 → 기존 개발 앱 정상 종료 대기 → 배치·서명 → 실행 순서.
+   - Swift 컴파일 실패 시 실행 앱 유지.
+   - 종료 대기 25초 초과 시 기존 번들을 유지하고 중단.
    - Prefer writing one script that owns this workflow instead of repeatedly asking the agent to manually run `swift build`, locate the artifact, then invoke an ad hoc run command.
    - For SwiftPM GUI apps, make the script build the product, create `dist/<AppName>.app`, copy the binary to `Contents/MacOS/<AppName>`, generate a minimal `Contents/Info.plist` with `CFBundlePackageType=APPL`, `CFBundleExecutable`, `CFBundleIdentifier`, `CFBundleName`, `LSMinimumSystemVersion`, and `NSPrincipalClass=NSApplication`, then launch with `/usr/bin/open -n <bundle>`.
    - SwiftPM GUI의 `logs` 모드는 `/usr/bin/open -n`으로 번들을 시작한 뒤 `/usr/bin/log stream --info ...` 실행.
