@@ -397,7 +397,9 @@ final class WidgetDataStore {
                         || home.resolvingSymlinksInPath().path == Self.sharedCodexHome.resolvingSymlinksInPath().path
                 else { return nil }
             }
-            return snapshot.codexSwitchQuota
+            guard var quota = snapshot.codexSwitchQuota else { return nil }
+            quota.codexAccountKey = binding.verifiedAccountKey
+            return quota
         default:
             return nil
         }

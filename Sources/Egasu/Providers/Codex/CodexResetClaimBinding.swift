@@ -12,21 +12,26 @@ struct CodexResetClaimBinding: Hashable, Sendable {
     }
 
     init?(authState: CodexAuthState) {
-        guard authState.hasUsableAccessToken, let tokens = authState.auth.tokens else { return nil }
+        guard let identity = Self.identity(for: authState.auth) else { return nil }
+        source = authState.source
+        accountID = authState.auth.tokens?.accountID
+        self.identity = identity
+    }
+
+    private static func identity(for auth: CodexAuth) -> Identity? {
+        guard let tokens = auth.tokens, tokens.accessToken?.isEmpty == false else { return nil }
         let payloads = [tokens.accessToken, tokens.idToken].compactMap { $0.flatMap(ProviderParse.jwtPayload) }
         let subjects = payloads.compactMap { ($0["sub"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
         let accounts = ([tokens.accountID] + payloads.map { DefaultAccountObserver.chatGPTAccountID(inIDTokenPayload: $0) })
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty?.lowercased() }
         guard Set(subjects).count <= 1, Set(accounts).count <= 1 else { return nil }
-        source = authState.source
-        accountID = tokens.accountID
         // ID 토큰은 충돌 검사에만 사용. 액세스 토큰이 증명하지 못한 주체로 토큰 교체를 허용하지 않음.
-        var accessIdentity = authState.auth
+        var accessIdentity = auth
         accessIdentity.tokens?.idToken = nil
         if let account = CodexWeeklyTimerIdentity.accountKey(for: accessIdentity) {
-            identity = .account(account)
-        } else if let fingerprint = CodexWeeklyTimerIdentity.generationFingerprint(for: authState.auth) {
-            identity = .credential(fingerprint)
+            return .account(account)
+        } else if let fingerprint = CodexWeeklyTimerIdentity.generationFingerprint(for: auth) {
+            return .credential(fingerprint)
         } else {
             return nil
         }
@@ -35,6 +40,14 @@ struct CodexResetClaimBinding: Hashable, Sendable {
     /// 액세스 토큰에서 검증한 계정만 사용. 자격 증명 사본의 지문은 계정 간 비교에서 제외.
     var verifiedAccountKey: String? {
         guard case .account(let key) = identity else { return nil }
+        return key
+    }
+
+    /// 저장 원문도 조회와 같은 사용자·워크스페이스 규칙으로 대조.
+    static func verifiedAccountKey(for credential: String) -> String? {
+        guard let auth = CodexAuthStore.parseAuth(credential), case .account(let key) = identity(for: auth) else {
+            return nil
+        }
         return key
     }
 
