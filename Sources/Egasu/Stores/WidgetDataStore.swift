@@ -364,6 +364,31 @@ final class WidgetDataStore {
         )
     }
 
+    func recommendationQuota(for profile: AccountProfile, cardID: String, at now: Date) -> AccountSwitchQuota? {
+        guard isProviderEnabled(cardID), claimRefreshBinding(providerID: cardID) == .account(profile.identityKey),
+            let snapshot = freshLocalQuota(for: cardID, at: now), snapshot.authenticationIssue == nil
+        else { return nil }
+        switch profile.family {
+        case "claude":
+            let accountKey = UsageTimerObservation.accountKey(family: "claude", identity: profile.identityKey)
+            guard snapshot.liveQuotaAccountKey == accountKey else { return nil }
+        case "codex":
+            guard snapshot.codexSwitchIdentity == profile.identityKey else { return nil }
+        default:
+            return nil
+        }
+        return snapshot.accountSwitchQuota
+    }
+
+    private func freshLocalQuota(for id: String, at now: Date) -> ProviderSnapshot? {
+        guard refreshResults[id] == .succeeded, let snapshot = localSnapshots[id],
+            snapshot.liveQuotaAccountKey != nil, let observed = snapshot.liveQuotaObservedAt, observed <= now,
+            now.timeIntervalSince(observed) < RefreshSetting.interval(for: id),
+            !cache.isQuotaInvalidated(providerID: id, observedAt: observed)
+        else { return nil }
+        return snapshot
+    }
+
     /// 캐시와 다른 Mac의 합산 자료를 제외하고 현재 계정의 실측 한도만 알림에 사용.
     private func recoveryReading(for descriptor: WidgetDescriptor, now: Date) -> QuotaNotificationEvaluator
         .RecoveryReading?
@@ -372,10 +397,7 @@ final class WidgetDataStore {
         // 회복 대상으로 선언한 행은 실측 consumption 한 종류만 사용. 혼합·추정 리소스는 비교하지 않음.
         guard descriptor.limitResources.count == 1, let resource = descriptor.limitResources.first,
             resource.kind == .consumption, !resource.estimated,
-            refreshResults[id] == .succeeded, let snapshot = refreshCoordinator.localSnapshots[id],
-            let account = snapshot.liveQuotaAccountKey, let observed = snapshot.liveQuotaObservedAt, observed <= now,
-            now.timeIntervalSince(observed) < RefreshSetting.interval(for: id),
-            !cache.isQuotaInvalidated(providerID: id, observedAt: observed),
+            let snapshot = freshLocalQuota(for: id, at: now), let account = snapshot.liveQuotaAccountKey,
             let line = snapshot.line(label: descriptor.metricLabel),
             resource.matches(line), case let .progress(_, used, limit, format, reset, _, _) = line,
             used.isFinite, used >= 0, limit.isFinite, limit > 0, reset.map({ $0 > now }) != false

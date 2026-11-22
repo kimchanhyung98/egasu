@@ -10,7 +10,8 @@ extension AccountCredentialSwitcher {
         from current: AccountProfile?,
         verifiedClaudeDeparture: VerifiedClaudeExternalAuthentication? = nil,
         expectedTarget: AccountCredentialVault.Entry? = nil,
-        expectedClaudeState: AccountSwitchJournal.SharedState? = nil
+        expectedClaudeState: AccountSwitchJournal.SharedState? = nil,
+        validateCodexDeparture: ((String?) throws -> Void)? = nil
     ) throws {
         guard AccountProfilesStore.isSupportedFamily(selected.family) else {
             throw Error.unsupportedFamily(selected.family)
@@ -84,6 +85,7 @@ extension AccountCredentialSwitcher {
                 }
             }
             if let preserved {
+                try validateCodexDeparture?(activeIdentity)
                 if let initialClaudeState, try readClaudeSwitchState() != initialClaudeState {
                     throw ClaudeAuthError.credentialsChanged
                 }
@@ -101,6 +103,11 @@ extension AccountCredentialSwitcher {
             {
                 throw ClaudeAuthError.credentialsChanged
             }
+        }
+        if let validateCodexDeparture {
+            let latest = try readSharedAuthentication(family: "codex")
+            guard latest == active else { throw CodexAuthError.credentialsChanged }
+            try validateCodexDeparture(latest.flatMap { identity(of: $0, family: "codex")?.identityKey })
         }
         do {
             try applySharedAuthentication(target, family: selected.family, expectedClaudeState: initialClaudeState)

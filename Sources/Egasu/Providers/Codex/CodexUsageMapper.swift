@@ -3,6 +3,7 @@ import Foundation
 struct CodexMappedUsage: Equatable, Sendable {
     var plan: String?
     var lines: [MetricLine]
+    var switchQuota: AccountSwitchQuota
     var incompleteQuotaWindows: Set<SoftLimitWindow>
 }
 
@@ -96,7 +97,9 @@ enum CodexUsageMapper {
 
         // "no usage data" badge는 `CodexProvider.probe`가 스캔된 spend line *뒤에* 추가 — 빈 live 응답의 badge가 Today/Yesterday와 공존 불가.
         return CodexMappedUsage(
-            plan: formatCodexPlan(body["plan_type"]), lines: lines, incompleteQuotaWindows: incompleteWindows)
+            plan: formatCodexPlan(body["plan_type"]), lines: lines,
+            switchQuota: switchQuota(body: body, response: response, now: now),
+            incompleteQuotaWindows: incompleteWindows)
     }
 
     /// 워크스페이스의 개인 크레딧 상한. Flex 잔액·일반 rate limit과 별개.
@@ -134,10 +137,33 @@ enum CodexUsageMapper {
         )
     }
 
-    private enum WindowKind {
-        case session
-        case weekly
-        case monthly
+    private typealias WindowKind = AccountSwitchQuota.Period
+
+    /// 화면 표시용 슬롯 추정과 헤더 대체값은 계정 추천 근거에서 제외.
+    private static func switchQuota(body: [String: Any], response: HTTPResponse, now: Date) -> AccountSwitchQuota {
+        var result = AccountSwitchQuota()
+        guard let base = body["rate_limit"] as? [String: Any] else { return result }
+        var seen: Set<WindowKind> = []
+        for slot in ["primary", "secondary"] {
+            guard let raw = base[slot + "_window"], !(raw is NSNull) else {
+                if response.header("x-codex-" + slot + "-used-percent") != nil { result.incomplete = true }
+                continue
+            }
+            guard let window = raw as? [String: Any], let period = exactKind(for: window) else {
+                result.incomplete = true
+                continue
+            }
+            guard seen.insert(period).inserted,
+                let percent = ProviderParse.number(window["used_percent"]), (0...100).contains(percent),
+                !hasMalformedReset(window)
+            else {
+                result.incomplete = true
+                result.windows[period] = nil
+                continue
+            }
+            result.windows[period] = .init(percent: percent, reset: resetDate(window, now: now))
+        }
+        return result
     }
 
     private struct WindowCandidate {

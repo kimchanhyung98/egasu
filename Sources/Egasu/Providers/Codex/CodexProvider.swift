@@ -335,7 +335,7 @@ final class CodexProvider: ProviderRuntime {
             try authStore.validateAccountIdentity(live.auth)
         }
         let binding = CodexResetClaimBinding(authState: authState)
-        return ProviderSnapshot.make(
+        var snapshot = ProviderSnapshot.make(
             provider: provider,
             plan: mapped.plan,
             lines: mapped.lines,
@@ -349,6 +349,9 @@ final class CodexProvider: ProviderRuntime {
             liveQuotaAccountKey: binding?.verifiedAccountKey,
             codexResetClaimBinding: binding
         )
+        snapshot.codexSwitchQuota = mapped.switchQuota
+        snapshot.codexSwitchIdentity = DefaultAccountObserver.codexIdentity(for: authState.auth)?.identityKey
+        return snapshot
     }
 
     /// On-demand reset-credit 잔액(및 per-credit expiry) 조회 — best-effort, refresh 전체를 실패시키지 않음.
