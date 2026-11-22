@@ -233,12 +233,18 @@ final class CommandLineToolInstallerTests: XCTestCase {
         for action in ["Cancel", "Remove"] {
             installer.isConfirmingRemoval = true
             for _ in 0..<100 where window.attachedSheet == nil { try await Task.sleep(for: .milliseconds(20)) }
-            let sheet = try XCTUnwrap(window.attachedSheet?.contentView)
+            let sheet = try XCTUnwrap(
+                window.attachedSheet?.contentView,
+                "action=\(action) confirming=\(installer.isConfirmingRemoval) sheets=\(window.sheets.count) visible=\(window.isVisible)"
+            )
             let button = try XCTUnwrap(buttons(in: sheet).first { $0.title == L10n.settings(action) })
             XCTAssertEqual(authorizationRequests, 0)
             XCTAssertTrue(button.sendAction(try XCTUnwrap(button.action), to: button.target))
             for _ in 0..<100 where window.attachedSheet != nil { try await Task.sleep(for: .milliseconds(20)) }
+            XCTAssertNil(window.attachedSheet)
             XCTAssertFalse(installer.isConfirmingRemoval)
+            // 취소 상태를 SwiftUI에 반영한 뒤 같은 창에서 다음 확인 요청.
+            host.layoutSubtreeIfNeeded()
             XCTAssertEqual(authorizationRequests, action == "Cancel" ? 0 : 1)
             XCTAssertEqual(installer.status, .installed)
             XCTAssertNil(installer.errorMessage)
