@@ -7,7 +7,11 @@ enum UsageHistoryBuilder {
         case unsupportedUsage
 
         init(_ cost: Double?) {
-            self = cost.map(Self.priced) ?? .unpriced
+            guard let cost, cost.isFinite, cost >= 0 else {
+                self = .unpriced
+                return
+            }
+            self = .priced(cost)
         }
     }
 

@@ -34,10 +34,11 @@ enum CodexUsagePricing {
         let rates: ModelRates
         let fastOverride: Bool?
 
-        func cost(for tokens: TokenBreakdown, applyLongContextRates: Bool = true) -> Double {
+        func cost(for tokens: TokenBreakdown, applyLongContextRates: Bool = true) -> Double? {
             var request = tokens
             if let fastOverride { request.isFast = fastOverride }
-            return rates.costDollars(for: request, applyLongContextRates: applyLongContextRates)
+            let cost = rates.costDollars(for: request, applyLongContextRates: applyLongContextRates)
+            return cost.isFinite && cost >= 0 ? cost : nil
         }
     }
 
