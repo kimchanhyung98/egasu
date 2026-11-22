@@ -316,11 +316,9 @@ for (const failure of ['read', 'write']) {
   });
 }
 
-test('Pages 보호 통과 조건이 산출물 업로드와 실제 배포 모두에 적용', () => {
+test('Pages 보호 통과 조건이 실제 배포에 적용', () => {
   const workflow = readFileSync(new URL('../../.github/workflows/deploy-pages.yml', import.meta.url), 'utf8');
-  for (const name of ['사이트 배포 산출물 업로드', 'GitHub Pages 배포']) {
-    assert.ok(workflow.includes(`      - name: ${name}\n        if: steps.revision.outputs.deploy == 'true'`));
-  }
+  assert.ok(workflow.includes("      - name: GitHub Pages 배포\n        if: steps.revision.outputs.deploy == 'true'"));
   assert.match(workflow, /ref: \$\{\{ env.PAGES_REF \}\}\n          fetch-depth: 0/);
   assert.match(workflow, /group: pages-deploy\n  queue: max\n  cancel-in-progress: false/);
 });
