@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 enum AccountActionAlert {
+    case recommendationChanged
     case switchFailed(AccountProfile, email: String?, error: any Error)
     case signInRequired(AccountProfile, detail: String?, concealedDetail: String?)
     case signInFailed(AccountProfile, issues: [AccountReSignInIssue], allowsRetry: Bool)
@@ -20,6 +21,8 @@ enum AccountActionAlert {
         }
         let switchTitle = L10n.dashboard("Couldn't Switch Account")
         switch self {
+        case .recommendationChanged:
+            return (switchTitle, L10n.dashboard("Account usage changed. Check the latest recommendation."))
         case .switchFailed(let profile, let email, let error):
             return (
                 switchTitle,

@@ -10,6 +10,7 @@ struct ClaudeMappedUsage: Equatable, Sendable, Codable {
     var liveQuotaObservedAt: Date?
     /// 이번 HTTP 응답의 계정. 디스크에 보관한 last-good 사용량에서는 제외.
     var liveQuotaAccountKey: String?
+    var legacySwitchIdentity: LegacyClaudeRecommendationIdentity?
     var quotaObservedAt: Date?
     var retryAfter: Date?
 

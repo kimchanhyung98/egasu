@@ -18,12 +18,26 @@ struct AccountSelectionSwitcher {
         try journal.load() != nil
     }
 
-    func switchAuthentication(to selected: AccountProfile, in store: AccountProfilesStore) async throws {
+    func switchAuthentication(
+        to selected: AccountProfile, in store: AccountProfilesStore,
+        validateDeparture: ((String?) throws -> Void)? = nil
+    ) async throws {
+        try await switchAuthentication(
+            to: selected, in: store, validateTarget: nil, validateDeparture: validateDeparture)
+    }
+
+    func switchAuthentication(
+        to selected: AccountProfile, in store: AccountProfilesStore,
+        validateTarget: ((AccountCredentialVault.Entry) throws -> Void)?,
+        validateDeparture: ((String?) throws -> Void)?
+    ) async throws {
         guard store.profile(id: selected.id) == selected else {
             throw AccountProfileError.profileNotFound(selected.id)
         }
         if selected.family != "claude" {
-            try switcher.switchAuthentication(to: selected, from: store.preferredProfile(family: selected.family))
+            try switcher.switchAuthentication(
+                to: selected, from: store.preferredProfile(family: selected.family),
+                validateCodexDeparture: validateDeparture)
             store.setPreferred(family: selected.family, profileID: selected.id)
             return
         }
@@ -33,6 +47,9 @@ struct AccountSelectionSwitcher {
         var previousRecord = try journal.load()
         var interruptedState: AccountSwitchJournal.SharedState?
         if let record = previousRecord {
+            guard validateDeparture == nil, validateTarget == nil else {
+                throw AccountCredentialSwitcher.Error.switchRecoveryRequired
+            }
             let state = try await readSwitchState(in: store, expecting: record)
             if let profileID = selection(for: record, state: state, in: store) {
                 try await finish(record, selecting: profileID, observed: state, in: store)
@@ -132,7 +149,15 @@ struct AccountSelectionSwitcher {
         do {
             AccountCredentialMutationLock.acquire(family: "claude")
             defer { AccountCredentialMutationLock.release(family: "claude") }
+            if let validateTarget {
+                guard let latest = try switcher.loadSnapshot(for: selected, allowInteraction: true), latest == target
+                else {
+                    throw AccountSwitchRecommendation.NoLongerAvailable()
+                }
+                try validateTarget(latest)
+            }
             guard try switcher.readClaudeSwitchState() == state else { throw ClaudeAuthError.credentialsChanged }
+            try validateDeparture?(verifiedIdentity)
             try journal.save(record, replacing: previousRecord)
             // 재시도 중 혼합된 공유 인증은 어느 계정의 저장 인증에도 반영하지 않음.
             try switcher.switchAuthentication(

@@ -10,7 +10,8 @@ extension AccountCredentialSwitcher {
         from current: AccountProfile?,
         verifiedClaudeDeparture: VerifiedClaudeExternalAuthentication? = nil,
         expectedTarget: AccountCredentialVault.Entry? = nil,
-        expectedClaudeState: AccountSwitchJournal.SharedState? = nil
+        expectedClaudeState: AccountSwitchJournal.SharedState? = nil,
+        validateCodexDeparture: ((String?) throws -> Void)? = nil
     ) throws {
         guard AccountProfilesStore.isSupportedFamily(selected.family) else {
             throw Error.unsupportedFamily(selected.family)
@@ -57,6 +58,12 @@ extension AccountCredentialSwitcher {
         if selected.family == "claude", let verifiedClaudeDeparture, active != verifiedClaudeDeparture.observed {
             throw ClaudeAuthError.credentialsChanged
         }
+        func validateUnchangedCodexDeparture() throws {
+            guard let validateCodexDeparture else { return }
+            let latest = try readSharedAuthentication(family: "codex")
+            guard latest == active else { throw CodexAuthError.credentialsChanged }
+            try validateCodexDeparture(latest.flatMap { identity(of: $0, family: "codex")?.identityKey })
+        }
         if let current, current.family == selected.family, let active {
             let activeIdentity = identity(of: active, family: current.family)?.identityKey
             var preserved: AccountCredentialVault.Entry?
@@ -84,6 +91,7 @@ extension AccountCredentialSwitcher {
                 }
             }
             if let preserved {
+                try validateUnchangedCodexDeparture()
                 if let initialClaudeState, try readClaudeSwitchState() != initialClaudeState {
                     throw ClaudeAuthError.credentialsChanged
                 }
@@ -102,6 +110,7 @@ extension AccountCredentialSwitcher {
                 throw ClaudeAuthError.credentialsChanged
             }
         }
+        try validateUnchangedCodexDeparture()
         do {
             try applySharedAuthentication(target, family: selected.family, expectedClaudeState: initialClaudeState)
             let applied = try readSharedAuthentication(family: selected.family)

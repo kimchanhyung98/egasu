@@ -97,6 +97,9 @@ struct WidgetGroupedListView: View {
             )
                 .highPriorityGesture(accountDragGesture(for: account, in: family), including: family.accounts.count > 1 ? .all : .subviews)
             rows(of: account, status: accountStatus)
+            if account.isInUse, account.id == family.id, container.orderedAccountProfiles(for: family.id).count > 1 {
+                AccountRecommendationRow(family: family.id, onError: { accountAlert = $0 })
+            }
         }
         .contextMenu {
             DashboardMenu(sections: accountMenu(account, status: accountStatus), perform: perform)

@@ -44,6 +44,10 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
     var quotaRecoveryScopes: [String: QuotaRecoveryScope] = [:]
     /// 마지막 정상 한도 조회 시각 — 캐시 재사용 중에도 보존하며 자동 전환용 관측과 구분.
     var quotaObservedAt: Date?
+    /// 검증한 Codex 기본 한도와 등록 신원. 표시용 대체값·디스크 캐시와 분리.
+    var codexSwitchQuota: AccountSwitchQuota?
+    var codexSwitchIdentity: String?
+    var legacyClaudeSwitchIdentity: LegacyClaudeRecommendationIdentity?
     var usageRetryAfter: Date?
 
     var freshnessDate: Date { quotaObservedAt ?? refreshedAt }
