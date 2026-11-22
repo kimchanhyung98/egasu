@@ -78,3 +78,7 @@
 
 "Moved metric %@ to position %lld of %lld." = "%1$@ 지표를 전체 %3$lld개 중 %2$lld번째로 이동했습니다.";
 "Claude login migration paused. %@" = "Claude 로그인 이전을 보류했습니다. %@";
+"To sign in to the default terminal account, run `codex login`." = "기본 터미널 계정에 로그인하려면 `codex login`을 실행하세요.";
+"Signed In" = "로그인 완료";
+"Check this account's sign-in status in Accounts." = "계정 탭에서 이 계정의 로그인 상태를 확인하세요.";
+"Sign In Again to %@" = "%@ 계정 다시 로그인";

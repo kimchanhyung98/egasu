@@ -98,7 +98,7 @@ extension AccountCredentialImporter.ImportError: CategorizedError {
     var errorCategory: ErrorCategory {
         switch self {
         case .noSignIn: .notLoggedIn
-        case .identityUnreadable, .verificationFailed: .authInvalid
+        case .identityUnreadable, .verificationFailed, .differentAccount, .reSignInIdentityUnavailable: .authInvalid
         }
     }
 }

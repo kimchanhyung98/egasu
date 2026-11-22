@@ -88,6 +88,22 @@ final class UserFacingErrorsTests: XCTestCase {
         }
     }
 
+    func testCodexAuthenticationErrorsDescribeTheCauseWithoutDirectingUsersToTheDefaultTerminal() {
+        let errors: [CodexAuthError] = [.notLoggedIn, .sessionExpired, .tokenConflict, .tokenRevoked, .tokenExpired]
+        for (language, expired) in [
+            (LanguageSetting.english, "This Codex account's sign-in has expired."),
+            (.korean, "이 Codex 계정의 로그인이 만료되었습니다."),
+            (.japanese, "この Codex アカウントのサインインの有効期限が切れました。")
+        ] {
+            L10n.withLanguage(language) {
+                let messages = errors.map { UserFacingErrors.message($0) }
+                XCTAssertEqual(messages[1], expired)
+                XCTAssertEqual(Set(messages).count, errors.count)
+                XCTAssertTrue(messages.allSatisfy { !$0.contains("`codex") })
+            }
+        }
+    }
+
     func testProcessOutputReadErrorTranslatesWithoutChangingDiagnostics() {
         let error = ProcessRunnerError.outputReadFailed
         let diagnostic = "Could not read output from the process."

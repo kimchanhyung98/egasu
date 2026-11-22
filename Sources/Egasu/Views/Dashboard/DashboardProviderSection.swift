@@ -127,6 +127,7 @@ struct DashboardAccountCaption: View {
     let account: DashboardAccount
     var plan: String?
     var status = DashboardAccountStatus()
+    var signInFeedback: String?
     /// 계정명 ↔ 로그인 이메일 — 이메일을 아는 계정만, 공유 이미지에서는 생략.
     var onToggleName: (() -> Void)?
 
@@ -162,6 +163,11 @@ struct DashboardAccountCaption: View {
                 }
             }
             status.glyph
+            if let signInFeedback {
+                Text(signInFeedback)
+                    .font(DashboardGrid.captionFont)
+                    .foregroundStyle(.secondary)
+            }
             Spacer(minLength: DashboardGrid.columnGap)
             if let plan {
                 PlanBadge(plan: plan)
@@ -206,9 +212,6 @@ struct DashboardAccountStatus {
     var onFix: (() -> Void)?
 
     var isShowing: Bool { refreshing || notice != nil || staleness != nil }
-
-    /// 우클릭 메뉴 첫 줄 상태 문구.
-    var menuText: String? { notice ?? staleness?.tooltip }
 
     @MainActor @ViewBuilder
     var glyph: some View {

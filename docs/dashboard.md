@@ -341,7 +341,7 @@ All Usage의 프로바이더 섹션 공유 이미지는 현재 표시 중인 계
 | 위치 | 항목 |
 |---|---|
 | 지표 행 | **Pin**/**Unpin**(고정 가능한 지표만), **Hide**, 아래 계정 메뉴 |
-| 계정 줄 | 계정 상태(문제가 있을 때), **Use {Provider}: {name}**(새 터미널 세션 계정이 아닐 때), **Refresh**, **Rename**(Claude·Codex 등록 계정), **Edit Account…** |
+| 계정 줄 | 마지막 갱신 시각(오래된 경우), **Sign In Again…**(재로그인이 필요한 등록 Codex 계정) 또는 **Use {Provider}: {name}**(전환할 계정), **Refresh**, **Rename**(Claude·Codex 등록 계정), **Edit Account…** |
 | 섹션 머리 | **Refresh**, **Manage Accounts…**, 프로바이더 페이지 링크(Status, Console 등) |
 
 - 계정 추적·등록은 섹션 머리의 **Manage Accounts…**에서 관리.
@@ -356,6 +356,10 @@ All Usage의 프로바이더 섹션 공유 이미지는 현재 표시 중인 계
   Privacy Mode가 켜져 있으면 대시보드의 Rename은 비활성화하며, 이름 편집은 Accounts의 계정 상세에서 가능.
   이름을 비우고 저장하면 별명을 지우고 로그인 이메일을 이름으로 사용(이름 규칙은 [계정 상세](/docs/accounts.md#계정-상세) 참조).
   계정명 클릭은 계속 계정명과 로그인 이메일 전환.
+- 계정 행 또는 지표 행에서 **Sign In Again…**을 선택하면 해당 Codex 계정의 브라우저 로그인 시작.
+  다른 Codex 계정으로 로그인하면 저장 전에 중단.
+  비활성 계정은 복구 후에도 현재 터미널 로그인 유지.
+  오류 사유는 계정명 옆 경고 아이콘에서 확인.
 - **Use {Provider}: {name}**은 확인 후 Accounts와 같은 방식으로 저장 로그인을 교체하며, 새 터미널 세션이 해당 계정 사용.
   Privacy Mode가 켜져 있으면 이 메뉴와 전환 확인창의 계정명 대신 마스킹한 로그인 이메일 표시.
   이메일이 없으면 **Account(계정)** 표시.

@@ -83,24 +83,7 @@ enum CodexAuthError: Error, LocalizedError, Equatable {
     case credentialsChanged
 
     var errorDescription: String? {
-        switch self {
-        case .notLoggedIn:
-            return "Not logged in. Run `codex` to authenticate."
-        case .sessionExpired:
-            return "Session expired. Run `codex` to log in again."
-        case .tokenConflict:
-            return "Token conflict. Run `codex` to log in again."
-        case .tokenRevoked:
-            return "Token revoked. Run `codex` to log in again."
-        case .tokenExpired:
-            return "Token expired. Run `codex` to log in again."
-        case .usageAPIKey:
-            return "Usage not available for API key."
-        case .invalidAuthPayload:
-            return "Codex auth data is invalid."
-        case .credentialsChanged:
-            return "Codex sign-in changed during this operation. Reload the current account and try again."
-        }
+        presentationMessage.key
     }
 
     var allowsAuthFallback: Bool {

@@ -2,11 +2,20 @@ import Foundation
 
 extension AppContainer {
     func accountStatus(for profile: AccountProfile, localState: AccountSignInProbe.State?) -> AccountStatus {
-        let mapping = Dictionary(uniqueKeysWithValues: dataStore.knownProviderIDs.compactMap { cardID in
-            accountProfileID(for: cardID).map { (cardID, $0) }
-        })
-        let cardID = AccountUsageCardPlanner.statusCardID(for: profile, profileIDsByCard: mapping)
-        return dataStore.accountStatus(for: cardID, localState: localState)
+        dataStore.accountStatus(for: accountStatusCardID(for: profile), localState: localState)
+    }
+
+    func signInReasonWithoutAccountDetails(for profile: AccountProfile) -> String? {
+        guard let cardID = accountStatusCardID(for: profile) else { return nil }
+        return dataStore.refreshResults[cardID]?.failure?.presentation?.staticText
+    }
+
+    private func accountStatusCardID(for profile: AccountProfile) -> String? {
+        let mapping = Dictionary(
+            uniqueKeysWithValues: dataStore.knownProviderIDs.compactMap { cardID in
+                accountProfileID(for: cardID).map { (cardID, $0) }
+            })
+        return AccountUsageCardPlanner.statusCardID(for: profile, profileIDsByCard: mapping)
     }
 
     /// Keychain 접근 실패는 해당 카드만 수동 갱신하고, 나머지 문제는 계정 상세로 연결.

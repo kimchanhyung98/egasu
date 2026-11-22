@@ -78,3 +78,7 @@
 
 "Moved metric %@ to position %lld of %lld." = "Moved metric %@ to position %lld of %lld.";
 "Claude login migration paused. %@" = "Claude login migration paused. %@";
+"To sign in to the default terminal account, run `codex login`." = "To sign in to the default terminal account, run `codex login`.";
+"Signed In" = "Signed In";
+"Check this account's sign-in status in Accounts." = "Check this account's sign-in status in Accounts.";
+"Sign In Again to %@" = "Sign In Again to %@";

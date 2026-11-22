@@ -69,7 +69,8 @@ final class PopoverState {
     var accountDetailID: String?
     var isAddingAccount = false
     /// 브라우저 재로그인이 진행 중인 등록 계정 — 취소 처리가 끝날 때까지 외부 클릭으로 닫지 않음.
-    var signingInAgainAccountID: String?
+    private(set) var signingInAgainAccountID: String?
+    @ObservationIgnored private var reSignInTask: Task<Void, Never>?
     private let displaySettings: DisplaySettingsStore
     private var selectedDashboardTab: DashboardTab
     var showsDashboardTabs: Bool { displaySettings.hasVisiblePriorityConditions }
@@ -82,7 +83,25 @@ final class PopoverState {
     var settingsTab = SettingsTab.general
     /// 패널 표시 여부 — makeKeyAndOrderFront·orderOut과 동기 변경.
     /// 창 가림·키 창 상태로 추정하지 않음 — Space 전환 중 잠깐 가려지는 상태와 닫힘 구분.
-    var popoverShown = false
+    var popoverShown = false {
+        didSet {
+            if !popoverShown { reSignInTask?.cancel() }
+        }
+    }
+
+    func startReSignIn(for profileID: String, operation: @escaping @MainActor () async -> Void) -> Task<Void, Never>? {
+        guard popoverShown, reSignInTask == nil else { return nil }
+        signingInAgainAccountID = profileID
+        let task = Task {
+            defer {
+                signingInAgainAccountID = nil
+                reSignInTask = nil
+            }
+            if !Task.isCancelled { await operation() }
+        }
+        reSignInTask = task
+        return task
+    }
 
     let shareNotice = TransientNotice<Bool>(clearedValue: false, timeout: .seconds(2.5))
 
