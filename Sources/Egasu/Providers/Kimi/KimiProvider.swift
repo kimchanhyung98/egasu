@@ -124,7 +124,7 @@ final class KimiProvider: ProviderRuntime {
             appendWarning((error as? KimiHistoryError ?? .unreadable).localizedDescription, to: &snapshot)
         }
         // 이력 조회 중 로그인 전환 가능. 한도 요청에 사용한 인증과 같은 경우에만 결과 사용.
-        if let credential = quota.credential, hasSoftLimitQuota(in: snapshot.lines) {
+        if let credential = quota.credential {
             do {
                 let matches = try await loadOffMainActor { [authStore, terminalEnvironment] in
                     guard try authStore.loadCredentialDocument() == credential else { return false }
