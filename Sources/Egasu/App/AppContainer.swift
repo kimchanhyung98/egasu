@@ -340,16 +340,16 @@ final class AppContainer {
     }
 
     var hasRunningBackgroundProcesses: Bool {
-        tokscaleSync.isRunning || usageTimer.hasPendingWork
+        popover.signingInAgainAccountID != nil || tokscaleSync.isRunning || usageTimer.hasPendingWork
     }
 
-    func shutdownBackgroundProcesses() async {
+    func shutdownBackgroundProcesses(reSignIn: Task<Void, Never>?) async {
         refreshTask.task?.cancel()
         usageTimerCheckTask.task?.cancel()
         softLimitCoordinator.stop()
         async let timer: Void = usageTimer.shutdown()
         async let tokscale: Void = tokscaleSync.shutdown()
-        _ = await (timer, tokscale)
+        _ = await (timer, tokscale, reSignIn?.value)
     }
 
     /// 메뉴 바·프로바이더 동작의 이름 — 계정 카드 표시 모드와 독립.

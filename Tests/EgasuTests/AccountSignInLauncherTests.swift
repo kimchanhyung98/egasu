@@ -31,6 +31,57 @@ final class AccountSignInLauncherTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testShutdownWaitsForTheBrowserLoginChildAndAttemptCleanup() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let workspace = AccountSignInWorkspace(baseDirectory: root.appendingPathComponent("accounts"))
+        let attempt = try workspace.prepareReauthentication(family: "codex", profileID: "saved")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let attemptID = try XCTUnwrap(attempt.attemptID)
+        let child = root.appendingPathComponent("codex")
+        let script = """
+            #!/bin/sh
+            echo ready > "$CODEX_HOME/ready"
+            exec /bin/sleep 8
+            """
+        try Data(script.utf8).write(to: child)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: child.path)
+
+        let state = PopoverState()
+        state.show()
+        var exitCode: Int32?
+        let login = try XCTUnwrap(
+            state.startReSignIn(for: "saved") {
+                do {
+                    exitCode = try await AccountSignInLauncher().runLogin(
+                        family: "codex", home: attempt.directory.path, baseEnvironment: ["PATH": root.path],
+                        usesLoginShellPATH: false)
+                    try workspace.remove(family: "codex", profileID: "saved", attemptID: attemptID)
+                } catch {
+                    XCTFail("Login or cleanup failed: \(error)")
+                }
+            })
+        defer { login.cancel() }
+        let ready = attempt.directory.appendingPathComponent("ready")
+        let deadline = ContinuousClock.now + .seconds(4)
+        while !FileManager.default.fileExists(atPath: ready.path), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: ready.path))
+
+        let first = state.beginReSignInShutdown()
+        let repeated = state.beginReSignInShutdown()
+        await first?.value
+        await repeated?.value
+
+        XCTAssertEqual(exitCode, 128 + SIGTERM)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: attempt.directory.path))
+        XCTAssertNil(state.signingInAgainAccountID)
+        XCTAssertNil(state.startReSignIn(for: "another") {})
+        login.cancel()
+        await login.value
+    }
+
     func testCancellationBeforeLaunchTerminatesTheLoginChild() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

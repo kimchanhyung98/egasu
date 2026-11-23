@@ -138,9 +138,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         updater.start()
     }
 
-    /// 진행 중인 Claude 토큰 회전 저장과 Runner 소유 process group 정리까지 app 종료 지연.
+    /// 재로그인 시도 정리와 Claude 토큰 회전 저장, Runner 소유 프로세스 종료까지 대기.
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !isAwaitingProcessShutdown else { return .terminateLater }
+        let reSignIn = container?.popover.beginReSignInShutdown()
         TokenRotationShutdownGuard.beginTermination()
         let hasActiveRotation = !TokenRotationShutdownGuard.isIdle
         guard hasActiveRotation || container?.hasRunningBackgroundProcesses == true else { return .terminateNow }
@@ -152,7 +153,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             if let container, container.hasRunningBackgroundProcesses {
-                await container.shutdownBackgroundProcesses()
+                await container.shutdownBackgroundProcesses(reSignIn: reSignIn)
             }
             self.isAwaitingProcessShutdown = false
             sender.reply(toApplicationShouldTerminate: true)
