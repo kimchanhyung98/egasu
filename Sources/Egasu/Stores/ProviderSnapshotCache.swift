@@ -1,3 +1,5 @@
+import CryptoKit
+import Darwin
 import Foundation
 import os
 
@@ -10,10 +12,12 @@ struct ProviderSnapshotCache {
         var producedByIdentityKeys: [String: String]
         /// ISO 8601 캐시 날짜의 초 단위 정밀도를 보완. 같은 초의 인증 무효화와 다음 실측을 구분.
         var liveQuotaTimestamps: [String: Double]?
+        /// 같은 초에 끝난 두 프로세스의 저장 순서를 비교하는 원래 갱신 시각.
+        var refreshTimestamps: [String: Double]?
     }
 
     /// persist blob의 in-memory mirror — 읽기마다 전 provider JSON을 MainActor에서 re-decode하던 비용 제거.
-    /// 인스턴스당 최대 1회 decode(첫 접근); 쓰기는 mirror 갱신 후 persist. lock으로 value-type 공유 안전.
+    /// 읽기는 mirror 재사용, 영속 쓰기는 프로세스 잠금 안에서 최신 저장본을 다시 읽어 병합.
     private let memo = OSAllocatedUnfairLock<Payload?>(initialState: nil)
 
     /// 이 cache 인스턴스에서 정상 refresh로 저장한 provider ID — 로컬 이력만 갱신한 쓰기는 제외.
@@ -23,6 +27,7 @@ struct ProviderSnapshotCache {
 
     private let userDefaults: UserDefaults
     private let storageKey: String
+    private let persistenceLockURL: URL
     /// 세션 내에 쓴 snapshot의 fresh 유지 기간(1 refresh interval) — 이전 세션의 snapshot은 `refreshedAt`과
     /// 무관하게 non-fresh(`sessionWrites` 참고). 테스트는 고정 TTL 주입.
     private let ttl: TimeInterval?
@@ -37,6 +42,7 @@ struct ProviderSnapshotCache {
 
     init(
         userDefaults: UserDefaults = .standard,
+        storageDomainName: String = AppBundleLocator.current.bundleIdentifier,
         // storage key 버전 bump는 pre-upgrade 캐시를 폐기 — schema 확장 필드를 1회 refetch로 즉시 반영.
         // v10: 마지막 정상 한도 시각 도입 — 이전 캐시의 로컬 갱신 시각을 한도 조회 시각으로 재사용 금지.
         storageKey: String = "openusage.providerSnapshots.v10",
@@ -48,6 +54,15 @@ struct ProviderSnapshotCache {
     ) {
         self.userDefaults = userDefaults
         self.storageKey = storageKey
+        let lockKey = storageDomainName + "\u{0}" + storageKey
+        let digest = SHA256.hash(data: Data(lockKey.utf8)).map { String(format: "%02x", $0) }.joined()
+        let cacheDirectory =
+            FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
+                "Library/Caches", isDirectory: true)
+        self.persistenceLockURL =
+            cacheDirectory
+            .appendingPathComponent("egasu-snapshot-cache-\(digest).lock")
         self.ttl = ttl
         self.allowsPersistedFreshness = allowsPersistedFreshness
         self.ignoresPersistedSnapshotsFor = ignoresPersistedSnapshotsFor
@@ -135,13 +150,47 @@ struct ProviderSnapshotCache {
             return
         }
         AppLog.debug(.cache, "write \(AppLog.providerFamily(snapshot.providerID))")
-        if markSessionFresh { sessionWrites.withLock { $0.insert(snapshot.providerID) } }
-        var payload = loadPayload()
-        payload.snapshots[snapshot.providerID] = snapshot
-        // entry 옆에 생산 account를 stamp(또는 clear) — nil identity는 이전 stamp를 반드시 clear.
-        // 무귀속 snapshot에 이전 account의 stamp가 남으면 다음 launch의 identity 검사를 거짓 통과.
-        payload.producedByIdentityKeys[snapshot.providerID] = producedByIdentityKey
-        save(payload)
+        func updating(_ stored: Payload) {
+            guard markSessionFresh || stored.snapshots[snapshot.providerID] != nil else {
+                AppLog.debug(
+                    .cache, "skip history write \(AppLog.providerFamily(snapshot.providerID)) (cache removed)")
+                updateMemo(stored)
+                return
+            }
+            if let current = stored.snapshots[snapshot.providerID] {
+                let older =
+                    current.refreshedAt > snapshot.refreshedAt
+                    && (!markSessionFresh || current.refreshedAt <= now())
+                let changedAccount =
+                    !markSessionFresh
+                    && stored.producedByIdentityKeys[snapshot.providerID] != producedByIdentityKey
+                if older || changedAccount {
+                    AppLog.debug(
+                        .cache, "skip write \(AppLog.providerFamily(snapshot.providerID)) (newer stored snapshot)")
+                    updateMemo(stored)
+                    return
+                }
+            }
+            var payload = stored
+            payload.snapshots[snapshot.providerID] = snapshot
+            // 무귀속 snapshot에 이전 계정 stamp를 남기지 않음.
+            payload.producedByIdentityKeys[snapshot.providerID] = producedByIdentityKey
+            save(payload, replacingProviderID: snapshot.providerID)
+            if markSessionFresh { sessionWrites.withLock { $0.insert(snapshot.providerID) } }
+        }
+        guard persistsWrites else {
+            updating(loadPayload())
+            return
+        }
+        do {
+            try withPersistenceLock {
+                guard userDefaults.synchronize() else { throw POSIXError(.EIO) }
+                updating(decodeStoredPayload())
+                guard userDefaults.synchronize() else { throw POSIXError(.EIO) }
+            }
+        } catch {
+            AppLog.warn(.cache, "shared cache write failed: \(AppLog.errorDetails(error))")
+        }
     }
 
     /// entry 저장 시 stamp된 account identity — entry 부재·무stamp면 nil. launch 필터가 account-aware
@@ -169,6 +218,22 @@ struct ProviderSnapshotCache {
         return loaded
     }
 
+    /// 다른 프로세스의 저장을 현재 세션의 실측으로 승격하지 않도록 표시용 사본 분리.
+    private func updateMemo(_ payload: Payload, replacingProviderID: String? = nil) {
+        let localIDs = sessionWrites.withLock { $0 }
+        memo.withLock { mirror in
+            var visible = payload
+            for id in localIDs where id != replacingProviderID && payload.snapshots[id] != nil {
+                if let local = mirror?.snapshots[id] {
+                    visible.snapshots[id] = local
+                    visible.producedByIdentityKeys[id] = mirror?.producedByIdentityKeys[id]
+                }
+            }
+            mirror = visible
+        }
+        sessionWrites.withLock { $0.formIntersection(payload.snapshots.keys) }
+    }
+
     private func decodeStoredPayload() -> Payload {
         // 저장 데이터 없음은 정상 first-launch·cleared-cache — 조용히 empty 복구. 데이터가 있는데 decode 실패는
         // 실제 문제(schema drift, half-write) — 크게 log 후 empty 복구(조용한 drop은 전 provider 캐시 소실 + refresh storm).
@@ -177,6 +242,9 @@ struct ProviderSnapshotCache {
         }
         do {
             var payload = try decoder.decode(Payload.self, from: data)
+            for (id, timestamp) in payload.refreshTimestamps ?? [:] where payload.snapshots[id] != nil {
+                payload.snapshots[id]?.refreshedAt = Date(timeIntervalSinceReferenceDate: timestamp)
+            }
             for id in payload.snapshots.keys where payload.snapshots[id]?.liveQuotaObservedAt != nil {
                 // 이전 캐시는 부분 한도 누락을 구분하지 않아 다음 실측까지 표시용으로만 복원.
                 payload.snapshots[id]?.liveQuotaObservedAt = payload.liveQuotaTimestamps?[id].map {
@@ -195,9 +263,9 @@ struct ProviderSnapshotCache {
         }
     }
 
-    private func save(_ payload: Payload) {
+    private func save(_ payload: Payload, replacingProviderID: String) {
         // mirror 먼저 갱신 — encode 실패해도 세션 내 읽기는 이 쓰기를 반영(persist만 best-effort).
-        memo.withLock { $0 = payload }
+        updateMemo(payload, replacingProviderID: replacingProviderID)
         guard persistsWrites else { return }
         // encode 실패는 크게 log — 조용히 삼키면 snapshot이 persisted cache에서 소리 없이 빠짐.
         do {
@@ -205,10 +273,24 @@ struct ProviderSnapshotCache {
             persisted.liveQuotaTimestamps = payload.snapshots.compactMapValues {
                 $0.liveQuotaObservedAt?.timeIntervalSinceReferenceDate
             }
+            persisted.refreshTimestamps = payload.snapshots.mapValues { $0.refreshedAt.timeIntervalSinceReferenceDate }
             let data = try encoder.encode(persisted)
             userDefaults.set(data, forKey: storageKey)
         } catch {
             AppLog.warn(.cache, "encode failed, snapshot not persisted: \(AppLog.errorDetails(error))")
         }
+    }
+
+    private func withPersistenceLock(_ body: () throws -> Void) throws {
+        try FileManager.default.createDirectory(
+            at: persistenceLockURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let descriptor = Darwin.open(persistenceLockURL.path, O_CREAT | O_RDWR | O_CLOEXEC, S_IRUSR | S_IWUSR)
+        guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        defer { Darwin.close(descriptor) }
+        while flock(descriptor, LOCK_EX) != 0 {
+            guard errno == EINTR else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        }
+        defer { flock(descriptor, LOCK_UN) }
+        try body()
     }
 }
