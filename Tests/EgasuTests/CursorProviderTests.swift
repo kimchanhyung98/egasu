@@ -148,7 +148,7 @@ final class CursorUsageMapperTests: XCTestCase {
         XCTAssertEqual(progress(mapped.lines, "On-demand")?.used, 40)
     }
 
-    func testBoundedOnDemandDoesNotLetZeroSpendMaskPositiveUsage() throws {
+    func testPersonalRemainingDeterminesSpendBeforeUnscopedTotal() throws {
         let mapped = try CursorUsageMapper.mapUsage(
             usage: [
                 "enabled": true,
@@ -170,7 +170,7 @@ final class CursorUsageMapperTests: XCTestCase {
             stripeBalanceCents: 0
         )
 
-        XCTAssertEqual(progress(mapped.lines, "On-demand")?.used, 12)
+        XCTAssertEqual(progress(mapped.lines, "On-demand")?.used, 5)
     }
 
     func testMapsSpendOnlyOnDemandAsUnboundedUsage() throws {
