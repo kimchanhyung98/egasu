@@ -122,6 +122,8 @@ final class UpdaterChannelDelegateTests: XCTestCase {
             XCTAssertEqual((error as NSError).code, Int(SUError.installationCanceledError.rawValue))
         }
         XCTAssertNoThrow(try delegate.updater(current, mayPerform: .updatesInBackground))
+        XCTAssertNoThrow(try delegate.updater(current, mayPerform: .updates))
+        XCTAssertNoThrow(try delegate.updater(current, mayPerform: .updateInformation))
         delegate.updater(old, didFinishUpdateCycleFor: .updatesInBackground, error: nil)
         XCTAssertEqual(finishedCount, 0)
         delegate.updater(current, didFinishUpdateCycleFor: .updatesInBackground, error: nil)
