@@ -101,6 +101,7 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
 - **[전역 단축키](/docs/settings.md#general).** Settings → General에서 지정한 키 조합으로 패널 열기·닫기.
 - **[계정 관리](/docs/accounts.md).** Accounts에서 계정 추가·전환·재로그인, API 키와 계정별 지표 표시·순서 관리.
   숨긴 계정 복원과 이름 변경·중단된 Claude 전환 복구 지원.
+  기존 지표 설정의 이전·복구가 끝나기 전에는 원문을 보존하고 자동 이전 재시도.
   기존 Claude 계정의 토큰 갱신 중에도 새 작업 공간의 로그인 등록 가능.
 - **[사용량 자동 갱신](/docs/refreshing.md).** 앱을 열면 저장된 사용량부터 표시.
   기본 갱신 주기는 Claude 15분, 나머지 프로바이더 5분.

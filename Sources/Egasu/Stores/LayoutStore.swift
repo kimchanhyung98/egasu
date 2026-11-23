@@ -29,6 +29,7 @@ final class LayoutStore {
     private let defaultMetricIDs: [String]?
     private let knownCardIDs: Set<String>
     private let defaultPinnedMetricIDs: [String]
+    private var canMigrateLegacyPins: Bool
     let isProviderEnabled: @MainActor (String) -> Bool
 
     init(
@@ -66,6 +67,7 @@ final class LayoutStore {
         providerOrder = initial.providerOrder
         metricOrderByProvider = initial.metricOrderByProvider
         priorityPinIDs = Self.loadPriorityPins(from: persistence, registry: registry)
+        canMigrateLegacyPins = initial.shouldPersistVisibility
 
         if initial.shouldPersistMetricOrder { persistMetricOrder() }
         if initial.shouldPersistVisibility { persistence.saveDisabledMetrics(initial.disabledMetricIDs) }
@@ -95,6 +97,7 @@ final class LayoutStore {
         providerOrder = reloaded.providerOrder
         metricOrderByProvider = reloaded.metricOrderByProvider
         priorityPinIDs = Self.loadPriorityPins(from: persistence, registry: registry)
+        canMigrateLegacyPins = reloaded.shouldPersistVisibility
         undoHistory.clear()
         cancelDrag()
 
@@ -123,7 +126,10 @@ final class LayoutStore {
                 add(settingsID)
             } else if let widget = placed.first(where: { $0.descriptorID == settingsID }) {
                 remove(widget.id)
-                if priorityPinIDs.remove(settingsID) != nil { persistence.savePriorityPins(priorityPinIDs) }
+                if priorityPinIDs.remove(settingsID) != nil {
+                    persistence.recordExplicitPinChoice(settingsID, pinned: false)
+                    persistence.savePriorityPins(priorityPinIDs)
+                }
             }
         }
     }
@@ -138,7 +144,8 @@ final class LayoutStore {
             placed: placed,
             providerOrder: providerOrder,
             metricOrderByProvider: metricOrderByProvider,
-            priorityPinIDs: priorityPinIDs
+            priorityPinIDs: priorityPinIDs,
+            declinedMenuBarStarIDs: persistence.loadDeclinedMenuBarStars()
         )
     }
 
@@ -152,6 +159,7 @@ final class LayoutStore {
         defer { isApplyingUndo = false }
         let result = body()
         if currentSnapshot() != before {
+            persistPendingImportChoice()
             undoHistory.record(before)
         }
         return result
@@ -169,15 +177,21 @@ final class LayoutStore {
 
     /// 실행 취소 대상 필드를 복원하고 같은 저장 경로에 반영.
     private func restore(_ snapshot: LayoutSnapshot) {
+        let visibilityChanged = placed != snapshot.placed
+        let providersChanged = providerOrder != snapshot.providerOrder
+        let metricsChanged = metricOrderByProvider != snapshot.metricOrderByProvider
+        let pinsChanged = priorityPinIDs != snapshot.priorityPinIDs
+        let declinedChanged = persistence.loadDeclinedMenuBarStars() != snapshot.declinedMenuBarStarIDs
         cancelDrag()
         placed = snapshot.placed
         providerOrder = snapshot.providerOrder
         metricOrderByProvider = snapshot.metricOrderByProvider
         priorityPinIDs = snapshot.priorityPinIDs
-        persist()
-        persistProviderOrder()
-        persistMetricOrder()
-        persistence.savePriorityPins(priorityPinIDs)
+        if declinedChanged { persistence.saveDeclinedMenuBarStars(snapshot.declinedMenuBarStarIDs) }
+        if visibilityChanged { persist() }
+        if providersChanged { persistProviderOrder() }
+        if metricsChanged { persistMetricOrder() }
+        if pinsChanged { persistence.savePriorityPins(priorityPinIDs) }
     }
 
     // MARK: - Priority pins
@@ -185,33 +199,65 @@ final class LayoutStore {
     /// 가져온 고정값에서 알려진 고정 불가 지표만 제거하고, 현재 카탈로그에 없는 지표는 복귀를 위해 보관.
     private static func loadPriorityPins(from persistence: LayoutPersistence, registry: WidgetRegistry) -> Set<String> {
         let saved = Set(persistence.loadPriorityPins() ?? [])
-        let valid = saved.filter { registry.descriptor(id: $0)?.pinnable != false }
+        let valid = saved.filter {
+            registry.descriptor(id: $0)?.pinnable != false && !persistence.isUnresolvedMetric($0)
+        }
         if valid != saved { persistence.savePriorityPins(valid) }
         return valid
     }
 
-    /// 기존 별표의 사용자 지정분을 알려진 계정으로 1회 이전 — Priority 저장값이 있으면 생략.
+    /// 기존 별표의 사용자 지정분을 1회 이전. 복구를 기다리는 항목만 새 고정 선택과 합침.
     func migrateMenuBarStars(isHiddenOnCard: (String, String) -> Bool = { _, _ in false }) -> Int? {
-        guard !persistence.hasStoredPriorityPins else { return nil }
-        defer { persistence.savePriorityPins(priorityPinIDs) }
-        guard let saved = persistence.loadPins() else { return nil }
+        let deferred = persistence.loadDeferredMenuBarStars()
+        guard !persistence.hasStoredPriorityPins || deferred != nil else { return nil }
+        guard let saved = deferred ?? persistence.loadPins() else {
+            if canMigrateLegacyPins { persistence.savePriorityPins(priorityPinIDs) }
+            return nil
+        }
         // 프로바이더가 꺼져 있어도 별표는 남겨 두고 다시 켰을 때 표시.
         let stars = Set(saved.map(Self.canonical)).filter(registry.hasCanonicalMetric)
+        let declined = persistence.loadDeclinedMenuBarStars()
         let defaults = Set(defaultPinnedMetricIDs).filter(registry.hasCanonicalMetric)
-        guard stars != defaults else { return nil }
+        guard deferred != nil || stars != defaults else {
+            if canMigrateLegacyPins { persistence.savePriorityPins(priorityPinIDs) }
+            return nil
+        }
+        guard canMigrateLegacyPins else {
+            persistence.saveDeferredMenuBarStars(stars)
+            return nil
+        }
         var pins = Set<String>()
+        var pending = Set<String>()
         for star in stars {
             let family = LayoutOrdering.family(ofMetric: star)
-            for provider in registry.providers where ProviderAccountID.family(of: provider.id) == family {
+            let providers = registry.providers.filter { ProviderAccountID.family(of: $0.id) == family }
+            if providers.contains(where: {
+                persistence.isUnresolvedMetric(LayoutOrdering.cardMetricID(star, on: $0.id))
+            }) {
+                pending.insert(star)
+                continue
+            }
+            for provider in providers {
                 let cardMetricID = LayoutOrdering.cardMetricID(star, on: provider.id)
+                let settingsID =
+                    ProviderAccountID.isSharedMetric(cardMetricID) ? Self.canonical(cardMetricID) : cardMetricID
+                guard !declined.contains(settingsID) else { continue }
                 if registry.descriptor(id: cardMetricID)?.pinnable == true,
                    isMetricEnabled(cardMetricID), !isHiddenOnCard(cardMetricID, provider.id) {
                     pins.insert(ProviderAccountID.isSharedMetric(cardMetricID) ? Self.canonical(cardMetricID) : cardMetricID)
                 }
             }
         }
-        priorityPinIDs = pins
-        return pins.isEmpty ? nil : pins.count
+        priorityPinIDs.subtract(declined)
+        let added = pins.subtracting(priorityPinIDs).count
+        priorityPinIDs.formUnion(pins)
+        // 고정 저장이 끝날 때까지 모든 이전 후보를 남겨 중단 후 같은 작업 재시도.
+        persistence.saveDeferredMenuBarStars(stars)
+        if pending.isEmpty || !pins.isEmpty || persistence.hasStoredPriorityPins {
+            persistence.savePriorityPins(priorityPinIDs)
+        }
+        if pending != stars { persistence.saveDeferredMenuBarStars(pending) }
+        return added == 0 ? nil : added
     }
 
     /// 계정별 고정 조회 — 공통 지표는 프로바이더 설정으로 조회.
@@ -230,6 +276,7 @@ final class LayoutStore {
             } else {
                 guard priorityPinIDs.remove(settingsID) != nil else { return }
             }
+            persistence.recordExplicitPinChoice(settingsID, pinned: pinned)
             persistence.savePriorityPins(priorityPinIDs)
         }
     }
@@ -260,6 +307,7 @@ final class LayoutStore {
     }
 
     func resetToDefault() {
+        persistence.clearDeferredMenuBarStars()
         cancelDrag()
         // reset은 그 자체로 deliberate action — pre-reset 레이아웃을 가리키는 undo stack 전체 폐기.
         undoHistory.clear()
@@ -290,6 +338,7 @@ final class LayoutStore {
 
         // 이 family의 canonical metric 전집 — 아래 membership set들의 scope.
         let family = ProviderAccountID.family(of: providerID)
+        persistence.clearDeferredMenuBarStars(family: family)
         let canonicalIDs = registry.canonicalMetricIDs(family: family)
         let owned = Set(canonicalIDs)
         func defaults(_ ids: [String]) -> [String] {
@@ -326,6 +375,7 @@ final class LayoutStore {
     }
 
     func persist() {
+        persistPendingImportChoice()
         guard let saved = persistence.loadDisabledMetrics() else { return }
         let current = Set(registry.descriptors.map(\.id).filter { !ProviderAccountID.isSharedMetricAlias($0) })
         let shown = Set(placed.map(\.descriptorID))
@@ -333,13 +383,26 @@ final class LayoutStore {
     }
 
     func persistProviderOrder() {
+        persistPendingImportChoice()
         persistence.saveProviderOrder(providerOrder)
     }
 
     func persistMetricOrder() {
+        persistPendingImportChoice()
         persistence.saveMetricOrder(metricOrderByProvider)
     }
 
+    /// 원본 가져오기 대기 중 직접 편집한 설정은 로컬 선택으로 확정.
+    private func persistPendingImportChoice() {
+        guard persistence.isUpstreamImportPending else { return }
+        persistence.finishPendingUpstreamImport()
+        let current = Set(registry.descriptors.map(\.id).filter { !ProviderAccountID.isSharedMetricAlias($0) })
+        persistence.saveDisabledMetrics(current.subtracting(placed.map(\.descriptorID)))
+        persistence.saveProviderOrder(providerOrder)
+        persistence.saveMetricOrder(metricOrderByProvider)
+        persistence.savePriorityPins(priorityPinIDs)
+        canMigrateLegacyPins = true
+    }
 
     /// 카드별 개인 지표 순서 — 공통 이력의 계정별 복사본 제외.
     func metricOrder(for providerID: String) -> [String] {
