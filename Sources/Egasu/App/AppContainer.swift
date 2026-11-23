@@ -255,10 +255,19 @@ final class AppContainer {
             softLimitCoordinator?.accountsDidChange(providerIDs)
             usageTimer?.invalidate(providerIDs: providerIDs)
         }
-        dataStore.onFreshSnapshot = { [weak softLimitCoordinator, weak usageTimer] snapshot, descriptors, trigger in
+        dataStore.onFreshSnapshot = {
+            [
+                weak softLimitCoordinator, weak usageTimer, weak accountProfiles,
+                weak accountRecommendationSettings, weak dataStore
+            ] snapshot, descriptors, trigger in
             softLimitCoordinator?.receive(snapshot, descriptors: descriptors)
             Task { [weak softLimitCoordinator] in await softLimitCoordinator?.check(providerID: snapshot.providerID) }
             usageTimer?.receive(snapshot, trigger: trigger)
+            if let accountProfiles, let accountRecommendationSettings, let dataStore {
+                Self.observeAccountRecommendationSession(
+                    snapshot, profiles: accountProfiles, dataStore: dataStore,
+                    settings: accountRecommendationSettings, at: .now)
+            }
         }
         self.layout = layout
         self.dataStore = dataStore

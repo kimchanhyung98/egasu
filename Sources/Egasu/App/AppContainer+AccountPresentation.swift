@@ -34,14 +34,39 @@ extension AppContainer {
         let recommendation = accountRecommendationSettings.recommendation(
             current: current, profiles: profiles, at: now
         ) { profile in
-            let savedCard = AccountUsageCardPlanner.cardID(family: family, profileID: profile.id)
-            let id = profile.id == current.id ? family : savedCard
-            return dataStore.recommendationQuota(for: profile, cardID: id, at: now)
+            recommendationQuota(for: profile, at: now)
         }
         if family == "claude", recommendation != nil, (try? Self.recommendationSwitcher.hasPendingSwitch()) != false {
             return nil
         }
         return recommendation
+    }
+
+    func dismissAccountRecommendation(_ suggestion: AccountSwitchRecommendation, at now: Date) {
+        guard accountRecommendation(for: suggestion.current.family, at: now) == suggestion else { return }
+        accountRecommendationSettings.dismiss(suggestion, at: now) { recommendationQuota(for: $0, at: now) }
+    }
+
+    private func recommendationQuota(for profile: AccountProfile, at now: Date) -> AccountSwitchQuota? {
+        let card =
+            profile.id == accountProfiles.preferredProfileID(family: profile.family)
+            ? profile.family : AccountUsageCardPlanner.cardID(family: profile.family, profileID: profile.id)
+        return dataStore.recommendationQuota(for: profile, cardID: card, at: now)
+    }
+
+    static func observeAccountRecommendationSession(
+        _ snapshot: ProviderSnapshot, profiles: AccountProfilesStore, dataStore: WidgetDataStore,
+        settings: AccountRecommendationSettingsStore, at now: Date
+    ) {
+        let family = ProviderAccountID.family(of: snapshot.providerID)
+        guard let observedAt = snapshot.liveQuotaObservedAt else { return }
+        for profile in profiles.profiles(family: family) {
+            let savedCard = AccountUsageCardPlanner.cardID(family: family, profileID: profile.id)
+            guard snapshot.providerID == family || snapshot.providerID == savedCard,
+                let quota = dataStore.recommendationQuota(for: profile, cardID: snapshot.providerID, at: now)
+            else { continue }
+            settings.observeSession(for: profile, quota: quota, observedAt: observedAt, at: now)
+        }
     }
 
     /// 등록 계정 표시 대상·순서만 계산 — 런타임 catalog·CLI·HTTP API는 유지.

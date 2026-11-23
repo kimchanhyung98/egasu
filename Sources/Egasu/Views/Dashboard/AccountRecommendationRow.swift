@@ -10,12 +10,9 @@ struct AccountRecommendationRow: View {
 
     var body: some View {
         let now = Date()
-        var deadlines = container.dataStore.localSnapshots.values
+        let deadlines = container.dataStore.localSnapshots.values
             .filter { ProviderAccountID.family(of: $0.providerID) == family }
             .flatMap { $0.recommendationDeadlines(after: now) }
-        if let deadline = container.accountRecommendationSettings.nextRecommendationDate(for: family, at: now) {
-            deadlines.append(deadline)
-        }
         return TimelineView(.explicit([now] + Set(deadlines).sorted())) { context in
             let suggestion = container.accountRecommendation(for: family, at: max(context.date, .now))
             Group {
@@ -56,7 +53,7 @@ struct AccountRecommendationRow: View {
             pending = suggestion
             selection = target
         } dismiss: {
-            container.accountRecommendationSettings.dismiss(for: family, at: .now)
+            container.dismissAccountRecommendation(suggestion, at: .now)
         }
     }
 }

@@ -18,10 +18,10 @@ final class AccountRecommendationSettingsSectionTests: XCTestCase {
         let labels: [(LanguageSetting, String, [String])] = [
             (
                 .english, "Account Recommendations",
-                ["Recommend At", "Candidate Usage Below", "Show Again After"]
+                ["Recommend At", "Candidate Usage Below"]
             ),
-            (.korean, "계정 전환 추천", ["추천 시작 사용률", "후보 사용률 제한", "추천 재표시 대기"]),
-            (.japanese, "アカウント切り替えの提案", ["提案開始使用率", "候補の使用率上限", "再表示までの待機時間"])
+            (.korean, "계정 전환 추천", ["추천 시작 사용률", "후보 사용률 제한"]),
+            (.japanese, "アカウント切り替えの提案", ["提案開始使用率", "候補の使用率上限"])
         ]
         for (language, heading, controlLabels) in labels {
             for scheme in [ColorScheme.light, .dark] {
@@ -30,7 +30,7 @@ final class AccountRecommendationSettingsSectionTests: XCTestCase {
                     let bitmap = try L10n.withLanguage(language) {
                         let view = Form { AccountRecommendationSettingsSection(settings: settings) }
                             .formStyle(.grouped)
-                            .frame(width: PanelMetrics.width, height: enabled ? 290 : 145)
+                            .frame(width: PanelMetrics.width, height: enabled ? 250 : 145)
                             .environment(\.locale, language.locale)
                             .environment(\.colorScheme, scheme)
                             .defaultAppStorage(defaults)
@@ -61,6 +61,10 @@ final class AccountRecommendationSettingsSectionTests: XCTestCase {
                             text.contains { $0.hasPrefix(label.filter(\.isLetter).lowercased()) }, enabled,
                             "\(language) \(scheme) \(enabled) \(label): \(text)")
                     }
+                    XCTAssertFalse(
+                        text.contains {
+                            $0.contains("showagainafter") || $0.contains("추천재표시대기") || $0.contains("再表示までの待機時間")
+                        })
                     if let output {
                         let name = "account-recommendations-\(language.rawValue)-\(scheme)-\(enabled).png"
                         try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))

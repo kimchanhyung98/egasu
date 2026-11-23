@@ -4,7 +4,7 @@ import XCTest
 @MainActor
 final class AccountRecommendationSettingsConfirmationTests: XCTestCase {
     private enum Change {
-        case disabled, betaDisabled, triggerIncreased, candidateLimitReduced, dismissed, delayIncreased
+        case disabled, betaDisabled, triggerIncreased, candidateLimitReduced, dismissed
         case unchanged, stillEligible
 
         var succeeds: Bool { self == .unchanged || self == .stillEligible }
@@ -13,7 +13,7 @@ final class AccountRecommendationSettingsConfirmationTests: XCTestCase {
     func testChangedSettingsRejectThePendingRecommendationBeforeAuthenticationWrites() async throws {
         for family in ["claude", "codex"] {
             for change in [
-                Change.disabled, .betaDisabled, .triggerIncreased, .candidateLimitReduced, .dismissed, .delayIncreased
+                Change.disabled, .betaDisabled, .triggerIncreased, .candidateLimitReduced, .dismissed
             ] {
                 try await check(change, family: family)
             }
@@ -55,10 +55,7 @@ final class AccountRecommendationSettingsConfirmationTests: XCTestCase {
         let now = Date()
         let settings = AccountRecommendationSettingsStore(defaults: fixture.defaults, labsAvailable: true)
         settings.enabled = true
-        settings.reappearanceMinutes = 5
-        if change == .delayIncreased { settings.dismiss(for: family, at: now.addingTimeInterval(-600)) }
-        func recommendation() -> AccountSwitchRecommendation? {
-            settings.recommendation(current: current, profiles: [current, target], at: now) { profile in
+        func quota(_ profile: AccountProfile) -> AccountSwitchQuota? {
                 .init(
                     windows: [
                         .weekly: .init(percent: profile.id == current.id ? 96 : 20, reset: now.addingTimeInterval(7200))
@@ -66,7 +63,9 @@ final class AccountRecommendationSettingsConfirmationTests: XCTestCase {
                     codexAccountKey: family == "codex"
                         ? CodexResetClaimBinding.verifiedAccountKey(
                             for: profile.id == current.id ? currentEntry.credential : targetEntry.credential) : nil)
-            }
+        }
+        func recommendation() -> AccountSwitchRecommendation? {
+            settings.recommendation(current: current, profiles: [current, target], at: now, quota: quota)
         }
         let pending = try XCTUnwrap(recommendation())
         switch change {
@@ -74,12 +73,10 @@ final class AccountRecommendationSettingsConfirmationTests: XCTestCase {
         case .betaDisabled: settings.setLabsAvailable(false)
         case .triggerIncreased: settings.triggerPercent = 100
         case .candidateLimitReduced: settings.candidateLimitPercent = 20
-        case .dismissed: settings.dismiss(for: family, at: now)
-        case .delayIncreased: settings.reappearanceMinutes = 15
+        case .dismissed: settings.dismiss(pending, at: now, quota: quota)
         case .stillEligible:
             settings.triggerPercent = 90
             settings.candidateLimitPercent = 30
-            settings.reappearanceMinutes = 1
         case .unchanged: break
         }
         let writes = fixture.keychain.writeCount
