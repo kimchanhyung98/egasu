@@ -84,7 +84,7 @@ final class ClaudeCollectionReviewTests: XCTestCase {
     }
 
     func testCommaInConfigDirRemainsOnePathAcrossRepeatedScans() async throws {
-        let now = Date()
+        let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
         let fixture = try makeHome(files: ["p/session.jsonl": usageLine(now: now)])
         let directory = fixture.appendingPathComponent("team,inc")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -102,7 +102,7 @@ final class ClaudeCollectionReviewTests: XCTestCase {
     }
 
     func testUnreadableNativeFileKeepsHistoryUnavailableAndRecovers() async throws {
-        let now = Date()
+        let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
         let directory = try makeHome(files: ["p/session.jsonl": usageLine(now: now)])
         let file = directory.appendingPathComponent("projects/p/session.jsonl")
         try blockReads(file)
@@ -123,7 +123,7 @@ final class ClaudeCollectionReviewTests: XCTestCase {
     }
 
     func testPartialNativeReadFailureKeepsReadableUsageWithWarning() async throws {
-        let now = Date()
+        let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
         let directory = try makeHome(files: [
             "p/good.jsonl": usageLine(now: now),
             "p/unreadable.jsonl": usageLine(now: now, id: "unreadable"),
@@ -139,7 +139,7 @@ final class ClaudeCollectionReviewTests: XCTestCase {
     }
 
     func testUnreadableProjectsDirectoryPreservesDiscoveryFailure() async throws {
-        let now = Date()
+        let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
         let directory = try makeHome(files: ["p/session.jsonl": usageLine(now: now)])
         try blockReads(directory.appendingPathComponent("projects"))
 
@@ -151,7 +151,7 @@ final class ClaudeCollectionReviewTests: XCTestCase {
     }
 
     func testUnreadableCoworkDirectoryKeepsNativeUsageAndWarning() async throws {
-        let now = Date()
+        let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
         let directory = try ClaudeLogFixture.makeUserHome(claudeFiles: ["p/session.jsonl": usageLine(now: now)])
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let cowork = directory.appendingPathComponent("Library/Application Support/Claude/local-agent-mode-sessions")
