@@ -12,7 +12,7 @@ final class MenuBarPrivacyStore {
     /// 변경 알림의 누락을 보완하는 캡처 상태 재확인 주기.
     static let pollInterval: Duration = .seconds(3)
 
-    /// 기본 켜짐 설정 — SwiftUI·AppKit이 같은 저장값 사용.
+    /// 기본 꺼짐 설정 — SwiftUI·AppKit이 같은 저장값 사용.
     /// 설정을 끄면 주기적 조회 중지. 등록된 변경 알림은 수신하되 캡처 상태 조회 생략.
     var hideUsageWhileScreenSharing: Bool {
         didSet {
@@ -49,7 +49,7 @@ final class MenuBarPrivacyStore {
         self.defaults = defaults
         self.probe = probe
         self.installChangeNotifications = installChangeNotifications
-        self.hideUsageWhileScreenSharing = defaults.bool(forKey: Self.key, default: true)
+        self.hideUsageWhileScreenSharing = defaults.bool(forKey: Self.key, default: false)
         // 초기화 중 didSet이 실행되지 않으므로 저장값이 켜짐이면 직접 감시 시작.
         if hideUsageWhileScreenSharing {
             startMonitoring()

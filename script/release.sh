@@ -195,7 +195,7 @@ cat >"$APP_CONTENTS/Info.plist" <<PLIST
   <key>NSHighResolutionCapable</key><true/>
   <key>SUFeedURL</key><string>$FEED_URL</string>
   <key>SUPublicEDKey</key><string>$SPARKLE_PUBLIC_KEY</string>
-  <key>SUEnableAutomaticChecks</key><true/>
+  <key>SUEnableAutomaticChecks</key><false/>
   <key>SUScheduledCheckInterval</key><integer>3600</integer>
   <key>NSUbiquitousContainers</key>
   <dict>

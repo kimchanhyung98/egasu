@@ -23,11 +23,24 @@ final class MenuBarPrivacyStoreTests: XCTestCase {
         )
     }
 
-    func testDefaultsOnAndConcealsActiveCapture() {
-        let store = makeStore("default", captured: { true })
-        XCTAssertTrue(store.hideUsageWhileScreenSharing)
-        XCTAssertTrue(store.screenIsCaptured)
-        XCTAssertTrue(store.concealUsage)
+    func testDefaultsOffWithoutStartingCaptureMonitoring() {
+        let defaults = makeDefaults("default")
+        var probes = 0
+        var subscriptions = 0
+        let store = MenuBarPrivacyStore(
+            defaults: defaults,
+            probe: {
+                probes += 1
+                return true
+            },
+            installChangeNotifications: { _ in subscriptions += 1 }
+        )
+        XCTAssertFalse(store.hideUsageWhileScreenSharing)
+        XCTAssertFalse(store.screenIsCaptured)
+        XCTAssertFalse(store.concealUsage)
+        XCTAssertEqual(probes, 0)
+        XCTAssertEqual(subscriptions, 0)
+        XCTAssertNil(defaults.object(forKey: MenuBarPrivacyStore.key))
     }
 
     func testCaptureAloneDoesNotConceal() {
@@ -80,12 +93,24 @@ final class MenuBarPrivacyStoreTests: XCTestCase {
 
     func testExplicitOffPersistsAcrossStores() {
         let defaults = makeDefaults("persist")
-        makeStore("persistFirst", defaults: defaults, captured: { true }).hideUsageWhileScreenSharing = false
+        let original = makeStore("persistFirst", defaults: defaults, captured: { true })
+        original.hideUsageWhileScreenSharing = true
+        original.hideUsageWhileScreenSharing = false
 
-        // 동일 defaults의 새 store는 default-on fallback보다 저장된 opt-out 우선
         let relaunched = makeStore("persistSecond", defaults: defaults, captured: { true })
+        XCTAssertEqual(defaults.object(forKey: MenuBarPrivacyStore.key) as? Bool, false)
         XCTAssertFalse(relaunched.hideUsageWhileScreenSharing)
         XCTAssertFalse(relaunched.concealUsage)
+    }
+
+    func testExplicitOnPersistsAcrossStoresDespiteDefaultOff() {
+        let defaults = makeDefaults("persistOn")
+        makeStore("persistOnFirst", defaults: defaults, captured: { true }).hideUsageWhileScreenSharing = true
+
+        let relaunched = makeStore("persistOnSecond", defaults: defaults, captured: { true })
+        XCTAssertTrue(relaunched.hideUsageWhileScreenSharing)
+        XCTAssertTrue(relaunched.screenIsCaptured)
+        XCTAssertTrue(relaunched.concealUsage)
     }
 
     func testStaleNotificationAfterDisableCannotReconceal() {
