@@ -1,4 +1,6 @@
+import Darwin
 import Foundation
+import os
 
 /// family의 공식 로그인 CLI(`claude auth login`, `codex login`)를 한 home(Sign-In Workspace 또는 첫 계정의 Shared Runtime Home)에 고정해 실행.
 /// child는 parent 환경에서 모든 provider auth override 제거 — export된 API 키·token의 로그인 계정 위장 금지. 공식 로그인 전용 — workspace의 일반 세션 시작 금지.
@@ -77,39 +79,30 @@ struct AccountSignInLauncher: Sendable {
            let shellPATH = LoginShellEnvironment.shared.value(for: "PATH")?.nilIfEmpty {
             environment["PATH"] = shellPATH
         }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = [family] + Self.loginArguments(family: family)
-        process.environment = environment
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-
         AppLog.debug(.subprocess, "account sign-in launch \(family) login")
+        let pid = try StreamingProcessRunner.spawn(
+            executable: "/usr/bin/env", arguments: [family] + Self.loginArguments(family: family),
+            environment: environment, resetSignalState: true)
+        let ownsChild = OSAllocatedUnfairLock(initialState: true)
+        let exit = ProcessExitSignal()
+        StreamingProcessRunner.startWait(pid: pid, signal: exit) { _ in
+            ownsChild.withLock { $0 = false }
+        }
+        // waitid가 종료를 관측한 뒤 같은 잠금에서 소유권을 해제해야 회수된 PID로 지연 신호가 가지 않음.
+        @Sendable func signalChild(_ signal: Int32) {
+            ownsChild.withLock { owned in
+                if owned, Darwin.kill(pid, signal) != 0, errno != ESRCH {
+                    AppLog.error(.subprocess, "Failed to signal login child (errno \(errno))")
+                }
+            }
+        }
         return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                process.terminationHandler = { child in
-                    if child.terminationReason == .uncaughtSignal {
-                        continuation.resume(returning: 128 + child.terminationStatus)
-                    } else {
-                        continuation.resume(returning: child.terminationStatus)
-                    }
-                }
-                do {
-                    try process.run()
-                    if Task.isCancelled, process.isRunning {
-                        process.terminate()
-                    }
-                } catch {
-                    process.terminationHandler = nil
-                    continuation.resume(throwing: error)
-                }
-            }
+            let result = await exit.wait()
+            if let error = result.waitError { throw StreamingProcessRunnerError.processWaitFailed(code: error) }
+            return result.exitCode
         } onCancel: {
-            // 미실행 Process의 terminate()는 예외 발생 — 취소가 run()보다 먼저일 수 있음.
-            if process.isRunning {
-                process.terminate()
-            }
+            signalChild(SIGTERM)
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 1) { signalChild(SIGKILL) }
         }
     }
 }
