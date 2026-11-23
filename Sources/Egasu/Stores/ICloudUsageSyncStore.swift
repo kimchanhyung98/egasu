@@ -6,9 +6,21 @@ struct UsageHistoryLoadResult: Sendable {
     private(set) var invalidFileMessages: [String] = []
     private(set) var failureCategories: Set<ErrorCategory> = []
 
+    private var unreadableFileNames: Set<String> = []
+    private var directoryReadFailed = false
+
+    func canReplaceDocument(for deviceID: String) -> Bool {
+        !directoryReadFailed && !unreadableFileNames.contains(deviceID.lowercased() + ".json")
+    }
+
     init(documents: [UsageHistoryDocument]) { self.documents = documents }
 
-    mutating func appendFailure(_ error: Error, fileName: String) {
+    mutating func appendFailure(_ error: Error, fileName: String, isDirectory: Bool = false) {
+        if isDirectory {
+            directoryReadFailed = true
+        } else {
+            unreadableFileNames.insert(fileName.lowercased())
+        }
         invalidFileMessages.append("\(fileName): \(error.localizedDescription)")
         failureCategories.insert(ErrorCategory.classify(error))
     }
@@ -80,12 +92,14 @@ final class ICloudUsageSyncStore {
     private var notificationTokens: [NSObjectProtocol] = []
     private var syncActivityCount = 0
     private var enablementGeneration = 0
+    private var canReplaceOwnDocument = false
 
     let deviceID: String
     let deviceName: String
     var enabled: Bool {
         didSet {
             guard enabled != oldValue else { return }
+            canReplaceOwnDocument = false
             enablementGeneration &+= 1
             let generation = enablementGeneration
             let expectedEnabled = enabled
@@ -220,6 +234,7 @@ final class ICloudUsageSyncStore {
             guard let self else { return }
             try? await Task.sleep(for: writeDebounce)
             guard !Task.isCancelled else { return }
+            if !canReplaceOwnDocument { await reload(generation: generation) }
             await writeNow(generation: generation)
         }
     }
@@ -249,7 +264,9 @@ final class ICloudUsageSyncStore {
             guard isCurrent(expectedEnabled: true, generation: generation) else { return }
             do {
                 let written = try await workQueue.run("icloud:write") {
-                    guard isCurrent(expectedEnabled: true, generation: generation) else { return false }
+                    guard isCurrent(expectedEnabled: true, generation: generation), canReplaceOwnDocument else {
+                        return false
+                    }
                     let document = dataStore.localHistoryDocument(
                         deviceID: deviceID, deviceName: deviceName,
                         preserving: documents.first { $0.deviceID == deviceID })
@@ -283,13 +300,11 @@ final class ICloudUsageSyncStore {
         guard isCurrent(expectedEnabled: true, generation: generation) else { return }
         let pendingAtStart = Self.normalizedDeviceID(pendingDeletionDeviceID)
         await withSyncActivity {
+            guard let ticket = await workQueue.acquire("icloud:read") else { return }
+            defer { workQueue.finish(ticket) }
+            guard !Task.isCancelled, isCurrent(expectedEnabled: true, generation: generation) else { return }
             do {
-                guard let result = try await workQueue.run("icloud:read", operation: {
-                    guard isCurrent(expectedEnabled: true, generation: generation) else {
-                        throw CancellationError()
-                    }
-                    return try await fileStore.loadDocuments()
-                }) else { return }
+                let result = try await fileStore.loadDocuments()
                 guard isCurrent(expectedEnabled: true, generation: generation) else { return }
                 let excludedDeviceIDs = Set([
                     pendingAtStart,
@@ -298,6 +313,7 @@ final class ICloudUsageSyncStore {
                 let visibleDocuments = result.documents.filter { document in
                     !excludedDeviceIDs.contains(document.deviceID.lowercased())
                 }
+                canReplaceOwnDocument = result.canReplaceDocument(for: deviceID)
                 documents = UsageHistoryDocument.newestByDevice(visibleDocuments)
                 invalidFileMessages = result.invalidFileMessages
                 if result.invalidFileMessages.isEmpty {
@@ -313,6 +329,7 @@ final class ICloudUsageSyncStore {
                     : L10n.errors("Some synced usage data couldn’t be read. Check the log for details.")
             } catch {
                 if isCurrent(expectedEnabled: true, generation: generation) {
+                    canReplaceOwnDocument = false
                     report(error, operation: .iCloudRead)
                 }
             }

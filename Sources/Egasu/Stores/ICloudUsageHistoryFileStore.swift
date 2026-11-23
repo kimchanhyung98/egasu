@@ -35,7 +35,7 @@ actor ICloudUsageHistoryFileStore: UsageHistoryFileStoring {
                 ).filter { $0.pathExtension == "json" }
             } catch {
                 if isMissingFile(error) { continue }
-                result.appendFailure(error, fileName: directory.lastPathComponent)
+                result.appendFailure(error, fileName: directory.lastPathComponent, isDirectory: true)
                 let issue = error as NSError
                 AppLog.warn(
                     .config,

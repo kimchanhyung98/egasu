@@ -28,6 +28,7 @@ final class ICloudUsageHistoryPermissionTests: XCTestCase {
             let result = try await ICloudUsageHistoryFileStore(containerURL: { root }).loadDocuments()
 
             XCTAssertEqual(result.documents, [readable])
+            XCTAssertFalse(result.canReplaceDocument(for: readable.deviceID))
             XCTAssertEqual(result.invalidFileMessages.count, 2)
             XCTAssertTrue(
                 result.invalidFileMessages.contains { $0.hasPrefix("\(blockedDirectory.lastPathComponent):") })

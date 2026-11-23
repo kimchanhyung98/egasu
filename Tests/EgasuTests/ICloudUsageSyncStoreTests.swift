@@ -146,7 +146,8 @@ final class ICloudUsageSyncStoreTests: XCTestCase {
         try await waitUntil { sync.serviceError != nil && !sync.isSyncing }
 
         XCTAssertEqual(sync.serviceError, ICloudUsageSyncError.unavailable.localizedDescription)
-        XCTAssertTrue(diagnostics.events.contains { $0.operation == .iCloudWrite && $0.result == .failure })
+        XCTAssertTrue(diagnostics.events.contains { $0.operation == .iCloudRead && $0.result == .failure })
+        XCTAssertFalse(diagnostics.events.contains { $0.operation == .iCloudWrite })
         XCTAssertFalse(sync.isSyncing)
     }
 
