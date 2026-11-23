@@ -315,7 +315,7 @@ private actor PendingDeletionHistoryFileStore: UsageHistoryFileStoring {
         UsageHistoryLoadResult(documents: documents)
     }
 
-    func write(_ document: UsageHistoryDocument) async throws {
+    func write(_ document: UsageHistoryDocument, replacing previous: UsageHistoryDocument?) async throws {
         writeCount += 1
         if writeFailuresRemaining > 0 {
             writeFailuresRemaining -= 1

@@ -78,7 +78,7 @@ final class ICloudUsageHistoryPermissionTests: XCTestCase {
         }
     }
 
-    func testInaccessibleLegacyCleanupKeepsNewWriteAndReportsFailure() async throws {
+    func testInaccessibleLegacyHistoryDefersReplacementAndReportsFailure() async throws {
         let root = try makeRoot()
         let blocked = root.appendingPathComponent("OpenUsage")
         defer {
@@ -90,13 +90,13 @@ final class ICloudUsageHistoryPermissionTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: blocked.path)
         let fileStore = ICloudUsageHistoryFileStore(containerURL: { root })
         var writeError: Error?
-        do { try await fileStore.write(own) } catch { writeError = error }
-        XCTAssertNotNil(writeError, "Legacy cleanup must report inaccessible history")
-        XCTAssertTrue(
+        do { try await fileStore.write(own, replacing: own) } catch { writeError = error }
+        XCTAssertNotNil(writeError, "Replacement must report inaccessible history")
+        XCTAssertFalse(
             FileManager.default.fileExists(
                 atPath: root.appendingPathComponent("egasu/History/\(own.deviceID).json").path))
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: blocked.path)
-        try await fileStore.write(own)
+        try await fileStore.write(own, replacing: own)
         XCTAssertFalse(
             FileManager.default.fileExists(
                 atPath: root.appendingPathComponent("OpenUsage/History/v1/\(own.deviceID).json").path))

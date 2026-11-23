@@ -133,7 +133,7 @@ final class ICloudReadDiagnosticsTests: XCTestCase {
             loadGate = nil
         }
 
-        func write(_ document: UsageHistoryDocument) async throws {}
+        func write(_ document: UsageHistoryDocument, replacing previous: UsageHistoryDocument?) async throws {}
         func delete(deviceID: String) async throws {}
     }
 }

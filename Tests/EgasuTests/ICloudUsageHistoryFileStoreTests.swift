@@ -76,7 +76,7 @@ final class ICloudUsageHistoryFileStoreTests: XCTestCase {
         let (root, store) = try makeFixture()
         let own = document(updatedAt: 100)
 
-        try await store.write(own)
+        try await store.write(own, replacing: nil)
 
         XCTAssertEqual(try read(currentURL(root, own.deviceID)), own)
         XCTAssertFalse(exists(root.appendingPathComponent("egasu/History/v1")))
@@ -94,7 +94,7 @@ final class ICloudUsageHistoryFileStoreTests: XCTestCase {
         try save(old, to: legacyURL(root, old.deviceID))
         try save(peer, to: legacyURL(root, peer.deviceID))
 
-        try await store.write(own)
+        try await store.write(own, replacing: old)
 
         XCTAssertEqual(try read(currentURL(root, own.deviceID)), own)
         XCTAssertFalse(exists(legacyURL(root, own.deviceID)))
@@ -102,6 +102,93 @@ final class ICloudUsageHistoryFileStoreTests: XCTestCase {
         XCTAssertFalse(exists(currentURL(root, peer.deviceID)), "다른 Mac의 기록은 대신 복사하지 않음")
         let result = try await store.loadDocuments()
         XCTAssertEqual(Set(result.documents), Set([own, peer]))
+    }
+
+    func testReplacementPreservesSameDeviceChangesDeliveredAfterTheRead() async throws {
+        for location in [currentURL, legacyURL] {
+            let (root, store) = try makeFixture()
+            let original = document(updatedAt: 100)
+            let url = location(root, original.deviceID)
+            try save(original, to: url)
+            let loaded = try await store.loadDocuments()
+            var replacement = try XCTUnwrap(loaded.documents.first)
+            replacement.updatedAt = Date(timeIntervalSince1970: 200)
+            var delivered = original
+            delivered.providers["codex"] = original.providers["claude"]
+            try save(delivered, to: url)
+
+            let error = await assertFailure { try await store.write(replacement, replacing: original) }
+            XCTAssertTrue(error is ICloudHistoryChangedDuringWrite)
+
+            XCTAssertEqual(try read(url), delivered)
+        }
+    }
+
+    func testLatestNamedCopyParticipatesInConditionalReplacement() async throws {
+        let (root, store) = try makeFixture()
+        let old = document(updatedAt: 100)
+        try save(old, to: currentURL(root, old.deviceID))
+        let alias = legacyURL(root, old.deviceID + "-copy")
+        var delivered = old
+        delivered.updatedAt = Date(timeIntervalSince1970: 200)
+        try save(delivered, to: alias)
+        let loaded = try await store.loadDocuments()
+        XCTAssertEqual(loaded.documents, [delivered])
+        var replacement = delivered
+        replacement.updatedAt = Date(timeIntervalSince1970: 300)
+
+        try await store.write(replacement, replacing: delivered)
+
+        XCTAssertEqual(try read(currentURL(root, old.deviceID)), replacement)
+        XCTAssertEqual(try read(alias), delivered)
+    }
+
+    func testNewNamedCopyAfterReadBlocksReplacement() async throws {
+        let (root, store) = try makeFixture()
+        let original = document(updatedAt: 100)
+        let current = currentURL(root, original.deviceID)
+        try save(original, to: current)
+        let loaded = try await store.loadDocuments()
+        var delivered = original
+        delivered.updatedAt = Date(timeIntervalSince1970: 200)
+        let alias = currentURL(root, original.deviceID + "-copy")
+        try save(delivered, to: alias)
+
+        let error = await assertFailure { try await store.write(original, replacing: loaded.documents.first) }
+
+        XCTAssertTrue(error is ICloudHistoryChangedDuringWrite)
+        XCTAssertEqual(try read(alias), delivered)
+        XCTAssertEqual(try read(current), original)
+    }
+
+    func testCanonicalFilenameContainingAnotherDeviceCannotBeReplaced() async throws {
+        let (root, store) = try makeFixture()
+        let own = document(updatedAt: 100)
+        let other = document(updatedAt: 200)
+        let canonical = currentURL(root, own.deviceID)
+        try save(other, to: canonical)
+        let loaded = try await store.loadDocuments()
+
+        XCTAssertFalse(loaded.canReplaceDocument(for: own.deviceID))
+        XCTAssertTrue(loaded.documents.contains(other))
+        _ = await assertFailure { try await store.write(own, replacing: nil) }
+        XCTAssertEqual(try read(canonical), other)
+    }
+
+    func testWritingOwnDocumentDoesNotRequestDeletionOfPresentedPeer() async throws {
+        let (root, store) = try makeFixture()
+        let own = document(updatedAt: 100)
+        let peer = document(updatedAt: 200)
+        let peerURL = currentURL(root, peer.deviceID)
+        try save(peer, to: peerURL)
+        let presenter = DeletionRefusingHistoryPresenter(url: peerURL)
+        NSFileCoordinator.addFilePresenter(presenter)
+        defer { NSFileCoordinator.removeFilePresenter(presenter) }
+
+        try await store.write(own, replacing: nil)
+
+        XCTAssertEqual(try read(peerURL), peer)
+        XCTAssertEqual(try read(currentURL(root, own.deviceID)), own)
     }
 
     func testFailedCurrentWritePreservesTheLegacyDocument() async throws {
@@ -116,7 +203,7 @@ final class ICloudUsageHistoryFileStoreTests: XCTestCase {
         var updated = old
         updated.updatedAt = Date(timeIntervalSince1970: 200)
 
-        _ = await assertFailure { try await store.write(updated) }
+        _ = await assertFailure { try await store.write(updated, replacing: old) }
 
         XCTAssertEqual(try read(legacyURL(root, old.deviceID)), old)
         XCTAssertEqual(try Data(contentsOf: blocked), marker)
@@ -132,12 +219,12 @@ final class ICloudUsageHistoryFileStoreTests: XCTestCase {
         var updated = old
         updated.updatedAt = Date(timeIntervalSince1970: 200)
 
-        _ = await assertFailure { try await store.write(updated) }
+        _ = await assertFailure { try await store.write(updated, replacing: old) }
 
         XCTAssertEqual(try read(currentURL(root, old.deviceID)), updated)
         XCTAssertEqual(try read(legacy), old)
         try FileManager.default.setAttributes([.immutable: false], ofItemAtPath: legacy.path)
-        try await store.write(updated)
+        try await store.write(updated, replacing: updated)
         XCTAssertFalse(exists(legacy))
         XCTAssertEqual(try read(currentURL(root, old.deviceID)), updated)
     }
@@ -149,7 +236,7 @@ final class ICloudUsageHistoryFileStoreTests: XCTestCase {
         var invalid = old
         invalid.schema = "unsupported"
 
-        let error = await assertFailure { try await store.write(invalid) }
+        let error = await assertFailure { try await store.write(invalid, replacing: old) }
 
         XCTAssertEqual(error as? UsageHistoryDocumentError, .unsupportedSchema)
         XCTAssertEqual(try read(legacyURL(root, old.deviceID)), old)
@@ -219,7 +306,7 @@ final class ICloudUsageHistoryFileStoreTests: XCTestCase {
         let own = document(updatedAt: 100)
         let errors = [
             await assertFailure { _ = try await store.loadDocuments() },
-            await assertFailure { try await store.write(own) },
+            await assertFailure { try await store.write(own, replacing: nil) },
             await assertFailure { try await store.delete(deviceID: own.deviceID) }
         ]
 
@@ -287,5 +374,18 @@ final class ICloudUsageHistoryFileStoreTests: XCTestCase {
         } catch {
             return error
         }
+    }
+}
+
+private final class DeletionRefusingHistoryPresenter: NSObject, NSFilePresenter {
+    let presentedItemURL: URL?
+    let presentedItemOperationQueue = OperationQueue()
+
+    init(url: URL) {
+        presentedItemURL = url
+    }
+
+    func accommodatePresentedItemDeletion(completionHandler: @escaping @Sendable (Error?) -> Void) {
+        completionHandler(CocoaError(.userCancelled))
     }
 }

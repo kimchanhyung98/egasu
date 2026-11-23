@@ -23,9 +23,13 @@ actor ICloudUsageHistoryFileStore: UsageHistoryFileStoring {
 
     func loadDocuments() async throws -> UsageHistoryLoadResult {
         let directories = try historyDirectories()
+        return readDocuments(in: [directories.current, directories.legacy], read: coordinatedRead)
+    }
+
+    private func readDocuments(in directories: [URL], read: (URL) throws -> Data) -> UsageHistoryLoadResult {
         var result = UsageHistoryLoadResult(documents: [])
         // 같은 기기·시각이면 먼저 읽은 새 경로의 기록 유지.
-        for directory in [directories.current, directories.legacy] {
+        for directory in directories {
             let urls: [URL]
             do {
                 urls = try FileManager.default.contentsOfDirectory(
@@ -45,10 +49,14 @@ actor ICloudUsageHistoryFileStore: UsageHistoryFileStoring {
 
             for url in urls {
                 do {
-                    let data = try coordinatedRead(url)
+                    let data = try read(url)
                     let document = try decoder.decode(UsageHistoryDocument.self, from: data)
                     try document.validate()
                     result.documents.append(document)
+                    let name = url.deletingPathExtension().lastPathComponent
+                    if UUID(uuidString: name) != nil, name.lowercased() != document.deviceID.lowercased() {
+                        throw UsageHistoryDocumentError.invalidDevice
+                    }
                 } catch {
                     result.appendFailure(error, fileName: url.lastPathComponent)
                     AppLog.warn(.config, "iCloud history ignored \(url.lastPathComponent): \(error.localizedDescription)")
@@ -59,17 +67,32 @@ actor ICloudUsageHistoryFileStore: UsageHistoryFileStoring {
         return result
     }
 
-    func write(_ document: UsageHistoryDocument) async throws {
+    func write(_ document: UsageHistoryDocument, replacing previous: UsageHistoryDocument?) async throws {
         try document.validate()
         let directories = try historyDirectories()
         let data = try encoder.encode(document)
         try FileManager.default.createDirectory(at: directories.current, withIntermediateDirectories: true)
-        let url = directories.current.appendingPathComponent(document.deviceID).appendingPathExtension("json")
-        try coordinatedWrite(data, to: url)
-        // 새 파일 저장 실패 시 원본 유지. 옛 파일 정리 실패는 다음 쓰기에서 재시도.
-        try coordinatedDelete(
-            directories.legacy.appendingPathComponent(document.deviceID).appendingPathExtension("json")
-        )
+        let name = document.deviceID + ".json"
+        var coordinationError: NSError?
+        var result: Result<Void, Error>?
+        // 이동용 조정은 피어 파일에 삭제 승인을 요청하지 않고 하위 파일의 조정 쓰기를 대기.
+        NSFileCoordinator().coordinate(
+            writingItemAt: directories.current, options: .forMoving,
+            writingItemAt: directories.legacy, options: .forMoving, error: &coordinationError
+        ) { current, legacy in
+            result = Result {
+                let stored = readDocuments(in: [current, legacy]) { try Data(contentsOf: $0) }
+                guard stored.canReplaceDocument(for: document.deviceID),
+                    stored.documents.first(where: { $0.deviceID == document.deviceID }) == previous
+                else { throw ICloudHistoryChangedDuringWrite() }
+                try data.write(to: current.appendingPathComponent(name), options: .atomic)
+                do { try FileManager.default.removeItem(at: legacy.appendingPathComponent(name)) }
+                catch { if !isMissingFile(error) { throw error } }
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        guard let result else { throw CocoaError(.fileWriteUnknown) }
+        try result.get()
     }
 
     func delete(deviceID: String) async throws {
@@ -101,17 +124,6 @@ actor ICloudUsageHistoryFileStore: UsageHistoryFileStoring {
         }
         if let coordinationError { throw coordinationError }
         return try result?.get() ?? { throw CocoaError(.fileReadUnknown) }()
-    }
-
-    private func coordinatedWrite(_ data: Data, to url: URL) throws {
-        var coordinationError: NSError?
-        var operationError: Error?
-        NSFileCoordinator().coordinate(writingItemAt: url, options: .forReplacing, error: &coordinationError) { coordinatedURL in
-            do { try data.write(to: coordinatedURL, options: .atomic) }
-            catch { operationError = error }
-        }
-        if let coordinationError { throw coordinationError }
-        if let operationError { throw operationError }
     }
 
     private func coordinatedDelete(_ url: URL) throws {

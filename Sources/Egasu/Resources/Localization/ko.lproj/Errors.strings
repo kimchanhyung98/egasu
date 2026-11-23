@@ -339,3 +339,4 @@
 "OpenCode sign-in changed during refresh. Refresh this account and try again." = "조회 중 OpenCode 로그인이 바뀌었습니다. 이 계정을 다시 새로 고쳐 주세요.";
 "You signed in to a different account. Try again with the account you selected." = "다른 계정으로 로그인했습니다. 선택한 계정으로 다시 로그인하세요.";
 "egasu couldn't verify the Codex user. Open the account in Accounts to sign in again." = "Codex 로그인 사용자를 확인할 수 없습니다. 계정 탭에서 해당 계정을 열고 다시 로그인하세요.";
+"This Mac’s synced history changed again. egasu will retry on the next update." = "이 Mac의 동기화 이력이 다시 변경되었습니다. 다음 업데이트 때 다시 시도합니다.";

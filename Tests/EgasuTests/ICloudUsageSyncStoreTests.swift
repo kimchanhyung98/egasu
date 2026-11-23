@@ -50,6 +50,21 @@ final class ICloudUsageSyncStoreTests: XCTestCase {
         XCTAssertEqual(writeCount, 2)
     }
 
+    func testRepeatedDocumentChangesSurfaceAnErrorAfterOneRetry() async throws {
+        let defaults = makeDefaults("repeated-conflict")
+        let files = RecordingHistoryFileStore()
+        await files.conflictOnNextWrites(2)
+        let sync = ICloudUsageSyncStore(
+            dataStore: makeDataStore(defaults), defaults: defaults, fileStore: files,
+            deviceIDStore: MemoryDeviceIDStore(), observesMetadataChanges: false)
+        sync.enabled = true
+
+        try await waitUntil { await files.writeCount >= 2 && !sync.isSyncing }
+        let count = await files.writeCount
+        XCTAssertEqual(count, 2)
+        XCTAssertNotNil(sync.serviceError)
+    }
+
     func testDisableDeletesWriteThatWasAlreadyInFlight() async throws {
         let defaults = makeDefaults("disable-in-flight-write")
         let fileStore = RecordingHistoryFileStore()
@@ -416,6 +431,7 @@ private actor RecordingHistoryFileStore: UsageHistoryFileStoring {
     private var shouldHoldNextLoad = false
     private var shouldHoldNextWrite = false
     private var shouldFailNextWrite = false
+    private var remainingConflicts = 0
     private var loadGate: CheckedContinuation<Void, Never>?
     private var writeGate: CheckedContinuation<Void, Never>?
 
@@ -445,11 +461,15 @@ private actor RecordingHistoryFileStore: UsageHistoryFileStoring {
         return result
     }
 
-    func write(_ document: UsageHistoryDocument) async throws {
+    func write(_ document: UsageHistoryDocument, replacing previous: UsageHistoryDocument?) async throws {
         if unavailable { throw ICloudUsageSyncError.unavailable }
         let shouldFail = shouldFailNextWrite
         shouldFailNextWrite = false
         writeCount += 1
+        if remainingConflicts > 0 {
+            remainingConflicts -= 1
+            throw ICloudHistoryChangedDuringWrite()
+        }
         writeInFlight = true
         defer { writeInFlight = false }
         if shouldHoldNextWrite {
@@ -476,6 +496,8 @@ private actor RecordingHistoryFileStore: UsageHistoryFileStoring {
     func holdNextWrite() {
         shouldHoldNextWrite = true
     }
+
+    func conflictOnNextWrites(_ count: Int) { remainingConflicts = count }
 
     func failNextWrite() {
         shouldFailNextWrite = true

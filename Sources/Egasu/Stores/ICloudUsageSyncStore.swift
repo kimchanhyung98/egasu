@@ -26,9 +26,15 @@ struct UsageHistoryLoadResult: Sendable {
     }
 }
 
+struct ICloudHistoryChangedDuringWrite: UserPresentableError {
+    var presentationMessage: LocalizedMessage {
+        .init("This Mac’s synced history changed again. egasu will retry on the next update.")
+    }
+}
+
 protocol UsageHistoryFileStoring: Sendable {
     func loadDocuments() async throws -> UsageHistoryLoadResult
-    func write(_ document: UsageHistoryDocument) async throws
+    func write(_ document: UsageHistoryDocument, replacing previous: UsageHistoryDocument?) async throws
     func delete(deviceID: String) async throws
 }
 
@@ -258,7 +264,7 @@ final class ICloudUsageSyncStore {
         }
     }
 
-    private func writeNow(generation: Int) async {
+    private func writeNow(generation: Int, retryOnChange: Bool = true) async {
         guard isCurrent(expectedEnabled: true, generation: generation) else { return }
         await withSyncActivity {
             guard isCurrent(expectedEnabled: true, generation: generation) else { return }
@@ -267,14 +273,26 @@ final class ICloudUsageSyncStore {
                     guard isCurrent(expectedEnabled: true, generation: generation), canReplaceOwnDocument else {
                         return false
                     }
+                    let previous = documents.first { $0.deviceID == deviceID }
                     let document = dataStore.localHistoryDocument(
-                        deviceID: deviceID, deviceName: deviceName,
-                        preserving: documents.first { $0.deviceID == deviceID })
-                    try await fileStore.write(document)
+                        deviceID: deviceID, deviceName: deviceName, preserving: previous)
+                    try await fileStore.write(document, replacing: previous)
                     return true
                 }
                 guard written == true else { return }
                 AppDiagnostics.record(.iCloudWrite, result: .success)
+            } catch let error as ICloudHistoryChangedDuringWrite {
+                guard isCurrent(expectedEnabled: true, generation: generation) else { return }
+                await reload(generation: generation)
+                guard isCurrent(expectedEnabled: true, generation: generation),
+                    canReplaceOwnDocument, !Task.isCancelled
+                else { return }
+                if retryOnChange {
+                    await writeNow(generation: generation, retryOnChange: false)
+                } else {
+                    report(error, operation: .iCloudWrite)
+                }
+                return
             } catch {
                 if isCurrent(expectedEnabled: true, generation: generation) {
                     report(error, operation: .iCloudWrite)

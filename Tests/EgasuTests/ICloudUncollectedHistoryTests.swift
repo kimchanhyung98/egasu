@@ -6,6 +6,7 @@ import XCTest
 final class ICloudUncollectedHistoryTests: XCTestCase {
     private enum Input {
         case activeWithMissingCache
+        case deliveryAfterLoad
         case unreadableOwn
         case unreadablePeer
         case activeWithFamilyTotal
@@ -47,6 +48,10 @@ final class ICloudUncollectedHistoryTests: XCTestCase {
 
     func testLaterAuthoritativeEmptyCollectionReplacesPreservedHistory() async throws {
         try await checkStartup(.activeThenEmptyCollection)
+    }
+
+    func testScheduledWriteRebuildsWithTheLatestDeliveredUncollectedHistory() async throws {
+        try await checkStartup(.deliveryAfterLoad)
     }
 
     func testUnreadableOwnDocumentDefersReplacementUntilAccessReturns() async throws {
@@ -182,7 +187,7 @@ final class ICloudUncollectedHistoryTests: XCTestCase {
         XCTAssertEqual(own.providers["codex"], refreshedHistory)
         switch input {
         case .unreadableOwn, .unreadablePeer, .activeWithMissingCache, .activeWithFamilyTotal,
-            .activeWithFailedCollection, .activeThenEmptyCollection:
+            .activeWithFailedCollection, .activeThenEmptyCollection, .deliveryAfterLoad:
             XCTAssertEqual(
                 own.providers["claude"], oldHistory,
                 "활성 Claude 첫 수집 전 마지막 정상 기록 100토큰·1.25달러 보존. 기존 경로 파일 존재 = \(FileManager.default.fileExists(atPath: legacy.path))"
@@ -191,6 +196,19 @@ final class ICloudUncollectedHistoryTests: XCTestCase {
             XCTAssertNil(own.providers["claude"])
         case .activeWithAuthoritativeEmptyHistory:
             XCTAssertEqual(own.providers["claude"], emptyHistory)
+        }
+        if input == .deliveryAfterLoad {
+            var delivered = own
+            delivered.providers["claude"] = refreshedHistory
+            delivered.updatedAt = own.updatedAt.addingTimeInterval(1)
+            try encoder.encode(delivered).write(to: legacy, options: .atomic)
+            sync.scheduleWrite()
+            while FileManager.default.fileExists(atPath: legacy.path) || sync.isSyncing {
+                guard clock.now < deadline else { return XCTFail("변경된 구형 이력 재조회와 게시 대기 시간 초과") }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            let reloaded = try await files.loadDocuments()
+            XCTAssertEqual(reloaded.documents.first { $0.deviceID == deviceID }?.providers["claude"], refreshedHistory)
         }
         if input == .activeWithFamilyTotal {
             XCTAssertNil(own.identities)
