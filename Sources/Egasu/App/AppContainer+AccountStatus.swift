@@ -46,8 +46,12 @@ extension AppContainer {
         return refreshes
     }
 
-    static func externalClaudeReconciliationFailure(for error: Error) -> ProviderRefreshFailure {
+    static func externalClaudeReconciliationFailure(for error: Error, family: String = "claude") -> ProviderRefreshFailure {
         let category = ErrorCategory.classify(error)
+        if family == "codex" || error is CodexAuthError {
+            let presentation = UserFacingErrors.presentation(error)
+            return ProviderRefreshFailure(message: presentation.key, category: category, presentation: presentation)
+        }
         let fallback =
             "egasu couldn't update the selected Claude sign-in. The saved account was left unchanged. Check the app log and try again."
         let presentation: LocalizedMessage
@@ -68,9 +72,9 @@ extension AppContainer {
 
     static func applyExternalClaudeReconciliationError(
         _ failure: ProviderRefreshFailure?, to dataStore: WidgetDataStore,
-        accountSwitch: AccountSwitchCoordinator, startedAt generation: Int
+        accountSwitch: AccountSwitchCoordinator, startedAt generation: Int, family: String = "claude"
     ) {
         guard !accountSwitch.isSwitching, accountSwitch.generation == generation else { return }
-        dataStore.setClaudeReconciliationFailure(failure)
+        dataStore.setAccountReconciliationFailure(failure, for: family)
     }
 }

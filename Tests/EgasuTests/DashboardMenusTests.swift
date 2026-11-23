@@ -93,6 +93,20 @@ final class DashboardMenusTests: XCTestCase {
             .switchAccount("c"))
     }
 
+    func testPendingCodexRecoveryOffersUseForTheSelectedAccountInsteadOfAnotherSignIn() {
+        let profile = AccountProfile(
+            id: "c", family: "codex", label: "work", identityKey: "identity", createdAt: .distantPast)
+        for status in [AccountStatus.ready, .sessionExpired("expired"), .signInNeeded()] {
+            for busy in [false, true] {
+                let action = DashboardMenus.profileAction(
+                    for: profile, status: status, isSelected: true, displayName: profile.label,
+                    isBusy: busy, hasPendingRecovery: true)
+                XCTAssertEqual(action?.command, .switchAccount(profile.id))
+                XCTAssertEqual(action?.isDisabled, busy)
+            }
+        }
+    }
+
     func testProviderMenuOffersRefreshAndAccountManagementWithoutSharing() {
         let family = DashboardFamily(id: "codex", provider: account.provider, displayName: "Codex", accounts: [account])
         let commands = DashboardMenus.provider(family).flatMap { $0 }.compactMap(\.command)

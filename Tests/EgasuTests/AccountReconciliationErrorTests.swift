@@ -3,6 +3,56 @@ import XCTest
 
 @MainActor
 final class AccountReconciliationErrorTests: XCTestCase {
+    func testCodexRecoveryConflictUsesItsOwnErrorPresentation() {
+        let failure = AppContainer.externalClaudeReconciliationFailure(for: CodexAuthError.credentialsChanged)
+
+        XCTAssertEqual(failure.presentation, UserFacingErrors.presentation(CodexAuthError.credentialsChanged))
+        XCTAssertFalse(failure.message.contains("Claude"))
+    }
+
+    func testCodexRecoveryFailureSurvivesQuotaRefreshAndOnlyClearsItsOwnFamily() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+        let claude = ProviderRefreshFailure(message: "Claude recovery is pending.")
+        AppContainer.applyExternalClaudeReconciliationError(
+            claude, to: fixture.store, accountSwitch: fixture.coordinator,
+            startedAt: fixture.coordinator.generation)
+        let failure = AppContainer.externalClaudeReconciliationFailure(for: CodexAuthError.credentialsChanged)
+        AppContainer.applyExternalClaudeReconciliationError(
+            failure, to: fixture.store, accountSwitch: fixture.coordinator,
+            startedAt: fixture.coordinator.generation, family: "codex")
+        var observedQuota = false
+        fixture.store.onFreshSnapshot = { _, _, _ in observedQuota = true }
+
+        _ = await fixture.store.refresh(providerID: "codex", force: true)
+
+        XCTAssertEqual(fixture.store.refreshResults["codex"]?.failure, failure)
+        XCTAssertEqual(fixture.store.refreshResults["claude"]?.failure, claude)
+        XCTAssertFalse(observedQuota)
+        XCTAssertNotNil(fixture.store.localSnapshots["codex"])
+
+        AppContainer.applyExternalClaudeReconciliationError(
+            nil, to: fixture.store, accountSwitch: fixture.coordinator,
+            startedAt: fixture.coordinator.generation, family: "codex")
+
+        XCTAssertNil(fixture.store.errorMessage(for: "codex"))
+        XCTAssertEqual(fixture.store.refreshResults["claude"]?.failure, claude)
+    }
+
+    func testCodexRecoveryKeychainFailureOffersRetryOnCodexInsteadOfClaude() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+        let failure = AppContainer.externalClaudeReconciliationFailure(
+            for: KeychainError.readFailed("Fixture rejection"), family: "codex")
+        AppContainer.applyExternalClaudeReconciliationError(
+            failure, to: fixture.store, accountSwitch: fixture.coordinator,
+            startedAt: fixture.coordinator.generation, family: "codex")
+
+        XCTAssertTrue(fixture.store.needsKeychainApproval("codex"))
+        XCTAssertFalse(fixture.store.needsKeychainApproval("claude"))
+        XCTAssertFalse(failure.message.contains("Claude"))
+    }
+
     func testClaudeKeychainReconciliationFailureOffersPriorityRetryAfterUsageRefresh() async throws {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }
@@ -186,10 +236,11 @@ final class AccountReconciliationErrorTests: XCTestCase {
         init() throws {
             defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
             let runtime = Runtime()
+            let codex = Runtime(id: "codex")
             store = WidgetDataStore(
-                registry: .from([runtime]), providers: [runtime],
+                registry: .from([runtime, codex]), providers: [runtime, codex],
                 cache: ProviderSnapshotCache(userDefaults: defaults), defaults: defaults,
-                providerIdentityKeys: ["claude": "account"]
+                providerIdentityKeys: ["claude": "account", "codex": "codex-account"]
             )
         }
 
@@ -197,12 +248,16 @@ final class AccountReconciliationErrorTests: XCTestCase {
     }
 
     private final class Runtime: ProviderRuntime {
-        let provider = Provider(id: "claude", displayName: "Claude", icon: .providerMark("claude"))
+        let provider: Provider
         let widgetDescriptors: [WidgetDescriptor] = []
+
+        init(id: String = "claude") {
+            provider = Provider(id: id, displayName: id.capitalized, icon: .providerMark(id))
+        }
 
         func hasLocalCredentials() async -> Bool { true }
         func refresh() async -> ProviderSnapshot {
-            ProviderSnapshot(providerID: "claude", displayName: "Claude", lines: [])
+            ProviderSnapshot(providerID: provider.id, displayName: provider.displayName, lines: [])
         }
     }
 }

@@ -68,6 +68,10 @@ private struct AccountSwitchConfirmation: ViewModifier {
 
     private func switchTo(_ profile: AccountProfile) {
         guard !container.accountSwitch.isSwitching, container.popover.signingInAgainAccountID == nil else { return }
+        let authenticationRevision = store.authenticationRevision
+        let pendingReplacement = try? store.pendingIdentityReplacement()
+        let hasCodexRecovery = profile.family == "codex"
+            && pendingReplacement.flatMap { store.profile(id: $0.profileID)?.family } == "codex"
         let providerIDs = AccountSwitchCoordinator.providerIDs(to: profile, from: store.preferredProfile(family: profile.family))
         container.accountSwitch.start(
             profileID: profile.id,
@@ -75,7 +79,8 @@ private struct AccountSwitchConfirmation: ViewModifier {
         ) {
             let switcher = AccountSelectionSwitcher()
             let status = container.accountStatus(for: profile, localState: localStates[profile.id])
-            let isRecoveryRetry = try allowsRecoveryRetry && profile.family == "claude" && switcher.hasPendingSwitch()
+            let isRecoveryRetry = try allowsRecoveryRetry && validateTarget == nil && validateDeparture == nil
+                && switcher.hasPendingSwitch(for: profile, in: store)
             guard status.canSwitch || isRecoveryRetry else {
                 onError(
                     .signInRequired(
@@ -95,6 +100,9 @@ private struct AccountSwitchConfirmation: ViewModifier {
             onError(nil)
             AppDiagnostics.record(.accountSwitch, result: .success, providerID: profile.family)
         } onFailure: { switchError in
+            if profile.family == "codex", hasCodexRecovery || store.authenticationRevision != authenticationRevision {
+                container.refreshAccountCatalog()
+            }
             AppDiagnostics.failure(.accountSwitch, error: switchError, providerID: profile.family)
             if switchError is AccountSwitchRecommendation.NoLongerAvailable {
                 onError(.recommendationChanged)

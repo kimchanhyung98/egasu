@@ -277,6 +277,7 @@ struct AccountCredentialImporter {
         in store: AccountProfilesStore
     ) async throws -> ExternalReauthenticationResult {
         let allowInteraction = ProviderRefreshContext.isManual
+        var recoveredCodexProfileID: String?
         if try await AccountSelectionSwitcher(switcher: switcher).recoverInterruptedSwitchAfterStartup(
             in: store, allowInteraction: allowInteraction), let profileID = store.preferredProfileID(family: "claude")
         {
@@ -289,11 +290,14 @@ struct AccountCredentialImporter {
                         transaction, for: profile, in: store, allowInteraction: allowInteraction
                     )
                 else { return .unchanged }
+                if profile.family == "codex" { recoveredCodexProfileID = profile.id }
             } else {
                 try store.cancelIdentityReplacement(transaction)
             }
         }
-        guard let profile = store.preferredProfile(family: "claude") else { return .unchanged }
+        let recoveredResult: ExternalReauthenticationResult =
+            recoveredCodexProfileID.map { .updated(profileID: $0) } ?? .unchanged
+        guard let profile = store.preferredProfile(family: "claude") else { return recoveredResult }
         let authenticationRevision = store.authenticationRevision
         let profiles = store.profiles(family: "claude")
         let familyRevision = AccountCredentialMutationLock.revision(for: "claude")
@@ -306,17 +310,17 @@ struct AccountCredentialImporter {
             try await observeExternalClaudeAuthentication(
                 for: profile, profiles: profiles, allowInteraction: allowInteraction)
         }.value
-        guard let observation else { return .noUsableAuthentication }
+        guard let observation else { return recoveredCodexProfileID == nil ? .noUsableAuthentication : recoveredResult }
         guard !Task.isCancelled, registryMatches(),
             try store.pendingIdentityReplacement() == nil, try switcher.switchJournal.load() == nil
-        else { return .unchanged }
+        else { return recoveredResult }
         guard AccountCredentialMutationLock.revision(for: "claude") == familyRevision else {
             throw ClaudeAuthError.credentialsChanged
         }
         let target = observation.profile
         let replacesCredential =
             observation.previousSnapshot != observation.snapshot || target.identityKey != observation.identityKey
-        if !replacesCredential, target.id == profile.id { return .unchanged }
+        if !replacesCredential, target.id == profile.id { return recoveredResult }
 
         let loginLock = try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: switcher.homeDirectory)
         defer { withExtendedLifetime(loginLock) {} }

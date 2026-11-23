@@ -63,7 +63,7 @@ extension AccountCredentialImporter {
         let previousClaudeLogin = isActive && profile.family == "claude" ? try switcher.sharedClaudeLogin() : nil
         let claudeState = previousClaudeLogin?.state
         let previousShared =
-            isActive && previousClaudeLogin == nil ? try switcher.readSharedAuthentication(family: profile.family) : nil
+            isActive && profile.family == "codex" ? try readSharedCodexReplacementState() : nil
         let generation = try claudeState.map {
             try AccountIdentityReplacement.ClaudeGeneration(
                 state: $0, previousSnapshot: previousSnapshot, replacement: credential.entry
@@ -72,7 +72,11 @@ extension AccountCredentialImporter {
         let transaction = try store.beginIdentityReplacement(
             profileID: profile.id,
             with: credential.identityKey,
-            replacesSharedAuthentication: isActive, claudeGeneration: generation
+            replacesSharedAuthentication: isActive, claudeGeneration: generation,
+            codexGeneration: isActive && profile.family == "codex"
+                ? .init(
+                    sharedHome: switcher.sharedHomePath(family: "codex"), previousShared: previousShared,
+                    previousSnapshot: previousSnapshot, replacement: credential.entry) : nil
         )
         do {
             try switcher.saveSnapshot(credential.entry, for: profile)
@@ -110,6 +114,20 @@ extension AccountCredentialImporter {
 
     /// 워크스페이스 ID는 여러 사용자가 공유. 두 로그인에서 확인할 수 있는 가장 강한 사용자 식별자를 비교.
     private static func codexReSignInUsersMatch(_ previous: CodexAuth, _ replacement: CodexAuth) -> Bool? {
+        for auth in [previous, replacement] {
+            let payloads = [auth.tokens?.idToken, auth.tokens?.accessToken]
+                .compactMap { $0.flatMap(ProviderParse.jwtPayload) }
+            let users = payloads.flatMap { payload -> [String] in
+                let claims = payload["https://api.openai.com/auth"] as? [String: Any]
+                return [claims?["chatgpt_user_id"], claims?["user_id"]].compactMap {
+                    ($0 as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                }
+            }
+            let subjects = payloads.compactMap {
+                ($0["sub"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            }
+            guard Set(users).count <= 1, Set(subjects).count <= 1 else { return false }
+        }
         func userID(_ auth: CodexAuth) -> String? {
             for token in [auth.tokens?.idToken, auth.tokens?.accessToken] {
                 let claims = token.flatMap(ProviderParse.jwtPayload)?["https://api.openai.com/auth"] as? [String: Any]
@@ -276,7 +294,11 @@ extension AccountCredentialImporter {
         let targetSaved: Bool
         var sharedMatchesSnapshot = false
         let savedIdentity = savedSnapshot.flatMap { switcher.identity(of: $0, family: profile.family)?.identityKey }
-        if let state {
+        if profile.family == "codex", transaction.replacesSharedAuthentication {
+            let recovery = try codexReplacementRecovery(transaction, savedSnapshot: savedSnapshot)
+            targetSaved = recovery.targetSaved
+            sharedMatchesSnapshot = recovery.sharedNeedsNoWrite
+        } else if let state {
             let savedFingerprint = try savedSnapshot.map(AccountIdentityReplacement.ClaudeGeneration.fingerprint)
             if let savedFingerprint, let savedIdentity {
                 sharedMatchesSnapshot = state.matches(
@@ -322,7 +344,10 @@ extension AccountCredentialImporter {
 
         guard targetSaved, let snapshot = savedSnapshot else {
             if transaction.replacesSharedAuthentication, let savedSnapshot {
-                if !activeClaude { try switcher.applySharedAuthentication(savedSnapshot, family: profile.family) }
+                if !activeClaude, !sharedMatchesSnapshot {
+                    _ = try codexReplacementRecovery(transaction, savedSnapshot: savedSnapshot)
+                    try switcher.applySharedAuthentication(savedSnapshot, family: profile.family)
+                }
                 try switcher.writeWorkspaceAuthentication(
                     savedSnapshot, for: profile, allowInteraction: allowInteraction)
             }
@@ -345,10 +370,17 @@ extension AccountCredentialImporter {
         transaction: AccountIdentityReplacement, expectedClaudeState: AccountSwitchJournal.SharedState?,
         allowInteraction: Bool = true
     ) throws {
+        if let generation = transaction.codexGeneration {
+            try validateSharedCodexReplacement(generation, replacement: entry)
+        }
         try switcher.applySharedAuthentication(
             entry, family: profile.family, expectedClaudeState: expectedClaudeState, allowInteraction: allowInteraction
         )
-        if let generation = transaction.claudeGeneration {
+        if transaction.codexGeneration != nil {
+            guard try readSharedCodexReplacementState().map(AccountIdentityReplacement.CodexGeneration.fingerprint)
+                == AccountIdentityReplacement.CodexGeneration.fingerprint(entry)
+            else { throw CodexAuthError.credentialsChanged }
+        } else if let generation = transaction.claudeGeneration {
             guard
                 generation.matchesReplacement(
                     try switcher.readClaudeSwitchState(allowInteraction: allowInteraction),
@@ -384,6 +416,8 @@ extension AccountCredentialImporter {
                         else { throw ClaudeAuthError.credentialsChanged }
                         try switcher.rollbackSharedClaudeLogin(to: previousClaudeLogin, replacing: current)
                     }
+                } else if let generation = transaction.codexGeneration {
+                    try rollbackSharedCodexReplacement(generation, previousShared: previousShared)
                 } else if let previousShared {
                     try switcher.applySharedAuthentication(previousShared, family: profile.family)
                 } else {
@@ -394,7 +428,7 @@ extension AccountCredentialImporter {
                     .accountRollback, error: error, providerID: profile.family,
                     localContext: "\(context): restore shared login")
                 // 다른 CLI 세대가 관찰되면 다시 시도할 수 있도록 교체 저장본과 기록 보존.
-                if transaction.claudeGeneration != nil { return false }
+                if transaction.claudeGeneration != nil || transaction.codexGeneration != nil { return false }
                 restored = false
             }
         }

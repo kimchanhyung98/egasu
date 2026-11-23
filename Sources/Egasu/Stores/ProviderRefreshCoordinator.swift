@@ -31,7 +31,8 @@ final class ProviderRefreshCoordinator {
     var refreshingProviderIDs: Set<String> { refreshWork.refreshingProviderIDs }
     var scheduledRefreshDates: [String: Date] { refreshSchedule.dates }
     private(set) var refreshResults: [String: ProviderRefreshResult] = [:]
-    private(set) var claudeReconciliationFailure: ProviderRefreshFailure?
+    private(set) var accountReconciliationFailures: [String: ProviderRefreshFailure] = [:]
+    var claudeReconciliationFailure: ProviderRefreshFailure? { accountReconciliationFailures["claude"] }
     private(set) var automationWarnings: [String: [String]] = [:]
     var lastRefreshAt: Date?
     nonisolated static let refreshScheduleDidChange = ProviderRefreshSchedule.didChange
@@ -213,7 +214,7 @@ final class ProviderRefreshCoordinator {
             registry: registry, identityKeys: identityKeys, familyTotalHistoryCardIDs: familyTotalHistoryCardIDs
         )
         refreshResults = refreshResults.filter { keepsState($0.key) }
-        if !keepsState("claude") { claudeReconciliationFailure = nil }
+        accountReconciliationFailures = accountReconciliationFailures.filter { keepsState($0.key) }
         automationWarnings = automationWarnings.filter { keepsState($0.key) }
         authenticationGenerations = authenticationGenerations.filter { liveIDs.contains($0.key) }
         invalidatedAuthentication.formIntersection(liveIDs)
@@ -236,11 +237,15 @@ final class ProviderRefreshCoordinator {
 
     /// Claude 로그인 반영은 사용량 조회와 독립적으로 성공하거나 실패.
     func setClaudeReconciliationFailure(_ failure: ProviderRefreshFailure?) {
-        guard claudeReconciliationFailure != failure else { return }
-        claudeReconciliationFailure = failure
+        setAccountReconciliationFailure(failure, for: "claude")
+    }
+
+    func setAccountReconciliationFailure(_ failure: ProviderRefreshFailure?, for family: String) {
+        guard accountReconciliationFailures[family] != failure else { return }
+        accountReconciliationFailures[family] = failure
         if failure != nil {
-            snapshotStore.invalidateLiveQuota(for: "claude")
-            onQuotaInvalidated?(["claude"])
+            snapshotStore.invalidateLiveQuota(for: family)
+            onQuotaInvalidated?([family])
         }
     }
 
@@ -398,7 +403,7 @@ final class ProviderRefreshCoordinator {
             onRefreshOutcome?(providerID, .failed, failure.category, trigger, false)
             return .failed
         case .succeeded(let accepted, let degraded):
-            let hasReconciliationFailure = providerID == "claude" && claudeReconciliationFailure != nil
+            let hasReconciliationFailure = accountReconciliationFailures[providerID] != nil
             if hasReconciliationFailure { snapshotStore.invalidateLiveQuota(for: providerID) }
             refreshResults[providerID] = .succeeded
             invalidatedAuthentication.remove(providerID)
@@ -464,7 +469,7 @@ final class ProviderRefreshCoordinator {
         onQuotaInvalidated?([providerID])
         invalidatedAuthentication.insert(providerID)
         refreshResults[providerID] = nil
-        if providerID == "claude" { claudeReconciliationFailure = nil }
+        accountReconciliationFailures[providerID] = nil
         if snapshotStore.invalidateAuthentication(for: providerID) { rebuildRenderedSnapshots() }
     }
 

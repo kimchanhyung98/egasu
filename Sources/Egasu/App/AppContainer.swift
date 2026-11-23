@@ -491,12 +491,20 @@ final class AppContainer {
         await resetWatchTask?.value
     }
 
-    /// 단일 카드 사용자 새로 고침 — Claude managed binding을 먼저 반영.
+    /// 단일 카드 새로 고침 — Claude 로그인 반영 또는 미완료 Codex 복구를 먼저 재시도.
     func refresh(providerID: String, force: Bool = false) async -> WidgetDataStore.RefreshOutcome {
         guard !accountSwitch.blocksRefresh(for: providerID) else { return .skipped }
         if ProviderAccountID.family(of: providerID) == "claude" {
             await ProviderRefreshContext.$isManual.withValue(true) {
                 await reconcileExternalClaudeAuthenticationAndRefreshCatalog()
+            }
+        } else if ProviderAccountID.family(of: providerID) == "codex" {
+            let transaction = try? accountProfiles.pendingIdentityReplacement()
+            let pendingFamily = transaction.flatMap { accountProfiles.profile(id: $0.profileID)?.family }
+            if pendingFamily == "codex" || dataStore.codexReconciliationFailure != nil {
+                await ProviderRefreshContext.$isManual.withValue(true) {
+                    await reconcileExternalClaudeAuthenticationAndRefreshCatalog(codexRecoveryOnly: true)
+                }
             }
         }
         guard !accountSwitch.blocksRefresh(for: providerID) else { return .skipped }
@@ -510,7 +518,7 @@ final class AppContainer {
         return outcome
     }
 
-    private func reconcileExternalClaudeAuthentication() async -> Result<Bool, Error>? {
+    private func reconcileExternalClaudeAuthentication(codexRecoveryOnly: Bool = false) async -> Result<Bool, Error>? {
         while ProviderRefreshContext.isManual && isReconcilingExternalClaudeAuthentication && !Task.isCancelled {
             await withCheckedContinuation { authenticationReconciliationWaiters.append($0) }
         }
@@ -527,39 +535,62 @@ final class AppContainer {
         defer { workQueue.finish(ticket) }
         guard !Task.isCancelled, !accountSwitch.isSwitching else { return nil }
         do {
-            switch try await AccountCredentialImporter()
-                .reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: accountProfiles) {
+            let importer = AccountCredentialImporter()
+            let result: AccountCredentialImporter.ExternalReauthenticationResult
+            if codexRecoveryOnly {
+                result = try await importer.reconcileCodexIdentityReplacementAfterStartup(in: accountProfiles)
+            } else {
+                result = try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: accountProfiles)
+            }
+            switch result {
             case .updated(let profileID):
-                AppDiagnostics.record(.accountReconcile, result: .success, providerID: "claude")
-                AppLog.info(.auth, "external Claude reauthentication updated selected profile (\(profileID.prefix(8))…)")
+                let family = accountProfiles.profile(id: profileID)?.family ?? "claude"
+                AppDiagnostics.record(.accountReconcile, result: .success, providerID: family)
+                AppLog.info(.auth, "account authentication reconciliation updated \(family) profile (\(profileID.prefix(8))…)")
                 return .success(true)
             case .unchanged:
-                AppDiagnostics.record(.accountReconcile, result: .success, providerID: "claude")
+                AppDiagnostics.record(.accountReconcile, result: .success, providerID: codexRecoveryOnly ? "codex" : "claude")
                 return .success(false)
             case .noUsableAuthentication:
                 return .success(false)
             }
         } catch {
-            AppDiagnostics.failure(.accountReconcile, error: error, providerID: "claude",
-                                   localContext: "External Claude reauthentication reconciliation failed")
+            AppDiagnostics.failure(.accountReconcile, error: error, providerID: reconciliationFamily(for: error),
+                                   localContext: "Account authentication reconciliation failed")
             return .failure(error)
         }
     }
 
-    /// 사용량 조회 결과와 별도로 외부 Claude 로그인 반영 상태 게시.
-    func reconcileExternalClaudeAuthenticationAndRefreshCatalog() async {
+    private func reconciliationFamily(for error: Error) -> String {
+        if error is CodexAuthError { return "codex" }
+        if error is ClaudeAuthError { return "claude" }
+        let transaction = try? accountProfiles.pendingIdentityReplacement()
+        return transaction.flatMap { accountProfiles.profile(id: $0.profileID)?.family } ?? "claude"
+    }
+
+    /// 사용량 조회와 별도로 계정 복구·외부 Claude 로그인 반영 상태 게시.
+    func reconcileExternalClaudeAuthenticationAndRefreshCatalog(codexRecoveryOnly: Bool = false) async {
         let generation = accountSwitch.generation
-        guard let result = await reconcileExternalClaudeAuthentication(), !Task.isCancelled else { return }
+        let authenticationRevision = accountProfiles.authenticationRevision
+        guard let result = await reconcileExternalClaudeAuthentication(codexRecoveryOnly: codexRecoveryOnly),
+            !Task.isCancelled else { return }
         let failure: ProviderRefreshFailure?
+        var failureFamily = codexRecoveryOnly ? "codex" : "claude"
         switch result {
         case .success(let updated):
-            if updated { refreshAccountCatalog() }
+            if updated || accountProfiles.authenticationRevision != authenticationRevision { refreshAccountCatalog() }
             failure = nil
         case .failure(let error):
-            failure = Self.externalClaudeReconciliationFailure(for: error)
+            if accountProfiles.authenticationRevision != authenticationRevision { refreshAccountCatalog() }
+            failureFamily = reconciliationFamily(for: error)
+            failure = Self.externalClaudeReconciliationFailure(for: error, family: failureFamily)
+        }
+        if failureFamily != "codex", (try? accountProfiles.pendingIdentityReplacement()) == nil {
+            Self.applyExternalClaudeReconciliationError(
+                nil, to: dataStore, accountSwitch: accountSwitch, startedAt: generation, family: "codex")
         }
         Self.applyExternalClaudeReconciliationError(
-            failure, to: dataStore, accountSwitch: accountSwitch, startedAt: generation)
+            failure, to: dataStore, accountSwitch: accountSwitch, startedAt: generation, family: failureFamily)
     }
 
     /// account runtime은 한 provider의 대체 view — Customize 마스터 토글은 family 전체 카드를 함께 on/off.
