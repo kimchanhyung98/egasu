@@ -75,6 +75,8 @@ final class SettingsLabsTabTests: XCTestCase {
         let updater = UpdaterController(defaults: defaults)
         let settings = SoftLimitSettingsStore(defaults: defaults, labsAvailable: true)
         settings.enabled = true
+        let recommendations = AccountRecommendationSettingsStore(defaults: defaults, labsAvailable: true)
+        recommendations.enabled = true
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let helper = CommandLineToolInstaller(
             sourcePath: "/bin/sh",
@@ -101,7 +103,8 @@ final class SettingsLabsTabTests: XCTestCase {
                     Form {
                         if tab == .labs {
                             SettingsLabsSections(
-                                settings: settings, accounts: { [account] }, commandLineTool: helper)
+                                settings: settings, accounts: { [account] }, commandLineTool: helper,
+                                recommendations: recommendations)
                         } else {
                             SettingsAdvancedSections(
                                 privacy: privacy, telemetry: telemetry,
@@ -113,7 +116,7 @@ final class SettingsLabsTabTests: XCTestCase {
                     .contentMargins(.horizontal, PanelMetrics.margin - 20, for: .scrollContent)
                     .contentMargins(.top, DashboardContentView.barGap - 20, for: .scrollContent)
                 }
-                .frame(width: PanelMetrics.width, height: tab == .labs ? 520 : 500)
+                .frame(width: PanelMetrics.width, height: tab == .labs ? 740 : 500)
                 .background(Theme.panelBody)
                 .environment(state)
                 .environment(updater)
@@ -128,7 +131,7 @@ final class SettingsLabsTabTests: XCTestCase {
             let text = try await recognizedText(in: image, language: language)
             for key in [
                 "Soft Limit", "Weekly and Monthly", "Quota Status", "Terminal Commands", "Copy Command",
-                "Terminal Helper", "Privacy Mode"
+                "Terminal Helper", "Privacy Mode", "Account Recommendations"
             ] {
                 let label = L10n.withLanguage(language) { L10n.settings(key).filter(\.isLetter).lowercased() }
                 let expected = tab == (key == "Privacy Mode" ? .advanced : .labs)

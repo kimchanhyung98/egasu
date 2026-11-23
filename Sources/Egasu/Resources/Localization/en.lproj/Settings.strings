@@ -203,3 +203,14 @@
 "Check Quota" = "Check Quota";
 "Paste the command in Terminal. A new session starts only if the quota check allows it. The Codex start command uses the login saved in auth.json." = "Paste the command in Terminal. A new session starts only if the quota check allows it. The Codex start command uses the login saved in auth.json.";
 "Couldn't copy the terminal command." = "Couldn't copy the terminal command.";
+"Account Recommendations" = "Account Recommendations";
+"Enable Account Recommendations" = "Enable Account Recommendations";
+"Recommend At" = "Recommend At";
+"Candidate Usage Below" = "Candidate Usage Below";
+"Show Again After" = "Show Again After";
+"%d Minutes" = "%d Minutes";
+"Suggest another Claude or Codex account. Switching always requires confirmation." = "Suggest another Claude or Codex account. Switching always requires confirmation.";
+"Suggest switching when any current base quota reaches this usage." = "Suggest switching when any current base quota reaches this usage.";
+"Every applicable base quota on a candidate must be below this usage." = "Every applicable base quota on a candidate must be below this usage.";
+"After dismissing a suggestion, wait this long before showing another suggestion for the same provider." = "After dismissing a suggestion, wait this long before showing another suggestion for the same provider.";
+"1 Minute" = "1 Minute";

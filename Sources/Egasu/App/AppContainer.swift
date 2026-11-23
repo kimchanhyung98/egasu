@@ -30,6 +30,7 @@ final class AppContainer {
     /// Settings와 알림 평가가 공유하는 조건별 설정.
     let notificationSettings: NotificationSettingsStore
     let softLimitSettings: SoftLimitSettingsStore
+    let accountRecommendationSettings: AccountRecommendationSettingsStore
     let softLimitCoordinator: SoftLimitCoordinator
     /// Settings opt-in 토글과 앱 종료 flush가 공유하는 일간 rollup.
     let telemetry: TelemetryRecorder
@@ -116,6 +117,7 @@ final class AppContainer {
         let enablement = ProviderEnablementStore()
         let notificationSettings = NotificationSettingsStore()
         let softLimitSettings = SoftLimitSettingsStore(labsAvailable: labsAvailable)
+        let accountRecommendationSettings = AccountRecommendationSettingsStore(labsAvailable: labsAvailable)
         let layout = LayoutStore(
             registry: registry,
             knownCardIDs: enablement.knownIDs.union(enablement.enabledIDs ?? []),
@@ -223,6 +225,7 @@ final class AppContainer {
         self.apiKeyProviders = apiKeyProviders
         self.notificationSettings = notificationSettings
         self.softLimitSettings = softLimitSettings
+        self.accountRecommendationSettings = accountRecommendationSettings
         let softLimitCoordinator = SoftLimitCoordinator(
             settings: softLimitSettings,
             adapters: [CodexSoftLimitAdapter()],

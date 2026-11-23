@@ -129,6 +129,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         updater.onBetaChannelChange = { [weak container] enabled in
             container?.softLimitSettings.setLabsAvailable(enabled)
+            container?.accountRecommendationSettings.setLabsAvailable(enabled)
             container?.popover.reconcileSettingsTab(betaUpdatesEnabled: enabled)
         }
         self.container = container
