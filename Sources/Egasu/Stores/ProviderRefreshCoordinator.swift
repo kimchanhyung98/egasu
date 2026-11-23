@@ -444,8 +444,12 @@ final class ProviderRefreshCoordinator {
         if snapshotStore.clearPeerHistoryDocuments() { rebuildRenderedSnapshots() }
     }
 
-    func localHistoryDocument(deviceID: String, deviceName: String, updatedAt: Date = Date()) -> UsageHistoryDocument {
-        snapshotStore.localHistoryDocument(deviceID: deviceID, deviceName: deviceName, updatedAt: updatedAt)
+    func localHistoryDocument(
+        deviceID: String, deviceName: String, updatedAt: Date = Date(),
+        preserving previous: UsageHistoryDocument? = nil
+    ) -> UsageHistoryDocument {
+        snapshotStore.localHistoryDocument(
+            deviceID: deviceID, deviceName: deviceName, updatedAt: updatedAt, preserving: previous)
     }
 
     private func rebuildRenderedSnapshots() {

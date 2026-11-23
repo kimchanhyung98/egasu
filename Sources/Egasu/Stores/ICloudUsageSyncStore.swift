@@ -250,7 +250,9 @@ final class ICloudUsageSyncStore {
             do {
                 let written = try await workQueue.run("icloud:write") {
                     guard isCurrent(expectedEnabled: true, generation: generation) else { return false }
-                    let document = dataStore.localHistoryDocument(deviceID: deviceID, deviceName: deviceName)
+                    let document = dataStore.localHistoryDocument(
+                        deviceID: deviceID, deviceName: deviceName,
+                        preserving: documents.first { $0.deviceID == deviceID })
                     try await fileStore.write(document)
                     return true
                 }
