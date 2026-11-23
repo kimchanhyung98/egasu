@@ -205,7 +205,7 @@ final class AccountRecommendationSettingsStore {
             }
             let sameReset = UsageTimerObservation.resetTimesMatch(reset, next)
             if started {
-                if reset != nil, used > 0, window.percent == 0 { return true }
+                if used > 0, window.percent == 0 { return true }
                 if let reset, !sameReset,
                     date >= reset || window.percent == 0 || window.percent < used
                 {

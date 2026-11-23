@@ -270,6 +270,31 @@ final class AccountRecommendationDismissalTests: XCTestCase {
         XCTAssertEqual(f.recommendation("A")?.target.id, "B")
     }
 
+    func testUsedSessionWithUnknownDeadlineResetsWhenUsageBecomesZero() throws {
+        for family in ["claude", "codex"] {
+            for id in ["A", "B"] {
+                let f = try Fixture(family: family)
+                defer { f.cleanup() }
+                f.profiles = Array(f.profiles.prefix(2))
+                f.quotas[id]?.windows[.session] = .init(percent: 20, reset: nil)
+                try f.dismiss("A")
+                try f.observe(id, at: 100, used: 0, reset: 18_100)
+                XCTAssertEqual(f.recommendation("A")?.target.id, "B", "\(family) \(id)")
+            }
+        }
+    }
+
+    func testFirstPositiveUsageWithoutDeadlineCanLaterReset() throws {
+        let f = try Fixture(family: "codex")
+        defer { f.cleanup() }
+        f.quotas["A"]?.windows[.session] = .init(percent: 0, reset: nil)
+        try f.dismiss("A")
+        try f.observe("A", at: 100, used: 1, reset: nil)
+        XCTAssertNil(f.recommendation("A"))
+        try f.observe("A", at: 200, used: 0, reset: 18_200)
+        XCTAssertEqual(f.recommendation("A")?.target.id, "B")
+    }
+
     func testExpiredPositiveCodexUsageCannotConfirmTheStartOfAnUnusedSession() throws {
         for initiallyExpired in [false, true] {
             let f = try Fixture(family: "codex")
