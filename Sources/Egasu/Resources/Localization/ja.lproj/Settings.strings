@@ -203,3 +203,14 @@
 "Check Quota" = "使用量上限を確認";
 "Paste the command in Terminal. A new session starts only if the quota check allows it. The Codex start command uses the login saved in auth.json." = "コマンドをターミナルに貼り付けてください。上限の確認で許可された場合にだけ、新しいセッションを開始します。Codex の起動コマンドは auth.json に保存されたログインを使います。";
 "Couldn't copy the terminal command." = "ターミナルコマンドをコピーできませんでした。";
+"Account Recommendations" = "アカウント切り替えの提案";
+"Enable Account Recommendations" = "アカウント切り替えの提案を有効にする";
+"Recommend At" = "提案開始使用率";
+"Candidate Usage Below" = "候補の使用率上限";
+"Show Again After" = "再表示までの待機時間";
+"%d Minutes" = "%d分";
+"Suggest another Claude or Codex account. Switching always requires confirmation." = "別のClaudeまたはCodexアカウントを提案します。切り替えには必ず確認が必要です。";
+"Suggest switching when any current base quota reaches this usage." = "現在のアカウントの基本利用枠のいずれかがこの使用率に達すると、切り替えを提案します。";
+"Every applicable base quota on a candidate must be below this usage." = "候補アカウントのすべての基本利用枠の使用率が、この値未満である必要があります。";
+"After dismissing a suggestion, wait this long before showing another suggestion for the same provider." = "提案を閉じてから、同じプロバイダーの提案を再表示するまでの待機時間です。";
+"1 Minute" = "1分";

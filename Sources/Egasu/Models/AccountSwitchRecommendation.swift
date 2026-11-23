@@ -47,12 +47,16 @@ struct AccountSwitchQuota: Hashable, Sendable {
         return result
     }
 
-    func needsSwitch(at now: Date) -> Bool {
-        windows.values.contains { $0.percent >= 95 && ($0.reset ?? .distantFuture) > now }
+    func needsSwitch(at now: Date, thresholdPercent: Int = AccountSwitchRecommendation.defaultTriggerPercent) -> Bool {
+        windows.values.contains { $0.percent >= Double(thresholdPercent) && ($0.reset ?? .distantFuture) > now }
     }
 
-    func nextCandidateReset(at now: Date) -> Date? {
-        guard !incomplete, windows.values.allSatisfy({ $0.percent < 90 && ($0.reset ?? .distantFuture) > now }) else {
+    func nextCandidateReset(
+        at now: Date, usageLimitPercent: Int = AccountSwitchRecommendation.defaultCandidateLimitPercent
+    ) -> Date? {
+        guard !incomplete,
+            windows.values.allSatisfy({ $0.percent < Double(usageLimitPercent) && ($0.reset ?? .distantFuture) > now })
+        else {
             return nil
         }
         return [windows[.session]?.reset, windows[.weekly]?.reset].compactMap { $0 }.min()
@@ -78,6 +82,9 @@ extension ProviderSnapshot {
 }
 
 struct AccountSwitchRecommendation: Equatable {
+    static let defaultTriggerPercent = 95
+    static let defaultCandidateLimitPercent = 90
+
     let current: AccountProfile
     let target: AccountProfile
     var legacyCurrentIdentityKey: String?
@@ -106,9 +113,11 @@ struct AccountSwitchRecommendation: Equatable {
 
     static func choose(
         current: AccountProfile, profiles: [AccountProfile], at now: Date,
+        triggerPercent: Int = defaultTriggerPercent, candidateLimitPercent: Int = defaultCandidateLimitPercent,
         quota: (AccountProfile) -> AccountSwitchQuota?
     ) -> Self? {
-        guard let currentQuota = quota(current), currentQuota.needsSwitch(at: now) else { return nil }
+        guard let currentQuota = quota(current), currentQuota.needsSwitch(at: now, thresholdPercent: triggerPercent)
+        else { return nil }
         if current.family == "codex", currentQuota.codexAccountKey == nil { return nil }
         let currentIdentity = currentQuota.legacyClaudeIdentity?.identityKey ?? current.identityKey
         var best: (recommendation: Self, reset: Date)?
@@ -118,7 +127,8 @@ struct AccountSwitchRecommendation: Equatable {
         {
             guard let reading = quota(profile),
                 (reading.legacyClaudeIdentity?.identityKey ?? profile.identityKey) != currentIdentity,
-                let reset = reading.nextCandidateReset(at: now), best.map({ reset < $0.reset }) ?? true
+                let reset = reading.nextCandidateReset(at: now, usageLimitPercent: candidateLimitPercent),
+                best.map({ reset < $0.reset }) ?? true
             else { continue }
             if profile.family == "codex", reading.codexAccountKey == nil { continue }
             let recommendation = Self(

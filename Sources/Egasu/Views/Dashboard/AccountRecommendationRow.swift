@@ -5,19 +5,21 @@ struct AccountRecommendationRow: View {
     @Environment(\.concealsAccountNames) private var concealsNames
     let family: String
     let onError: (AccountActionAlert?) -> Void
-    @State private var dismissed: AccountSwitchRecommendation?
     @State private var pending: AccountSwitchRecommendation?
     @State private var selection: AccountProfile?
 
     var body: some View {
         let now = Date()
-        let deadlines = container.dataStore.localSnapshots.values
+        var deadlines = container.dataStore.localSnapshots.values
             .filter { ProviderAccountID.family(of: $0.providerID) == family }
             .flatMap { $0.recommendationDeadlines(after: now) }
-        TimelineView(.explicit([now] + Set(deadlines).sorted())) { context in
+        if let deadline = container.accountRecommendationSettings.nextRecommendationDate(for: family, at: now) {
+            deadlines.append(deadline)
+        }
+        return TimelineView(.explicit([now] + Set(deadlines).sorted())) { context in
             let suggestion = container.accountRecommendation(for: family, at: max(context.date, .now))
             Group {
-                if let suggestion, suggestion != dismissed {
+                if let suggestion {
                     controls(for: suggestion)
                 }
             }
@@ -25,7 +27,10 @@ struct AccountRecommendationRow: View {
                 guard !container.accountSwitch.isSwitching, container.popover.signingInAgainAccountID == nil else {
                     return
                 }
-                if current != dismissed { dismissed = nil }
+                if current == nil {
+                    pending = nil
+                    selection = nil
+                }
             }
         }
         .accountSwitchConfirmation(
@@ -51,7 +56,7 @@ struct AccountRecommendationRow: View {
             pending = suggestion
             selection = target
         } dismiss: {
-            dismissed = suggestion
+            container.accountRecommendationSettings.dismiss(for: family, at: .now)
         }
     }
 }

@@ -8,7 +8,8 @@ struct SettingsLabsTab: View {
         SettingsLabsSections(
             settings: container.softLimitSettings,
             accounts: { quotaAccounts },
-            commandLineTool: commandLineTool
+            commandLineTool: commandLineTool,
+            recommendations: container.accountRecommendationSettings
         )
     }
 
@@ -66,11 +67,13 @@ struct SettingsLabsSections: View {
     let settings: SoftLimitSettingsStore
     let accounts: () -> [SoftLimitAccountStatus]
     let commandLineTool: CommandLineToolInstaller
+    let recommendations: AccountRecommendationSettingsStore
 
     var body: some View {
         Text(L10n.settings("Experimental features may change or be removed."))
             .font(.caption)
             .foregroundStyle(.secondary)
+        AccountRecommendationSettingsSection(settings: recommendations)
         SoftLimitSettingsSection(settings: settings, accounts: accounts, commandLineTool: commandLineTool)
         TerminalHelperSettingsSection(commandLineTool: commandLineTool)
     }

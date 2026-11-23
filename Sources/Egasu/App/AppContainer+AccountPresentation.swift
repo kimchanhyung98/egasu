@@ -31,7 +31,7 @@ extension AppContainer {
         else { return nil }
         let profiles = orderedAccountProfiles(for: family)
         guard profiles.count > 1 else { return nil }
-        let recommendation = AccountSwitchRecommendation.choose(
+        let recommendation = accountRecommendationSettings.recommendation(
             current: current, profiles: profiles, at: now
         ) { profile in
             let savedCard = AccountUsageCardPlanner.cardID(family: family, profileID: profile.id)
