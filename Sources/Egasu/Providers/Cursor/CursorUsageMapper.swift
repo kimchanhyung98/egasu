@@ -202,27 +202,21 @@ enum CursorUsageMapper {
         }
 
         if let spendLimitUsage {
-            let individualLimit = ProviderParse.number(spendLimitUsage["individualLimit"])
-            let limit = individualLimit ?? ProviderParse.number(spendLimitUsage["pooledLimit"]) ?? 0
-            let spent = onDemandSpendCents(from: spendLimitUsage, limit: limit)
-            if let spent, limit > 0 {
-                let limitScope: QuotaRecoveryScope = individualLimit == nil ? .team : .account
-                if spent.scope != limitScope {
-                    recoveryScopes["On-demand"] = .unverified
-                } else if limitScope == .team {
-                    recoveryScopes["On-demand"] = .team
-                }
-                lines.append(.progress(
-                    label: "On-demand",
+            if let spent = onDemandSpendCents(from: spendLimitUsage) {
+                if let limit = spent.limit, limit > 0 {
+                    if spent.scope == .team { recoveryScopes["On-demand"] = .team }
+                    lines.append(.progress(
+                        label: "On-demand",
                         used: ProviderParse.centsToDollars(spent.cents),
-                    limit: ProviderParse.centsToDollars(limit),
-                    format: .dollars
-                ))
-            } else if let spent, spent.cents > 0 {
-                lines.append(.values(
-                    label: "On-demand",
+                        limit: ProviderParse.centsToDollars(limit),
+                        format: .dollars
+                    ))
+                } else if spent.cents > 0 {
+                    lines.append(.values(
+                        label: "On-demand",
                         values: [MetricValue(number: ProviderParse.centsToDollars(spent.cents), kind: .dollars)]
-                ))
+                    ))
+                }
             }
         }
 
@@ -236,23 +230,21 @@ enum CursorUsageMapper {
         )
     }
 
-    private static func onDemandSpendCents(from usage: [String: Any], limit: Double)
-        -> (cents: Double, scope: QuotaRecoveryScope)?
+    private static func onDemandSpendCents(from usage: [String: Any])
+        -> (cents: Double, limit: Double?, scope: QuotaRecoveryScope)?
     {
-        let fields: [(String, QuotaRecoveryScope)] = [
-            ("individualUsed", .account), ("pooledUsed", .team), ("totalSpend", .unverified)
-        ]
-        let reported = fields.compactMap { field, scope in
-            ProviderParse.number(usage[field]).map { (cents: $0, scope: scope) }
+        for (prefix, scope) in [("individual", QuotaRecoveryScope.account), ("pooled", .team)] {
+            let limit = ProviderParse.number(usage[prefix + "Limit"])
+            let used = ProviderParse.number(usage[prefix + "Used"])
+            if let used, used > 0 { return (used, limit, scope) }
+            if let limit, limit > 0,
+                let remaining = ProviderParse.number(usage[prefix + "Remaining"]), remaining >= 0
+            {
+                return (max(0, limit - remaining), limit, scope)
+            }
+            if let used, used == 0 { return (used, limit, scope) }
         }
-        if let positive = reported.first(where: { $0.cents > 0 }) { return positive }
-        let individualRemaining = ProviderParse.number(usage["individualRemaining"])
-        if let remaining = individualRemaining ?? ProviderParse.number(usage["pooledRemaining"]),
-            remaining >= 0, limit > 0
-        {
-            return (max(0, limit - remaining), individualRemaining == nil ? .team : .account)
-        }
-        return reported.first { $0.cents == 0 }
+        return ProviderParse.number(usage["totalSpend"]).map { ($0, nil, .unverified) }
     }
 
     static func mapRequestBasedUsage(

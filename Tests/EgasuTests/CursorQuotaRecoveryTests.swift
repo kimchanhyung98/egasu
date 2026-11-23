@@ -164,8 +164,11 @@ extension CursorOptionalEndpointTests {
                 "spendLimitUsage": ["individualLimit": 10000, "pooledUsed": 2000]
             ],
             planName: "team", creditGrants: nil, stripeBalanceCents: 0)
-        XCTAssertEqual(progress(mapped.lines, "On-demand")?.used, 20)
-        XCTAssertEqual(mapped.recoveryScopes["On-demand"], .unverified)
+        XCTAssertNil(progress(mapped.lines, "On-demand"))
+        guard case .values(_, let values, _, _, _, _) = mapped.lines.first(where: { $0.label == "On-demand" }) else {
+            return XCTFail("Expected team usage without a matching team limit")
+        }
+        XCTAssertEqual(values.first?.number, 20)
     }
 
     func testMonthlyExtraUsageRecoversWithOrWithoutWeeklyQuota() async throws {
