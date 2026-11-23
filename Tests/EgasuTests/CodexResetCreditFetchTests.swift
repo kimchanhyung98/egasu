@@ -44,6 +44,12 @@ final class CodexResetCreditFetchTests: XCTestCase {
         }
     }
 
+    func testOutOfRangeResetCreditCountsMarkRefreshDegradedAndPreserveUsageBodyCount() async {
+        for body in [#"{"available_count":1e100}"#, #"{"available_count":"1e100"}"#] {
+            await assertDegradedFallback(resetCreditsBody: body)
+        }
+    }
+
     func testZeroResetCreditCountRemainsSuccessful() async {
         await assertSuccessfulCount(resetCreditsBody: #"{"available_count":0}"#, count: 0)
     }
