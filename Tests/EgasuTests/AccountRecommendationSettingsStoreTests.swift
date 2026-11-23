@@ -34,10 +34,6 @@ final class AccountRecommendationSettingsStoreTests: XCTestCase {
         }
     }
 
-    func testReappearanceOptionsMatchTheDocumentedChoices() {
-        XCTAssertEqual(AccountRecommendationSettingsStore.reappearanceMinuteOptions, [1, 5, 15, 30, 60])
-    }
-
     func testFreshAndExistingInstallDefaultsRequireExplicitOptIn() throws {
         let values = try defaults()
         values.set("existing-install", forKey: "fixture.existing")
@@ -46,18 +42,15 @@ final class AccountRecommendationSettingsStoreTests: XCTestCase {
         XCTAssertFalse(store.isActive)
         XCTAssertEqual(store.triggerPercent, 95)
         XCTAssertEqual(store.candidateLimitPercent, 90)
-        XCTAssertEqual(store.reappearanceMinutes, 15)
         XCTAssertNil(recommendation(store))
     }
 
-    func testBetaOffClearsOptInAndKeepsValuesAndDismissalAcrossRestart() throws {
+    func testBetaOffClearsOptInAndKeepsValuesAcrossRestart() throws {
         let values = try defaults()
         let store = AccountRecommendationSettingsStore(defaults: values, labsAvailable: true)
         store.enabled = true
         store.triggerPercent = 83
         store.candidateLimitPercent = 72
-        store.reappearanceMinutes = 30
-        store.dismiss(for: "claude", at: now)
         store.setLabsAvailable(false)
         store.enabled = true
         XCTAssertFalse(store.enabled)
@@ -69,9 +62,7 @@ final class AccountRecommendationSettingsStoreTests: XCTestCase {
         XCTAssertFalse(restored.enabled)
         XCTAssertEqual(restored.triggerPercent, 83)
         XCTAssertEqual(restored.candidateLimitPercent, 72)
-        XCTAssertEqual(restored.reappearanceMinutes, 30)
         restored.enabled = true
-        XCTAssertEqual(restored.nextRecommendationDate(for: "claude", at: now), now.addingTimeInterval(1800))
     }
 
     func testStartingWithoutLabsRevokesPreviouslyEnabledRecommendation() throws {
@@ -120,11 +111,9 @@ final class AccountRecommendationSettingsStoreTests: XCTestCase {
         let values = try defaults()
         values.set("bad", forKey: "openusage.accountRecommendations.triggerPercent.v1")
         values.set("bad", forKey: "openusage.accountRecommendations.candidateLimitPercent.v1")
-        values.set(99, forKey: "openusage.accountRecommendations.reappearanceMinutes.v1")
         let malformed = AccountRecommendationSettingsStore(defaults: values, labsAvailable: true)
         XCTAssertEqual(malformed.triggerPercent, 95)
         XCTAssertEqual(malformed.candidateLimitPercent, 90)
-        XCTAssertEqual(malformed.reappearanceMinutes, 15)
         malformed.triggerPercent = 0
         malformed.candidateLimitPercent = 101
         let bounded = AccountRecommendationSettingsStore(defaults: values, labsAvailable: true)
@@ -159,38 +148,4 @@ final class AccountRecommendationSettingsStoreTests: XCTestCase {
         XCTAssertNil(choice)
     }
 
-    func testDismissalIsPerProviderAndExpiresAtTheExactDeadline() throws {
-        let store = AccountRecommendationSettingsStore(defaults: try defaults(), labsAvailable: true)
-        store.enabled = true
-        store.dismiss(for: "claude", at: now)
-        XCTAssertNil(recommendation(store))
-        XCTAssertNotNil(recommendation(store, family: "codex"))
-        let deadline = now.addingTimeInterval(900)
-        XCTAssertEqual(store.nextRecommendationDate(for: "claude", at: now), deadline)
-        XCTAssertNil(recommendation(store, at: deadline.addingTimeInterval(-0.001)))
-        XCTAssertNil(store.nextRecommendationDate(for: "claude", at: deadline))
-        XCTAssertNotNil(recommendation(store, at: deadline))
-    }
-
-    func testDismissalSurvivesRecreatingTheStoreAndChangingScreens() throws {
-        let values = try defaults()
-        let store = AccountRecommendationSettingsStore(defaults: values, labsAvailable: true)
-        store.enabled = true
-        store.dismiss(for: "claude", at: now)
-        let restored = AccountRecommendationSettingsStore(defaults: values, labsAvailable: true)
-        XCTAssertNil(recommendation(restored, at: now.addingTimeInterval(400)))
-        XCTAssertNotNil(recommendation(restored, at: now.addingTimeInterval(900)))
-    }
-
-    func testChangingDelayRecalculatesFromTheOriginalDismissalTime() throws {
-        let store = AccountRecommendationSettingsStore(defaults: try defaults(), labsAvailable: true)
-        store.enabled = true
-        store.dismiss(for: "claude", at: now)
-        let later = now.addingTimeInterval(600)
-        store.reappearanceMinutes = 5
-        XCTAssertNotNil(recommendation(store, at: later))
-        store.reappearanceMinutes = 30
-        XCTAssertNil(recommendation(store, at: later))
-        XCTAssertEqual(store.nextRecommendationDate(for: "claude", at: later), now.addingTimeInterval(1800))
-    }
 }
