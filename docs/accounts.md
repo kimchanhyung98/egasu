@@ -311,6 +311,7 @@ Accounts의 복구 행이나 대시보드 우클릭에서 **Use Codex**를 명�
 ![선택된 Codex 계정의 중단된 로그인 복구 메뉴](/docs/assets/codex-login-recovery.png)
 
 복구가 완료되면 계정 목록과 대시보드 연결도 갱신.
+복구가 저장된 뒤 Accounts를 닫아도 변경을 반영.
 Codex 복구 오류는 Codex에 표시하며, 사용량 조회가 성공해도 복구 완료 전까지 유지.
 Codex의 Keychain 접근 오류는 Codex만 수동으로 새로 고침해 승인·복구 재시도.
 미완료 재로그인의 관리 계정은 토큰 회전을 보류하며, 유효한 로그인으로 사용량 조회는 계속 가능.

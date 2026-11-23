@@ -37,6 +37,40 @@ final class CodexReSignInRecoveryTests: XCTestCase {
         XCTAssertEqual(result, .updated(profileID: fixture.profile.id))
     }
 
+    func testCancelledReconciliationRefreshesTheCatalogForCommittedCodexRecovery() async throws {
+        for downstreamFailure in [false, true] {
+            let fixture = try Fixture()
+            defer { fixture.cleanUp() }
+            try fixture.prepareInterruptedSignIn(replacementWasSaved: true, shared: fixture.previous)
+            let store = fixture.reloadedStore()
+            var catalogIdentity = store.profile(id: fixture.profile.id)?.identityKey
+
+            let screenTask = Task {
+                await AppContainer.reconcileAndRefreshAccountCatalog(
+                    in: store,
+                    reconcile: {
+                        do {
+                            let recovery = try await fixture.importer.reconcileCodexIdentityReplacementAfterStartup(
+                                in: store)
+                            XCTAssertEqual(recovery, .updated(profileID: fixture.profile.id))
+                            XCTAssertNil(try store.pendingIdentityReplacement())
+                            withUnsafeCurrentTask { $0?.cancel() }
+                            if downstreamFailure { return .failure(ClaudeAuthError.credentialsChanged) }
+                            return .success(true)
+                        } catch {
+                            XCTFail("Unexpected Codex recovery failure: \(error)")
+                            return .failure(error)
+                        }
+                    },
+                    refreshCatalog: { catalogIdentity = store.profile(id: fixture.profile.id)?.identityKey })
+            }
+            let statusResult = await screenTask.value
+
+            XCTAssertNil(statusResult, "A cancelled task does not publish the reconciliation result.")
+            XCTAssertEqual(catalogIdentity, "workspace-b", "The catalog must reflect the identity already committed.")
+        }
+    }
+
     func testManualCodexRecoveryReadsOnlyCodexEvenWhenClaudeIsRegistered() async throws {
         let keychain = ReplacementWriteKeychain()
         let fixture = try Fixture(keychain: keychain)

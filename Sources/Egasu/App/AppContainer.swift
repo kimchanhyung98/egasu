@@ -571,17 +571,19 @@ final class AppContainer {
     /// 사용량 조회와 별도로 계정 복구·외부 Claude 로그인 반영 상태 게시.
     func reconcileExternalClaudeAuthenticationAndRefreshCatalog(codexRecoveryOnly: Bool = false) async {
         let generation = accountSwitch.generation
-        let authenticationRevision = accountProfiles.authenticationRevision
-        guard let result = await reconcileExternalClaudeAuthentication(codexRecoveryOnly: codexRecoveryOnly),
-            !Task.isCancelled else { return }
+        guard
+            let result = await Self.reconcileAndRefreshAccountCatalog(
+                in: accountProfiles,
+                reconcile: { await reconcileExternalClaudeAuthentication(codexRecoveryOnly: codexRecoveryOnly) },
+                refreshCatalog: { refreshAccountCatalog() }
+            )
+        else { return }
         let failure: ProviderRefreshFailure?
         var failureFamily = codexRecoveryOnly ? "codex" : "claude"
         switch result {
-        case .success(let updated):
-            if updated || accountProfiles.authenticationRevision != authenticationRevision { refreshAccountCatalog() }
+        case .success:
             failure = nil
         case .failure(let error):
-            if accountProfiles.authenticationRevision != authenticationRevision { refreshAccountCatalog() }
             failureFamily = reconciliationFamily(for: error)
             failure = Self.externalClaudeReconciliationFailure(for: error, family: failureFamily)
         }
