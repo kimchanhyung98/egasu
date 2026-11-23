@@ -157,6 +157,10 @@ struct ProviderSnapshotCache {
                 updateMemo(stored)
                 return
             }
+            var payload = stored
+            payload.snapshots[snapshot.providerID] = snapshot
+            // 무귀속 snapshot에 이전 계정 stamp를 남기지 않음.
+            payload.producedByIdentityKeys[snapshot.providerID] = producedByIdentityKey
             if let current = stored.snapshots[snapshot.providerID] {
                 let older =
                     current.refreshedAt > snapshot.refreshedAt
@@ -167,14 +171,18 @@ struct ProviderSnapshotCache {
                 if older || changedAccount {
                     AppLog.debug(
                         .cache, "skip write \(AppLog.providerFamily(snapshot.providerID)) (newer stored snapshot)")
-                    updateMemo(stored)
+                    let localDate = sessionWrites.withLock { $0.contains(snapshot.providerID) }
+                        ? memo.withLock { $0?.snapshots[snapshot.providerID]?.refreshedAt } : nil
+                    let keepsNewerLocal = localDate.map { $0 > snapshot.refreshedAt && $0 <= now() } ?? false
+                    if markSessionFresh && !keepsNewerLocal {
+                        updateMemo(payload, replacingProviderID: snapshot.providerID)
+                        sessionWrites.withLock { $0.insert(snapshot.providerID) }
+                    } else {
+                        updateMemo(stored)
+                    }
                     return
                 }
             }
-            var payload = stored
-            payload.snapshots[snapshot.providerID] = snapshot
-            // 무귀속 snapshot에 이전 계정 stamp를 남기지 않음.
-            payload.producedByIdentityKeys[snapshot.providerID] = producedByIdentityKey
             save(payload, replacingProviderID: snapshot.providerID)
             if markSessionFresh { sessionWrites.withLock { $0.insert(snapshot.providerID) } }
         }

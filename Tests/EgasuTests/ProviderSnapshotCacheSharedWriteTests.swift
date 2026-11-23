@@ -66,6 +66,39 @@ final class ProviderSnapshotCacheSharedWriteTests: XCTestCase {
         }
     }
 
+    func testLocalSuccessBehindNewerDiskResultKeepsTheLatestSessionReading() throws {
+        for previous in [false, true] {
+            let suite = "EgasuTests.SharedCache." + UUID().uuidString
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let app = ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite, now: { self.now })
+            if previous {
+                var old = reading("codex", used: 10)
+                old.refreshedAt = now.addingTimeInterval(-3)
+                app.store(old, producedByIdentityKey: "previous")
+            }
+            let disk = ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite, now: { self.now })
+            let external = reading("codex", used: 80)
+            disk.store(external, producedByIdentityKey: "external")
+            var local = reading("codex", used: 30)
+            local.refreshedAt = now.addingTimeInterval(-1)
+            local.liveQuotaAccountKey = "runtime-only"
+            app.store(local, producedByIdentityKey: "local")
+            var delayed = reading("codex", used: 20)
+            delayed.refreshedAt = now.addingTimeInterval(-2)
+            app.store(delayed, producedByIdentityKey: "delayed")
+
+            let cached = app.snapshot(providerID: "codex")
+            XCTAssertEqual(cached?.lines, local.lines)
+            XCTAssertEqual(cached?.refreshedAt, local.refreshedAt)
+            XCTAssertEqual(cached?.liveQuotaAccountKey, local.liveQuotaAccountKey)
+            XCTAssertEqual(app.producedByIdentityKey(providerID: "codex"), "local")
+            let reader = ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite)
+            XCTAssertEqual(reader.loadSnapshots(providerIDs: ["codex"])["codex"]?.lines, external.lines)
+            XCTAssertEqual(reader.producedByIdentityKey(providerID: "codex"), "external")
+        }
+    }
+
     func testHistoryOnlyWriteDoesNotReviveACardRemovedFromStorage() throws {
         let suite = "EgasuTests.SharedCache.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
