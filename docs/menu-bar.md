@@ -62,7 +62,8 @@
 
 ## 화면 공유 중 사용량 숨기기
 
-설정 위치는 [Settings → Advanced → Privacy](/docs/settings.md#개인정보-보호)의 **Privacy Mode**(개인정보 보호 모드, 기본값 켬).
+설정 위치는 [Settings → Advanced → Privacy](/docs/settings.md#개인정보-보호)의 **Privacy Mode**(개인정보 보호 모드, 기본값 끔).
+기존에 저장한 켜짐·꺼짐 선택 유지.
 화면 공유·녹화를 감지하면 메뉴 막대의 사용량을 egasu 아이콘으로 대체.
 직접 시작한 화면 녹화도 감지 대상에 포함.
 캡처 종료를 감지하면 선택한 표시로 복귀.
