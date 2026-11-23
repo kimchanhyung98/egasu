@@ -67,6 +67,21 @@ final class LayoutMigrationReviewTests: XCTestCase {
         }
     }
 
+    func testFirstPersonalPinWritesItsPendingProfileBindingBeforeThePin() throws {
+        let name = "EgasuTests.PendingPin." + UUID().uuidString
+        let defaults = try XCTUnwrap(RecordingLayoutMigrationDefaults(suiteName: name))
+        addTeardownBlock { defaults.removePersistentDomain(forName: name) }
+        defaults.set(true, forKey: SettingsMigrator.upstreamLayoutImportPendingKey)
+        let store = LayoutStore(registry: registry(), defaults: defaults, profileIDsByCardID: ["claude": "a"])
+        store.setMetric("claude.session", pinned: true)
+
+        XCTAssertFalse(defaults.bindingsAtPinWrites.isEmpty)
+        for binding in defaults.bindingsAtPinWrites {
+            let bytes = try XCTUnwrap(binding)
+            XCTAssertEqual(try JSONDecoder().decode([String: String].self, from: bytes)["claude"], "a")
+        }
+    }
+
     func testUndoingAnUnrelatedPinKeepsUnreadableOrderBytes() {
         let fixture = makeDefaults()
         let original = Data("unreadable order".utf8)
@@ -263,7 +278,10 @@ final class LayoutMigrationReviewTests: XCTestCase {
     }
 }
 
-private final class RecordingLayoutMigrationDefaults: UserDefaults {
+final class RecordingLayoutMigrationDefaults: UserDefaults {
+    var migrationSnapshotDomain: String?
+    var migrationSnapshots: [String: [String: Any]] = [:]
+    var bindingsAtPinWrites: [Data?] = []
     var writes: [(key: String, deferred: [String]?, pins: [String]?)] = []
 
     override func set(_ value: Any?, forKey defaultName: String) {
@@ -277,6 +295,13 @@ private final class RecordingLayoutMigrationDefaults: UserDefaults {
     }
 
     private func record(_ key: String) {
+        if ["layout.metricOrderByProvider", "layout.disabledMetrics"].contains(key),
+            let suite = migrationSnapshotDomain, migrationSnapshots[key] == nil {
+            migrationSnapshots[key] = persistentDomain(forName: suite)
+        }
+        if key == "openusage.layout.v1.priorityPins", stringArray(forKey: key)?.contains("claude.session") == true {
+            bindingsAtPinWrites.append(data(forKey: "openusage.layout.v1.accountProfilesByCard"))
+        }
         if ["layout.priorityPins", "layout.deferredMenuBarStars"].contains(key) {
             writes.append(
                 (key, stringArray(forKey: "layout.deferredMenuBarStars"), stringArray(forKey: "layout.priorityPins")))

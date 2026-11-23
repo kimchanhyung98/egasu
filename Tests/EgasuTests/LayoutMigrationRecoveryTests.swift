@@ -89,6 +89,48 @@ final class LayoutMigrationRecoveryTests: XCTestCase {
         XCTAssertTrue(repaired.isMetricPinned("claude.session"))
     }
 
+    func testVisibilityEditsSurviveUnreadableOrderAndOnlyOverrideTheEditedAccount() {
+        let defaults = makeDefaults()
+        let files = LayoutPersistence(defaults: defaults, storageKey: "layout")
+        let badOrder = Data("broken".utf8)
+        defaults.set(badOrder, forKey: "layout.metricOrderByProvider")
+        let a = AccountUsageCardPlanner.cardID(family: "claude", profileID: "a")
+        let b = AccountUsageCardPlanner.cardID(family: "claude", profileID: "b")
+        let mapping = ["claude": "a", b: "b"]
+        files.savePlaced([PlacedWidget(descriptorID: "claude.session")])
+        files.saveSeededDefaults(["claude.session", "claude.weekly", "claude.today"])
+        func store(_ other: String, _ mapping: [String: String]) -> LayoutStore {
+            LayoutStore(registry: registry(cards: ["claude", other]), defaults: defaults, storageKey: "layout",
+                        profileIDsByCardID: mapping)
+        }
+        let first = store(b, mapping)
+        first.setMetricEnabled("claude.session", false)
+        first.setMetricEnabled("claude.weekly", true)
+        first.setMetricEnabled(b + ".today", true)
+        first.setMetricEnabled("claude.fable", false)
+        XCTAssertTrue(first.undo())
+
+        let reloaded = store(b, mapping)
+        XCTAssertFalse(reloaded.isMetricEnabled("claude.session"))
+        XCTAssertTrue(reloaded.isMetricEnabled("claude.weekly"))
+        XCTAssertTrue(reloaded.isMetricEnabled("claude.today"))
+        XCTAssertTrue(reloaded.isMetricEnabled(b + ".session"))
+        XCTAssertFalse(reloaded.isMetricEnabled(b + ".weekly"))
+        XCTAssertEqual(defaults.data(forKey: "layout.metricOrderByProvider"), badOrder)
+        XCTAssertNil(defaults.object(forKey: "layout.disabledMetrics"))
+
+        let switched = ["claude": "b", a: "a"]
+        _ = store(a, switched)
+        files.saveMetricOrder(["claude": ["claude.fable", "claude.weekly", "claude.session"]])
+        let repaired = store(a, switched)
+        XCTAssertFalse(repaired.isMetricEnabled(a + ".session"))
+        XCTAssertTrue(repaired.isMetricEnabled(a + ".weekly"))
+        XCTAssertTrue(repaired.isMetricEnabled("claude.today"))
+        XCTAssertFalse(repaired.isMetricEnabled("claude.fable"), "실행 취소한 잠정 편집보다 복구한 순서 우선")
+        XCTAssertNotNil(defaults.object(forKey: "layout.disabledMetrics"))
+        XCTAssertNil(defaults.object(forKey: "layout.deferredVisibility"))
+    }
+
     func testUnreadableVisibilityDoesNotCompleteStarMigration() {
         let defaults = makeDefaults()
         defaults.set("unreadable-visibility", forKey: "layout.disabledMetrics")
@@ -148,6 +190,33 @@ final class LayoutMigrationRecoveryTests: XCTestCase {
         XCTAssertTrue(repaired.isMetricPinned("cursor.session"))
     }
 
+    func testRestartBetweenRecoveredWritesPreservesNewMetricsAndAccountOrder() throws {
+        let suite = "EgasuTests.SeedRecovery." + UUID().uuidString
+        let defaults = try XCTUnwrap(RecordingLayoutMigrationDefaults(suiteName: suite))
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        let files = LayoutPersistence(defaults: defaults, storageKey: "layout")
+        files.savePlaced([PlacedWidget(descriptorID: "claude.session")])
+        defaults.set("bad", forKey: "layout.seededDefaults")
+        let card = AccountUsageCardPlanner.cardID(family: "claude", profileID: "b")
+        let registry = registry(cards: ["claude", card])
+        files.saveMetricOrder(["claude": ["claude.weekly", "claude.session"]])
+        _ = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
+        files.saveSeededDefaults(["claude.session", "claude.weekly"])
+        defaults.migrationSnapshotDomain = suite
+        _ = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
+
+        for key in ["layout.metricOrderByProvider", "layout.disabledMetrics"] {
+            let restored = makeDefaults()
+            for (key, value) in try XCTUnwrap(defaults.migrationSnapshots[key]) {
+                restored.set(value, forKey: key)
+            }
+            let restarted = LayoutStore(registry: registry, defaults: restored, storageKey: "layout")
+            XCTAssertTrue(restarted.isMetricEnabled("claude.fable"), key)
+            let personal = [card + ".weekly", card + ".session"]
+            XCTAssertEqual(restarted.metricOrder(for: card).filter(personal.contains), personal, key)
+        }
+    }
+
     func testUnreadableSeedMarkerDoesNotLookLikeAMissingPreSeedMarker() {
         let defaults = makeDefaults()
         let persistence = LayoutPersistence(defaults: defaults, storageKey: "layout")
@@ -158,6 +227,10 @@ final class LayoutMigrationRecoveryTests: XCTestCase {
 
         XCTAssertFalse(store.isMetricEnabled("claude.fable"))
         XCTAssertEqual(defaults.string(forKey: "layout.seededDefaults"), "unreadable-seed")
+        XCTAssertNil(defaults.object(forKey: "layout.disabledMetrics"))
+        persistence.saveSeededDefaults(["claude.session", "claude.weekly"])
+        let repaired = LayoutStore(registry: registry(), defaults: defaults, storageKey: "layout")
+        XCTAssertTrue(repaired.isMetricEnabled("claude.fable"))
     }
 
     func testUnreadableMappingKeepsLegacyPersonalVisibilityForLaterRecovery() throws {

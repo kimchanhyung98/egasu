@@ -49,6 +49,32 @@ final class LayoutPersistence {
         defaults.set(changed.union(retained).sorted(), forKey: keys.disabledMetrics)
     }
 
+    var deferredVisibility: [String: Bool] {
+        get { defaults.dictionary(forKey: keys.deferredVisibility) as? [String: Bool] ?? [:] }
+        set {
+            if newValue.isEmpty {
+                if defaults.object(forKey: keys.deferredVisibility) != nil {
+                    defaults.removeObject(forKey: keys.deferredVisibility)
+                }
+            } else {
+                defaults.set(newValue, forKey: keys.deferredVisibility)
+            }
+        }
+    }
+
+    /// 구형 가시성 이전을 끝내기 전에는 명시적으로 편집한 항목만 보관.
+    func recordDeferredVisibility(_ choices: [String: Bool]) {
+        guard !hasStoredDisabledMetrics, !isUpstreamImportPending else { return }
+        let resolved = choices.filter { !isUnresolvedMetric($0.key) }
+        guard !resolved.isEmpty else { return }
+        deferredVisibility.merge(resolved) { _, edited in edited }
+    }
+
+    func finishVisibilityMigration(_ ids: Set<String>) {
+        saveDisabledMetrics(ids)
+        deferredVisibility = [:]
+    }
+
     func loadPlaced() -> [PlacedWidget]? { decode([PlacedWidget].self, forKey: keys.placed) }
     func loadProviderOrder() -> [String]? { decode([String].self, forKey: keys.providerOrder) }
     func loadMetricOrder() -> [String: [String]]? {
@@ -205,6 +231,14 @@ final class LayoutPersistence {
         if let disabled = loadDisabledMetrics() {
             saveDisabledMetrics(Set(disabled.compactMap(metricID)))
         }
+        let choices = deferredVisibility
+        if !choices.isEmpty {
+            var remapped: [String: Bool] = [:]
+            for (id, enabled) in choices {
+                if let target = metricID(id) { remapped[target] = enabled }
+            }
+            deferredVisibility = remapped
+        }
         if !hasStoredDisabledMetrics, let placed = loadPlaced() {
             savePlaced(placed.compactMap { widget in
                 metricID(widget.descriptorID).map { PlacedWidget(id: widget.id, descriptorID: $0) }
@@ -307,6 +341,7 @@ final class LayoutPersistence {
 
     private struct Keys {
         let placed: String
+        let deferredVisibility: String
         let disabledMetrics: String
         let providerOrder: String
         let metricOrder: String
@@ -323,6 +358,7 @@ final class LayoutPersistence {
 
         init(storageKey: String) {
             placed = storageKey
+            deferredVisibility = "\(storageKey).deferredVisibility"
             disabledMetrics = "\(storageKey).disabledMetrics"
             providerOrder = "\(storageKey).providerOrder"
             metricOrder = "\(storageKey).metricOrderByProvider"
