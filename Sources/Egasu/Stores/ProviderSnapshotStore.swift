@@ -347,6 +347,16 @@ final class ProviderSnapshotStore {
                 now: renderDate
             )
         }
+        for entry in remoteOnlySpend where entry.snapshot.reportedPartialFailure == .decoding {
+            let family = ProviderAccountID.family(of: entry.provider.id)
+            guard let provider = registry.provider(id: family) else { continue }
+            var snapshot =
+                rendered[family]
+                ?? ProviderSnapshot(
+                    providerID: family, displayName: provider.displayName, lines: [], refreshedAt: renderDate)
+            UsageHistorySnapshotRenderer.addInvalidHistoryWarning(to: &snapshot)
+            rendered[family] = snapshot
+        }
         return Rendered(snapshots: rendered, remoteOnlySpend: remoteOnlySpend)
     }
 
@@ -362,7 +372,7 @@ final class ProviderSnapshotStore {
                   let descriptor = registry.historyDescriptorsByProvider[entry.family]
             else { return nil }
             let history = UsageHistoryAggregator.mergeHistories(entry.histories, now: now)
-            guard !history.series.daily.isEmpty else { return nil }
+            guard !history.series.daily.isEmpty || history.hasRejectedNumericContributions else { return nil }
 
             // 합계 항목 이름은 계정 식별 키에서 파생한 카드 ID 사용.
             // 가상 프로바이더 ID는 실제 카드 ID와 충돌하지 않는 별도 형식 사용.
