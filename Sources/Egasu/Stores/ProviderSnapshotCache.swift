@@ -16,20 +16,21 @@ struct ProviderSnapshotCache {
         var refreshTimestamps: [String: Double]?
     }
 
-    /// persist blob의 in-memory mirror — 읽기마다 전 provider JSON을 MainActor에서 re-decode하던 비용 제거.
-    /// 읽기는 mirror 재사용, 영속 쓰기는 프로세스 잠금 안에서 최신 저장본을 다시 읽어 병합.
-    private let memo = OSAllocatedUnfairLock<Payload?>(initialState: nil)
+    private struct Session {
+        var payload: Payload?
+        var freshIDs: Set<String> = []
+        /// 사전 저장 실패로 디스크에 없는 실측은 다른 카드 쓰기 후에도 메모리에 보존.
+        var unpublishedIDs: Set<String> = []
+    }
 
-    /// 이 cache 인스턴스에서 정상 refresh로 저장한 provider ID — 로컬 이력만 갱신한 쓰기는 제외.
-    /// launch에 disk에서 로드된 snapshot은 표시만 되고 fresh로 취급되지 않아 첫 pass에 refresh 강제(#697).
-    private let sessionWrites = OSAllocatedUnfairLock<Set<String>>(initialState: [])
+    private let session = OSAllocatedUnfairLock(initialState: Session())
     private let localQuotaInvalidations = OSAllocatedUnfairLock<[String: Date]>(initialState: [:])
 
     private let userDefaults: UserDefaults
     private let storageKey: String
     private let persistenceLockURL: URL
     /// 세션 내에 쓴 snapshot의 fresh 유지 기간(1 refresh interval) — 이전 세션의 snapshot은 `refreshedAt`과
-    /// 무관하게 non-fresh(`sessionWrites` 참고). 테스트는 고정 TTL 주입.
+    /// 무관하게 non-fresh. 테스트는 고정 TTL 주입.
     private let ttl: TimeInterval?
     /// timestamp-only freshness opt-in — 메뉴바 앱은 launch당 1회 refresh를 강제하지만 one-shot reader에는 세션 개념이 없음.
     private let allowsPersistedFreshness: Bool
@@ -80,24 +81,25 @@ struct ProviderSnapshotCache {
     /// refresh gating은 TTL 검사하는 `snapshot(providerID:)` 경유.
     func loadSnapshots(providerIDs: [String]) -> [String: ProviderSnapshot] {
         let providerIDSet = Set(providerIDs)
-        let loaded = loadPayload().snapshots.filter { providerID, _ in
-            providerIDSet.contains(providerID) && canReadSnapshot(providerID)
-        }
+        let state = loadSession()
+        let loaded =
+            state.payload?.snapshots.filter { providerID, _ in
+                providerIDSet.contains(providerID) && canReadSnapshot(providerID, in: state)
+            } ?? [:]
         AppLog.debug(.cache, "loaded \(loaded.count) snapshots from disk")
         return loaded
     }
 
-    private func canReadSnapshot(_ providerID: String) -> Bool {
-        !ignoresPersistedSnapshotsFor.contains(providerID) || sessionWrites.withLock { $0.contains(providerID) }
+    private func canReadSnapshot(_ providerID: String, in state: Session) -> Bool {
+        !ignoresPersistedSnapshotsFor.contains(providerID) || state.freshIDs.contains(providerID)
     }
 
     func snapshot(providerID: String) -> ProviderSnapshot? {
-        guard canReadSnapshot(providerID) else { return nil }
-        let snapshot = loadPayload().snapshots[providerID]
-        guard let snapshot else { return nil }
-        // freshness는 이중 조건: 이 세션에 쓰였고 AND TTL 이내 — 이전 세션 blob은 즉시 paint용일 뿐
-        // refresh를 gate하지 않아 launch마다 즉시 refetch(#697).
-        let writtenThisSession = sessionWrites.withLock { $0.contains(providerID) }
+        let state = loadSession()
+        guard canReadSnapshot(providerID, in: state), let snapshot = state.payload?.snapshots[providerID] else {
+            return nil
+        }
+        let writtenThisSession = state.freshIDs.contains(providerID)
         let age = now().timeIntervalSince(snapshot.freshnessDate)
         let ttl = ttl ?? RefreshSetting.interval(for: providerID)
         let trusted = allowsPersistedFreshness || writtenThisSession
@@ -151,53 +153,48 @@ struct ProviderSnapshotCache {
         }
         AppLog.debug(.cache, "write \(AppLog.providerFamily(snapshot.providerID))")
         func updating(_ stored: Payload) {
-            guard markSessionFresh || stored.snapshots[snapshot.providerID] != nil else {
+            let observedNow = now()
+            let current = stored.snapshots[snapshot.providerID]
+            let older =
+                current.map {
+                    $0.refreshedAt > snapshot.refreshedAt && (!markSessionFresh || $0.refreshedAt <= observedNow)
+                } ?? false
+            let acceptsHistory =
+                current != nil && stored.producedByIdentityKeys[snapshot.providerID] == producedByIdentityKey
+            let publishes = !older && (markSessionFresh || acceptsHistory)
+            mergeSession(
+                stored, snapshot: snapshot, identity: producedByIdentityKey, at: observedNow,
+                live: markSessionFresh, acceptsStoredWrite: publishes)
+            guard publishes else {
                 AppLog.debug(
-                    .cache, "skip history write \(AppLog.providerFamily(snapshot.providerID)) (cache removed)")
-                updateMemo(stored)
+                    .cache, "skip shared write \(AppLog.providerFamily(snapshot.providerID)) (stored snapshot changed)")
                 return
             }
-            var payload = stored
-            payload.snapshots[snapshot.providerID] = snapshot
-            // 무귀속 snapshot에 이전 계정 stamp를 남기지 않음.
-            payload.producedByIdentityKeys[snapshot.providerID] = producedByIdentityKey
-            if let current = stored.snapshots[snapshot.providerID] {
-                let older =
-                    current.refreshedAt > snapshot.refreshedAt
-                    && (!markSessionFresh || current.refreshedAt <= now())
-                let changedAccount =
-                    !markSessionFresh
-                    && stored.producedByIdentityKeys[snapshot.providerID] != producedByIdentityKey
-                if older || changedAccount {
-                    AppLog.debug(
-                        .cache, "skip write \(AppLog.providerFamily(snapshot.providerID)) (newer stored snapshot)")
-                    let localDate = sessionWrites.withLock { $0.contains(snapshot.providerID) }
-                        ? memo.withLock { $0?.snapshots[snapshot.providerID]?.refreshedAt } : nil
-                    let keepsNewerLocal = localDate.map { $0 > snapshot.refreshedAt && $0 <= now() } ?? false
-                    if markSessionFresh && !keepsNewerLocal {
-                        updateMemo(payload, replacingProviderID: snapshot.providerID)
-                        sessionWrites.withLock { $0.insert(snapshot.providerID) }
-                    } else {
-                        updateMemo(stored)
-                    }
-                    return
-                }
+            if persistsWrites {
+                var payload = stored
+                payload.snapshots[snapshot.providerID] = snapshot
+                payload.producedByIdentityKeys[snapshot.providerID] = producedByIdentityKey
+                save(payload)
             }
-            save(payload, replacingProviderID: snapshot.providerID)
-            if markSessionFresh { sessionWrites.withLock { $0.insert(snapshot.providerID) } }
         }
         guard persistsWrites else {
             updating(loadPayload())
             return
         }
+        var merged = false
         do {
             try withPersistenceLock {
                 guard userDefaults.synchronize() else { throw POSIXError(.EIO) }
                 updating(decodeStoredPayload())
+                merged = true
                 guard userDefaults.synchronize() else { throw POSIXError(.EIO) }
             }
         } catch {
             AppLog.warn(.cache, "shared cache write failed: \(AppLog.errorDetails(error))")
+            if !merged && markSessionFresh {
+                _ = loadSession()
+                mergeSession(nil, snapshot: snapshot, identity: producedByIdentityKey, at: now(), live: true)
+            }
         }
     }
 
@@ -218,28 +215,51 @@ struct ProviderSnapshotCache {
         return payload.producedByIdentityKeys[providerID] != currentIdentityKey
     }
 
-    private func loadPayload() -> Payload {
-        if let mirror = memo.withLock({ $0 }) { return mirror }
-        // 첫 접근에만 blob decode 후 mirror — lock 밖 decode로 @Sendable closure에서 self 제외, race는 동일 값 중복 decode에 그침(무해).
+    private func loadSession() -> Session {
+        let cached = session.withLock { $0 }
+        if cached.payload != nil { return cached }
         let loaded = decodeStoredPayload()
-        memo.withLock { $0 = loaded }
-        return loaded
+        return session.withLock { state in
+            if state.payload == nil { state.payload = loaded }
+            return state
+        }
     }
 
-    /// 다른 프로세스의 저장을 현재 세션의 실측으로 승격하지 않도록 표시용 사본 분리.
-    private func updateMemo(_ payload: Payload, replacingProviderID: String? = nil) {
-        let localIDs = sessionWrites.withLock { $0 }
-        memo.withLock { mirror in
-            var visible = payload
-            for id in localIDs where id != replacingProviderID && payload.snapshots[id] != nil {
-                if let local = mirror?.snapshots[id] {
-                    visible.snapshots[id] = local
-                    visible.producedByIdentityKeys[id] = mirror?.producedByIdentityKeys[id]
+    private func loadPayload() -> Payload {
+        loadSession().payload ?? Payload(snapshots: [:], producedByIdentityKeys: [:])
+    }
+
+    /// 공유 저장본과 실제 세션 조회를 구분하고 표시값·귀속·freshness를 함께 갱신.
+    private func mergeSession(
+        _ stored: Payload?, snapshot: ProviderSnapshot, identity: String?, at now: Date,
+        live: Bool, acceptsStoredWrite: Bool = false
+    ) {
+        let id = snapshot.providerID
+        session.withLock { state in
+            var visible = stored ?? state.payload ?? Payload(snapshots: [:], producedByIdentityKeys: [:])
+            if stored != nil {
+                state.unpublishedIDs.subtract(visible.snapshots.keys)
+                state.freshIDs.formIntersection(Set(visible.snapshots.keys).union(state.unpublishedIDs))
+                for localID in state.freshIDs {
+                    visible.snapshots[localID] = state.payload?.snapshots[localID]
+                    visible.producedByIdentityKeys[localID] = state.payload?.producedByIdentityKeys[localID]
                 }
             }
-            mirror = visible
+            let local = state.freshIDs.contains(id) ? visible.snapshots[id] : nil
+            let newerLocal =
+                local.map { $0.refreshedAt > snapshot.refreshedAt && (!live || $0.refreshedAt <= now) } ?? false
+            let differentLocalAccount = !live && local != nil && visible.producedByIdentityKeys[id] != identity
+            if (live || acceptsStoredWrite) && !newerLocal && !differentLocalAccount {
+                visible.snapshots[id] = snapshot
+                visible.producedByIdentityKeys[id] = identity
+                if live {
+                    state.freshIDs.insert(id)
+                    if stored == nil { state.unpublishedIDs.insert(id) }
+                }
+            }
+            if acceptsStoredWrite { state.unpublishedIDs.remove(id) }
+            state.payload = visible
         }
-        sessionWrites.withLock { $0.formIntersection(payload.snapshots.keys) }
     }
 
     private func decodeStoredPayload() -> Payload {
@@ -271,10 +291,7 @@ struct ProviderSnapshotCache {
         }
     }
 
-    private func save(_ payload: Payload, replacingProviderID: String) {
-        // mirror 먼저 갱신 — encode 실패해도 세션 내 읽기는 이 쓰기를 반영(persist만 best-effort).
-        updateMemo(payload, replacingProviderID: replacingProviderID)
-        guard persistsWrites else { return }
+    private func save(_ payload: Payload) {
         // encode 실패는 크게 log — 조용히 삼키면 snapshot이 persisted cache에서 소리 없이 빠짐.
         do {
             var persisted = payload

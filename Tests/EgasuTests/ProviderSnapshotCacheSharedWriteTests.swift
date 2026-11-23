@@ -99,6 +99,102 @@ final class ProviderSnapshotCacheSharedWriteTests: XCTestCase {
         }
     }
 
+    func testFutureDiskReadingDoesNotRollBackANewerSessionReading() throws {
+        let suite = "EgasuTests.SharedCache." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite, now: { self.now })
+        let external = ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite, now: { self.now })
+        var local = reading("codex", used: 30)
+        local.refreshedAt = now.addingTimeInterval(-5)
+        app.store(local, producedByIdentityKey: "local")
+        var future = reading("codex", used: 80)
+        future.refreshedAt = now.addingTimeInterval(5)
+        external.store(future, producedByIdentityKey: "external")
+        var delayed = reading("codex", used: 20)
+        delayed.refreshedAt = now.addingTimeInterval(-6)
+        app.store(delayed, producedByIdentityKey: "delayed")
+
+        XCTAssertEqual(app.snapshot(providerID: "codex")?.lines, local.lines)
+        XCTAssertEqual(app.producedByIdentityKey(providerID: "codex"), "local")
+        let reader = ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite)
+        XCTAssertEqual(reader.loadSnapshots(providerIDs: ["codex"])["codex"]?.lines, delayed.lines)
+        XCTAssertEqual(reader.producedByIdentityKey(providerID: "codex"), "delayed")
+        let next = reading("codex", used: 40)
+        app.store(next, producedByIdentityKey: "next")
+        XCTAssertEqual(app.snapshot(providerID: "codex")?.lines, next.lines)
+    }
+
+    func testFailedSynchronizationKeepsLatestSuccessfulReadingOnlyInSession() throws {
+        let suite = "EgasuTests.SharedCache." + UUID().uuidString
+        let defaults = try XCTUnwrap(FailingCacheSynchronizationDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite, now: { self.now })
+        var local = reading("codex", used: 30)
+        local.liveQuotaAccountKey = "runtime"
+        app.store(local, producedByIdentityKey: "local")
+        var delayed = reading("codex", used: 20)
+        delayed.refreshedAt = now.addingTimeInterval(-1)
+        app.store(delayed, producedByIdentityKey: "delayed")
+        app.store(reading("claude", used: 10), markSessionFresh: false)
+
+        XCTAssertEqual(app.snapshot(providerID: "codex")?.lines, local.lines)
+        XCTAssertEqual(app.snapshot(providerID: "codex")?.liveQuotaAccountKey, "runtime")
+        XCTAssertEqual(app.producedByIdentityKey(providerID: "codex"), "local")
+        XCTAssertNil(app.snapshot(providerID: "claude"))
+        XCTAssertNil(defaults.data(forKey: "openusage.providerSnapshots.v10"))
+        defaults.failsBeforeWrite = false
+        app.store(local, producedByIdentityKey: "local", markSessionFresh: false)
+        XCTAssertEqual(app.snapshot(providerID: "codex")?.lines, local.lines)
+        XCTAssertEqual(app.producedByIdentityKey(providerID: "codex"), "local")
+        XCTAssertNil(defaults.data(forKey: "openusage.providerSnapshots.v10"))
+        app.store(reading("claude", used: 10))
+        XCTAssertEqual(app.snapshot(providerID: "codex")?.lines, local.lines)
+        let reader = ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite)
+        XCTAssertNil(reader.loadSnapshots(providerIDs: ["codex"])["codex"])
+        app.store(delayed, producedByIdentityKey: "delayed")
+        XCTAssertEqual(app.snapshot(providerID: "codex")?.lines, local.lines)
+        XCTAssertEqual(app.producedByIdentityKey(providerID: "codex"), "local")
+        let published = ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite)
+        XCTAssertEqual(published.producedByIdentityKey(providerID: "codex"), "delayed")
+        defaults.removeObject(forKey: "openusage.providerSnapshots.v10")
+        app.store(reading("claude", used: 20))
+        XCTAssertNil(app.snapshot(providerID: "codex"))
+    }
+
+    func testWriteChecksFutureTimeAfterSynchronizingWithExternalWriter() throws {
+        let suite = "EgasuTests.SharedCache." + UUID().uuidString
+        let defaults = try XCTUnwrap(FailingCacheSynchronizationDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.failsBeforeWrite = false
+        let external = ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite)
+        var newer = reading("codex", used: 80)
+        newer.refreshedAt = now.addingTimeInterval(1)
+        external.store(newer, producedByIdentityKey: "external")
+        var clock = now
+        defaults.beforeSync = { clock = self.now.addingTimeInterval(2) }
+        let app = ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite, now: { clock })
+        app.store(reading("codex", used: 30), producedByIdentityKey: "local")
+        let reader = ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite)
+        XCTAssertEqual(reader.producedByIdentityKey(providerID: "codex"), "external")
+        XCTAssertEqual(app.producedByIdentityKey(providerID: "codex"), "local")
+    }
+
+    func testFailedPostWriteSynchronizationKeepsOnePublishedReading() throws {
+        let suite = "EgasuTests.SharedCache." + UUID().uuidString
+        let defaults = try XCTUnwrap(FailingCacheSynchronizationDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.failsBeforeWrite = false
+        defaults.failsAfterWrite = true
+        let app = ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite, now: { self.now })
+        let local = reading("codex", used: 30)
+        app.store(local, producedByIdentityKey: "local")
+        XCTAssertEqual(defaults.blobWrites, 1)
+        XCTAssertEqual(defaults.syncCalls, 2)
+        XCTAssertEqual(app.snapshot(providerID: "codex")?.lines, local.lines)
+        XCTAssertEqual(app.producedByIdentityKey(providerID: "codex"), "local")
+    }
+
     func testHistoryOnlyWriteDoesNotReviveACardRemovedFromStorage() throws {
         let suite = "EgasuTests.SharedCache.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -321,5 +417,24 @@ final class ProviderSnapshotCacheSharedWriteTests: XCTestCase {
         guard FileManager.default.fileExists(atPath: file.path) else {
             throw CocoaError(.fileReadNoSuchFile)
         }
+    }
+}
+
+private final class FailingCacheSynchronizationDefaults: UserDefaults {
+    var failsBeforeWrite = true
+    var failsAfterWrite = false
+    var blobWrites = 0
+    var syncCalls = 0
+    var beforeSync: (() -> Void)?
+
+    override func synchronize() -> Bool {
+        beforeSync?()
+        syncCalls += 1
+        return !failsBeforeWrite && !(failsAfterWrite && blobWrites > 0) && super.synchronize()
+    }
+
+    override func set(_ value: Any?, forKey defaultName: String) {
+        if defaultName == "openusage.providerSnapshots.v10" { blobWrites += 1 }
+        super.set(value, forKey: defaultName)
     }
 }
