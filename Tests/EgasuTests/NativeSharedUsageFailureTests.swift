@@ -6,7 +6,7 @@ final class NativeSharedUsageFailureTests: XCTestCase {
     func testClaudeReadFailureSurvivesEmptySharedMergeAndRecovers() async throws {
         let home = try UsageRecordFixture.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: home) }
-        let now = Date()
+        let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
         let path = home.appendingPathComponent(".claude/projects/fixture/usage.jsonl")
         try UsageRecordFixture.write(ClaudeLogFixture.usageLine(
             timestamp: EgasuISO8601.string(from: now), input: 3, output: 2,
@@ -31,7 +31,7 @@ final class NativeSharedUsageFailureTests: XCTestCase {
     func testCodexReadFailureSurvivesEmptySharedMergeAndRecovers() async throws {
         let home = try UsageRecordFixture.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: home) }
-        let now = Date()
+        let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
         let path = home.appendingPathComponent(".codex/sessions/fixture/rollout.jsonl")
         try UsageRecordFixture.write(CodexLogFixture.tokenCount(
             timestamp: EgasuISO8601.string(from: now),

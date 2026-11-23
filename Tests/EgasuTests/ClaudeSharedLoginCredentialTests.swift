@@ -61,7 +61,7 @@ final class ClaudeSharedLoginCredentialTests: XCTestCase {
 
     @MainActor
     func testWrapperUsesItsProjectHistoryWhenAnotherConfigDirectoryIsExported() async throws {
-        let now = Date()
+        let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
         let stamp = EgasuISO8601.string(from: now)
         let userHome = try ClaudeLogFixture.makeUserHome(claudeFiles: [
             "wrapper.jsonl": ClaudeLogFixture.usageLine(timestamp: stamp, input: 15, costUSD: 0.25)
