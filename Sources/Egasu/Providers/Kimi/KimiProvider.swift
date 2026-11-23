@@ -257,6 +257,10 @@ final class KimiProvider: ProviderRuntime {
         }
 
         let handle = try await credentialLock.acquire(target: lockTarget)
+        var isRotationProtected = false
+        defer {
+            if isRotationProtected { TokenRotationShutdownGuard.end() }
+        }
         do {
             let live = try await loadOffMainActor { [authStore] in
                 try authStore.reloadCurrentDocument(original)
@@ -279,21 +283,28 @@ final class KimiProvider: ProviderRuntime {
                 throw KimiAuthError.authExpired
             }
 
-            let rotated: KimiTokenRefresh
-            do {
-                rotated = try await usageClient.refreshToken(refreshToken: refreshToken, service: live.service)
-            } catch let error as KimiAuthError {
-                throw error
-            } catch let error as KimiUsageError {
-                throw error
-            } catch {
-                throw KimiUsageError.connectionFailed
-            }
-            try await handle.performWhileValid { [authStore] in
-                try await loadOffMainActor {
-                    try authStore.persistRotatedCredentials(replacing: live, with: rotated)
+            try Task.checkCancellation()
+            try TokenRotationShutdownGuard.begin()
+            isRotationProtected = true
+            // 요청을 보낸 뒤에는 사용량 조회 취소와 별개로 응답과 저장을 처리.
+            let rotation = Task { [authStore, usageClient] in
+                let rotated: KimiTokenRefresh
+                do {
+                    rotated = try await usageClient.refreshToken(refreshToken: refreshToken, service: live.service)
+                } catch let error as KimiAuthError {
+                    throw error
+                } catch let error as KimiUsageError {
+                    throw error
+                } catch {
+                    throw KimiUsageError.connectionFailed
+                }
+                try await handle.performWhileValid {
+                    try await loadOffMainActor {
+                        try authStore.persistRotatedCredentials(replacing: live, with: rotated)
+                    }
                 }
             }
+            try await rotation.value
 
             let updated = try await loadOffMainActor { [authStore] in
                 try authStore.reloadCurrentDocument(live)
@@ -319,7 +330,7 @@ final class KimiProvider: ProviderRuntime {
     }
 
     private func normalized(_ error: Error) -> Error {
-        if error is KimiAuthError || error is KimiUsageError { return error }
+        if error is KimiAuthError || error is KimiUsageError || error is CancellationError { return error }
         return KimiUsageError.connectionFailed
     }
 }
