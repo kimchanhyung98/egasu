@@ -254,8 +254,12 @@ final class WidgetDataStore {
     }
 
     func clearPeerHistoryDocuments() { refreshCoordinator.clearPeerHistoryDocuments() }
-    func localHistoryDocument(deviceID: String, deviceName: String, updatedAt: Date = Date()) -> UsageHistoryDocument {
-        refreshCoordinator.localHistoryDocument(deviceID: deviceID, deviceName: deviceName, updatedAt: updatedAt)
+    func localHistoryDocument(
+        deviceID: String, deviceName: String, updatedAt: Date = Date(),
+        preserving previous: UsageHistoryDocument? = nil
+    ) -> UsageHistoryDocument {
+        refreshCoordinator.localHistoryDocument(
+            deviceID: deviceID, deviceName: deviceName, updatedAt: updatedAt, preserving: previous)
     }
 
     func refreshAfterAccountSelection(

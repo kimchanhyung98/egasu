@@ -259,19 +259,28 @@ final class ProviderSnapshotStore {
         return true
     }
 
-    func localHistoryDocument(deviceID: String, deviceName: String, updatedAt: Date = Date()) -> UsageHistoryDocument {
+    func localHistoryDocument(
+        deviceID: String, deviceName: String, updatedAt: Date = Date(),
+        preserving previous: UsageHistoryDocument? = nil
+    ) -> UsageHistoryDocument {
         var providers: [String: ProviderUsageHistory] = [:]
         var identities: [String: String] = [:]
         // 로컬 범위 이력은 계정 카드도 동기화 — 계정에서 파생한 ID로 동일 계정 연결.
         // 기본 카드의 이력은 별도 계정 식별 키로 다른 Mac의 카드에 연결.
         for (providerID, descriptor) in registry.historyDescriptorsByProvider
         where descriptor.scope == .machineLocal && isProviderEnabled(providerID) {
-            if let history = localSnapshots[providerID]?.usageHistory {
+            let identity = familyTotalHistoryCardIDs.contains(providerID) ? nil : identityKeys[providerID]
+            var history = localSnapshots[providerID]?.usageHistory
+            if history == nil, !isUnresolvedClaude(providerID), let previous,
+                previous.deviceID == deviceID, previous.identities?[providerID] == identity
+            {
+                history = previous.providers[providerID]
+            }
+            if let history {
                 providers[providerID] = history
                 // 공유 홈 이력은 전환한 모든 계정의 세션을 합한 프로바이더 합계.
                 // 전체 합계가 현재 선택 계정에 귀속되지 않도록 계정 식별 키 없이 동기화.
-                if let identity = identityKeys[providerID],
-                   !familyTotalHistoryCardIDs.contains(providerID) {
+                if let identity {
                     identities[providerID] = identity
                 }
             }

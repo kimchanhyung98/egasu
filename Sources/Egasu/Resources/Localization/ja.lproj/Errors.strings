@@ -339,3 +339,4 @@
 "OpenCode sign-in changed during refresh. Refresh this account and try again." = "更新中に OpenCode のログインが切り替わりました。このアカウントをもう一度更新してください。";
 "You signed in to a different account. Try again with the account you selected." = "別のアカウントでサインインしました。選択したアカウントで再度サインインしてください。";
 "egasu couldn't verify the Codex user. Open the account in Accounts to sign in again." = "Codex のユーザーを確認できませんでした。「アカウント」で対象のアカウントを開き、再度サインインしてください。";
+"This Mac’s synced history changed again. egasu will retry on the next update." = "この Mac の同期履歴が再び変更されました。次の更新時に再試行します。";
