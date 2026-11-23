@@ -22,13 +22,7 @@ struct AccountRecommendationSettingsSection: View {
                     title: L10n.settings("Candidate Usage Below"),
                     info: L10n.settings("Every applicable base quota on a candidate must be below this usage."),
                     value: settings.candidateLimitPercent, save: settings.setCandidateLimit)
-                SettingsPicker(
-                    L10n.settings("Show Again After"), selection: $settings.reappearanceMinutes,
-                    options: AccountRecommendationSettingsStore.reappearanceMinuteOptions,
-                    info: L10n.settings(
-                        "After dismissing a suggestion, wait this long before showing another suggestion for the same provider."
-                    )
-                ) { $0 == 1 ? L10n.settings("1 Minute") : L10n.settings("%d Minutes", $0) }
+
             }
         } header: {
             Text(L10n.settings("Account Recommendations"))

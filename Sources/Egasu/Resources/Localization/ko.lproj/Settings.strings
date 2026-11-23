@@ -207,10 +207,6 @@
 "Enable Account Recommendations" = "계정 전환 추천 활성화";
 "Recommend At" = "추천 시작 사용률";
 "Candidate Usage Below" = "후보 사용률 제한";
-"Show Again After" = "추천 재표시 대기";
-"%d Minutes" = "%d분";
 "Suggest another Claude or Codex account. Switching always requires confirmation." = "다른 Claude 또는 Codex 계정을 추천합니다. 전환 전에는 항상 승인이 필요합니다.";
 "Suggest switching when any current base quota reaches this usage." = "현재 계정의 기본 구독 한도 중 하나가 이 사용률에 도달하면 전환을 추천합니다.";
 "Every applicable base quota on a candidate must be below this usage." = "후보 계정의 모든 기본 구독 한도 사용률이 이 값 미만이어야 합니다.";
-"After dismissing a suggestion, wait this long before showing another suggestion for the same provider." = "추천을 닫은 뒤 같은 프로바이더의 추천을 다시 표시할 때까지 기다리는 시간입니다.";
-"1 Minute" = "1분";
