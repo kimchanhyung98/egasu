@@ -4,7 +4,7 @@ import Foundation
 /// `LayoutStore`가 활성 registry 기준으로 필터링 — 미정의 ID는 무시
 /// provider 섹션 순서는 여기서 시드하지 않음, 빈 저장 순서는 registry 순서로 정착
 enum DefaultLayout {
-    /// v1 켜짐 목록 이전 직전의 기본 ON 지표 — 명시적 시드 기록이 있는 설치에만 적용.
+    /// v1 켜짐 목록 이전 직전의 기본 ON 지표 — 기존 존재 근거와 비교하는 고정 목록.
     static let legacyV1DefaultMetricIDs: [String] = [
         "antigravity.geminiPro", "antigravity.geminiWeekly", "antigravity.claude", "antigravity.claudeWeekly",
         "antigravity.argonWeekly",
