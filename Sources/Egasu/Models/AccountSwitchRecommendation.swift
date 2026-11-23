@@ -32,6 +32,7 @@ struct AccountSwitchQuota: Hashable, Sendable {
     var windows: [Period: Window] = [:]
     var incomplete = false
     var legacyClaudeIdentity: LegacyClaudeRecommendationIdentity?
+    var codexAccountKey: String?
 
     static func claude(lines: [MetricLine]) -> Self {
         var result = Self()
@@ -81,16 +82,25 @@ struct AccountSwitchRecommendation: Equatable {
     let target: AccountProfile
     var legacyCurrentIdentityKey: String?
     var legacyTargetIdentity: LegacyClaudeRecommendationIdentity?
+    var codexCurrentAccountKey: String?
+    var codexTargetAccountKey: String?
 
     struct NoLongerAvailable: Error {}
 
     func validate(departure: String?, latest: Self?) throws {
-        guard departure == (legacyCurrentIdentityKey ?? current.identityKey), latest == self else {
+        if current.family == "codex", codexCurrentAccountKey == nil { throw NoLongerAvailable() }
+        guard departure == (codexCurrentAccountKey ?? legacyCurrentIdentityKey ?? current.identityKey), latest == self
+        else {
             throw NoLongerAvailable()
         }
     }
 
     func validateTarget(_ entry: AccountCredentialVault.Entry) throws {
+        if target.family == "codex" {
+            guard let codexTargetAccountKey,
+                CodexResetClaimBinding.verifiedAccountKey(for: entry.credential) == codexTargetAccountKey
+            else { throw NoLongerAvailable() }
+        }
         if let legacyTargetIdentity, !legacyTargetIdentity.matches(entry) { throw NoLongerAvailable() }
     }
 
@@ -99,6 +109,7 @@ struct AccountSwitchRecommendation: Equatable {
         quota: (AccountProfile) -> AccountSwitchQuota?
     ) -> Self? {
         guard let currentQuota = quota(current), currentQuota.needsSwitch(at: now) else { return nil }
+        if current.family == "codex", currentQuota.codexAccountKey == nil { return nil }
         let currentIdentity = currentQuota.legacyClaudeIdentity?.identityKey ?? current.identityKey
         var best: (recommendation: Self, reset: Date)?
         for profile in profiles
@@ -109,10 +120,13 @@ struct AccountSwitchRecommendation: Equatable {
                 (reading.legacyClaudeIdentity?.identityKey ?? profile.identityKey) != currentIdentity,
                 let reset = reading.nextCandidateReset(at: now), best.map({ reset < $0.reset }) ?? true
             else { continue }
+            if profile.family == "codex", reading.codexAccountKey == nil { continue }
             let recommendation = Self(
                 current: current, target: profile,
                 legacyCurrentIdentityKey: currentQuota.legacyClaudeIdentity?.identityKey,
-                legacyTargetIdentity: reading.legacyClaudeIdentity)
+                legacyTargetIdentity: reading.legacyClaudeIdentity,
+                codexCurrentAccountKey: currentQuota.codexAccountKey,
+                codexTargetAccountKey: reading.codexAccountKey)
             best = (recommendation, reset)
         }
         return best?.recommendation

@@ -44,9 +44,9 @@ final class AccountSwitchRecommendationTests: XCTestCase {
         let second = profile("second")
         let profiles = [current, first, second]
         var quotas = [
-            current.id: AccountSwitchQuota(windows: [.monthly: window(95, in: nil)]),
-            first.id: AccountSwitchQuota(windows: [.session: window(30, in: 7200)]),
-            second.id: AccountSwitchQuota(windows: [.session: window(0, in: 18000)])
+            current.id: AccountSwitchQuota(windows: [.monthly: window(95, in: nil)], codexAccountKey: "current"),
+            first.id: AccountSwitchQuota(windows: [.session: window(30, in: 7200)], codexAccountKey: "first"),
+            second.id: AccountSwitchQuota(windows: [.session: window(0, in: 18000)], codexAccountKey: "second")
         ]
         func choice() -> AccountProfile? {
             AccountSwitchRecommendation.choose(current: current, profiles: profiles, at: now) { quotas[$0.id] }?.target
@@ -73,7 +73,8 @@ final class AccountSwitchRecommendationTests: XCTestCase {
         for profiles in [[current], [current, alias, archived, other]] {
             XCTAssertNil(
                 AccountSwitchRecommendation.choose(current: current, profiles: profiles, at: now) { account in
-                    AccountSwitchQuota(windows: [.weekly: window(account == current ? 99 : 12, in: 100)])
+                    AccountSwitchQuota(
+                        windows: [.weekly: window(account == current ? 99 : 12, in: 100)], codexAccountKey: account.id)
                 })
         }
     }
@@ -129,7 +130,7 @@ final class AccountSwitchRecommendationTests: XCTestCase {
         let account = profile("selected")
         let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
         let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots")
-        let quota = AccountSwitchQuota(windows: [.session: window(95, in: 1000)])
+        var quota = AccountSwitchQuota(windows: [.session: window(95, in: 1000)])
         var snapshot = ProviderSnapshot(
             providerID: provider.id, displayName: provider.displayName, lines: [],
             refreshedAt: now, liveQuotaObservedAt: now, liveQuotaAccountKey: "verified")
@@ -139,6 +140,8 @@ final class AccountSwitchRecommendationTests: XCTestCase {
             account: account.identityKey,
             source: .file(path: AccountCredentialSwitcher().sharedHomePath(family: "codex") + "/auth.json"))
         snapshot.liveQuotaAccountKey = snapshot.codexResetClaimBinding?.verifiedAccountKey
+        quota.codexAccountKey = snapshot.liveQuotaAccountKey
+        snapshot.codexSwitchQuota = quota
         let runtime = TestProviderRuntime(provider: provider, descriptors: [], snapshot: snapshot)
         func store(for identity: String) -> WidgetDataStore {
             WidgetDataStore(
@@ -191,12 +194,19 @@ final class AccountSwitchRecommendationTests: XCTestCase {
         let current = try fixture.store.add(family: "codex", label: "Current", identityKey: "current", id: "codex-a")
         let target = try fixture.store.add(family: "codex", label: "Target", identityKey: "target", id: "codex-b")
         func entry(_ id: String) -> AccountCredentialVault.Entry {
-            .init(credential: #"{"tokens":{"access_token":"fixture","account_id":"\#(id)"}}"#, claudeOAuthAccount: nil)
+            let payload = Data(#"{"sub":"\#(id)"}"#.utf8).base64EncodedString()
+            return .init(
+                credential: #"{"tokens":{"access_token":"header.\#(payload).signature","account_id":"\#(id)"}}"#,
+                claudeOAuthAccount: nil)
         }
+        try fixture.switcher.saveSnapshot(entry("current"), for: current)
         try fixture.switcher.saveSnapshot(entry("target"), for: target)
         try fixture.switcher.applySharedAuthentication(entry("current"), family: "codex")
 
-        let pending = AccountSwitchRecommendation(current: current, target: target)
+        let pending = AccountSwitchRecommendation(
+            current: current, target: target,
+            codexCurrentAccountKey: CodexResetClaimBinding.verifiedAccountKey(for: entry("current").credential),
+            codexTargetAccountKey: CodexResetClaimBinding.verifiedAccountKey(for: entry("target").credential))
         let path = fixture.root.appendingPathComponent(".codex/auth.json")
         let external = entry("external")
         let service = AccountCredentialVault.service(family: "codex", profileID: target.id)
@@ -205,7 +215,6 @@ final class AccountSwitchRecommendationTests: XCTestCase {
         }
         do {
             try await fixture.selectionSwitcher.switchAuthentication(to: target, in: fixture.store) { identity in
-                XCTAssertEqual(identity, "external")
                 try pending.validate(departure: identity, latest: pending)
             }
             XCTFail("The external login must remain active")

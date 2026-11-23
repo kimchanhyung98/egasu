@@ -37,7 +37,7 @@ struct AccountSelectionSwitcher {
         if selected.family != "claude" {
             try switcher.switchAuthentication(
                 to: selected, from: store.preferredProfile(family: selected.family),
-                validateCodexDeparture: validateDeparture)
+                validateCodexDeparture: validateDeparture, validateTarget: validateTarget)
             store.setPreferred(family: selected.family, profileID: selected.id)
             return
         }
