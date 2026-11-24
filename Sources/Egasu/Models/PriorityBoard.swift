@@ -78,9 +78,15 @@ struct PriorityItem: Identifiable {
         }
     }
 
-    func runOutText(now: Date) -> String? {
+    func runOutInterval(now: Date) -> TimeInterval? {
         guard case .burningFast(let runway) = reason, let resetsAt = data.resetsAt,
-              runway < resetsAt.timeIntervalSince(now), let duration = Formatters.compactDuration(runway)
+            runway > 0, runway < resetsAt.timeIntervalSince(now)
+        else { return nil }
+        return runway
+    }
+
+    func runOutText(now: Date) -> String? {
+        guard let runway = runOutInterval(now: now), let duration = Formatters.compactDuration(runway)
         else { return nil }
         return L10n.dashboard("Out in %@", duration)
     }

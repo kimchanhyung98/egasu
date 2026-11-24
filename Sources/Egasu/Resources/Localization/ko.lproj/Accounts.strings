@@ -82,3 +82,7 @@
 "Signed In" = "로그인 완료";
 "Check this account's sign-in status in Accounts." = "계정 탭에서 이 계정의 로그인 상태를 확인하세요.";
 "Sign In Again to %@" = "%@ 계정 다시 로그인";
+"Current Login" = "현재 로그인";
+"Shared Usage" = "공통 사용량";
+"Account %lld" = "계정 %lld";
+"%@ · Account %lld" = "%@ · 계정 %lld";

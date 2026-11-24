@@ -4,10 +4,12 @@ import AppKit
 public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var container: AppContainer?
     private var statusItemController: StatusItemController?
+    private var widgetNavigation = DesktopWidgetNavigation()
     private var singleInstanceLock: SingleInstanceLock.Token?
     private var isAwaitingProcessShutdown = false
     private var terminationSignalSource: DispatchSourceSignal?
     private let updater = UpdaterController()
+    private var desktopWidgets: DesktopWidgetPublisher?
 
     public override init() {
         super.init()
@@ -109,6 +111,17 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { await finishLaunching(isFreshInstall: isFreshInstall) }
     }
 
+    public func application(_ application: NSApplication, open urls: [URL]) {
+        guard let scheme = Bundle.main.object(forInfoDictionaryKey: "EgasuWidgetURLScheme") as? String else { return }
+        widgetNavigation.receive(urls, scheme: scheme)
+        openPendingWidgetDestination()
+    }
+
+    private func openPendingWidgetDestination() {
+        guard let statusItemController, let destination = widgetNavigation.take() else { return }
+        statusItemController.openFromWidget(destination)
+    }
+
     private func finishLaunching(isFreshInstall: Bool) async {
         let migrationError: Error?
         do {
@@ -133,7 +146,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             container?.popover.reconcileSettingsTab(betaUpdatesEnabled: enabled)
         }
         self.container = container
+        desktopWidgets = DesktopWidgetPublisher.start(for: container)
         statusItemController = StatusItemController(container: container, updater: updater)
+        openPendingWidgetDestination()
         // 백그라운드 업데이트 체크 시작 (release build 한정).
         updater.start()
     }
@@ -163,6 +178,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 종료 시 대기 telemetry flush — SDK lifecycle autocapture off라 자동 flush 부재, 저빈도 이벤트 유실 방지.
     public func applicationWillTerminate(_ notification: Notification) {
+        desktopWidgets?.finish()
         container?.telemetry.flush()
     }
 }

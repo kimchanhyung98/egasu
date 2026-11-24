@@ -26,6 +26,8 @@ Swift 빌드가 실패하면 실행 중인 앱 유지.
 
 스크립트는 서명된 앱 번들을 `dist/`에 생성.
 서명 신원은 `CODESIGN_IDENTITY` 환경 변수, 저장소 루트의 `.env.local.codesign-identity`, Apple Development 자동 선택 순서로 결정.
+팀 식별자가 있는 인증서를 사용하면 [데스크톱 위젯](/docs/desktop-widgets.md)을 함께 빌드해 앱의 `Contents/PlugIns`에 포함.
+ad-hoc 서명으로 빌드하면 데스크톱 위젯이 제외되며 빌드 출력에 사유 표시.
 이 Mac의 인증서를 고정하려면 `.env.local.codesign-identity`에 인증서 지문 또는 정확한 이름을 한 줄로 저장.
 이 파일은 Git에서 제외되는 로컬 설정.
 명시하거나 고정한 서명 신원은 임시 실행 파일 복사본에 `codesign --dryrun`을 실행해 사용 가능 여부 확인.

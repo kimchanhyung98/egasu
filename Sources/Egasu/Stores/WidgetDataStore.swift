@@ -465,6 +465,10 @@ final class WidgetDataStore {
     /// backedOff는 실패 대기, skipped는 비활성·미등록·진행 중 등의 사유로 조회 생략.
     typealias RefreshOutcome = ProviderRefreshCoordinator.RefreshOutcome
 
+    func usageRefreshFailed(for providerID: String) -> Bool {
+        refreshCoordinator.refreshResults[providerID]?.failure != nil
+    }
+
     func errorMessage(for providerID: String) -> String? {
         refreshResults[providerID]?.failure?.localizedMessage
     }
