@@ -79,6 +79,7 @@ struct AccountIdentityReplacement: Codable, Equatable, Sendable {
     var replacesSharedAuthentication: Bool
     var claudeGeneration: ClaudeGeneration?
     var externalClaudeGeneration: ExternalClaudeGeneration? = nil
+    var codexGeneration: CodexGeneration? = nil
 
     /// 외부 로그인에서 검증한 공유 세대와 저장본 교체 전·후의 지문.
     struct ExternalClaudeGeneration: Codable, Equatable, Sendable {
@@ -341,7 +342,8 @@ public final class AccountProfilesStore {
         with identityKey: String,
         replacesSharedAuthentication: Bool,
         claudeGeneration: AccountIdentityReplacement.ClaudeGeneration? = nil,
-        externalClaudeGeneration: AccountIdentityReplacement.ExternalClaudeGeneration? = nil
+        externalClaudeGeneration: AccountIdentityReplacement.ExternalClaudeGeneration? = nil,
+        codexGeneration: AccountIdentityReplacement.CodexGeneration? = nil
     ) throws -> AccountIdentityReplacement {
         try ensureRegistryWritable()
         guard let profile = profile(id: profileID) else {
@@ -362,17 +364,23 @@ public final class AccountProfilesStore {
             replacementIdentityKey: replacementIdentityKey,
             replacesSharedAuthentication: replacesSharedAuthentication,
             claudeGeneration: claudeGeneration,
-            externalClaudeGeneration: externalClaudeGeneration
+            externalClaudeGeneration: externalClaudeGeneration,
+            codexGeneration: codexGeneration
         )
         defaults.set(try JSONEncoder().encode(transaction), forKey: Self.identityReplacementKey)
         return transaction
     }
 
     func pendingIdentityReplacement() throws -> AccountIdentityReplacement? {
-        guard let data = defaults.data(forKey: Self.identityReplacementKey) else { return nil }
-        guard let transaction = try? JSONDecoder().decode(AccountIdentityReplacement.self, from: data) else {
+        try Self.pendingIdentityReplacement(defaults: defaults)
+    }
+
+    static func pendingIdentityReplacement(defaults: UserDefaults) throws -> AccountIdentityReplacement? {
+        guard let stored = defaults.object(forKey: Self.identityReplacementKey) else { return nil }
+        guard let data = stored as? Data,
+            let transaction = try? JSONDecoder().decode(AccountIdentityReplacement.self, from: data)
+        else {
             AppLog.error(.auth, "account identity replacement journal is unreadable")
-            defaults.removeObject(forKey: Self.identityReplacementKey)
             throw AccountIdentityReplacementError.invalidTransaction
         }
         return transaction

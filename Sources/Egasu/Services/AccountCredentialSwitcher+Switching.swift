@@ -151,7 +151,13 @@ extension AccountCredentialSwitcher {
         } catch {
             if selected.family == "codex", let active {
                 do {
-                    try applySharedAuthentication(active, family: selected.family)
+                    let current = try readSharedAuthentication(family: "codex")
+                        .map { AccountSwitchJournal.fingerprint($0.credential) }
+                    if current == AccountSwitchJournal.fingerprint(target.credential) {
+                        try applySharedAuthentication(active, family: selected.family)
+                    } else if current != AccountSwitchJournal.fingerprint(active.credential) {
+                        throw CodexAuthError.credentialsChanged
+                    }
                 } catch {
                     AppDiagnostics.failure(
                         .accountRollback, error: error, providerID: selected.family,

@@ -103,6 +103,7 @@ struct RegisteredAccountRows: View {
         .onChange(of: container.accountSwitch.isSwitching) { _, isSwitching in
             if !isSwitching { refreshSwitchRecovery() }
         }
+        .onChange(of: container.dataStore.refreshResults) { _, _ in refreshSwitchRecovery() }
         .onChange(of: container.dataStore.refreshingProviderIDs) { previous, current in
             if Self.needsSignInRecheck(
                 state: signInState, finishedCardIDs: previous.subtracting(current), profileID: profile.id,
@@ -185,9 +186,8 @@ struct RegisteredAccountRows: View {
     }
 
     private func refreshSwitchRecovery() {
-        guard profile.family == "claude" else { return }
         do {
-            hasPendingSwitch = try AccountSelectionSwitcher().hasPendingSwitch()
+            hasPendingSwitch = try AccountSelectionSwitcher().hasPendingSwitch(for: profile, in: store)
         } catch {
             AppDiagnostics.failure(.accountSwitch, error: error, providerID: profile.family)
             actionError = UserFacingErrors.message(error)

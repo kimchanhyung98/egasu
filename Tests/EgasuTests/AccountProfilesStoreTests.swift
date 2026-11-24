@@ -256,15 +256,16 @@ final class AccountProfilesStoreTests: XCTestCase {
         XCTAssertNil(try restored.pendingIdentityReplacement())
     }
 
-    func testUnreadableIdentityReplacementJournalIsClearedAfterReportingFailure() throws {
-        defaults.set(Data("not json".utf8), forKey: AccountProfilesStore.identityReplacementKey)
+    func testUnreadableIdentityReplacementJournalIsPreservedAfterReportingFailure() throws {
+        let raw = Data("not json".utf8)
+        defaults.set(raw, forKey: AccountProfilesStore.identityReplacementKey)
         let store = AccountProfilesStore(defaults: defaults)
 
         XCTAssertThrowsError(try store.pendingIdentityReplacement()) { error in
             XCTAssertEqual(error as? AccountIdentityReplacementError, .invalidTransaction)
         }
-        XCTAssertNil(defaults.data(forKey: AccountProfilesStore.identityReplacementKey))
-        XCTAssertNil(try store.pendingIdentityReplacement())
+        XCTAssertEqual(defaults.data(forKey: AccountProfilesStore.identityReplacementKey), raw)
+        XCTAssertThrowsError(try store.pendingIdentityReplacement())
     }
 
     func testInvalidAndOverLimitRecordsPreserveTheBlobAndBlockWrites() throws {

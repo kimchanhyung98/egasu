@@ -22,6 +22,8 @@ final class CodexProvider: ProviderRuntime {
     let includeSharedUsage: Bool
     let now: @Sendable () -> Date
     let pricing: @Sendable () async -> ModelPricing
+    /// 미완료 재로그인의 관리 계정은 회전만 보류하며 유효 토큰 조회는 유지.
+    let allowsCredentialRefresh: () throws -> Bool
 
     init(
         provider: Provider = CodexProvider.makeProvider(),
@@ -30,7 +32,8 @@ final class CodexProvider: ProviderRuntime {
         logUsageScanner: CodexLogUsageScanner = CodexLogUsageScanner(),
         includeSharedUsage: Bool = true,
         now: @escaping @Sendable () -> Date = Date.init,
-        pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() }
+        pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() },
+        allowsCredentialRefresh: @escaping () throws -> Bool = { true }
     ) {
         self.provider = provider
         self.authStore = authStore
@@ -39,6 +42,7 @@ final class CodexProvider: ProviderRuntime {
         self.includeSharedUsage = includeSharedUsage
         self.now = now
         self.pricing = pricing
+        self.allowsCredentialRefresh = allowsCredentialRefresh
     }
 
     var widgetDescriptors: [WidgetDescriptor] {
@@ -263,7 +267,7 @@ final class CodexProvider: ProviderRuntime {
 
         if authStore.needsRefresh(authState.auth),
            let refreshToken = authState.auth.tokens?.refreshToken,
-           !refreshToken.isEmpty {
+           !refreshToken.isEmpty, try allowsCredentialRefresh() {
             let refreshed = try await refreshAccessToken(
                 authState: &authState, refreshToken: refreshToken, expectedAccountKey: expectedAccountKey
             )
@@ -435,6 +439,7 @@ final class CodexProvider: ProviderRuntime {
         refreshToken: String,
         expectedAccountKey: String? = nil
     ) async throws -> String {
+        guard try allowsCredentialRefresh() else { throw CodexAuthError.credentialsChanged }
         let original = authState
         let response: CodexRefreshResponse
         do {

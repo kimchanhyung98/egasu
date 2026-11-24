@@ -18,6 +18,11 @@ struct AccountSelectionSwitcher {
         try journal.load() != nil
     }
 
+    func hasPendingSwitch(for profile: AccountProfile, in store: AccountProfilesStore) throws -> Bool {
+        if profile.family == "claude" { return try hasPendingSwitch() }
+        return try store.pendingIdentityReplacement()?.profileID == profile.id
+    }
+
     func switchAuthentication(
         to selected: AccountProfile, in store: AccountProfilesStore,
         validateDeparture: ((String?) throws -> Void)? = nil
@@ -35,10 +40,25 @@ struct AccountSelectionSwitcher {
             throw AccountProfileError.profileNotFound(selected.id)
         }
         if selected.family != "claude" {
-            try switcher.switchAuthentication(
-                to: selected, from: store.preferredProfile(family: selected.family),
-                validateCodexDeparture: validateDeparture, validateTarget: validateTarget)
-            store.setPreferred(family: selected.family, profileID: selected.id)
+            AccountCredentialMutationLock.acquire(family: selected.family)
+            defer { AccountCredentialMutationLock.release(family: selected.family) }
+            let recovery: CodexExplicitSwitchRecovery.Plan?
+            if validateTarget != nil || validateDeparture != nil {
+                guard try store.pendingIdentityReplacement() == nil else {
+                    throw AccountSwitchRecommendation.NoLongerAvailable()
+                }
+                recovery = nil
+            } else {
+                recovery = try CodexExplicitSwitchRecovery.prepare(in: store, using: switcher)
+            }
+            if let recovery {
+                try CodexExplicitSwitchRecovery.apply(recovery, to: selected, in: store, using: switcher)
+            } else {
+                try switcher.switchAuthentication(
+                    to: selected, from: store.preferredProfile(family: selected.family),
+                    validateCodexDeparture: validateDeparture, validateTarget: validateTarget)
+                store.setPreferred(family: selected.family, profileID: selected.id)
+            }
             return
         }
         guard !store.hasUnreadableRegistry, try store.pendingIdentityReplacement() == nil else {

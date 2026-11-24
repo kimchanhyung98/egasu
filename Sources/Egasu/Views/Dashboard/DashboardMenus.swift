@@ -58,13 +58,13 @@ enum DashboardMenus {
 
     static func profileAction(
         for profile: AccountProfile, status: AccountStatus, isSelected: Bool,
-        displayName: String, isBusy: Bool
+        displayName: String, isBusy: Bool, hasPendingRecovery: Bool = false
     ) -> DashboardMenuItem? {
-        if profile.family == "codex", !status.canSwitch {
+        if profile.family == "codex", !status.canSwitch, !hasPendingRecovery {
             return DashboardMenuItem(
                 title: L10n.accounts("Sign In Again…"), command: .signInAgain(profile.id), isDisabled: isBusy)
         }
-        guard !isSelected else { return nil }
+        guard !isSelected || hasPendingRecovery else { return nil }
         return DashboardMenuItem(
             title: L10n.dashboard("Use %@: %@", profile.family.capitalized, displayName),
             command: .switchAccount(profile.id), isDisabled: isBusy)

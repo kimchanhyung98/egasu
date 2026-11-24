@@ -41,7 +41,9 @@ struct WidgetGroupedListView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .onPreferenceChange(ReorderFramePreferenceKey.self) { rowFrames = $0 }
         .animation(Motion.spring, value: families.map(\.id))
-        .accountSwitchConfirmation(selection: $pendingAccountSwitch, onError: { accountAlert = $0 })
+        .accountSwitchConfirmation(
+            selection: $pendingAccountSwitch, onError: { accountAlert = $0 },
+            allowsRecoveryRetry: pendingAccountSwitch?.family == "codex")
         .background {
             if let accountAlert, pendingAccountSwitch == nil, !container.accountSwitch.isSwitching, popover.popoverShown
             {
@@ -159,10 +161,18 @@ struct WidgetGroupedListView: View {
         else { return nil }
         let name = AccountNamePrivacy.displayName(
             profile.label, email: container.accountLoginEmail(for: profile), conceals: concealsAccountNames)
+        let hasPendingRecovery: Bool
+        do {
+            hasPendingRecovery = try profile.family == "codex"
+                && AccountSelectionSwitcher().hasPendingSwitch(for: profile, in: container.accountProfiles)
+        } catch {
+            AppDiagnostics.failure(.accountSwitch, error: error, providerID: profile.family)
+            return nil
+        }
         return DashboardMenus.profileAction(
             for: profile, status: container.accountStatus(for: profile, localState: nil),
             isSelected: container.accountProfiles.preferredProfileID(family: profile.family) == profile.id,
-            displayName: name, isBusy: accountActionIsBusy)
+            displayName: name, isBusy: accountActionIsBusy, hasPendingRecovery: hasPendingRecovery)
     }
 
     private var accountActionIsBusy: Bool {

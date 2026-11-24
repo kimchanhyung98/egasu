@@ -45,11 +45,15 @@ enum ProviderCatalog {
                 scope: codexHome.map { .home(path: $0) } ?? .standard,
                 expectedIdentityKey: codexAccountBinding?.identityKey,
                 managedSnapshotProfileID: codexSharedAuthHome == nil ? nil : codexSharedSnapshotProfileID
-            )
+            ),
+            allowsCredentialRefresh: {
+                guard codexSharedAuthHome != nil, let profileID = codexSharedSnapshotProfileID else { return true }
+                return try AccountProfilesStore.pendingIdentityReplacement(defaults: defaults)?.profileID != profileID
+            }
         ))
         for card in snapshotCards where card.family == "codex" {
             runtimes.append(codexSnapshotRuntime(
-                card: card,
+                card: card, defaults: defaults,
                 sharedAuthHome: codexSharedAuthHome ?? FileManager.default.homeDirectoryForCurrentUser
                     .appendingPathComponent(".codex").path
             ))
@@ -87,7 +91,9 @@ enum ProviderCatalog {
         )
     }
 
-    private static func codexSnapshotRuntime(card: AccountUsageSnapshotCard, sharedAuthHome: String) -> CodexProvider {
+    private static func codexSnapshotRuntime(
+        card: AccountUsageSnapshotCard, defaults: UserDefaults, sharedAuthHome: String
+    ) -> CodexProvider {
         CodexProvider(
             provider: CodexProvider.makeProvider(id: card.id, displayName: "Codex"),
             authStore: CodexAuthStore(
@@ -97,7 +103,10 @@ enum ProviderCatalog {
                 cacheIdentityOverride: "codex-snapshot:\(card.profileID)",
                 rootsOverride: []
             ),
-            includeSharedUsage: false
+            includeSharedUsage: false,
+            allowsCredentialRefresh: {
+                try AccountProfilesStore.pendingIdentityReplacement(defaults: defaults)?.profileID != card.profileID
+            }
         )
     }
 }

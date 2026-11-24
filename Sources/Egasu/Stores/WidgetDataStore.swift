@@ -59,10 +59,27 @@ final class WidgetDataStore {
     var scheduledRefreshDates: [String: Date] { refreshCoordinator.scheduledRefreshDates }
     var nextGeneralRefreshAt: Date?
     nonisolated static let refreshScheduleDidChange = ProviderRefreshSchedule.didChange
+    var accountReconciliationNotice: String?
     var claudeReconciliationFailure: ProviderRefreshFailure? { refreshCoordinator.claudeReconciliationFailure }
+    func reconciliationFailure(for cardID: String) -> ProviderRefreshFailure? {
+        refreshCoordinator.accountReconciliationFailures[cardID]
+    }
+    func clearCodexReconciliationFailure(for priorCardID: String?) {
+        if let priorCardID {
+            setAccountReconciliationFailure(nil, for: priorCardID)
+        } else {
+            let cardIDs = refreshCoordinator.accountReconciliationFailures.keys.filter {
+                ProviderAccountID.family(of: $0) == "codex"
+            }
+            for cardID in cardIDs {
+                setAccountReconciliationFailure(nil, for: cardID)
+            }
+        }
+    }
+    var codexReconciliationFailure: ProviderRefreshFailure? { reconciliationFailure(for: "codex") }
     var refreshResults: [String: ProviderRefreshResult] {
         var results = refreshCoordinator.refreshResults
-        if let claudeReconciliationFailure { results["claude"] = .failed(claudeReconciliationFailure) }
+        for (family, failure) in refreshCoordinator.accountReconciliationFailures { results[family] = .failed(failure) }
         return results
     }
     var providerErrors: [String: String] {
@@ -238,6 +255,10 @@ final class WidgetDataStore {
 
     func setClaudeReconciliationFailure(_ failure: ProviderRefreshFailure?) {
         refreshCoordinator.setClaudeReconciliationFailure(failure)
+    }
+
+    func setAccountReconciliationFailure(_ failure: ProviderRefreshFailure?, for family: String) {
+        refreshCoordinator.setAccountReconciliationFailure(failure, for: family)
     }
 
     func clearFailureBackoff(for providerID: String) { refreshCoordinator.clearFailureBackoff(for: providerID) }
@@ -450,7 +471,7 @@ final class WidgetDataStore {
     func needsKeychainApproval(_ providerID: String) -> Bool {
         ProviderAccountID.families.contains(ProviderAccountID.family(of: providerID))
             && (refreshCoordinator.refreshResults[providerID]?.failure?.category == .credentialAccess
-                || (providerID == "claude" && claudeReconciliationFailure?.category == .credentialAccess))
+                || refreshCoordinator.accountReconciliationFailures[providerID]?.category == .credentialAccess)
     }
 
     /// 마지막 정상 결과의 경고 — 이후 조회가 실패해도 유지될 수 있음.

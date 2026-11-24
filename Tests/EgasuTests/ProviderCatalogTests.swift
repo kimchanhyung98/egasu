@@ -71,6 +71,27 @@ final class ProviderCatalogTests: XCTestCase {
         XCTAssertEqual(snapshot?.authStore.managedSharedAuthHome, "/fixture/.codex")
     }
 
+    func testOnlyThePendingCodexProfilesRotationIsDeferredAndResumesWithoutRebuildingTheCatalog() throws {
+        let defaults = makeScratchDefaults()
+        let profiles = AccountProfilesStore(defaults: defaults)
+        let pending = try profiles.add(family: "codex", label: "Pending", identityKey: "workspace", id: "pending")
+        let other = try profiles.add(family: "codex", label: "Other", identityKey: "other-workspace", id: "other")
+        let transaction = try profiles.beginIdentityReplacement(
+            profileID: pending.id, with: pending.identityKey, replacesSharedAuthentication: true)
+        let cards = [pending, other].map {
+            AccountUsageSnapshotCard(id: AccountUsageCardPlanner.cardID(family: "codex", profileID: $0.id),
+                                     profileID: $0.id, family: "codex")
+        }
+        let runtimes = ProviderCatalog.make(
+            defaults: defaults, snapshotCards: cards, codexSharedAuthHome: "/fixture/.codex",
+            codexSharedSnapshotProfileID: pending.id).compactMap { $0 as? CodexProvider }
+        for runtime in runtimes {
+            XCTAssertEqual(try runtime.allowsCredentialRefresh(), runtime.provider.id == cards[1].id)
+        }
+        try profiles.cancelIdentityReplacement(transaction)
+        for runtime in runtimes { XCTAssertTrue(try runtime.allowsCredentialRefresh()) }
+    }
+
     func testCodexResetWatchPrecedesRateLimitResets() throws {
         let codex = try XCTUnwrap(
             ProviderCatalog.make()
