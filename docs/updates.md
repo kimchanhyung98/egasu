@@ -9,8 +9,15 @@ egasu는 Mac 앱의 표준 업데이트 프레임워크인 [Sparkle](https://spa
 설치 파일은 `egasu-1.0.0.dmg`, 앱 이름은 `egasu.app`, 터미널 명령은 `egasu`.
 Spotlight가 앱을 색인하면 `openusage`와 `usage` 검색 결과에도 `egasu.app` 표시.
 기존 설치의 설정·계정·iCloud 기록을 이어 쓰기 위해 Apple Bundle ID와 iCloud 컨테이너 ID 유지.
-`openusage.*` 저장 키·API 스키마, Keychain 서비스 이름, 기존 설정·데이터 경로도 유지.
-이름 변경 때문에 계정을 다시 등록하거나 설정 파일을 옮길 필요 없음.
+`openusage.*` 저장 키·API 스키마 유지.
+공식 CLI와 공유하는 Keychain 서비스 이름 유지.
+운영 앱의 로그인 작업 공간·상태·캐시는 새 폴더로 이동하고, API 키 파일은 복사.
+계정별 Keychain 스냅샷은 새 이름으로 복사하며 기존 항목 유지.
+승인이 필요한 스냅샷은 해당 계정의 **Fix** 또는 수동 새로 고침에서 macOS 승인 후 이전.
+등록된 계정 프로필은 그대로 사용하며 수동 파일 이동은 불필요.
+OpenRouter·Z.ai의 대상 키 파일이 이미 있으면 기존 파일을 유지.
+대상 파일과 프로바이더 공용 설정 파일·환경 변수에 모두 키가 없으면 API 키를 다시 입력.
+기존 대상 파일과 승인·실패 시 재시도 조건은 [기존 저장 위치 이전](/docs/privacy.md#기존-openusage-저장-위치-이전) 참조.
 
 기존 Sparkle은 새 앱을 원래 설치 경로에 배치.
 새 정식 앱의 첫 실행에서 `OpenUsage.app`을 같은 폴더의 `egasu.app`으로 변경한 뒤 재시작.
