@@ -159,23 +159,28 @@ struct ProviderSnapshotCache {
                 current.map {
                     $0.refreshedAt > snapshot.refreshedAt && (!markSessionFresh || $0.refreshedAt <= observedNow)
                 } ?? false
-            let acceptsHistory =
-                current != nil && stored.producedByIdentityKeys[snapshot.providerID] == producedByIdentityKey
-            let publishes = !older && (markSessionFresh || acceptsHistory)
-            mergeSession(
-                stored, snapshot: snapshot, identity: producedByIdentityKey, at: observedNow,
-                live: markSessionFresh, acceptsStoredWrite: publishes)
-            guard publishes else {
+            let publishes =
+                !older
+                && (markSessionFresh
+                    || (stored.producedByIdentityKeys[snapshot.providerID] == producedByIdentityKey
+                        && Self.matchesQuota(current, snapshot, codecs: persistsWrites ? (encoder, decoder) : nil)))
+            var didPublish = false
+            if publishes {
+                if persistsWrites {
+                    var payload = stored
+                    payload.snapshots[snapshot.providerID] = snapshot
+                    payload.producedByIdentityKeys[snapshot.providerID] = producedByIdentityKey
+                    didPublish = save(payload)
+                } else {
+                    didPublish = true
+                }
+            } else {
                 AppLog.debug(
                     .cache, "skip shared write \(AppLog.providerFamily(snapshot.providerID)) (stored snapshot changed)")
-                return
             }
-            if persistsWrites {
-                var payload = stored
-                payload.snapshots[snapshot.providerID] = snapshot
-                payload.producedByIdentityKeys[snapshot.providerID] = producedByIdentityKey
-                save(payload)
-            }
+            mergeSession(
+                stored, snapshot: snapshot, identity: producedByIdentityKey, at: observedNow,
+                live: markSessionFresh, acceptsStoredWrite: publishes, failedToPublish: publishes && !didPublish)
         }
         guard persistsWrites else {
             updating(loadPayload())
@@ -230,10 +235,35 @@ struct ProviderSnapshotCache {
         loadSession().payload ?? Payload(snapshots: [:], producedByIdentityKeys: [:])
     }
 
+    /// 가공된 이력 행을 제외한 한도와 조회 시각 대조. 디스크의 날짜는 v10 ISO 8601 정밀도로 비교.
+    private static func matchesQuota(
+        _ candidate: ProviderSnapshot?, _ edit: ProviderSnapshot, codecs: (JSONEncoder, JSONDecoder)? = nil
+    ) -> Bool {
+        guard let candidate, candidate.refreshedAt == edit.refreshedAt,
+            candidate.plan == edit.plan, candidate.incompleteQuotaWindows == edit.incompleteQuotaWindows,
+            candidate.metricPresentations == edit.metricPresentations
+        else { return false }
+        func matchesDate(_ lhs: Date?, _ rhs: Date?) -> Bool {
+            if codecs == nil { return lhs == rhs }
+            return lhs.map { floor($0.timeIntervalSince1970) } == rhs.map { floor($0.timeIntervalSince1970) }
+        }
+        guard matchesDate(candidate.quotaObservedAt, edit.quotaObservedAt),
+            matchesDate(candidate.usageRetryAfter, edit.usageRetryAfter)
+        else { return false }
+        let hasHistory = candidate.usageHistory != nil || edit.usageHistory != nil
+        let previous = hasHistory ? UsageHistorySnapshotRenderer.nonHistoryLines(candidate.lines) : candidate.lines
+        let incoming = hasHistory ? UsageHistorySnapshotRenderer.nonHistoryLines(edit.lines) : edit.lines
+        if previous == incoming { return true }
+        guard let (encoder, decoder) = codecs, let data = try? encoder.encode(incoming),
+            let decoded = try? decoder.decode([MetricLine].self, from: data)
+        else { return false }
+        return previous == decoded
+    }
+
     /// 공유 저장본과 실제 세션 조회를 구분하고 표시값·귀속·freshness를 함께 갱신.
     private func mergeSession(
         _ stored: Payload?, snapshot: ProviderSnapshot, identity: String?, at now: Date,
-        live: Bool, acceptsStoredWrite: Bool = false
+        live: Bool, acceptsStoredWrite: Bool = false, failedToPublish: Bool = false
     ) {
         let id = snapshot.providerID
         session.withLock { state in
@@ -250,17 +280,16 @@ struct ProviderSnapshotCache {
             let newerLocal =
                 local.map { $0.refreshedAt > snapshot.refreshedAt && (!live || $0.refreshedAt <= now) } ?? false
             let differentLocalAccount = !live && local != nil && visible.producedByIdentityKeys[id] != identity
-            let retainsLocalReading =
-                local?.refreshedAt == snapshot.refreshedAt && local?.freshnessDate == snapshot.freshnessDate
-            if (live || acceptsStoredWrite || retainsLocalReading) && !newerLocal && !differentLocalAccount {
+            let acceptsHistory = !live && (local == nil ? acceptsStoredWrite : Self.matchesQuota(local, snapshot))
+            if (live || acceptsHistory) && !newerLocal && !differentLocalAccount {
                 visible.snapshots[id] = snapshot
                 visible.producedByIdentityKeys[id] = identity
                 if live {
                     state.freshIDs.insert(id)
-                    if stored == nil { state.unpublishedIDs.insert(id) }
+                    if stored == nil || failedToPublish { state.unpublishedIDs.insert(id) }
                 }
             }
-            if acceptsStoredWrite { state.unpublishedIDs.remove(id) }
+            if acceptsStoredWrite && !failedToPublish { state.unpublishedIDs.remove(id) }
             state.payload = visible
         }
     }
@@ -294,7 +323,7 @@ struct ProviderSnapshotCache {
         }
     }
 
-    private func save(_ payload: Payload) {
+    private func save(_ payload: Payload) -> Bool {
         // encode 실패는 크게 log — 조용히 삼키면 snapshot이 persisted cache에서 소리 없이 빠짐.
         do {
             var persisted = payload
@@ -304,8 +333,10 @@ struct ProviderSnapshotCache {
             persisted.refreshTimestamps = payload.snapshots.mapValues { $0.refreshedAt.timeIntervalSinceReferenceDate }
             let data = try encoder.encode(persisted)
             userDefaults.set(data, forKey: storageKey)
+            return true
         } catch {
             AppLog.warn(.cache, "encode failed, snapshot not persisted: \(AppLog.errorDetails(error))")
+            return false
         }
     }
 
@@ -315,8 +346,14 @@ struct ProviderSnapshotCache {
         let descriptor = Darwin.open(persistenceLockURL.path, O_CREAT | O_RDWR | O_CLOEXEC, S_IRUSR | S_IWUSR)
         guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         defer { Darwin.close(descriptor) }
-        while flock(descriptor, LOCK_EX) != 0 {
-            guard errno == EINTR else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        let deadline = ContinuousClock.now + .milliseconds(100)
+        while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
+            let error = errno
+            guard error == EINTR || error == EWOULDBLOCK else {
+                throw POSIXError(POSIXErrorCode(rawValue: error) ?? .EIO)
+            }
+            guard ContinuousClock.now < deadline else { throw POSIXError(.ETIMEDOUT) }
+            if error == EWOULDBLOCK { Thread.sleep(forTimeInterval: 0.005) }
         }
         defer { flock(descriptor, LOCK_UN) }
         try body()

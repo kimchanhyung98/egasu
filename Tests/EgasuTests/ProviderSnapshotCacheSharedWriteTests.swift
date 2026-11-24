@@ -394,6 +394,30 @@ final class ProviderSnapshotCacheSharedWriteTests: XCTestCase {
         XCTAssertEqual(reader.terminationStatus, 0, output(of: reader))
     }
 
+    @MainActor
+    func testMainActorReturnsLocalReadingWhileAnotherProcessHoldsCacheLock() throws {
+        let suite = "EgasuTests.SharedCache.Process." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let holder = try fixtureProcess("hold-lock", suite: suite, directory: directory)
+        defer { if holder.isRunning { holder.terminate() } }
+        try waitForFile(directory.appendingPathComponent("ready"))
+        let app = ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite, now: { self.now })
+        let local = reading("codex", used: 30)
+        app.store(local, producedByIdentityKey: "local")
+        XCTAssertNil(defaults.data(forKey: "openusage.providerSnapshots.v10"))
+        XCTAssertEqual(app.snapshot(providerID: "codex")?.lines, local.lines)
+        try Data().write(to: directory.appendingPathComponent("continue"))
+        holder.waitUntilExit()
+        XCTAssertEqual(holder.terminationStatus, 0, output(of: holder))
+        let reader = ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite)
+        XCTAssertNil(reader.loadSnapshots(providerIDs: ["codex"])["codex"])
+        XCTAssertNotNil(reader.loadSnapshots(providerIDs: ["claude"])["claude"])
+    }
+
     func testChildProcessFixture() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let action = environment["EGASU_CACHE_FIXTURE_ACTION"],
@@ -419,6 +443,10 @@ final class ProviderSnapshotCacheSharedWriteTests: XCTestCase {
                 cache.loadSnapshots(providerIDs: ["claude"])["claude"]?.lines, reading("claude", used: 35).lines)
             XCTAssertEqual(cache.producedByIdentityKey(providerID: "codex"), "new-account")
             XCTAssertEqual(cache.producedByIdentityKey(providerID: "claude"), "claude-account")
+        case "hold-lock":
+            let holding = try XCTUnwrap(HoldingCacheDefaults(suiteName: suite))
+            holding.directory = directory
+            ProviderSnapshotCache(userDefaults: holding, storageDomainName: suite).store(reading("claude", used: 10))
         case "parallel-codex", "parallel-claude":
             _ = cache.loadSnapshots(providerIDs: ["codex", "claude"])
             try Data().write(to: directory.appendingPathComponent(action))
