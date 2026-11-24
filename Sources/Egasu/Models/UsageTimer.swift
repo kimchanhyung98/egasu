@@ -1,6 +1,15 @@
 import CryptoKit
 import Foundation
 
+/// 타이머 준비·검증에서만 원래 후보의 유효성을 다음 제공자 요청까지 전달.
+enum UsageTimerReadContext {
+    @TaskLocal static var isCurrent: @MainActor @Sendable () -> Bool = { true }
+
+    @MainActor static func check() throws {
+        guard isCurrent() else { throw CancellationError() }
+    }
+}
+
 struct UsageTimerObservation: Equatable, Sendable {
     enum StartRule: Sendable {
         case movingReset, missingReset

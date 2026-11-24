@@ -132,6 +132,7 @@ final class CodexProvider: ProviderRuntime {
     func prepareWeeklyTimerSession(expectedAccountKey: String, timerID: String = "codex.default.weekly") async throws -> CodexWeeklyTimerSession {
         guard await operationGate.acquire() else { throw CancellationError() }
         defer { operationGate.release() }
+        try UsageTimerReadContext.check()
         usageTimerObservations = []
         do {
             if let selection = weeklyTimerCredentialSelection {
@@ -393,7 +394,11 @@ final class CodexProvider: ProviderRuntime {
         return try await ProviderAuthRetry.fetch(
             provider: "codex",
             token: accessToken,
-            attempt: { try await self.usageClient.fetchUsage(accessToken: $0, accountID: working.auth.tokens?.accountID) },
+            attempt: { token in
+                try UsageTimerReadContext.check()
+                return try await self.usageClient.fetchUsage(
+                    accessToken: token, accountID: working.auth.tokens?.accountID)
+            },
             refreshAccessToken: {
                 guard let refreshToken = working.auth.tokens?.refreshToken, !refreshToken.isEmpty else {
                     throw CodexAuthError.tokenExpired
@@ -439,6 +444,7 @@ final class CodexProvider: ProviderRuntime {
         refreshToken: String,
         expectedAccountKey: String? = nil
     ) async throws -> String {
+        try UsageTimerReadContext.check()
         guard try allowsCredentialRefresh() else { throw CodexAuthError.credentialsChanged }
         let original = authState
         let response: CodexRefreshResponse

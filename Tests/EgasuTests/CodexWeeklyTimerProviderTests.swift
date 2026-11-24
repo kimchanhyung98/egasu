@@ -1,4 +1,5 @@
 import XCTest
+import os
 @testable import Egasu
 
 @MainActor
@@ -104,10 +105,12 @@ final class CodexWeeklyTimerProviderTests: XCTestCase {
                 """.utf8)
             return HTTPResponse(statusCode: 200, headers: [:], body: body)
         }
-        let provider = makeProvider(files: files, http: http) {
+        let provider = makeProvider(
+            files: files, http: http,
+            now: {
             http.requests.contains { $0.url == CodexUsageClient.resetCreditsURL }
                 ? Self.instant.addingTimeInterval(5) : Self.instant
-        }
+            })
 
         let snapshot = await provider.refresh()
         XCTAssertEqual(snapshot.liveQuotaObservedAt, Self.instant)
@@ -295,6 +298,104 @@ final class CodexWeeklyTimerProviderTests: XCTestCase {
         XCTAssertEqual(CodexAuthStore.parseAuth(files.files[Self.path]!)?.tokens, changed.tokens)
     }
 
+    func testRevokedTimerWaitingForAnOrdinaryCodexRefreshDoesNotReadQuota() async throws {
+        let suite = "TimerGate.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let setting = UsageTimerSetting(defaults: defaults)
+        let fixture = try UsageTimerRouterTests.Fixture()
+        defer { fixture.remove() }
+        let entered = expectation(description: "Ordinary refresh holds the provider gate")
+        let release = OSAllocatedUnfairLock<CheckedContinuation<Void, Never>?>(initialState: nil)
+        let files = FakeFiles([Self.path: try Self.text(Self.auth())])
+        let http = FakeHTTPClient(response: Self.quotaResponse)
+        let provider = makeProvider(
+            files: files, http: http,
+            pricing: {
+                await withCheckedContinuation { continuation in
+                    release.withLock { $0 = continuation }
+                    entered.fulfill()
+                }
+                return .empty
+            })
+        let regular = Task { await provider.refresh() }
+        await fulfillment(of: [entered], timeout: 3)
+        let observed = try XCTUnwrap(provider.weeklyTimerObservation)
+        let queue = BackgroundWorkQueue()
+        let dequeued = expectation(description: "Timer validated its candidate after leaving the queue")
+        var awaitingAdmission = false
+        let router = UsageTimerRouter(
+            providers: [provider],
+            isProviderEnabled: { _ in
+                if awaitingAdmission {
+                    awaitingAdmission = false
+                    dequeued.fulfill()
+                }
+                return true
+            }, usageTimerSetting: setting,
+            executor: fixture.executor(), store: fixture.store, report: { _, _ in }, refresh: { _, _ in },
+            now: { Self.instant }, workQueue: queue)
+        let initial = await queue.acquire("hold-timer")
+        router.receive(
+            .init(
+                providerID: provider.provider.id, displayName: "Codex", lines: [],
+                liveQuotaObservedAt: observed.observedAt),
+            trigger: .weeklyTimerCheck)
+        let deadline = ContinuousClock.now + .seconds(3)
+        while queue.pendingCount == 0, ContinuousClock.now < deadline { await Task.yield() }
+        XCTAssertEqual(queue.pendingCount, 1)
+        awaitingAdmission = true
+        queue.finish(try XCTUnwrap(initial))
+        await fulfillment(of: [dequeued], timeout: 3)
+        let count = http.requests.count
+        setting.isEnabled = false
+        setting.isEnabled = true
+        try XCTUnwrap(release.withLock { $0 }).resume()
+        let snapshot = await regular.value
+        XCTAssertNotNil(snapshot.liveQuotaObservedAt)
+        await router.waitForPendingWork(providerIDs: [provider.provider.id])
+        XCTAssertEqual(http.requests.count, count)
+        XCTAssertEqual(provider.weeklyTimerObservation, observed)
+        await router.shutdown()
+    }
+
+    func testRevokedTimerKeepsRotatedCredentialsAndSkipsTheNextQuotaRequest() async throws {
+        let suite = "TimerOAuth.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let setting = UsageTimerSetting(defaults: defaults)
+        let fixture = try UsageTimerRouterTests.Fixture()
+        defer { fixture.remove() }
+        let files = FakeFiles([Self.path: try Self.text(Self.auth())])
+        let rotated = try Self.auth(expiresIn: 7_200, refresh: "rotated")
+        let refreshBody = try JSONEncoder().encode([
+            "access_token": try XCTUnwrap(rotated.tokens?.accessToken), "refresh_token": "rotated"
+        ])
+        let http = RoutingHTTPClient { request in
+            if request.url == CodexUsageClient.refreshURL {
+                await MainActor.run {
+                    setting.isEnabled = false
+                    setting.isEnabled = true
+                }
+                return HTTPResponse(statusCode: 200, headers: [:], body: refreshBody)
+            }
+            return Self.quotaResponse
+        }
+        let provider = makeProvider(files: files, http: http)
+        let snapshot = await provider.refresh()
+        let initialRequests = http.requests.count
+        files.files[Self.path] = try Self.text(Self.auth(expiresIn: 120))
+        let router = UsageTimerRouter(
+            providers: [provider], isProviderEnabled: { _ in true }, usageTimerSetting: setting,
+            executor: fixture.executor(), store: fixture.store, report: { _, _ in }, refresh: { _, _ in },
+            now: { Self.instant })
+        router.receive(snapshot, trigger: .weeklyTimerCheck)
+        await router.waitForPendingWork(providerIDs: [provider.provider.id])
+        XCTAssertEqual(Array(http.requests.dropFirst(initialRequests)).map(\.url), [CodexUsageClient.refreshURL])
+        XCTAssertEqual(CodexAuthStore.parseAuth(files.files[Self.path]!)?.tokens, rotated.tokens)
+        await router.shutdown()
+    }
+
     func testPreparationUsesExistingRefreshAndPersistsRotatedTokens() async throws {
         let original = try Self.auth(expiresIn: 120)
         let refreshed = try Self.auth(expiresIn: 3_600, refresh: "rotated-refresh")
@@ -418,6 +519,7 @@ final class CodexWeeklyTimerProviderTests: XCTestCase {
 
     private func makeProvider(
         files: FakeFiles, http: any HTTPClient,
+        pricing: @escaping @Sendable () async -> ModelPricing = { .empty },
         now: @escaping @Sendable () -> Date = { CodexWeeklyTimerProviderTests.instant }
     ) -> CodexProvider {
         CodexProvider(
@@ -427,7 +529,7 @@ final class CodexWeeklyTimerProviderTests: XCTestCase {
             ),
             usageClient: CodexUsageClient(http: http),
             logUsageScanner: CodexLogUsageScanner(cacheIdentityOverride: "weekly-timer-tests", rootsOverride: []),
-            includeSharedUsage: false, now: now, pricing: { .empty }
+            includeSharedUsage: false, now: now, pricing: pricing
         )
     }
 

@@ -6,6 +6,14 @@ import { settingGroups, settingsTabs, alertConditions } from '../src/data/settin
 import { providerMetrics, softLimitWindowFor, softLimitWindows } from '../src/data/metrics.ts';
 import { initialPreviewState, changePreference, activateAccount, renameAccount, restorePreviewState, previewTime } from '../src/data/preview-state.ts';
 
+test('subscription timer automation defaults on and restores the saved choice', () => {
+  const initial = initialPreviewState();
+  assert.equal(initial.preferences.autoStartSubscriptionTimers, true);
+  const changed = changePreference(initial, 'autoStartSubscriptionTimers', false);
+  assert.equal(restorePreviewState(JSON.parse(JSON.stringify(changed))).preferences.autoStartSubscriptionTimers, false);
+  assert.equal(restorePreviewState({ preferences: {}, activeAccounts: {} }).preferences.autoStartSubscriptionTimers, true);
+});
+
 const source = (path: string): string => readFileSync(new URL(`../../Sources/Egasu/${path}`, import.meta.url), 'utf8');
 const englishSource = (path: string): string => source(path)
   .replace(/\bL10n\.\w+\(\s*("(?:\\.|[^"\\])*")\s*\)/g, '$1');

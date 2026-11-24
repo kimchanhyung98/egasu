@@ -72,7 +72,7 @@ final class WeeklyTimerProbe {
         UsageTimerCoordinator<CodexWeeklyTimerSession>(
             store: store,
             isCurrent: { self.enabled && self.bindings[$0] == $1 && self.accounts[$0] == $2 },
-            prepare: { _, observation in
+            prepare: { _, observation, _ in
                 let key = observation.accountKey
                 self.prepared.append(key)
                 await self.preparationHook?()
@@ -96,7 +96,7 @@ final class WeeklyTimerProbe {
                 await self.executionHook?(session.observation.accountKey)
                 return self.result
             },
-            verify: { _, _ in
+            verify: { _, _, _ in
                 await self.verificationHook?()
                 self.verificationTimes.append(self.now)
                 guard !self.verification.isEmpty else { return nil }

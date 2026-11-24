@@ -12,6 +12,7 @@
 "Always Show Pacing" = "Always Show Pacing";
 "Appearance" = "Appearance";
 "Auto" = "Auto";
+"Auto-Start Subscription Timers" = "Auto-Start Subscription Timers";
 "Bars" = "Bars";
 "Beta Updates" = "Beta Updates";
 "Cancel" = "Cancel";
@@ -87,6 +88,7 @@
 "Reveal in Finder" = "Reveal in Finder";
 "Running Tokscale…" = "Running Tokscale…";
 "Save" = "Save";
+"Sends a short request to start an unused subscription window for all supported accounts. The request can use some of your quota. Turning this off keeps usage updates on." = "Sends a short request to start an unused subscription window for all supported accounts. The request can use some of your quota. Turning this off keeps usage updates on.";
 "Share Anonymous Usage" = "Share Anonymous Usage";
 "Shares anonymous usage counts and error types to help improve egasu. No account details, credentials, or usage values are sent." = "Shares anonymous usage counts and error types to help improve egasu. No account details, credentials, or usage values are sent.";
 "Shares usage history through iCloud, so you can see one combined summary for all your Macs." = "Shares usage history through iCloud, so you can see one combined summary for all your Macs.";

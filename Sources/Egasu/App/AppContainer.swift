@@ -41,6 +41,7 @@ final class AppContainer {
     /// 되돌릴 수 없는 claim이 항상 카드가 표시하는 계정의 credential을 사용하도록 보장.
     let codexResetClaim: CodexResetClaimRouter
     private let usageTimer: UsageTimerRouter
+    var usageTimerSetting: UsageTimerSetting { usageTimer.usageTimerSetting }
     /// 런치 패스가 reconcile한 account registry. 계정 이름은 여기서 render 시점에 해석.
     let accounts: ProviderAccountsStore
     /// 관리형 launch-profile registry. 런치 account 패스와 Settings 계정 UI가 공유하는 단일 인스턴스.
@@ -322,10 +323,7 @@ final class AppContainer {
             scheduleChanged: { [weak self] in self?.nextUsageTimerCheckAt = $0 }
         ) { [weak usageTimer, weak dataStore] in
             guard let usageTimer, let dataStore else { return }
-            AppLog.info(.refresh, "Checking usage timer reset times (every 15 minutes)")
-            await UsageTimerCheckSchedule.refreshAccounts(usageTimer.requestScheduledCheck()) { providerID in
-                await dataStore.refresh(providerID: providerID, force: true, trigger: .weeklyTimerCheck)
-            }
+            await UsageTimerCheckSchedule.checkAccounts(router: usageTimer, dataStore: dataStore)
         }
         localAPI.start()
         softLimitCoordinator.start()

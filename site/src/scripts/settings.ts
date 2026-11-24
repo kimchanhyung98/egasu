@@ -13,7 +13,7 @@ let verifyingTerminalHelper = false;
 const pending = new WeakMap<HTMLElement, { family: string; id: string; button: HTMLElement }>();
 const notificationPreferences = ['warningNotification', 'criticalNotification', 'closeToRunningOut', 'useItOrLoseItNotification', 'quotaRecovered', 'codexResetWatch'];
 const appOnlyPreferences = new Set([
-  'launchAtLogin', ...notificationPreferences, 'shareAnonymousUsage', 'updateAutomatically', 'betaUpdates', 'logLevel',
+  'launchAtLogin', 'autoStartSubscriptionTimers', ...notificationPreferences, 'shareAnonymousUsage', 'updateAutomatically', 'betaUpdates', 'logLevel',
 ]);
 
 function report(error: unknown, message: string): void {

@@ -265,9 +265,10 @@ final class ProviderRefreshCoordinator {
         force: Bool = false,
         trigger: RefreshTrigger = .scheduled,
         notifyHistoryChange: Bool = true,
-        codexBinding: CodexResetClaimBinding? = nil
+        codexBinding: CodexResetClaimBinding? = nil,
+        isCurrent: @escaping @MainActor () -> Bool = { true }
     ) async -> RefreshOutcome {
-        guard !Task.isCancelled, isProviderEnabled(providerID) else { return .skipped }
+        guard !Task.isCancelled, isCurrent(), isProviderEnabled(providerID) else { return .skipped }
         guard isRefreshSuspended?(providerID) != true else { return .skipped }
         let family = AppLog.providerFamily(providerID)
         var cacheIdentity = snapshotStore.identityKeys[providerID]
@@ -276,7 +277,7 @@ final class ProviderRefreshCoordinator {
         {
             let generation = catalogGeneration
             cacheIdentity = await cursor.currentIdentityKey()
-            guard !Task.isCancelled, generation == catalogGeneration, isProviderEnabled(providerID),
+            guard !Task.isCancelled, isCurrent(), generation == catalogGeneration, isProviderEnabled(providerID),
                 isRefreshSuspended?(providerID) != true
             else { return .skipped }
             if snapshotStore.discardMismatchedCursorReading(for: providerID, currentIdentityKey: cacheIdentity) {
@@ -314,15 +315,20 @@ final class ProviderRefreshCoordinator {
         var authenticationGeneration = authenticationGenerations[providerID, default: 0]
         var boundCredentialGeneration = credentialGenerations[providerID, default: 0]
         var start: TimeInterval = 0
-        guard let result = await refreshWork.run(lease, provider: provider, trigger: trigger, prepare: {
-            guard self.isProviderEnabled(providerID), self.isRefreshSuspended?(providerID) != true,
-                  self.providersByID[providerID] === provider else { return false }
-            boundGeneration = self.catalogGeneration
-            authenticationGeneration = self.authenticationGenerations[providerID, default: 0]
-            boundCredentialGeneration = self.credentialGenerations[providerID, default: 0]
-            start = self.monotonicNow()
-            return true
-        }) else { return .skipped }
+        guard
+            let result = await refreshWork.run(
+                lease, provider: provider, trigger: trigger, isCurrent: isCurrent,
+                prepare: {
+                    guard self.isProviderEnabled(providerID), self.isRefreshSuspended?(providerID) != true,
+                        self.providersByID[providerID] === provider
+                    else { return false }
+                    boundGeneration = self.catalogGeneration
+                    authenticationGeneration = self.authenticationGenerations[providerID, default: 0]
+                    boundCredentialGeneration = self.credentialGenerations[providerID, default: 0]
+                    start = self.monotonicNow()
+                    return true
+                })
+        else { return .skipped }
         var snapshot: ProviderSnapshot
         switch result {
         case .snapshot(let value):
@@ -352,6 +358,10 @@ final class ProviderRefreshCoordinator {
         guard !Task.isCancelled else {
             needsScheduleWake = true
             AppLog.debug(.refresh, "cancelled \(family) refresh; keeping last-good snapshot")
+            return .skipped
+        }
+        guard isCurrent() else {
+            needsScheduleWake = true
             return .skipped
         }
         // 조회 중 카탈로그가 바뀌면 결과 폐기 — 같은 카드 ID가 다른 계정을 가리킬 수 있음.
