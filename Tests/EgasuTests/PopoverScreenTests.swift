@@ -91,6 +91,25 @@ final class PopoverScreenTests: XCTestCase {
         XCTAssertEqual(state.screenSlideID, 2, "같은 화면 재설정은 slide를 기록하지 않음")
     }
 
+    func testSlideCompletionFollowsTheVisibleScreenThroughDetailChangesAndReopening() {
+        let state = PopoverState(dashboardTab: .priority)
+        state.show()
+        state.openAccounts("codex")
+        let accountsSlide = state.screenSlideID
+        XCTAssertTrue(state.back())
+        XCTAssertTrue(state.isShowingSlide(accountsSlide))
+        XCTAssertTrue(state.back())
+        let dashboardSlide = state.screenSlideID
+        XCTAssertFalse(state.isShowingSlide(accountsSlide))
+        XCTAssertTrue(state.isShowingSlide(dashboardSlide))
+        state.popoverShown = false
+        XCTAssertFalse(state.isShowingSlide(dashboardSlide))
+        state.reset()
+        state.show()
+        XCTAssertTrue(state.isShowingSlide(dashboardSlide))
+        XCTAssertFalse(state.isShowingSlide(accountsSlide))
+    }
+
     func testLeavingAccountsClearsDetailAndSheet() {
         let state = PopoverState()
         state.openAccounts("claude")
@@ -100,6 +119,10 @@ final class PopoverScreenTests: XCTestCase {
         state.screen = .settings
         XCTAssertNil(state.accountDetailID)
         XCTAssertFalse(state.isAddingAccount)
+        XCTAssertEqual(state.displayedAccountDetail(on: .accounts), "claude")
+        XCTAssertNil(PopoverFooter(screen: .accounts, accountDetailID: state.displayedAccountDetail(on: .accounts)))
+        state.openAccounts(nil)
+        XCTAssertNil(state.displayedAccountDetail(on: .accounts))
     }
 
     func testBackStepsFromDetailToListToDashboard() {

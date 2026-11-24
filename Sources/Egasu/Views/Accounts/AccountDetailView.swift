@@ -58,7 +58,7 @@ struct AccountDetailView: View {
     }
 
     private func backToList() {
-        withAnimation(Motion.navigation) { popover.accountDetailID = nil }
+        popover.accountDetailID = nil
     }
 }
 

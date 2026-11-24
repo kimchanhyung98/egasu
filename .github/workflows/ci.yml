@@ -33,5 +33,22 @@ jobs:
       - name: Build ARM64 app and tests
         run: swift build --arch arm64 --build-tests
 
+      - name: Run panel geometry tests
+        id: panel_geometry
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --filter DashboardTabSwitchTests 2>&1 | tee "$RUNNER_TEMP/panel-geometry-tests.log"
+
+      - name: Upload panel geometry failure log
+        if: ${{ !cancelled() && steps.panel_geometry.outcome == 'failure' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: panel-geometry-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/panel-geometry-tests.log
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Run tests
+        if: ${{ !cancelled() && (success() || steps.panel_geometry.outcome == 'failure') }}
         run: swift test

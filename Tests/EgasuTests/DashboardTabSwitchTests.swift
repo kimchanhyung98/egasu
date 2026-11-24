@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
+import os
 @testable import Egasu
 
 /// 대시보드 탭 전환 — 누르는 순간 선택, 패널 크기가 바뀌는 동안 아래 바가 새 행을 가림.
@@ -57,6 +58,114 @@ final class DashboardTabSwitchTests: XCTestCase {
         }
     }
 
+    func testAccountNavigationReservesTheWholeFooterOrNone() async throws {
+        let popover = PopoverState()
+        popover.openAccounts(nil)
+        var samples: [EdgeInsets] = []
+        var footerVisible: [Bool] = []
+        var nativeInsets: [CGFloat] = []
+        var insets: [CGFloat] { samples.filter { $0.top > 0 }.map(\.bottom) }
+        let footerHeight: CGFloat = 47
+        func page() -> AccountInsetProbe {
+            AccountInsetProbe(
+                accountDetailID: popover.accountDetailID, footerHeight: footerHeight,
+                record: { samples.append($0) }, footerVisibility: { footerVisible.append($0) })
+        }
+        let (window, host) = show(page(), size: CGSize(width: PanelMetrics.width, height: 200))
+        let scroll = try XCTUnwrap(descendants(of: host).compactMap { $0 as? NSScrollView }.first)
+        func waitForInset(_ expected: CGFloat, line: UInt = #line) async throws {
+            try await waitUntil(
+                diagnostic: {
+                    return "Expected bottom inset \(expected), detail=\(String(describing: popover.accountDetailID)), "
+                        + "hostDetail=\(String(describing: host.rootView.accountDetailID)), "
+                        + "scrollInsets=\(String(describing: scroll.contentInsets)), "
+                        + "footerVisible=\(footerVisible), visibleRect=\(String(describing: scroll.documentVisibleRect)), "
+                        + "documentHeight=\(String(describing: scroll.documentView?.frame.height)), "
+                        + "native=\(nativeInsets), occlusion=\(window.occlusionState.rawValue), top/bottom=\(samples.map { [$0.top, $0.bottom] })"
+                },
+                {
+                    host.layoutSubtreeIfNeeded()
+                    guard scroll.contentInsets.top > 0 else { return false }
+                    nativeInsets.append(scroll.contentInsets.bottom)
+                    return nativeInsets.last == expected
+                }, line: line)
+            XCTAssertTrue(descendants(of: host).contains { $0 === scroll }, line: line)
+        }
+        try await waitForInset(footerHeight)
+        popover.openAccounts("codex")
+        host.rootView = page()
+        try await waitForInset(0)
+        popover.back()
+        host.rootView = page()
+        try await waitForInset(footerHeight)
+        XCTAssertTrue(nativeInsets.allSatisfy { $0 == 0 || $0 == footerHeight }, "\(nativeInsets)")
+        XCTAssertTrue(insets.allSatisfy { $0 == 0 || $0 == footerHeight }, "푸터 여백이 따로 애니메이션됨: \(insets)")
+    }
+
+    func testAccountNavigationMeasuresEachRouteWithEqualContentHeights() async throws {
+        var heights = MeasuredPanelHeights()
+        var measurements: [PanelPageMeasurement] = []
+        let inputs = OSAllocatedUnfairLock(initialState: [String]())
+        func page(_ detail: String?) -> AccountHeightProbe {
+            AccountHeightProbe(detail: detail, inputs: inputs) { measurement in
+                measurements.append(measurement)
+                heights[.accounts, measurement.tab, measurement.detail] = measurement.height
+            }
+        }
+        let (_, host) = show(page(nil), size: CGSize(width: PanelMetrics.width, height: 200))
+        let scroll = try XCTUnwrap(descendants(of: host).compactMap { $0 as? NSScrollView }.first)
+        func waitForHeight(_ height: CGFloat, detail: String?, after count: Int, line: UInt = #line) async throws {
+            try await waitUntil(
+                diagnostic: {
+                    "Expected \(height) for \(String(describing: detail)), inputs=\(inputs.withLock { $0 }), "
+                        + "measurements=\(measurements)"
+                },
+                {
+                    host.layoutSubtreeIfNeeded()
+                    return measurements.count > count && measurements.last?.detail == detail
+                        && heights[.accounts, .priority, detail] == height
+                }, line: line)
+            XCTAssertTrue(descendants(of: host).contains { $0 === scroll }, line: line)
+        }
+        try await waitForHeight(577, detail: nil, after: 0)
+        let initial = measurements.count
+        host.rootView = page("codex")
+        try await waitForHeight(530, detail: "codex", after: initial)
+        let detailed = measurements.count
+        host.rootView = page(nil)
+        try await waitForHeight(577, detail: nil, after: detailed)
+    }
+
+    func testHostedPanelHeightEffectDrawsIntermediateFramesAndReversesFromThePresentedHeight() async throws {
+        let model = PanelMotionProbe()
+        var heights: [CGFloat] = []
+        PanelHeightBridge.invalidate()
+        MenuBarPopover.applyHeight = { heights.append($0) }
+        defer {
+            MenuBarPopover.applyHeight = nil
+            PanelHeightBridge.invalidate()
+        }
+        let (_, host) = show(PanelMotionProbeView(model: model), size: CGSize(width: PanelMetrics.width, height: 240))
+        try await waitUntil { heights.last == 240 }
+        withAnimation(.linear(duration: 0.6)) { model.progress = 1 }
+        try await waitUntil { (heights.last ?? 0) > 265 }
+        let turn = try XCTUnwrap(heights.last)
+        XCTAssertLessThan(turn, 600)
+        let firstReturn = heights.count
+        withAnimation(nil) {
+            model.motion = model.presentation.restart().motion
+            model.path = PanelHeightPath(start: turn, end: 240)
+            model.progress = 0
+        }
+        host.layoutSubtreeIfNeeded()
+        await Task.yield()
+        withAnimation(.linear(duration: 0.25)) { model.progress = 1 }
+        try await waitUntil { heights.last == 240 }
+        let returning = Array(heights.dropFirst(firstReturn))
+        XCTAssertTrue(returning.contains { $0 > 240 && $0 < turn })
+        XCTAssertTrue(zip([turn] + returning, returning).allSatisfy { $1 <= $0 + 1 })
+    }
+
     /// 탭 전환은 패널이 새 높이를 받기 한 프레임 전에 새 행을 그림 — 그동안 아래 바가 패널 색으로 가림.
     func testTheBottomBarCoversContentOnlyWhileThePanelIsAtAnotherHeight() async throws {
         let barHeight: CGFloat = 30
@@ -105,7 +214,7 @@ final class DashboardTabSwitchTests: XCTestCase {
 
     // MARK: - Fixtures
 
-    private func show(_ content: some View, size: CGSize) -> (NSWindow, NSView) {
+    private func show<Content: View>(_ content: Content, size: CGSize) -> (NSWindow, NSHostingView<Content>) {
         let host = NSHostingView(rootView: content)
         host.frame = NSRect(origin: .zero, size: size)
         let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
@@ -139,12 +248,12 @@ final class DashboardTabSwitchTests: XCTestCase {
     }
 
     private func waitUntil(
-        timeout: Duration = .seconds(2), _ condition: () -> Bool,
+        timeout: Duration = .seconds(2), diagnostic: () -> String = { "Timed out waiting" }, _ condition: () -> Bool,
         file: StaticString = #filePath, line: UInt = #line
     ) async throws {
         let deadline = ContinuousClock.now + timeout
         while !condition() {
-            guard ContinuousClock.now < deadline else { return XCTFail("Timed out waiting", file: file, line: line) }
+            guard ContinuousClock.now < deadline else { return XCTFail(diagnostic(), file: file, line: line) }
             try await Task.sleep(for: .milliseconds(10))
         }
     }
@@ -183,5 +292,81 @@ private struct Segments: View {
             selectsOnPress: selectsOnPress
         )
         .frame(width: 200, height: 60)
+    }
+}
+
+@MainActor
+@Observable
+private final class PanelMotionProbe {
+    var motion = 0
+    var progress: CGFloat = 0
+    var path = PanelHeightPath(start: 240, end: 600)
+    let presentation = PanelHeightPresentation()
+}
+
+private struct PanelMotionProbeView: View {
+    let model: PanelMotionProbe
+
+    var body: some View {
+        Color.blue.background {
+            Color.clear
+                .modifier(
+                    PanelHeightModifier(
+                        path: model.path, progress: model.progress, motion: model.motion,
+                        presentation: model.presentation
+                    )
+                )
+                .id(model.motion)
+                .transition(.identity)
+        }
+    }
+}
+
+private struct AccountInsetProbe: View {
+    let accountDetailID: String?
+    let footerHeight: CGFloat
+    let record: (EdgeInsets) -> Void
+    let footerVisibility: (Bool) -> Void
+
+    var body: some View {
+        PopoverScrollView { Color.blue.frame(height: 500) }
+            .onScrollGeometryChange(for: EdgeInsets.self) {
+                $0.contentInsets
+            } action: { _, insets in
+                record(insets)
+            }
+            .panelBars {
+                Color.clear.frame(height: 30)
+            } bottom: {
+                PopoverFooter(screen: .accounts, accountDetailID: accountDetailID).map { _ in
+                    Color.clear.frame(height: footerHeight)
+                        .onAppear { footerVisibility(true) }
+                        .onDisappear { footerVisibility(false) }
+                }
+            }
+    }
+}
+
+private struct AccountHeightProbe: View {
+    let detail: String?
+    let inputs: OSAllocatedUnfairLock<[String]>
+    let record: (PanelPageMeasurement) -> Void
+
+    var body: some View {
+        let footer = PopoverFooter(screen: .accounts, accountDetailID: detail)
+        PopoverScrollView { Color.blue.frame(height: 500) }
+            .onScrollGeometryChange(for: PanelPageMeasurement?.self) { geometry in
+                let input = "\(detail ?? "list") body=\(geometry.contentSize.height) insets=\(geometry.contentInsets)"
+                inputs.withLock { if $0.last != input { $0.append(input) } }
+                return PanelPageMeasurement(
+                    screen: .accounts, tab: .priority, detail: detail, hasFooter: footer != nil, geometry: geometry)
+            } action: { _, measurement in
+                if let measurement { record(measurement) }
+            }
+            .panelBars {
+                Color.clear.frame(height: 30)
+            } bottom: {
+                footer.map { _ in Color.clear.frame(height: 47) }
+            }
     }
 }
