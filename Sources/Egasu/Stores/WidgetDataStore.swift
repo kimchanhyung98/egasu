@@ -61,7 +61,22 @@ final class WidgetDataStore {
     nonisolated static let refreshScheduleDidChange = ProviderRefreshSchedule.didChange
     var accountReconciliationNotice: String?
     var claudeReconciliationFailure: ProviderRefreshFailure? { refreshCoordinator.claudeReconciliationFailure }
-    var codexReconciliationFailure: ProviderRefreshFailure? { refreshCoordinator.accountReconciliationFailures["codex"] }
+    func reconciliationFailure(for cardID: String) -> ProviderRefreshFailure? {
+        refreshCoordinator.accountReconciliationFailures[cardID]
+    }
+    func clearCodexReconciliationFailure(for priorCardID: String?) {
+        if let priorCardID {
+            setAccountReconciliationFailure(nil, for: priorCardID)
+        } else {
+            let cardIDs = refreshCoordinator.accountReconciliationFailures.keys.filter {
+                ProviderAccountID.family(of: $0) == "codex"
+            }
+            for cardID in cardIDs {
+                setAccountReconciliationFailure(nil, for: cardID)
+            }
+        }
+    }
+    var codexReconciliationFailure: ProviderRefreshFailure? { reconciliationFailure(for: "codex") }
     var refreshResults: [String: ProviderRefreshResult] {
         var results = refreshCoordinator.refreshResults
         for (family, failure) in refreshCoordinator.accountReconciliationFailures { results[family] = .failed(failure) }
