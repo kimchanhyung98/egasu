@@ -149,6 +149,10 @@ final class PopoverState {
         withAnimation(Motion.modeSwitch) { screen = screen == target ? .dashboard : target }
     }
 
+    func isShowingSlide(_ slide: Int) -> Bool {
+        popoverShown && screenSlideID == slide
+    }
+
     func openAccounts(_ accountID: String?) {
         accountDetailID = accountID
         if screen != .accounts {

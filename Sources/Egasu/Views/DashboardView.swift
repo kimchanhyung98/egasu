@@ -101,13 +101,13 @@ struct DashboardView: View {
                 beginNavigation(animate: !reduceAnimations && !(screenChanged && new.slide == openingSlideID))
             }
             // 시작 프레임이 뷰에 반영된 뒤 같은 진행률로 화면과 패널 높이 이동.
-            .onChange(of: heightMotion) { _, motion in
+            .onChange(of: heightMotion) {
                 guard popover.popoverShown, slideProgress == 0 else { return }
                 let slide = popover.screenSlideID
                 withAnimation(Motion.navigation, completionCriteria: .removed) {
                     slideProgress = 1
                 } completion: {
-                    guard heightMotion == motion else { return }
+                    guard popover.isShowingSlide(slide) else { return }
                     settledSlideID = slide
                 }
             }
