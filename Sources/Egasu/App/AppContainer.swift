@@ -601,7 +601,18 @@ final class AppContainer {
         let family: String
         let failure: ProviderRefreshFailure?
         switch result {
-        case .success:
+        case .success(let updated):
+            if codexRecoveryOnly || !updated {
+                switch journal {
+                case .success(nil):
+                    break
+                case .success(let transaction?):
+                    guard codexRecoveryOnly, accountProfiles.profile(id: transaction.profileID)?.family == "claude"
+                    else { return }
+                case .failure:
+                    return
+                }
+            }
             family = codexRecoveryOnly ? "codex" : "claude"
             failure = nil
         case .failure(let error):
