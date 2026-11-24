@@ -6,6 +6,7 @@ import SwiftUI
 struct SettingsGeneralTab: View {
     @Environment(ICloudUsageSyncStore.self) private var iCloudSync
     @Environment(PopoverState.self) private var popover
+    @Environment(UsageTimerSetting.self) private var usageTimerSetting
     @AppStorage(DashboardTab.defaultKey) private var defaultTab = DashboardTab.priority
     @AppStorage(LanguageSetting.key) private var language = LanguageSetting.current
     @AppStorage(AppearanceSetting.key) private var appearance = AppearanceSetting.system
@@ -14,6 +15,7 @@ struct SettingsGeneralTab: View {
     let relauncher: AppRelauncher
 
     var body: some View {
+        @Bindable var usageTimerSetting = usageTimerSetting
         Section {
             Toggle(
                 L10n.settings("Launch at Login"),
@@ -21,6 +23,14 @@ struct SettingsGeneralTab: View {
                     get: { launchAtLogin.isEnabled },
                     set: { launchAtLogin.update(to: $0) }
                 ))
+            Toggle(isOn: $usageTimerSetting.isEnabled) {
+                SettingsTitle(
+                    title: L10n.settings("Auto-Start Subscription Timers"),
+                    info: L10n.settings(
+                        "Sends a short request to start an unused subscription window for all supported accounts. The request can use some of your quota. Turning this off keeps usage updates on."
+                    )
+                )
+            }
             SettingsPicker(L10n.settings("Default Tab"), selection: $defaultTab, options: DashboardTab.allCases) {
                 $0.label
             }

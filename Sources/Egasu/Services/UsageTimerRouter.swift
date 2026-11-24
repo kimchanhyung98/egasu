@@ -16,6 +16,8 @@ final class UsageTimerRouter {
     private var warningsByAccount: [String: [String: String]] = [:]
     private var scheduledCheckRequests: Set<String> = []
     private var followUpRefreshes: [UUID: (providerID: String, task: Task<Void, Never>)] = [:]
+    let usageTimerSetting: UsageTimerSetting
+    private var launchPermission = StreamingProcessLaunchPermission()
     private let isProviderEnabled: (String) -> Bool
     private let executors: UsageTimerExecutors
     private let store: UsageTimerAttemptStore
@@ -45,7 +47,9 @@ final class UsageTimerRouter {
                 return UsageTimerExecutionResult(launched: false, completed: false)
             }
             let hadStartupFailure = self.executors.codex.startupFailureDescription != nil
-            let result = await session.send { canLaunch() }
+            let result = await StreamingProcessLaunchPermission.$current.withValue(self.launchPermission) {
+                await session.send { canLaunch() }
+            }
             if !self.isShuttingDown, hadStartupFailure, self.executors.codex.startupFailureDescription == nil {
                 for (id, binding) in self.bindings where binding.provider is CodexProvider && self.isProviderEnabled(id) {
                     self.report(id, binding.accountKey.flatMap { self.warning(for: $0) })
@@ -70,7 +74,9 @@ final class UsageTimerRouter {
                                   providerID: providerID)
         },
         finished: { [weak self] providerID, _ in
-            guard let self, !self.isShuttingDown, let currentBindingID = self.bindings[providerID]?.id else { return }
+            guard let self, !self.isShuttingDown, self.usageTimerSetting.isEnabled,
+                let currentBindingID = self.bindings[providerID]?.id
+            else { return }
             let id = UUID()
             let task = Task { [weak self] in
                 guard let self else { return }
@@ -90,6 +96,7 @@ final class UsageTimerRouter {
         providers: [any ProviderRuntime],
         identityKeys: [String: String] = [:],
         isProviderEnabled: @escaping (String) -> Bool,
+        usageTimerSetting: UsageTimerSetting = UsageTimerSetting(),
         executor: any CodexWeeklyTimerExecuting = CodexWeeklyTimerExecutor(),
         cliExecutor: any UsageTimerCLIExecuting = UsageTimerCLIExecutor(),
         store: UsageTimerAttemptStore = UsageTimerAttemptStore(),
@@ -102,6 +109,7 @@ final class UsageTimerRouter {
         self.bindings = Dictionary(uniqueKeysWithValues: providers.compactMap { $0 as? any UsageTimerProviding }.map { ($0.provider.id, Binding(provider: $0)) })
         self.identityKeys = identityKeys
         self.isProviderEnabled = isProviderEnabled
+        self.usageTimerSetting = usageTimerSetting
         self.executors = UsageTimerExecutors(codex: executor, cli: cliExecutor)
         self.store = store
         self.publishWarning = report
@@ -114,6 +122,20 @@ final class UsageTimerRouter {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.clockDidChange() }
         }
+        usageTimerSetting.onDisable = { [weak self] in
+            guard let self else { return }
+            self.launchPermission.revoke()
+            self.launchPermission = StreamingProcessLaunchPermission()
+            let accountKeys = self.bindings.compactMapValues(\.accountKey)
+            // 즉시 다시 켜도 대기 중이던 이전 전송이 살아나지 않도록 바인딩 교체.
+            self.invalidate(providerIDs: Set(self.bindings.keys))
+            // 이미 실행 중인 작업을 같은 계정의 다른 카드에서도 기다릴 수 있게 연결 보존.
+            if self.hasPendingWork || !self.followUpRefreshes.isEmpty {
+                for (providerID, accountKey) in accountKeys {
+                    self.bindings[providerID]?.accountKey = accountKey
+                }
+            }
+        }
         reportStartupFailure()
     }
 
@@ -122,7 +144,7 @@ final class UsageTimerRouter {
     }
 
     func receive(_ snapshot: ProviderSnapshot, trigger: RefreshTrigger) {
-        guard !isShuttingDown, trigger != .cli, trigger != .weeklyTimer,
+        guard !isShuttingDown, usageTimerSetting.isEnabled, trigger != .cli, trigger != .weeklyTimer,
               var binding = bindings[snapshot.providerID],
               let quotaObservedAt = snapshot.liveQuotaObservedAt else { return }
         let observedAt = snapshot.usageTimerObservedAt ?? quotaObservedAt
@@ -180,16 +202,24 @@ final class UsageTimerRouter {
         }
     }
 
+    func scheduledCheckValidity() -> @MainActor () -> Bool {
+        let permission = launchPermission
+        return { [weak self] in
+            guard let self else { return false }
+            return !self.isShuttingDown && self.usageTimerSetting.isEnabled && !permission.isRevoked
+        }
+    }
+
     /// 15분 경계 조회가 진행 중인 요청과 겹치면 다음 정상 응답에서 재검증.
     func requestScheduledCheck() -> [String] {
-        guard !isShuttingDown else { return [] }
+        guard !isShuttingDown, usageTimerSetting.isEnabled else { return [] }
         let providerIDs = bindings.keys.filter { isProviderEnabled($0) }.sorted()
         scheduledCheckRequests.formUnion(providerIDs)
         return providerIDs
     }
 
     func isRunning(providerID: String) -> Bool {
-        coordinator.isRunning(providerID: providerID)
+        relatedProviderIDs(to: [providerID]).contains { coordinator.isRunning(providerID: $0) }
     }
 
     var hasPendingWork: Bool { coordinator.hasPendingWork }
@@ -271,7 +301,7 @@ final class UsageTimerRouter {
 
     /// 새 응답을 기다리지 않고 이전 시각 기준의 검증·실행 준비를 무효화.
     private func clockDidChange() {
-        guard !isShuttingDown else { return }
+        guard !isShuttingDown, usageTimerSetting.isEnabled else { return }
         coordinator.invalidateObservations()
         scheduledCheckRequests.formUnion(bindings.keys.filter { isProviderEnabled($0) })
     }

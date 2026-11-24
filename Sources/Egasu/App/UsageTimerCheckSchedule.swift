@@ -25,12 +25,24 @@ enum UsageTimerCheckSchedule {
         }
     }
 
+    static func checkAccounts(router: UsageTimerRouter, dataStore: WidgetDataStore) async {
+        let providerIDs = router.requestScheduledCheck()
+        guard !providerIDs.isEmpty else { return }
+        let isCurrent = router.scheduledCheckValidity()
+        AppLog.info(.refresh, "Checking usage timer reset times (every 15 minutes)")
+        await refreshAccounts(providerIDs, isCurrent: isCurrent) { providerID in
+            await dataStore.refresh(
+                providerID: providerID, force: true, trigger: .weeklyTimerCheck, isCurrent: isCurrent)
+        }
+    }
+
     static func refreshAccounts(
-        _ providerIDs: [String], using refresh: @escaping @MainActor (String) async -> Void
+        _ providerIDs: [String], isCurrent: @MainActor () -> Bool = { true },
+        using refresh: @escaping @MainActor (String) async -> Void
     ) async {
         guard !Task.isCancelled else { return }
         for providerID in providerIDs {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, isCurrent() else { return }
             await refresh(providerID)
         }
     }

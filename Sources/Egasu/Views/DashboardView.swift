@@ -242,6 +242,7 @@ struct DashboardView: View {
         case .settings:
             SettingsScreen(operations: settingsOperations)
                 .environment(container.iCloudSync)
+                .environment(container.usageTimerSetting)
                 .environment(container.notificationSettings)
         }
     }

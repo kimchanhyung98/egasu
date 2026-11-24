@@ -168,6 +168,8 @@ final class UsageTimerCLIExecutor: UsageTimerCLIExecuting {
             )
         } catch UsageTimerError.accountChanged {
             result = failure(UsageTimerError.accountChanged.errorDescription!)
+        } catch is CancellationError {
+            result = UsageTimerExecutionResult(launched: launchState.withLock { $0 }, completed: false)
         } catch {
             AppDiagnostics.failure(
                 .weeklyTimer, error: error,
