@@ -61,15 +61,24 @@ final class DashboardTabSwitchTests: XCTestCase {
         let popover = PopoverState()
         popover.openAccounts(nil)
         var samples: [EdgeInsets] = []
+        var footerVisible: [Bool] = []
         var insets: [CGFloat] { samples.filter { $0.top > 0 }.map(\.bottom) }
         let footerHeight: CGFloat = 47
-        let (window, host) = show(
-            AccountInsetProbe(popover: popover, footerHeight: footerHeight) { samples.append($0) },
-            size: CGSize(width: PanelMetrics.width, height: 200))
+        func page() -> AccountInsetProbe {
+            AccountInsetProbe(
+                accountDetailID: popover.accountDetailID, footerHeight: footerHeight,
+                record: { samples.append($0) }, footerVisibility: { footerVisible.append($0) })
+        }
+        let (window, host) = show(page(), size: CGSize(width: PanelMetrics.width, height: 200))
         func waitForInset(_ expected: CGFloat, line: UInt = #line) async throws {
             try await waitUntil(
                 diagnostic: {
-                    "Expected bottom inset \(expected), detail=\(String(describing: popover.accountDetailID)), "
+                    let scroll = descendants(of: host).compactMap { $0 as? NSScrollView }.first
+                    return "Expected bottom inset \(expected), detail=\(String(describing: popover.accountDetailID)), "
+                        + "hostDetail=\(String(describing: host.rootView.accountDetailID)), "
+                        + "scrollInsets=\(String(describing: scroll?.contentInsets)), "
+                        + "footerVisible=\(footerVisible), visibleRect=\(String(describing: scroll?.documentVisibleRect)), "
+                        + "documentHeight=\(String(describing: scroll?.documentView?.frame.height)), "
                         + "occlusion=\(window.occlusionState.rawValue), top/bottom=\(samples.map { [$0.top, $0.bottom] })"
                 },
                 {
@@ -79,8 +88,10 @@ final class DashboardTabSwitchTests: XCTestCase {
         }
         try await waitForInset(footerHeight)
         popover.openAccounts("codex")
+        host.rootView = page()
         try await waitForInset(0)
         popover.back()
+        host.rootView = page()
         try await waitForInset(footerHeight)
         XCTAssertTrue(insets.allSatisfy { $0 == 0 || $0 == footerHeight }, "푸터 여백이 따로 애니메이션됨: \(insets)")
     }
@@ -163,7 +174,7 @@ final class DashboardTabSwitchTests: XCTestCase {
 
     // MARK: - Fixtures
 
-    private func show(_ content: some View, size: CGSize) -> (NSWindow, NSView) {
+    private func show<Content: View>(_ content: Content, size: CGSize) -> (NSWindow, NSHostingView<Content>) {
         let host = NSHostingView(rootView: content)
         host.frame = NSRect(origin: .zero, size: size)
         let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
@@ -272,9 +283,10 @@ private struct PanelMotionProbeView: View {
 }
 
 private struct AccountInsetProbe: View {
-    let popover: PopoverState
+    let accountDetailID: String?
     let footerHeight: CGFloat
     let record: (EdgeInsets) -> Void
+    let footerVisibility: (Bool) -> Void
 
     var body: some View {
         PopoverScrollView { Color.blue.frame(height: 500) }
@@ -286,8 +298,10 @@ private struct AccountInsetProbe: View {
             .panelBars {
                 Color.clear.frame(height: 30)
             } bottom: {
-                PopoverFooter(screen: .accounts, accountDetailID: popover.accountDetailID).map { _ in
+                PopoverFooter(screen: .accounts, accountDetailID: accountDetailID).map { _ in
                     Color.clear.frame(height: footerHeight)
+                        .onAppear { footerVisibility(true) }
+                        .onDisappear { footerVisibility(false) }
                 }
             }
     }
