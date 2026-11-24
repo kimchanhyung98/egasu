@@ -556,7 +556,8 @@ final class AppContainer {
             }
         } catch {
             let family = Self.reconciliationFamily(
-                for: error, codexRecoveryOnly: codexRecoveryOnly, in: accountProfiles)
+                for: error, codexRecoveryOnly: codexRecoveryOnly, in: accountProfiles,
+                journal: Result { try accountProfiles.pendingIdentityReplacement() })
             AppDiagnostics.failure(
                 .accountReconcile, error: error, providerID: family,
                 localContext: "Account authentication reconciliation failed")
@@ -565,11 +566,13 @@ final class AppContainer {
     }
 
     static func reconciliationFamily(
-        for error: Error, codexRecoveryOnly: Bool, in accountProfiles: AccountProfilesStore
-    ) -> String {
+        for error: Error, codexRecoveryOnly: Bool, in accountProfiles: AccountProfilesStore,
+        journal: Result<AccountIdentityReplacement?, Error>
+    ) -> String? {
         if codexRecoveryOnly || error is CodexAuthError { return "codex" }
         if error is ClaudeAuthError { return "claude" }
-        let transaction = try? accountProfiles.pendingIdentityReplacement()
+        if case .failure = journal, case AccountIdentityReplacementError.invalidTransaction = error { return nil }
+        let transaction = try? journal.get()
         return transaction.flatMap { accountProfiles.profile(id: $0.profileID)?.family } ?? "claude"
     }
 
@@ -583,22 +586,39 @@ final class AppContainer {
                 refreshCatalog: { refreshAccountCatalog() }
             )
         else { return }
+        Self.publishAccountReconciliation(
+            result, codexRecoveryOnly: codexRecoveryOnly, in: accountProfiles, to: dataStore,
+            accountSwitch: accountSwitch, startedAt: generation)
+    }
+
+    static func publishAccountReconciliation(
+        _ result: Result<Bool, Error>, codexRecoveryOnly: Bool, in accountProfiles: AccountProfilesStore,
+        to dataStore: WidgetDataStore, accountSwitch: AccountSwitchCoordinator, startedAt generation: Int
+    ) {
+        guard !Task.isCancelled, !accountSwitch.isSwitching, accountSwitch.generation == generation else { return }
+        let journal = Result { try accountProfiles.pendingIdentityReplacement() }
+        if case .success = journal { dataStore.accountReconciliationNotice = nil }
+        let family: String
         let failure: ProviderRefreshFailure?
-        var failureFamily = codexRecoveryOnly ? "codex" : "claude"
         switch result {
         case .success:
+            family = codexRecoveryOnly ? "codex" : "claude"
             failure = nil
         case .failure(let error):
-            failureFamily = Self.reconciliationFamily(
-                for: error, codexRecoveryOnly: codexRecoveryOnly, in: accountProfiles)
-            failure = Self.externalClaudeReconciliationFailure(for: error, family: failureFamily)
+            guard
+                let owner = reconciliationFamily(
+                    for: error, codexRecoveryOnly: codexRecoveryOnly, in: accountProfiles, journal: journal)
+            else {
+                dataStore.accountReconciliationNotice = UserFacingErrors.message(error)
+                return
+            }
+            family = owner
+            failure = externalClaudeReconciliationFailure(for: error, family: family)
         }
-        if failureFamily != "codex", (try? accountProfiles.pendingIdentityReplacement()) == nil {
-            Self.applyExternalClaudeReconciliationError(
-                nil, to: dataStore, accountSwitch: accountSwitch, startedAt: generation, family: "codex")
+        if family != "codex", case .success(nil) = journal {
+            dataStore.setAccountReconciliationFailure(nil, for: "codex")
         }
-        Self.applyExternalClaudeReconciliationError(
-            failure, to: dataStore, accountSwitch: accountSwitch, startedAt: generation, family: failureFamily)
+        dataStore.setAccountReconciliationFailure(failure, for: family)
     }
 
     /// account runtime은 한 provider의 대체 view — Customize 마스터 토글은 family 전체 카드를 함께 on/off.

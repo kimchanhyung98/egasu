@@ -27,7 +27,10 @@ final class AccountReconciliationErrorTests: XCTestCase {
             XCTFail("Expected unreadable recovery journal")
         } catch AccountIdentityReplacementError.invalidTransaction {
             let error = AccountIdentityReplacementError.invalidTransaction
-            let family = AppContainer.reconciliationFamily(for: error, codexRecoveryOnly: true, in: profiles)
+            let journal = Result { try profiles.pendingIdentityReplacement() }
+            let family = try XCTUnwrap(
+                AppContainer.reconciliationFamily(
+                    for: error, codexRecoveryOnly: true, in: profiles, journal: journal))
             let failure = AppContainer.externalClaudeReconciliationFailure(for: error, family: family)
             AppContainer.applyExternalClaudeReconciliationError(
                 failure, to: fixture.store, accountSwitch: fixture.coordinator,
@@ -35,10 +38,57 @@ final class AccountReconciliationErrorTests: XCTestCase {
             XCTAssertEqual(family, "codex")
             XCTAssertEqual(fixture.store.refreshResults["codex"]?.failure, failure)
             XCTAssertEqual(fixture.store.refreshResults["claude"]?.failure, claudeFailure)
-            XCTAssertEqual(
-                AppContainer.reconciliationFamily(for: error, codexRecoveryOnly: false, in: profiles), "claude")
+            XCTAssertNil(
+                AppContainer.reconciliationFamily(
+                    for: error, codexRecoveryOnly: false, in: profiles, journal: journal))
         }
         XCTAssertEqual(fixture.defaults.data(forKey: AccountProfilesStore.identityReplacementKey), bytes)
+        XCTAssertTrue(http.requests.isEmpty)
+    }
+
+    func testCombinedRecoveryKeepsExistingFailuresWhileJournalIsUnreadable() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+        let profiles = AccountProfilesStore(defaults: fixture.defaults)
+        let bytes = Data("unreadable journal".utf8)
+        fixture.defaults.set(bytes, forKey: AccountProfilesStore.identityReplacementKey)
+        let claude = ProviderRefreshFailure(message: "Claude failed")
+        let codex = ProviderRefreshFailure(message: "Codex failed")
+        let generation = fixture.coordinator.generation
+        for (family, failure) in [("claude", claude), ("codex", codex)] {
+            AppContainer.applyExternalClaudeReconciliationError(
+                failure, to: fixture.store, accountSwitch: fixture.coordinator,
+                startedAt: generation, family: family)
+        }
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(fixture.suite)
+        let http = FakeHTTPClient(response: HTTPResponse(statusCode: 503, headers: [:], body: Data()))
+        let importer = AccountCredentialImporter(
+            keychain: FakeKeychain(), environment: FakeEnvironment(), homeDirectory: home,
+            workspace: AccountSignInWorkspace(baseDirectory: home), httpClient: http)
+        do {
+            _ = try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: profiles)
+            XCTFail("Expected unreadable recovery journal")
+        } catch AccountIdentityReplacementError.invalidTransaction {
+            AppContainer.publishAccountReconciliation(
+                .failure(AccountIdentityReplacementError.invalidTransaction), codexRecoveryOnly: false,
+                in: profiles, to: fixture.store, accountSwitch: fixture.coordinator, startedAt: generation)
+        }
+        XCTAssertEqual(fixture.store.refreshResults["codex"]?.failure, codex)
+        XCTAssertEqual(fixture.store.refreshResults["claude"]?.failure, claude)
+        XCTAssertEqual(fixture.defaults.data(forKey: AccountProfilesStore.identityReplacementKey), bytes)
+        let notice = UserFacingErrors.message(AccountIdentityReplacementError.invalidTransaction)
+        XCTAssertEqual(fixture.store.accountReconciliationNotice, notice)
+        fixture.defaults.removeObject(forKey: AccountProfilesStore.identityReplacementKey)
+        AppContainer.publishAccountReconciliation(
+            .success(false), codexRecoveryOnly: false,
+            in: profiles, to: fixture.store, accountSwitch: fixture.coordinator, startedAt: generation - 1)
+        XCTAssertEqual(fixture.store.accountReconciliationNotice, notice)
+        AppContainer.publishAccountReconciliation(
+            .success(false), codexRecoveryOnly: false,
+            in: profiles, to: fixture.store, accountSwitch: fixture.coordinator, startedAt: generation)
+        XCTAssertNil(fixture.store.accountReconciliationNotice)
+        XCTAssertNil(fixture.store.refreshResults["codex"]?.failure)
+        XCTAssertNil(fixture.store.refreshResults["claude"]?.failure)
         XCTAssertTrue(http.requests.isEmpty)
     }
 
