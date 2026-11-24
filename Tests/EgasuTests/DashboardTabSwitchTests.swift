@@ -57,6 +57,52 @@ final class DashboardTabSwitchTests: XCTestCase {
         }
     }
 
+    func testAccountNavigationReservesTheWholeFooterOrNone() async throws {
+        let popover = PopoverState()
+        popover.openAccounts(nil)
+        var insets: [CGFloat] = []
+        let footerHeight: CGFloat = 47
+        _ = show(
+            AccountInsetProbe(popover: popover, footerHeight: footerHeight) { insets.append($0) },
+            size: CGSize(width: PanelMetrics.width, height: 200))
+        try await waitUntil { insets.last == footerHeight }
+        popover.openAccounts("codex")
+        try await waitUntil { insets.last == 0 }
+        popover.back()
+        try await waitUntil { insets.last == footerHeight }
+        XCTAssertTrue(insets.allSatisfy { $0 == 0 || $0 == footerHeight }, "푸터 여백이 따로 애니메이션됨: \(insets)")
+    }
+
+    func testHostedPanelHeightEffectDrawsIntermediateFramesAndReversesFromThePresentedHeight() async throws {
+        let model = PanelMotionProbe()
+        var heights: [CGFloat] = []
+        PanelHeightBridge.invalidate()
+        MenuBarPopover.applyHeight = { heights.append($0) }
+        defer {
+            MenuBarPopover.applyHeight = nil
+            PanelHeightBridge.invalidate()
+        }
+        let (_, host) = show(PanelMotionProbeView(model: model), size: CGSize(width: PanelMetrics.width, height: 240))
+        try await waitUntil { heights.last == 240 }
+        withAnimation(.linear(duration: 0.6)) { model.progress = 1 }
+        try await waitUntil { (heights.last ?? 0) > 265 }
+        let turn = try XCTUnwrap(heights.last)
+        XCTAssertLessThan(turn, 600)
+        let firstReturn = heights.count
+        withAnimation(nil) {
+            model.motion = model.presentation.restart().motion
+            model.path = PanelHeightPath(start: turn, end: 240)
+            model.progress = 0
+        }
+        host.layoutSubtreeIfNeeded()
+        await Task.yield()
+        withAnimation(.linear(duration: 0.25)) { model.progress = 1 }
+        try await waitUntil { heights.last == 240 }
+        let returning = Array(heights.dropFirst(firstReturn))
+        XCTAssertTrue(returning.contains { $0 > 240 && $0 < turn })
+        XCTAssertTrue(zip([turn] + returning, returning).allSatisfy { $1 <= $0 + 1 })
+    }
+
     /// 탭 전환은 패널이 새 높이를 받기 한 프레임 전에 새 행을 그림 — 그동안 아래 바가 패널 색으로 가림.
     func testTheBottomBarCoversContentOnlyWhileThePanelIsAtAnotherHeight() async throws {
         let barHeight: CGFloat = 30
@@ -183,5 +229,54 @@ private struct Segments: View {
             selectsOnPress: selectsOnPress
         )
         .frame(width: 200, height: 60)
+    }
+}
+
+@MainActor
+@Observable
+private final class PanelMotionProbe {
+    var motion = 0
+    var progress: CGFloat = 0
+    var path = PanelHeightPath(start: 240, end: 600)
+    let presentation = PanelHeightPresentation()
+}
+
+private struct PanelMotionProbeView: View {
+    let model: PanelMotionProbe
+
+    var body: some View {
+        Color.blue.background {
+            Color.clear
+                .modifier(
+                    PanelHeightModifier(
+                        path: model.path, progress: model.progress, motion: model.motion,
+                        presentation: model.presentation
+                    )
+                )
+                .id(model.motion)
+                .transition(.identity)
+        }
+    }
+}
+
+private struct AccountInsetProbe: View {
+    let popover: PopoverState
+    let footerHeight: CGFloat
+    let record: (CGFloat) -> Void
+
+    var body: some View {
+        PopoverScrollView { Color.blue.frame(height: 500) }
+            .onScrollGeometryChange(for: EdgeInsets.self) {
+                $0.contentInsets
+            } action: { _, insets in
+                if insets.top > 0 { record(insets.bottom) }
+            }
+            .panelBars {
+                Color.clear.frame(height: 30)
+            } bottom: {
+                PopoverFooter(screen: .accounts, accountDetailID: popover.accountDetailID).map { _ in
+                    Color.clear.frame(height: footerHeight)
+                }
+            }
     }
 }

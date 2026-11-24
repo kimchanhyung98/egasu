@@ -7,11 +7,13 @@ struct AccountsView: View {
     @Environment(PopoverState.self) private var popover
     let reorderSpaceName: String
     @Binding var reorderLift: ReorderLift?
+    let pageAnimation: Animation?
+    let accountDetailID: String?
 
     @State private var rowFrames: [String: CGRect] = [:]
 
     private var isClaudeAccountContext: Bool {
-        guard let id = popover.accountDetailID else { return true }
+        guard let id = accountDetailID else { return true }
         return ProviderAccountID.family(of: id) == "claude"
     }
 
@@ -23,7 +25,7 @@ struct AccountsView: View {
     var body: some View {
         PopoverScrollView {
             VStack(alignment: .leading, spacing: PanelMetrics.sectionSpacing) {
-                if isClaudeAccountContext, popover.accountDetailID != "claude",
+                if isClaudeAccountContext, accountDetailID != "claude",
                     let failure = container.dataStore.claudeReconciliationFailure
                 {
                     ProblemCard(message: failure.localizedMessage)
@@ -32,10 +34,11 @@ struct AccountsView: View {
                     ProblemCard(message: L10n.accounts("Claude login migration paused. %@", issue.localized))
                 }
                 content
+                    .animation(pageAnimation, value: accountDetailID)
             }
             .padding(.horizontal, PanelMetrics.margin)
             .padding(.top, 7)
-            .padding(.bottom, popover.accountDetailID == nil ? 0 : PanelMetrics.margin)
+            .padding(.bottom, accountDetailID == nil ? 0 : PanelMetrics.margin)
             .frame(maxWidth: .infinity)
         }
         .onPreferenceChange(ReorderFramePreferenceKey.self) { rowFrames = $0 }
@@ -60,7 +63,7 @@ struct AccountsView: View {
 
     @ViewBuilder
     private var content: some View {
-        if let id = popover.accountDetailID {
+        if let id = accountDetailID {
             AccountDetailView(
                 accountID: id,
                 reorderSpaceName: reorderSpaceName,

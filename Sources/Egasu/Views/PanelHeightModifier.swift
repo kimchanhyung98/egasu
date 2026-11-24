@@ -1,23 +1,78 @@
 import SwiftUI
 import os
 
-/// SwiftUI 애니메이션에 패널 높이 동기화 — AppKit의 별도 setFrame 애니메이션과 경합 방지.
-/// `animatableData` 설정자와 `effectValue`에서 높이 전달 — 0 이하의 높이는 생략.
-/// GeometryEffect로 Animatable의 nonisolated 요구 준수 — ViewModifier의 body는 MainActor로 추론.
+/// 이미 그린 높이에서 새 목표까지 남은 전환 진행률로 보간.
+struct PanelHeightPath: Equatable {
+    var start: CGFloat = 0
+    var end: CGFloat = 0
+    var startProgress: CGFloat = 0
+
+    func height(at progress: CGFloat) -> CGFloat {
+        guard startProgress < 1 else { return end }
+        let fraction = min(1, max(0, (progress - startProgress) / (1 - startProgress)))
+        return start + (end - start) * fraction
+    }
+}
+
+/// 창마다 마지막으로 그린 진행률·높이 보관 — 이전 전환의 지연 프레임 폐기.
+final class PanelHeightPresentation: Sendable {
+    struct Frame: Sendable {
+        var motion = 0
+        var progress: CGFloat = 1
+        var height: CGFloat = 0
+    }
+
+    private let frame = OSAllocatedUnfairLock(initialState: Frame())
+
+    var current: Frame { frame.withLock { $0 } }
+
+    func restart() -> Frame {
+        frame.withLock {
+            PanelHeightBridge.invalidate()
+            $0.motion += 1
+            $0.progress = 0
+            return $0
+        }
+    }
+
+    func settle(at height: CGFloat) -> Int {
+        let motion = restart().motion
+        present(height, at: 1, motion: motion)
+        return motion
+    }
+
+    func present(_ height: CGFloat, at progress: CGFloat, motion: Int) {
+        frame.withLock {
+            guard $0.motion == motion else { return }
+            $0.height = height
+            $0.progress = progress
+            PanelHeightBridge.push(height)
+        }
+    }
+}
+
+/// 화면의 위치와 같은 진행률로 높이 전달 — 목표가 바뀌어도 새 애니메이션을 더하지 않음.
 struct PanelHeightModifier: GeometryEffect {
-    var height: CGFloat
+    var path: PanelHeightPath
+    var progress: CGFloat
+    let motion: Int
+    let presentation: PanelHeightPresentation
 
     var animatableData: CGFloat {
-        get { height }
+        get { progress }
         set {
-            height = newValue
-            PanelHeightBridge.push(newValue)
+            progress = newValue
+            present()
         }
     }
 
     func effectValue(size: CGSize) -> ProjectionTransform {
-        PanelHeightBridge.push(height)
+        present()
         return ProjectionTransform()
+    }
+
+    private func present() {
+        presentation.present(path.height(at: progress), at: progress, motion: motion)
     }
 }
 
@@ -67,13 +122,5 @@ enum PanelHeightBridge {
                 MenuBarPopover.applyHeight?(height)
             }
         }
-    }
-}
-
-extension View {
-    /// 메뉴 막대 패널 높이를 SwiftUI 애니메이션에 동기화.
-    /// body 루트의 `.animation(nil, …)` 범위 밖에 부착 필수.
-    func drivesPanelHeight(_ height: CGFloat) -> some View {
-        modifier(PanelHeightModifier(height: height))
     }
 }

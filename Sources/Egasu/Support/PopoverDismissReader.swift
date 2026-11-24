@@ -132,6 +132,7 @@ enum MenuBarPopover {
     /// `clampHeight`는 SwiftUI 목표를 panel의 [min, screen-max] 범위로 clamp해 spring이 정확히 frame에 안착.
     static var applyHeight: ((CGFloat) -> Void)?
     static var clampHeight: ((CGFloat) -> CGFloat)?
+    static var presentedHeight: (() -> CGFloat?)?
 
     /// popover 닫기. handler 미설치 시(배선 버그) 지정 window의 order-out으로 fallback.
     static func dismiss(fallback window: NSWindow?) {

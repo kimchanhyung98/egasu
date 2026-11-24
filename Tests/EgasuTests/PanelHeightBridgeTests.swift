@@ -74,10 +74,66 @@ final class PanelHeightBridgeTests: XCTestCase {
             firstApply.fulfill()
         }
 
-        _ = PanelHeightModifier(height: 640).effectValue(size: CGSize(width: 320, height: 640))
+        let modifier = PanelHeightModifier(
+            path: PanelHeightPath(start: 400, end: 700), progress: 0.8,
+            motion: 0, presentation: PanelHeightPresentation()
+        )
+        _ = modifier.effectValue(size: CGSize(width: 320, height: 640))
 
         await fulfillment(of: [firstApply], timeout: 1)
         XCTAssertEqual(applied, [640])
+    }
+
+    func testCorrectedTargetFinishesOnTheSameProgressWithoutReversing() {
+        let initial = PanelHeightPath(start: 240, end: 440)
+        let correction = PanelHeightPath(start: initial.height(at: 0.25), end: 510, startProgress: 0.25)
+
+        XCTAssertEqual(correction.height(at: 0.25), 290)
+        let frames = [0.25, 0.4, 0.5, 0.6, 0.75, 0.9, 1].map(correction.height(at:))
+        XCTAssertEqual(frames, frames.sorted())
+        XCTAssertEqual(frames.last, 510)
+    }
+
+    func testBackDuringDetailTransitionDiscardsLateOutgoingFrames() async {
+        resetBridge()
+        defer { resetBridge() }
+        let presentation = PanelHeightPresentation()
+        let push = presentation.restart()
+        let detail = PanelHeightPath(start: 220, end: 600)
+        presentation.present(detail.height(at: 0.5), at: 0.5, motion: push.motion)
+        let back = presentation.restart()
+        let list = PanelHeightPath(start: back.height, end: 220)
+
+        XCTAssertEqual(back.height, 410)
+        XCTAssertEqual(back.progress, 0)
+        let delivered = expectation(description: "목록으로 돌아가는 최신 프레임")
+        MenuBarPopover.applyHeight = { height in
+            XCTAssertEqual(height, 315)
+            delivered.fulfill()
+        }
+        presentation.present(list.height(at: 0.5), at: 0.5, motion: back.motion)
+        presentation.present(600, at: 1, motion: push.motion)
+        XCTAssertEqual(presentation.current.height, 315)
+        await fulfillment(of: [delivered], timeout: 1)
+    }
+
+    func testNewMeasurementReplacesUnanimatedFallbackWithoutAnotherDrawingPass() async {
+        resetBridge()
+        defer { resetBridge() }
+        let presentation = PanelHeightPresentation()
+        let initial = presentation.restart().motion
+        presentation.present(220, at: 1, motion: initial)
+        let delivered = expectation(description: "새로 측정한 계정 목록 높이")
+        MenuBarPopover.applyHeight = { height in
+            XCTAssertEqual(height, 300)
+            delivered.fulfill()
+        }
+
+        let motion = presentation.settle(at: 300)
+        presentation.present(220, at: 1, motion: initial)
+        XCTAssertEqual(presentation.current.motion, motion)
+        XCTAssertEqual(presentation.current.height, 300)
+        await fulfillment(of: [delivered], timeout: 1)
     }
 
     private func resetBridge() {

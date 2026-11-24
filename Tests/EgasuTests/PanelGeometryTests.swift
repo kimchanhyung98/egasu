@@ -23,6 +23,7 @@ final class PanelGeometryTests: XCTestCase {
             controller.finishClosing()
             MenuBarPopover.applyHeight = nil
             MenuBarPopover.clampHeight = nil
+            MenuBarPopover.presentedHeight = nil
             panel.close()
             sheet.close()
         }
@@ -120,6 +121,10 @@ final class PanelGeometryTests: XCTestCase {
         heights[.dashboard, .priority] = 250
         heights[.accounts, .allUsage] = 400
         heights[.settings, .priority] = 700
+        heights[.accounts, .priority, "codex"] = 310
+        heights[.accounts, .priority, "claude"] = 525
+        XCTAssertEqual(heights[.accounts, .allUsage, "codex"], 310)
+        XCTAssertEqual(heights[.accounts, .priority, "claude"], 525)
         XCTAssertEqual(heights[.dashboard, .allUsage], 600)
         XCTAssertEqual(heights[.dashboard, .priority], 250)
         XCTAssertEqual(heights[.accounts, .priority], 400)

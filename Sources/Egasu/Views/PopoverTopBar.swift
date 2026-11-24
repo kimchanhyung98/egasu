@@ -6,6 +6,7 @@ struct PopoverTopBar: View {
     @Environment(AppContainer.self) private var container
     @Environment(PopoverState.self) private var popover
     let screen: PopoverScreen
+    let accountDetailID: String?
 
     @ViewBuilder
     var body: some View {
@@ -13,7 +14,7 @@ struct PopoverTopBar: View {
         case .dashboard:
             EmptyView()
         case .accounts:
-            if let accountID = popover.accountDetailID, let provider = container.accountManagementProvider(id: accountID) {
+            if let accountID = accountDetailID, let provider = container.accountManagementProvider(id: accountID) {
                 navigationBar(back: { popover.back() }) {
                     AccountTitle(provider: provider)
                 } trailing: {

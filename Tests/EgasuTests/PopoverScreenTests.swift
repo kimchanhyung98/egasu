@@ -100,6 +100,10 @@ final class PopoverScreenTests: XCTestCase {
         state.screen = .settings
         XCTAssertNil(state.accountDetailID)
         XCTAssertFalse(state.isAddingAccount)
+        XCTAssertEqual(state.displayedAccountDetail(on: .accounts), "claude")
+        XCTAssertNil(PopoverFooter(screen: .accounts, accountDetailID: state.displayedAccountDetail(on: .accounts)))
+        state.openAccounts(nil)
+        XCTAssertNil(state.displayedAccountDetail(on: .accounts))
     }
 
     func testBackStepsFromDetailToListToDashboard() {
