@@ -555,14 +555,19 @@ final class AppContainer {
                 return .success(false)
             }
         } catch {
-            AppDiagnostics.failure(.accountReconcile, error: error, providerID: reconciliationFamily(for: error),
-                                   localContext: "Account authentication reconciliation failed")
+            let family = Self.reconciliationFamily(
+                for: error, codexRecoveryOnly: codexRecoveryOnly, in: accountProfiles)
+            AppDiagnostics.failure(
+                .accountReconcile, error: error, providerID: family,
+                localContext: "Account authentication reconciliation failed")
             return .failure(error)
         }
     }
 
-    private func reconciliationFamily(for error: Error) -> String {
-        if error is CodexAuthError { return "codex" }
+    static func reconciliationFamily(
+        for error: Error, codexRecoveryOnly: Bool, in accountProfiles: AccountProfilesStore
+    ) -> String {
+        if codexRecoveryOnly || error is CodexAuthError { return "codex" }
         if error is ClaudeAuthError { return "claude" }
         let transaction = try? accountProfiles.pendingIdentityReplacement()
         return transaction.flatMap { accountProfiles.profile(id: $0.profileID)?.family } ?? "claude"
@@ -584,7 +589,8 @@ final class AppContainer {
         case .success:
             failure = nil
         case .failure(let error):
-            failureFamily = reconciliationFamily(for: error)
+            failureFamily = Self.reconciliationFamily(
+                for: error, codexRecoveryOnly: codexRecoveryOnly, in: accountProfiles)
             failure = Self.externalClaudeReconciliationFailure(for: error, family: failureFamily)
         }
         if failureFamily != "codex", (try? accountProfiles.pendingIdentityReplacement()) == nil {

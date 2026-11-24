@@ -3,6 +3,45 @@ import XCTest
 
 @MainActor
 final class AccountReconciliationErrorTests: XCTestCase {
+    func testUnreadableJournalDuringCodexRetryKeepsFailureOnCodex() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+        let profiles = AccountProfilesStore(defaults: fixture.defaults)
+        let bytes = Data("unreadable journal".utf8)
+        fixture.defaults.set(bytes, forKey: AccountProfilesStore.identityReplacementKey)
+        let claudeFailure = ProviderRefreshFailure(message: "Earlier Claude issue")
+        AppContainer.applyExternalClaudeReconciliationError(
+            claudeFailure, to: fixture.store, accountSwitch: fixture.coordinator,
+            startedAt: fixture.coordinator.generation)
+        let previousCodexFailure = ProviderRefreshFailure(message: "Earlier Codex issue")
+        AppContainer.applyExternalClaudeReconciliationError(
+            previousCodexFailure, to: fixture.store, accountSwitch: fixture.coordinator,
+            startedAt: fixture.coordinator.generation, family: "codex")
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(fixture.suite)
+        let http = FakeHTTPClient(response: HTTPResponse(statusCode: 503, headers: [:], body: Data()))
+        let importer = AccountCredentialImporter(
+            keychain: FakeKeychain(), environment: FakeEnvironment(), homeDirectory: home,
+            workspace: AccountSignInWorkspace(baseDirectory: home), httpClient: http)
+        do {
+            _ = try await importer.reconcileCodexIdentityReplacementAfterStartup(in: profiles)
+            XCTFail("Expected unreadable recovery journal")
+        } catch AccountIdentityReplacementError.invalidTransaction {
+            let error = AccountIdentityReplacementError.invalidTransaction
+            let family = AppContainer.reconciliationFamily(for: error, codexRecoveryOnly: true, in: profiles)
+            let failure = AppContainer.externalClaudeReconciliationFailure(for: error, family: family)
+            AppContainer.applyExternalClaudeReconciliationError(
+                failure, to: fixture.store, accountSwitch: fixture.coordinator,
+                startedAt: fixture.coordinator.generation, family: family)
+            XCTAssertEqual(family, "codex")
+            XCTAssertEqual(fixture.store.refreshResults["codex"]?.failure, failure)
+            XCTAssertEqual(fixture.store.refreshResults["claude"]?.failure, claudeFailure)
+            XCTAssertEqual(
+                AppContainer.reconciliationFamily(for: error, codexRecoveryOnly: false, in: profiles), "claude")
+        }
+        XCTAssertEqual(fixture.defaults.data(forKey: AccountProfilesStore.identityReplacementKey), bytes)
+        XCTAssertTrue(http.requests.isEmpty)
+    }
+
     func testCodexRecoveryConflictUsesItsOwnErrorPresentation() {
         let failure = AppContainer.externalClaudeReconciliationFailure(for: CodexAuthError.credentialsChanged)
 
