@@ -45,7 +45,7 @@ struct AccountListView: View {
         if container.accountProfiles.hasUnreadableRegistry {
             return UserFacingErrors.message(AccountProfileError.registryUnreadable)
         }
-        return container.accountCardPresentation.errorMessage
+        return container.dataStore.accountReconciliationNotice ?? container.accountCardPresentation.errorMessage
     }
 
     @ViewBuilder

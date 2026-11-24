@@ -500,10 +500,12 @@ final class AppContainer {
             }
         } else if ProviderAccountID.family(of: providerID) == "codex" {
             let transaction = try? accountProfiles.pendingIdentityReplacement()
-            let pendingFamily = transaction.flatMap { accountProfiles.profile(id: $0.profileID)?.family }
-            if pendingFamily == "codex" || dataStore.codexReconciliationFailure != nil {
+            if Self.shouldRetryCodexReconciliation(
+                for: providerID, transaction: transaction, in: accountProfiles, to: dataStore,
+                profileIDsByCard: accountProfileIDsByCardID)
+            {
                 await ProviderRefreshContext.$isManual.withValue(true) {
-                    await reconcileExternalClaudeAuthenticationAndRefreshCatalog(codexRecoveryOnly: true)
+                    await reconcileExternalClaudeAuthenticationAndRefreshCatalog(codexRetryCardID: providerID)
                 }
             }
         }
@@ -518,7 +520,9 @@ final class AppContainer {
         return outcome
     }
 
-    private func reconcileExternalClaudeAuthentication(codexRecoveryOnly: Bool = false) async -> Result<Bool, Error>? {
+    private func reconcileExternalClaudeAuthentication(
+        codexRetryCardID: String?, observeCodexProfile: (String) -> Void
+    ) async -> Result<Bool, Error>? {
         while ProviderRefreshContext.isManual && isReconcilingExternalClaudeAuthentication && !Task.isCancelled {
             await withCheckedContinuation { authenticationReconciliationWaiters.append($0) }
         }
@@ -534,6 +538,19 @@ final class AppContainer {
         guard let ticket = await workQueue.acquire("accounts:reconcile") else { return nil }
         defer { workQueue.finish(ticket) }
         guard !Task.isCancelled, !accountSwitch.isSwitching else { return nil }
+        let initialRecord = try? accountProfiles.pendingIdentityReplacement()
+        if let codexRetryCardID,
+            !Self.shouldRetryCodexReconciliation(
+                for: codexRetryCardID, transaction: initialRecord, in: accountProfiles, to: dataStore,
+                profileIDsByCard: accountProfileIDsByCardID)
+        {
+            return nil
+        }
+        let codexRecoveryOnly = codexRetryCardID != nil
+        if let initialRecord, let owner = accountProfiles.profile(id: initialRecord.profileID), owner.family == "codex"
+        {
+            observeCodexProfile(owner.id)
+        }
         do {
             let importer = AccountCredentialImporter()
             let result: AccountCredentialImporter.ExternalReauthenticationResult
@@ -555,42 +572,127 @@ final class AppContainer {
                 return .success(false)
             }
         } catch {
-            AppDiagnostics.failure(.accountReconcile, error: error, providerID: reconciliationFamily(for: error),
-                                   localContext: "Account authentication reconciliation failed")
+            let family = Self.reconciliationFamily(
+                for: error, codexRecoveryOnly: codexRecoveryOnly, in: accountProfiles,
+                journal: Result { try accountProfiles.pendingIdentityReplacement() })
+            AppDiagnostics.failure(
+                .accountReconcile, error: error, providerID: family,
+                localContext: "Account authentication reconciliation failed")
             return .failure(error)
         }
     }
 
-    private func reconciliationFamily(for error: Error) -> String {
-        if error is CodexAuthError { return "codex" }
+    static func reconciliationFamily(
+        for error: Error, codexRecoveryOnly: Bool, in accountProfiles: AccountProfilesStore,
+        journal: Result<AccountIdentityReplacement?, Error>
+    ) -> String? {
+        if codexRecoveryOnly || error is CodexAuthError { return "codex" }
         if error is ClaudeAuthError { return "claude" }
-        let transaction = try? accountProfiles.pendingIdentityReplacement()
+        if case .failure = journal, case AccountIdentityReplacementError.invalidTransaction = error { return nil }
+        let transaction = try? journal.get()
         return transaction.flatMap { accountProfiles.profile(id: $0.profileID)?.family } ?? "claude"
     }
 
+    static func shouldRetryCodexReconciliation(
+        for cardID: String, transaction: AccountIdentityReplacement?, in profiles: AccountProfilesStore,
+        to dataStore: WidgetDataStore, profileIDsByCard: [String: String]
+    ) -> Bool {
+        if let transaction, let owner = profiles.profile(id: transaction.profileID), owner.family == "codex" {
+            return AccountUsageCardPlanner.statusCardID(for: owner, profileIDsByCard: profileIDsByCard) == cardID
+        }
+        return dataStore.reconciliationFailure(for: cardID) != nil
+    }
+
     /// 사용량 조회와 별도로 계정 복구·외부 Claude 로그인 반영 상태 게시.
-    func reconcileExternalClaudeAuthenticationAndRefreshCatalog(codexRecoveryOnly: Bool = false) async {
+    func reconcileExternalClaudeAuthenticationAndRefreshCatalog(codexRetryCardID: String? = nil) async {
+        let codexRecoveryOnly = codexRetryCardID != nil
+        var initialCodexProfileID: String?
         let generation = accountSwitch.generation
-        let authenticationRevision = accountProfiles.authenticationRevision
-        guard let result = await reconcileExternalClaudeAuthentication(codexRecoveryOnly: codexRecoveryOnly),
-            !Task.isCancelled else { return }
+        guard
+            let result = await Self.reconcileAndRefreshAccountCatalog(
+                in: accountProfiles,
+                reconcile: {
+                    await reconcileExternalClaudeAuthentication(codexRetryCardID: codexRetryCardID) {
+                        initialCodexProfileID = $0
+                    }
+                },
+                refreshCatalog: { refreshAccountCatalog() }
+            )
+        else { return }
+        Self.publishAccountReconciliation(
+            result, codexRecoveryOnly: codexRecoveryOnly, in: accountProfiles, to: dataStore,
+            accountSwitch: accountSwitch, startedAt: generation, profileIDsByCard: accountProfileIDsByCardID,
+            codexRetryCardID: codexRetryCardID, previousCodexProfileID: initialCodexProfileID)
+    }
+
+    static func publishAccountReconciliation(
+        _ result: Result<Bool, Error>, codexRecoveryOnly: Bool, in accountProfiles: AccountProfilesStore,
+        to dataStore: WidgetDataStore, accountSwitch: AccountSwitchCoordinator, startedAt generation: Int,
+        profileIDsByCard: [String: String] = [:], codexRetryCardID: String? = nil, previousCodexProfileID: String? = nil
+    ) {
+        guard !Task.isCancelled, !accountSwitch.isSwitching, accountSwitch.generation == generation else { return }
+        let journal = Result { try accountProfiles.pendingIdentityReplacement() }
+        if case .success = journal { dataStore.accountReconciliationNotice = nil }
+        let family: String
         let failure: ProviderRefreshFailure?
-        var failureFamily = codexRecoveryOnly ? "codex" : "claude"
         switch result {
         case .success(let updated):
-            if updated || accountProfiles.authenticationRevision != authenticationRevision { refreshAccountCatalog() }
+            let pending: AccountIdentityReplacement?
+            do {
+                pending = try journal.get()
+            } catch {
+                dataStore.accountReconciliationNotice = UserFacingErrors.message(error)
+                return
+            }
+            if let pending, codexRecoveryOnly || !updated {
+                guard codexRecoveryOnly, accountProfiles.profile(id: pending.profileID)?.family == "claude"
+                else { return }
+            }
+            family = codexRecoveryOnly ? "codex" : "claude"
             failure = nil
         case .failure(let error):
-            if accountProfiles.authenticationRevision != authenticationRevision { refreshAccountCatalog() }
-            failureFamily = reconciliationFamily(for: error)
-            failure = Self.externalClaudeReconciliationFailure(for: error, family: failureFamily)
+            guard
+                let owner = reconciliationFamily(
+                    for: error, codexRecoveryOnly: codexRecoveryOnly, in: accountProfiles, journal: journal)
+            else {
+                dataStore.accountReconciliationNotice = UserFacingErrors.message(error)
+                return
+            }
+            family = owner
+            failure = externalClaudeReconciliationFailure(for: error, family: family)
         }
-        if failureFamily != "codex", (try? accountProfiles.pendingIdentityReplacement()) == nil {
-            Self.applyExternalClaudeReconciliationError(
-                nil, to: dataStore, accountSwitch: accountSwitch, startedAt: generation, family: "codex")
+        func cardID(for profileID: String) -> String? {
+            guard let profile = accountProfiles.profile(id: profileID), profile.family == "codex" else { return nil }
+            return AccountUsageCardPlanner.statusCardID(for: profile, profileIDsByCard: profileIDsByCard)
         }
-        Self.applyExternalClaudeReconciliationError(
-            failure, to: dataStore, accountSwitch: accountSwitch, startedAt: generation, family: failureFamily)
+        func clearRecoveredCodexFailure() {
+            if let previousCodexProfileID {
+                if let card = cardID(for: previousCodexProfileID) {
+                    dataStore.setAccountReconciliationFailure(nil, for: card)
+                }
+            } else {
+                dataStore.clearCodexReconciliationFailure(for: codexRetryCardID)
+            }
+        }
+        if family == "codex" {
+            guard let failure else {
+                clearRecoveredCodexFailure()
+                return
+            }
+            let pending = try? journal.get()
+            if let profileID = previousCodexProfileID ?? pending?.profileID {
+                guard let card = cardID(for: profileID) else {
+                    dataStore.accountReconciliationNotice = failure.localizedMessage
+                    return
+                }
+                dataStore.setAccountReconciliationFailure(failure, for: card)
+            } else {
+                dataStore.setAccountReconciliationFailure(failure, for: codexRetryCardID ?? "codex")
+            }
+        } else {
+            if case .success(nil) = journal { clearRecoveredCodexFailure() }
+            dataStore.setAccountReconciliationFailure(failure, for: family)
+        }
     }
 
     /// account runtime은 한 provider의 대체 view — Customize 마스터 토글은 family 전체 카드를 함께 on/off.

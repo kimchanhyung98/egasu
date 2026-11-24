@@ -339,3 +339,4 @@
 "OpenCode sign-in changed during refresh. Refresh this account and try again." = "OpenCode sign-in changed during refresh. Refresh this account and try again.";
 "You signed in to a different account. Try again with the account you selected." = "You signed in to a different account. Try again with the account you selected.";
 "egasu couldn't verify the Codex user. Open the account in Accounts to sign in again." = "egasu couldn't verify the Codex user. Open the account in Accounts to sign in again.";
+"This Mac’s synced history changed again. egasu will retry on the next update." = "This Mac’s synced history changed again. egasu will retry on the next update.";

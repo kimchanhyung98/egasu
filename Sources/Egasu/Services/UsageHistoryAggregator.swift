@@ -212,6 +212,10 @@ enum UsageHistorySnapshotRenderer {
     static let sharedHistoryPrefix = "Across your Macs · "
     private static let historyLabels: Set<String> = ["Today", "Yesterday", "Last 30 Days", "Usage Trend"]
 
+    static func nonHistoryLines(_ lines: [MetricLine]) -> [MetricLine] {
+        lines.filter { !historyLabels.contains($0.label) }
+    }
+
     static func render(
         local snapshot: ProviderSnapshot,
         history: ProviderUsageHistory,
@@ -220,7 +224,7 @@ enum UsageHistorySnapshotRenderer {
         combined: Bool = true
     ) -> ProviderSnapshot {
         var result = snapshot
-        result.lines.removeAll { historyLabels.contains($0.label) }
+        result.lines = nonHistoryLines(result.lines)
         let sourceNote = combined ? sharedHistoryPrefix + descriptor.sourceNote : descriptor.sourceNote
         SpendTileMapper.appendTokenUsage(
             history.series,

@@ -16,20 +16,21 @@ struct ProviderSnapshotCache {
         var refreshTimestamps: [String: Double]?
     }
 
-    /// persist blob의 in-memory mirror — 읽기마다 전 provider JSON을 MainActor에서 re-decode하던 비용 제거.
-    /// 읽기는 mirror 재사용, 영속 쓰기는 프로세스 잠금 안에서 최신 저장본을 다시 읽어 병합.
-    private let memo = OSAllocatedUnfairLock<Payload?>(initialState: nil)
+    private struct Session {
+        var payload: Payload?
+        var freshIDs: Set<String> = []
+        /// 사전 저장 실패로 디스크에 없는 실측은 다른 카드 쓰기 후에도 메모리에 보존.
+        var unpublishedIDs: Set<String> = []
+    }
 
-    /// 이 cache 인스턴스에서 정상 refresh로 저장한 provider ID — 로컬 이력만 갱신한 쓰기는 제외.
-    /// launch에 disk에서 로드된 snapshot은 표시만 되고 fresh로 취급되지 않아 첫 pass에 refresh 강제(#697).
-    private let sessionWrites = OSAllocatedUnfairLock<Set<String>>(initialState: [])
+    private let session = OSAllocatedUnfairLock(initialState: Session())
     private let localQuotaInvalidations = OSAllocatedUnfairLock<[String: Date]>(initialState: [:])
 
     private let userDefaults: UserDefaults
     private let storageKey: String
     private let persistenceLockURL: URL
     /// 세션 내에 쓴 snapshot의 fresh 유지 기간(1 refresh interval) — 이전 세션의 snapshot은 `refreshedAt`과
-    /// 무관하게 non-fresh(`sessionWrites` 참고). 테스트는 고정 TTL 주입.
+    /// 무관하게 non-fresh. 테스트는 고정 TTL 주입.
     private let ttl: TimeInterval?
     /// timestamp-only freshness opt-in — 메뉴바 앱은 launch당 1회 refresh를 강제하지만 one-shot reader에는 세션 개념이 없음.
     private let allowsPersistedFreshness: Bool
@@ -80,24 +81,25 @@ struct ProviderSnapshotCache {
     /// refresh gating은 TTL 검사하는 `snapshot(providerID:)` 경유.
     func loadSnapshots(providerIDs: [String]) -> [String: ProviderSnapshot] {
         let providerIDSet = Set(providerIDs)
-        let loaded = loadPayload().snapshots.filter { providerID, _ in
-            providerIDSet.contains(providerID) && canReadSnapshot(providerID)
-        }
+        let state = loadSession()
+        let loaded =
+            state.payload?.snapshots.filter { providerID, _ in
+                providerIDSet.contains(providerID) && canReadSnapshot(providerID, in: state)
+            } ?? [:]
         AppLog.debug(.cache, "loaded \(loaded.count) snapshots from disk")
         return loaded
     }
 
-    private func canReadSnapshot(_ providerID: String) -> Bool {
-        !ignoresPersistedSnapshotsFor.contains(providerID) || sessionWrites.withLock { $0.contains(providerID) }
+    private func canReadSnapshot(_ providerID: String, in state: Session) -> Bool {
+        !ignoresPersistedSnapshotsFor.contains(providerID) || state.freshIDs.contains(providerID)
     }
 
     func snapshot(providerID: String) -> ProviderSnapshot? {
-        guard canReadSnapshot(providerID) else { return nil }
-        let snapshot = loadPayload().snapshots[providerID]
-        guard let snapshot else { return nil }
-        // freshness는 이중 조건: 이 세션에 쓰였고 AND TTL 이내 — 이전 세션 blob은 즉시 paint용일 뿐
-        // refresh를 gate하지 않아 launch마다 즉시 refetch(#697).
-        let writtenThisSession = sessionWrites.withLock { $0.contains(providerID) }
+        let state = loadSession()
+        guard canReadSnapshot(providerID, in: state), let snapshot = state.payload?.snapshots[providerID] else {
+            return nil
+        }
+        let writtenThisSession = state.freshIDs.contains(providerID)
         let age = now().timeIntervalSince(snapshot.freshnessDate)
         let ttl = ttl ?? RefreshSetting.interval(for: providerID)
         let trusted = allowsPersistedFreshness || writtenThisSession
@@ -151,45 +153,54 @@ struct ProviderSnapshotCache {
         }
         AppLog.debug(.cache, "write \(AppLog.providerFamily(snapshot.providerID))")
         func updating(_ stored: Payload) {
-            guard markSessionFresh || stored.snapshots[snapshot.providerID] != nil else {
-                AppLog.debug(
-                    .cache, "skip history write \(AppLog.providerFamily(snapshot.providerID)) (cache removed)")
-                updateMemo(stored)
-                return
-            }
-            if let current = stored.snapshots[snapshot.providerID] {
-                let older =
-                    current.refreshedAt > snapshot.refreshedAt
-                    && (!markSessionFresh || current.refreshedAt <= now())
-                let changedAccount =
-                    !markSessionFresh
-                    && stored.producedByIdentityKeys[snapshot.providerID] != producedByIdentityKey
-                if older || changedAccount {
-                    AppLog.debug(
-                        .cache, "skip write \(AppLog.providerFamily(snapshot.providerID)) (newer stored snapshot)")
-                    updateMemo(stored)
-                    return
+            let observedNow = now()
+            let current = stored.snapshots[snapshot.providerID]
+            let older =
+                current.map {
+                    $0.refreshedAt > snapshot.refreshedAt && (!markSessionFresh || $0.refreshedAt <= observedNow)
+                } ?? false
+            let publishes =
+                !older
+                && (markSessionFresh
+                    || (stored.producedByIdentityKeys[snapshot.providerID] == producedByIdentityKey
+                        && Self.matchesQuota(current, snapshot, codecs: persistsWrites ? (encoder, decoder) : nil)))
+            var didPublish = false
+            if publishes {
+                if persistsWrites {
+                    var payload = stored
+                    payload.snapshots[snapshot.providerID] = snapshot
+                    payload.producedByIdentityKeys[snapshot.providerID] = producedByIdentityKey
+                    didPublish = save(payload)
+                } else {
+                    didPublish = true
                 }
+            } else {
+                AppLog.debug(
+                    .cache, "skip shared write \(AppLog.providerFamily(snapshot.providerID)) (stored snapshot changed)")
             }
-            var payload = stored
-            payload.snapshots[snapshot.providerID] = snapshot
-            // 무귀속 snapshot에 이전 계정 stamp를 남기지 않음.
-            payload.producedByIdentityKeys[snapshot.providerID] = producedByIdentityKey
-            save(payload, replacingProviderID: snapshot.providerID)
-            if markSessionFresh { sessionWrites.withLock { $0.insert(snapshot.providerID) } }
+            mergeSession(
+                stored, snapshot: snapshot, identity: producedByIdentityKey, at: observedNow,
+                live: markSessionFresh, acceptsStoredWrite: publishes, failedToPublish: publishes && !didPublish)
         }
         guard persistsWrites else {
             updating(loadPayload())
             return
         }
+        var merged = false
         do {
             try withPersistenceLock {
                 guard userDefaults.synchronize() else { throw POSIXError(.EIO) }
                 updating(decodeStoredPayload())
+                merged = true
                 guard userDefaults.synchronize() else { throw POSIXError(.EIO) }
             }
         } catch {
             AppLog.warn(.cache, "shared cache write failed: \(AppLog.errorDetails(error))")
+            if !merged {
+                _ = loadSession()
+                mergeSession(
+                    nil, snapshot: snapshot, identity: producedByIdentityKey, at: now(), live: markSessionFresh)
+            }
         }
     }
 
@@ -210,28 +221,77 @@ struct ProviderSnapshotCache {
         return payload.producedByIdentityKeys[providerID] != currentIdentityKey
     }
 
-    private func loadPayload() -> Payload {
-        if let mirror = memo.withLock({ $0 }) { return mirror }
-        // 첫 접근에만 blob decode 후 mirror — lock 밖 decode로 @Sendable closure에서 self 제외, race는 동일 값 중복 decode에 그침(무해).
+    private func loadSession() -> Session {
+        let cached = session.withLock { $0 }
+        if cached.payload != nil { return cached }
         let loaded = decodeStoredPayload()
-        memo.withLock { $0 = loaded }
-        return loaded
+        return session.withLock { state in
+            if state.payload == nil { state.payload = loaded }
+            return state
+        }
     }
 
-    /// 다른 프로세스의 저장을 현재 세션의 실측으로 승격하지 않도록 표시용 사본 분리.
-    private func updateMemo(_ payload: Payload, replacingProviderID: String? = nil) {
-        let localIDs = sessionWrites.withLock { $0 }
-        memo.withLock { mirror in
-            var visible = payload
-            for id in localIDs where id != replacingProviderID && payload.snapshots[id] != nil {
-                if let local = mirror?.snapshots[id] {
-                    visible.snapshots[id] = local
-                    visible.producedByIdentityKeys[id] = mirror?.producedByIdentityKeys[id]
+    private func loadPayload() -> Payload {
+        loadSession().payload ?? Payload(snapshots: [:], producedByIdentityKeys: [:])
+    }
+
+    /// 가공된 이력 행을 제외한 한도와 조회 시각 대조. 디스크의 날짜는 v10 ISO 8601 정밀도로 비교.
+    private static func matchesQuota(
+        _ candidate: ProviderSnapshot?, _ edit: ProviderSnapshot, codecs: (JSONEncoder, JSONDecoder)? = nil
+    ) -> Bool {
+        guard let candidate, candidate.refreshedAt == edit.refreshedAt,
+            candidate.plan == edit.plan, candidate.incompleteQuotaWindows == edit.incompleteQuotaWindows,
+            candidate.metricPresentations == edit.metricPresentations
+        else { return false }
+        func matchesDate(_ lhs: Date?, _ rhs: Date?) -> Bool {
+            if codecs == nil { return lhs == rhs }
+            return lhs.map { floor($0.timeIntervalSince1970) } == rhs.map { floor($0.timeIntervalSince1970) }
+        }
+        guard matchesDate(candidate.quotaObservedAt, edit.quotaObservedAt),
+            matchesDate(candidate.usageRetryAfter, edit.usageRetryAfter)
+        else { return false }
+        let hasHistory = candidate.usageHistory != nil || edit.usageHistory != nil
+        let previous = hasHistory ? UsageHistorySnapshotRenderer.nonHistoryLines(candidate.lines) : candidate.lines
+        let incoming = hasHistory ? UsageHistorySnapshotRenderer.nonHistoryLines(edit.lines) : edit.lines
+        if previous == incoming { return true }
+        guard let (encoder, decoder) = codecs, let data = try? encoder.encode(incoming),
+            let decoded = try? decoder.decode([MetricLine].self, from: data)
+        else { return false }
+        return previous == decoded
+    }
+
+    /// 공유 저장본과 실제 세션 조회를 구분하고 표시값·귀속·freshness를 함께 갱신.
+    private func mergeSession(
+        _ stored: Payload?, snapshot: ProviderSnapshot, identity: String?, at now: Date,
+        live: Bool, acceptsStoredWrite: Bool = false, failedToPublish: Bool = false
+    ) {
+        let id = snapshot.providerID
+        session.withLock { state in
+            var visible = stored ?? state.payload ?? Payload(snapshots: [:], producedByIdentityKeys: [:])
+            if stored != nil {
+                state.unpublishedIDs.subtract(visible.snapshots.keys)
+                state.freshIDs.formIntersection(Set(visible.snapshots.keys).union(state.unpublishedIDs))
+                for localID in state.freshIDs {
+                    visible.snapshots[localID] = state.payload?.snapshots[localID]
+                    visible.producedByIdentityKeys[localID] = state.payload?.producedByIdentityKeys[localID]
                 }
             }
-            mirror = visible
+            let local = state.freshIDs.contains(id) ? visible.snapshots[id] : nil
+            let newerLocal =
+                local.map { $0.refreshedAt > snapshot.refreshedAt && (!live || $0.refreshedAt <= now) } ?? false
+            let differentLocalAccount = !live && local != nil && visible.producedByIdentityKeys[id] != identity
+            let acceptsHistory = !live && (local == nil ? acceptsStoredWrite : Self.matchesQuota(local, snapshot))
+            if (live || acceptsHistory) && !newerLocal && !differentLocalAccount {
+                visible.snapshots[id] = snapshot
+                visible.producedByIdentityKeys[id] = identity
+                if live {
+                    state.freshIDs.insert(id)
+                    if stored == nil || failedToPublish { state.unpublishedIDs.insert(id) }
+                }
+            }
+            if acceptsStoredWrite && !failedToPublish { state.unpublishedIDs.remove(id) }
+            state.payload = visible
         }
-        sessionWrites.withLock { $0.formIntersection(payload.snapshots.keys) }
     }
 
     private func decodeStoredPayload() -> Payload {
@@ -263,10 +323,7 @@ struct ProviderSnapshotCache {
         }
     }
 
-    private func save(_ payload: Payload, replacingProviderID: String) {
-        // mirror 먼저 갱신 — encode 실패해도 세션 내 읽기는 이 쓰기를 반영(persist만 best-effort).
-        updateMemo(payload, replacingProviderID: replacingProviderID)
-        guard persistsWrites else { return }
+    private func save(_ payload: Payload) -> Bool {
         // encode 실패는 크게 log — 조용히 삼키면 snapshot이 persisted cache에서 소리 없이 빠짐.
         do {
             var persisted = payload
@@ -276,8 +333,10 @@ struct ProviderSnapshotCache {
             persisted.refreshTimestamps = payload.snapshots.mapValues { $0.refreshedAt.timeIntervalSinceReferenceDate }
             let data = try encoder.encode(persisted)
             userDefaults.set(data, forKey: storageKey)
+            return true
         } catch {
             AppLog.warn(.cache, "encode failed, snapshot not persisted: \(AppLog.errorDetails(error))")
+            return false
         }
     }
 
@@ -287,8 +346,14 @@ struct ProviderSnapshotCache {
         let descriptor = Darwin.open(persistenceLockURL.path, O_CREAT | O_RDWR | O_CLOEXEC, S_IRUSR | S_IWUSR)
         guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         defer { Darwin.close(descriptor) }
-        while flock(descriptor, LOCK_EX) != 0 {
-            guard errno == EINTR else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        let deadline = ContinuousClock.now + .milliseconds(100)
+        while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
+            let error = errno
+            guard error == EINTR || error == EWOULDBLOCK else {
+                throw POSIXError(POSIXErrorCode(rawValue: error) ?? .EIO)
+            }
+            guard ContinuousClock.now < deadline else { throw POSIXError(.ETIMEDOUT) }
+            if error == EWOULDBLOCK { Thread.sleep(forTimeInterval: 0.005) }
         }
         defer { flock(descriptor, LOCK_UN) }
         try body()

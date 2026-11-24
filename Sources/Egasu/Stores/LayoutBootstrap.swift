@@ -10,6 +10,7 @@ struct LayoutInitialState {
     let providerOrder: [String]
     let metricOrderByProvider: [String: [String]]
     let disabledMetricIDs: Set<String>
+    let newlyVisibleMetricIDs: Set<String>
     let shouldPersistVisibility: Bool
     let shouldPersistMetricOrder: Bool
     let shouldClearOnDemandState: Bool
@@ -57,6 +58,8 @@ enum LayoutBootstrap {
         var disabled: Set<String>
         let canInitialize = canReadOrder && !persistence.isUpstreamImportPending
         var mayPersist = canInitialize
+        var mayPersistOrder = canInitialize
+        var newlyVisibleMetricIDs: Set<String> = []
         var legacyPlaced: [PlacedWidget] = []
         if persistence.hasStoredDisabledMetrics {
             if let saved = persistence.loadDisabledMetrics() {
@@ -98,9 +101,14 @@ enum LayoutBootstrap {
                         laterDefaults.formUnion(
                             Set(DefaultLayout.legacyV1DefaultMetricIDs).subtracting(defaults.migrationBaselineMetricIDs)
                         )
+                    } else {
+                        mayPersist = false
+                        // 보정한 순서가 복구 후 기존 지표의 근거로 사용되지 않도록 원본 유지.
+                        mayPersistOrder = false
                     }
                     let newMetrics = Set(defaults.metricIDs).intersection(laterDefaults).subtracting(known)
-                    disabled = disabled.filter { !newMetrics.contains(ProviderAccountID.canonicalMetricID($0)) }
+                    newlyVisibleMetricIDs = disabled.filter { newMetrics.contains(ProviderAccountID.canonicalMetricID($0)) }
+                    disabled.subtract(newlyVisibleMetricIDs)
                 }
             } else {
                 disabled = currentIDs
@@ -113,6 +121,9 @@ enum LayoutBootstrap {
         if !persistence.hasStoredDisabledMetrics {
             disabled = disabled.filter { !ProviderAccountID.isSharedMetricAlias($0) }
         }
+        for (id, enabled) in persistence.deferredVisibility {
+            if enabled { disabled.remove(id) } else { disabled.insert(id) }
+        }
         let legacyByID = Dictionary(legacyPlaced.map { ($0.descriptorID, $0) }, uniquingKeysWith: { first, _ in first })
         var placed = registry.descriptors.compactMap { descriptor -> PlacedWidget? in
             guard currentIDs.contains(descriptor.id),
@@ -124,8 +135,9 @@ enum LayoutBootstrap {
         order = order.mapValues { $0.filter { !persistence.isUnresolvedMetric($0) } }
         return LayoutInitialState(
             placed: placed, providerOrder: providerOrder, metricOrderByProvider: order,
-            disabledMetricIDs: disabled, shouldPersistVisibility: mayPersist,
-            shouldPersistMetricOrder: canInitialize && order != savedOrder,
+            disabledMetricIDs: disabled, newlyVisibleMetricIDs: newlyVisibleMetricIDs.subtracting(disabled),
+            shouldPersistVisibility: mayPersist,
+            shouldPersistMetricOrder: mayPersistOrder && order != savedOrder,
             shouldClearOnDemandState: mayPersist && !persistence.hasUnresolvedProfileMapping && hasOnDemandState
         )
     }

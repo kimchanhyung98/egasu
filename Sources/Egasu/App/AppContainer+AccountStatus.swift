@@ -77,4 +77,18 @@ extension AppContainer {
         guard !accountSwitch.isSwitching, accountSwitch.generation == generation else { return }
         dataStore.setAccountReconciliationFailure(failure, for: family)
     }
+
+    /// 저장이 끝난 인증 변경은 화면 작업이 취소돼도 카탈로그에 반영.
+    static func reconcileAndRefreshAccountCatalog(
+        in accountProfiles: AccountProfilesStore,
+        reconcile: () async -> Result<Bool, Error>?,
+        refreshCatalog: () -> Void
+    ) async -> Result<Bool, Error>? {
+        let authenticationRevision = accountProfiles.authenticationRevision
+        guard let result = await reconcile() else { return nil }
+        if (try? result.get()) == true || accountProfiles.authenticationRevision != authenticationRevision {
+            refreshCatalog()
+        }
+        return Task.isCancelled ? nil : result
+    }
 }

@@ -69,9 +69,7 @@ final class LayoutStore {
         priorityPinIDs = Self.loadPriorityPins(from: persistence, registry: registry)
         canMigrateLegacyPins = initial.shouldPersistVisibility
 
-        if initial.shouldPersistMetricOrder { persistMetricOrder() }
-        if initial.shouldPersistVisibility { persistence.saveDisabledMetrics(initial.disabledMetricIDs) }
-        if initial.shouldClearOnDemandState { persistence.clearOnDemandState() }
+        persistMigration(initial)
         syncPlacedOrder(persistChanges: false)
     }
 
@@ -101,9 +99,7 @@ final class LayoutStore {
         undoHistory.clear()
         cancelDrag()
 
-        if reloaded.shouldPersistMetricOrder { persistMetricOrder() }
-        if reloaded.shouldPersistVisibility { persistence.saveDisabledMetrics(reloaded.disabledMetricIDs) }
-        if reloaded.shouldClearOnDemandState { persistence.clearOnDemandState() }
+        persistMigration(reloaded)
         syncPlacedOrder(persistChanges: false)
     }
 
@@ -145,7 +141,8 @@ final class LayoutStore {
             providerOrder: providerOrder,
             metricOrderByProvider: metricOrderByProvider,
             priorityPinIDs: priorityPinIDs,
-            declinedMenuBarStarIDs: persistence.loadDeclinedMenuBarStars()
+            declinedMenuBarStarIDs: persistence.loadDeclinedMenuBarStars(),
+            deferredVisibility: persistence.deferredVisibility
         )
     }
 
@@ -187,6 +184,9 @@ final class LayoutStore {
         providerOrder = snapshot.providerOrder
         metricOrderByProvider = snapshot.metricOrderByProvider
         priorityPinIDs = snapshot.priorityPinIDs
+        if persistence.deferredVisibility != snapshot.deferredVisibility {
+            persistence.deferredVisibility = snapshot.deferredVisibility
+        }
         if declinedChanged { persistence.saveDeclinedMenuBarStars(snapshot.declinedMenuBarStarIDs) }
         if visibilityChanged { persist() }
         if providersChanged { persistProviderOrder() }
@@ -276,6 +276,7 @@ final class LayoutStore {
             } else {
                 guard priorityPinIDs.remove(settingsID) != nil else { return }
             }
+            persistPendingImportChoice()
             persistence.recordExplicitPinChoice(settingsID, pinned: pinned)
             persistence.savePriorityPins(priorityPinIDs)
         }
@@ -296,13 +297,15 @@ final class LayoutStore {
         guard !placed.contains(where: { $0.descriptorID == settingsID }) else { return }
         cancelDrag()
         placed.append(PlacedWidget(descriptorID: settingsID))
+        persistence.recordDeferredVisibility([settingsID: true])
         syncPlacedOrder()
     }
 
     func remove(_ id: UUID) {
         guard let index = placed.firstIndex(where: { $0.id == id }) else { return }
         cancelDrag()
-        placed.remove(at: index)
+        let removed = placed.remove(at: index)
+        persistence.recordDeferredVisibility([removed.descriptorID: false])
         persist()
     }
 
@@ -323,7 +326,7 @@ final class LayoutStore {
         priorityPinIDs = []
         persistence.savePriorityPins(priorityPinIDs)
         persistence.clearOnDemandState()
-        persistence.saveDisabledMetrics([])
+        persistence.finishVisibilityMigration([])
         persist()
     }
 
@@ -356,6 +359,9 @@ final class LayoutStore {
             + familyDescriptors.filter { currentDefaults.contains(Self.canonical($0.id)) }
                 .map { PlacedWidget(descriptorID: $0.id) }
 
+        persistence.recordDeferredVisibility(
+            Dictionary(uniqueKeysWithValues: layoutOwned.map { ($0, currentDefaults.contains(Self.canonical($0))) }))
+
         // metric 순서는 이 family만 registry 순서로 복귀.
         metricOrderByProvider[family] = canonicalIDs
         for provider in registry.providers where ProviderAccountID.family(of: provider.id) == family && provider.id != family {
@@ -385,6 +391,20 @@ final class LayoutStore {
     func persistProviderOrder() {
         persistPendingImportChoice()
         persistence.saveProviderOrder(providerOrder)
+    }
+
+    private func persistMigration(_ state: LayoutInitialState) {
+        if state.shouldPersistMetricOrder {
+            if state.shouldPersistVisibility && !state.newlyVisibleMetricIDs.isEmpty {
+                // 순서 저장 직후 종료해도 새 지표가 구형 순서에 있던 숨김으로 바뀌지 않도록 보존.
+                var choices = persistence.deferredVisibility
+                for id in state.newlyVisibleMetricIDs { choices[id] = true }
+                persistence.deferredVisibility = choices
+            }
+            persistMetricOrder()
+        }
+        if state.shouldPersistVisibility { persistence.finishVisibilityMigration(state.disabledMetricIDs) }
+        if state.shouldClearOnDemandState { persistence.clearOnDemandState() }
     }
 
     func persistMetricOrder() {

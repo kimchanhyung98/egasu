@@ -6,6 +6,9 @@ import XCTest
 final class ICloudUncollectedHistoryTests: XCTestCase {
     private enum Input {
         case activeWithMissingCache
+        case deliveryAfterLoad
+        case unreadableOwn
+        case unreadablePeer
         case activeWithFamilyTotal
         case activeWithFailedCollection
         case activeThenEmptyCollection
@@ -47,6 +50,18 @@ final class ICloudUncollectedHistoryTests: XCTestCase {
         try await checkStartup(.activeThenEmptyCollection)
     }
 
+    func testScheduledWriteRebuildsWithTheLatestDeliveredUncollectedHistory() async throws {
+        try await checkStartup(.deliveryAfterLoad)
+    }
+
+    func testUnreadableOwnDocumentDefersReplacementUntilAccessReturns() async throws {
+        try await checkStartup(.unreadableOwn)
+    }
+
+    func testUnreadablePeerDoesNotBlockOwnDocument() async throws {
+        try await checkStartup(.unreadablePeer)
+    }
+
     private func checkStartup(_ input: Input) async throws {
         let suite = "ICloudUncollectedHistoryTests." + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -72,7 +87,8 @@ final class ICloudUncollectedHistoryTests: XCTestCase {
             at: legacy.deletingLastPathComponent(), withIntermediateDirectories: true)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        try encoder.encode(previous).write(to: legacy, options: .atomic)
+        let previousBytes = try encoder.encode(previous)
+        try previousBytes.write(to: legacy, options: .atomic)
         var peer = previous
         peer.deviceID = UUID().uuidString.lowercased()
         peer.deviceName = "Peer Mac"
@@ -119,12 +135,33 @@ final class ICloudUncollectedHistoryTests: XCTestCase {
             XCTAssertEqual(result, .failed)
         }
 
+        if input == .unreadableOwn || input == .unreadablePeer {
+            let blocked = input == .unreadableOwn ? legacy : peerFile
+            try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: blocked.path)
+            XCTAssertThrowsError(try Data(contentsOf: blocked))
+        }
+
         defaults.set(true, forKey: "openusage.icloudSync.enabled.v1")
         let sync = ICloudUsageSyncStore(
             dataStore: data, defaults: defaults, fileStore: files, deviceIDStore: FixedDeviceID(id: deviceID),
             writeDebounce: .milliseconds(10), observesMetadataChanges: false)
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: .seconds(8))
+        if input == .unreadableOwn {
+            while sync.isSyncing || sync.documents.isEmpty {
+                guard clock.now < deadline else { return XCTFail("첫 동기화 대기 시간 초과") }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            XCTAssertNotNil(sync.serviceError)
+            let current = root.appendingPathComponent("egasu/History/" + deviceID + ".json")
+            XCTAssertFalse(FileManager.default.fileExists(atPath: current.path))
+            guard FileManager.default.fileExists(atPath: legacy.path) else {
+                return XCTFail("읽지 못한 기존 파일이 삭제됨")
+            }
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: legacy.path)
+            XCTAssertEqual(try Data(contentsOf: legacy), previousBytes)
+            sync.scheduleWrite()
+        }
         while sync.isSyncing
             || sync.documents.first(where: { $0.deviceID == deviceID })?.providers["codex"] != refreshedHistory
         {
@@ -133,7 +170,12 @@ final class ICloudUncollectedHistoryTests: XCTestCase {
         }
 
         XCTAssertTrue(sync.enabled)
-        XCTAssertNil(sync.serviceError)
+        if input == .unreadablePeer {
+            XCTAssertNotNil(sync.serviceError)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: peerFile.path)
+        } else {
+            XCTAssertNil(sync.serviceError)
+        }
         XCTAssertEqual(runtimes[0].refreshCount, input == .activeWithFailedCollection ? 1 : 0)
         XCTAssertEqual(runtimes[1].refreshCount, 0)
         let result = try await files.loadDocuments()
@@ -144,7 +186,8 @@ final class ICloudUncollectedHistoryTests: XCTestCase {
         XCTAssertEqual(own.deviceID, deviceID)
         XCTAssertEqual(own.providers["codex"], refreshedHistory)
         switch input {
-        case .activeWithMissingCache, .activeWithFamilyTotal, .activeWithFailedCollection, .activeThenEmptyCollection:
+        case .unreadableOwn, .unreadablePeer, .activeWithMissingCache, .activeWithFamilyTotal,
+            .activeWithFailedCollection, .activeThenEmptyCollection, .deliveryAfterLoad:
             XCTAssertEqual(
                 own.providers["claude"], oldHistory,
                 "활성 Claude 첫 수집 전 마지막 정상 기록 100토큰·1.25달러 보존. 기존 경로 파일 존재 = \(FileManager.default.fileExists(atPath: legacy.path))"
@@ -153,6 +196,19 @@ final class ICloudUncollectedHistoryTests: XCTestCase {
             XCTAssertNil(own.providers["claude"])
         case .activeWithAuthoritativeEmptyHistory:
             XCTAssertEqual(own.providers["claude"], emptyHistory)
+        }
+        if input == .deliveryAfterLoad {
+            var delivered = own
+            delivered.providers["claude"] = refreshedHistory
+            delivered.updatedAt = own.updatedAt.addingTimeInterval(1)
+            try encoder.encode(delivered).write(to: legacy, options: .atomic)
+            sync.scheduleWrite()
+            while FileManager.default.fileExists(atPath: legacy.path) || sync.isSyncing {
+                guard clock.now < deadline else { return XCTFail("변경된 구형 이력 재조회와 게시 대기 시간 초과") }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            let reloaded = try await files.loadDocuments()
+            XCTAssertEqual(reloaded.documents.first { $0.deviceID == deviceID }?.providers["claude"], refreshedHistory)
         }
         if input == .activeWithFamilyTotal {
             XCTAssertNil(own.identities)

@@ -18,7 +18,7 @@ final class UpdaterController {
 
     // SPUUpdaterDelegate는 MainActor, SPUStandardUserDriverDelegate는 nonisolated이므로 별도 객체 사용.
     // 두 프로토콜을 한 클래스에서 구현하면 Swift 6 격리 규칙 충돌.
-    private let channelDelegate = UpdaterChannelDelegate()
+    private let channelDelegate: UpdaterChannelDelegate
     private var userDriverDelegate: UpdaterUserDriverDelegate?
     private let presentationController: UpdaterPresentationController
     private var updater: SPUUpdater?
@@ -37,7 +37,7 @@ final class UpdaterController {
     /// Dock 없는 앱의 창이 뒤에 열리는 문제를 피하도록 대시보드 배너 표시.
     private(set) var availableUpdateVersion: String?
 
-    /// "Beta Updates" 설정 저장 — 변경 시 확인 주기를 재설정하여 다음 확인부터 새 채널 적용.
+    /// "Beta Updates" 설정 저장 — 자동 확인을 켠 경우에만 채널 변경 시 확인 주기 재설정.
     var betaChannelEnabled: Bool {
         get { currentBetaChannel }
         set {
@@ -58,6 +58,7 @@ final class UpdaterController {
     ) {
         self.presentationController = presentationController
         self.defaults = defaults
+        self.channelDelegate = UpdaterChannelDelegate(defaults: defaults)
         self.currentBetaChannel = defaults.betaUpdatesEnabled
         betaChannelObservation = defaults.publisher(for: \.betaUpdatesEnabled, options: [.new])
             .sink { @Sendable [weak self] enabled in
@@ -77,7 +78,7 @@ final class UpdaterController {
         currentBetaChannel = enabled
         onBetaChannelChange?(enabled)
         if userDriver?.dismissDisallowedUpdate() == true { availableUpdateVersion = nil }
-        updater?.resetUpdateCycle()
+        if automaticallyChecksForUpdates { updater?.resetUpdateCycle() }
         AppLog.info(.updates, "channel set to \(enabled ? "early access" : "stable")")
     }
 
@@ -128,6 +129,7 @@ final class UpdaterController {
         )
         self.userDriverDelegate = userDriverDelegate
         do {
+            channelDelegate.rememberChannelForCheck()
             try updater.start()
         } catch {
             AppDiagnostics.failure(.updateCheck, error: error, localContext: "Updater failed to start")
@@ -138,6 +140,11 @@ final class UpdaterController {
             }
             return
         }
+        attachStartedUpdater(updater, userDriver: userDriver)
+        AppLog.info(.updates, "started (feed present)")
+    }
+
+    func attachStartedUpdater(_ updater: SPUUpdater, userDriver: BannerUpdateUserDriver) {
         self.updater = updater
         self.userDriver = userDriver
         isActive = true
@@ -148,7 +155,6 @@ final class UpdaterController {
             .sink { [weak self] value in
                 MainActor.assumeIsolated { self?.canCheckForUpdates = value }
             }
-        AppLog.info(.updates, "started (feed present)")
     }
 
     /// 사용자의 업데이트 확인 요청 — Sparkle 표준 화면 표시.
@@ -269,6 +275,18 @@ final class UpdaterPresentationController {
 final class UpdaterChannelDelegate: NSObject, SPUUpdaterDelegate {
     var isCurrentUpdater: (SPUUpdater) -> Bool = { _ in true }
     var onUpdateCycleFinished: (() -> Void)?
+    private let defaults: UserDefaults
+    private var checkedBetaChannel = false
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        super.init()
+        rememberChannelForCheck()
+    }
+
+    func rememberChannelForCheck() {
+        checkedBetaChannel = defaults.bool(forKey: UpdaterController.betaChannelDefaultsKey)
+    }
 
     func updater(_ updater: SPUUpdater, mayPerform updateCheck: SPUUpdateCheck) throws {
         guard isCurrentUpdater(updater) else {
@@ -277,11 +295,16 @@ final class UpdaterChannelDelegate: NSObject, SPUUpdaterDelegate {
                 userInfo: [NSLocalizedDescriptionKey: "The update session was replaced."]
             )
         }
+        rememberChannelForCheck()
     }
 
     /// 기본은 정식 채널 — beta 반환 시 베타를 추가하며 정식 릴리스도 계속 포함.
     func allowedChannels(for updater: SPUUpdater) -> Set<String> {
-        UserDefaults.standard.bool(forKey: UpdaterController.betaChannelDefaultsKey) ? ["beta"] : []
+        // 자동 확인을 끈 뒤 Sparkle의 지연 예약이 채널 차이를 새 조회로 해석하지 않도록 유지.
+        let betaEnabled =
+            updater.sessionInProgress || updater.automaticallyChecksForUpdates
+            ? defaults.bool(forKey: UpdaterController.betaChannelDefaultsKey) : checkedBetaChannel
+        return betaEnabled ? ["beta"] : []
     }
 
     /// 업데이트 확인 결과 기록 — 업데이트 없음·사용자 취소는 INFO, 실패는 공통 진단 기록.

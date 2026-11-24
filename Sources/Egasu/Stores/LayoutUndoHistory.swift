@@ -9,6 +9,7 @@ struct LayoutSnapshot: Equatable {
     let metricOrderByProvider: [String: [String]]
     let priorityPinIDs: Set<String>
     let declinedMenuBarStarIDs: Set<String>
+    let deferredVisibility: [String: Bool]
 }
 
 /// `LayoutStore` 앱 전역 ⌘Z를 받치는 bounded undo stack
