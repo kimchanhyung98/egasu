@@ -7,13 +7,15 @@ struct PanelPageMeasurement: Equatable {
     let height: CGFloat
 
     init?(screen: PopoverScreen, tab: DashboardTab, detail: String?, hasFooter: Bool, geometry: ScrollGeometry) {
-        // 계정 화면의 바가 배치되기 전 높이와 떠나는 푸터의 이전 여백 제외.
+        var bottom = geometry.contentInsets.bottom
         if screen == .accounts {
-            guard geometry.contentInsets.top > 0, hasFooter == (geometry.contentInsets.bottom > 0) else { return nil }
+            guard geometry.contentInsets.top > 0, !hasFooter || bottom > 0 else { return nil }
+            // 상세 화면에서 ScrollGeometry가 이전 목록 푸터의 여백을 유지할 수 있음.
+            if !hasFooter { bottom = 0 }
         }
         self.tab = tab
         self.detail = detail
-        height = geometry.contentSize.height + geometry.contentInsets.top + geometry.contentInsets.bottom
+        height = geometry.contentSize.height + geometry.contentInsets.top + bottom
     }
 }
 

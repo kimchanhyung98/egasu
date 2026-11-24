@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
+import os
 @testable import Egasu
 
 /// 대시보드 탭 전환 — 누르는 순간 선택, 패널 크기가 바뀌는 동안 아래 바가 새 행을 가림.
@@ -104,8 +105,9 @@ final class DashboardTabSwitchTests: XCTestCase {
     func testAccountNavigationMeasuresEachRouteWithEqualContentHeights() async throws {
         var heights = MeasuredPanelHeights()
         var measurements: [PanelPageMeasurement] = []
+        let inputs = OSAllocatedUnfairLock(initialState: [String]())
         func page(_ detail: String?) -> AccountHeightProbe {
-            AccountHeightProbe(detail: detail) { measurement in
+            AccountHeightProbe(detail: detail, inputs: inputs) { measurement in
                 measurements.append(measurement)
                 heights[.accounts, measurement.tab, measurement.detail] = measurement.height
             }
@@ -114,7 +116,10 @@ final class DashboardTabSwitchTests: XCTestCase {
         let scroll = try XCTUnwrap(descendants(of: host).compactMap { $0 as? NSScrollView }.first)
         func waitForHeight(_ height: CGFloat, detail: String?, after count: Int, line: UInt = #line) async throws {
             try await waitUntil(
-                diagnostic: { "Expected \(height) for \(String(describing: detail)), measurements=\(measurements)" },
+                diagnostic: {
+                    "Expected \(height) for \(String(describing: detail)), inputs=\(inputs.withLock { $0 }), "
+                        + "measurements=\(measurements)"
+                },
                 {
                     host.layoutSubtreeIfNeeded()
                     return measurements.count > count && measurements.last?.detail == detail
@@ -344,13 +349,16 @@ private struct AccountInsetProbe: View {
 
 private struct AccountHeightProbe: View {
     let detail: String?
+    let inputs: OSAllocatedUnfairLock<[String]>
     let record: (PanelPageMeasurement) -> Void
 
     var body: some View {
         let footer = PopoverFooter(screen: .accounts, accountDetailID: detail)
         PopoverScrollView { Color.blue.frame(height: 500) }
             .onScrollGeometryChange(for: PanelPageMeasurement?.self) { geometry in
-                PanelPageMeasurement(
+                let input = "\(detail ?? "list") body=\(geometry.contentSize.height) insets=\(geometry.contentInsets)"
+                inputs.withLock { if $0.last != input { $0.append(input) } }
+                return PanelPageMeasurement(
                     screen: .accounts, tab: .priority, detail: detail, hasFooter: footer != nil, geometry: geometry)
             } action: { _, measurement in
                 if let measurement { record(measurement) }

@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import XCTest
 @testable import Egasu
 
@@ -113,6 +114,23 @@ final class PanelGeometryTests: XCTestCase {
         XCTAssertEqual(PanelGeometry.clampedHeight(
             PanelGeometry.height(content: 120, attachedSheet: 320), maximum: 200
         ), 200)
+    }
+
+    func testAccountDetailExcludesTheDepartedFooterWhileWaitingForVisibleBars() {
+        func measure(_ detail: String?, top: CGFloat, bottom: CGFloat) -> CGFloat? {
+            let geometry = ScrollGeometry(
+                contentOffset: .zero, contentSize: CGSize(width: 340, height: 500),
+                contentInsets: EdgeInsets(top: top, leading: 0, bottom: bottom, trailing: 0),
+                containerSize: CGSize(width: 340, height: 200))
+            return PanelPageMeasurement(
+                screen: .accounts, tab: .priority, detail: detail, hasFooter: detail == nil, geometry: geometry
+            )?.height
+        }
+        XCTAssertEqual(measure("codex", top: 30, bottom: 47), 530)
+        XCTAssertEqual(measure("codex", top: 30, bottom: 0), 530)
+        XCTAssertNil(measure("codex", top: 0, bottom: 47))
+        XCTAssertNil(measure(nil, top: 30, bottom: 0))
+        XCTAssertEqual(measure(nil, top: 30, bottom: 47), 577)
     }
 
     func testMeasuredHeightsKeepScreensIndependentOfDashboardTabs() {
