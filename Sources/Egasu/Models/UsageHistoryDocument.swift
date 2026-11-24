@@ -26,7 +26,8 @@ struct UsageHistoryDocument: Hashable, Sendable, Codable, Identifiable {
             }
             newest[document.deviceID] = document
         }
-        return Array(newest.values)
+        // 합산 한계에서 기여 선택이 파일 나열 순서에 따라 달라지지 않도록 순서 고정.
+        return newest.values.sorted { $0.deviceID < $1.deviceID }
     }
 
     func validate() throws {

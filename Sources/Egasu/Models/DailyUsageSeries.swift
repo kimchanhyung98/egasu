@@ -62,6 +62,12 @@ struct ProviderUsageHistory: Hashable, Sendable, Codable {
     var unknownModelsByDay: [String: Set<String>]
     /// 비용 출처가 바뀌어도 마지막 정상 이력의 추정 여부 유지.
     var estimatedCost: Bool?
+    /// 합산 범위를 벗어난 기여의 경고 — 기기 파일과 캐시에는 저장하지 않음.
+    var hasRejectedNumericContributions = false
+
+    private enum CodingKeys: String, CodingKey {
+        case series, modelUsage, unknownModelsByDay, estimatedCost
+    }
 
     init(
         series: DailyUsageSeries,
