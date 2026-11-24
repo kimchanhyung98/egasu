@@ -56,6 +56,7 @@ final class PopoverState {
             guard screen != oldValue else { return }
             // onChange는 한 프레임 늦으므로 전환 이전 화면을 동기 기록하여 다음 렌더링부터 이동 효과 적용.
             screenSlideFrom = oldValue
+            departingAccountDetailID = oldValue == .accounts ? accountDetailID : nil
             screenSlideID += 1
             if screen != .accounts {
                 accountDetailID = nil
@@ -65,6 +66,14 @@ final class PopoverState {
     }
     private(set) var screenSlideFrom = PopoverScreen.dashboard
     private(set) var screenSlideID = 0
+    private var departingAccountDetailID: String?
+
+    /// 화면을 떠나는 동안에도 헤더·본문·푸터가 같은 계정 페이지를 그리도록 유지.
+    func displayedAccountDetail(on page: PopoverScreen) -> String? {
+        guard page == .accounts else { return nil }
+        return screen == .accounts ? accountDetailID : departingAccountDetailID
+    }
+
     /// Accounts 화면에서 상세를 연 계정(카드 ID) — nil이면 목록.
     var accountDetailID: String?
     var isAddingAccount = false
@@ -128,7 +137,7 @@ final class PopoverState {
     @discardableResult
     func back() -> Bool {
         if accountDetailID != nil {
-            withAnimation(Motion.navigation) { accountDetailID = nil }
+            accountDetailID = nil
             return true
         }
         guard screen != .dashboard else { return false }
@@ -140,10 +149,14 @@ final class PopoverState {
         withAnimation(Motion.modeSwitch) { screen = screen == target ? .dashboard : target }
     }
 
+    func isShowingSlide(_ slide: Int) -> Bool {
+        popoverShown && screenSlideID == slide
+    }
+
     func openAccounts(_ accountID: String?) {
-        withAnimation(Motion.modeSwitch) {
-            accountDetailID = accountID
-            screen = .accounts
+        accountDetailID = accountID
+        if screen != .accounts {
+            withAnimation(Motion.modeSwitch) { screen = .accounts }
         }
     }
 

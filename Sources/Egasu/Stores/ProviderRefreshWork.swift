@@ -49,6 +49,7 @@ final class ProviderRefreshWork {
     /// 큐 대기 뒤 실행 직전에 현재 카탈로그·인증 연결을 확인.
     func run(
         _ lease: Lease, provider: ProviderRuntime, trigger: RefreshTrigger,
+        isCurrent: @escaping @MainActor () -> Bool = { true },
         prepare: @MainActor () -> Bool
     ) async -> ProviderRefreshDeadline.Result? {
         guard let ticket = await queue.acquire("usage:\(ProviderAccountID.family(of: lease.providerID))") else {
@@ -57,8 +58,8 @@ final class ProviderRefreshWork {
         waitingProviderIDs.remove(lease.providerID)
         var workOwnsTicket = false
         defer { if !workOwnsTicket { queue.finish(ticket) } }
-        guard !Task.isCancelled, prepare() else { return nil }
-        return await ProviderRefreshDeadline.run(timeout: .seconds(timeout)) { [self, queue] in
+        guard !Task.isCancelled, isCurrent(), prepare() else { return nil }
+        return await ProviderRefreshDeadline.run(timeout: .seconds(timeout), isCurrent: isCurrent) { [self, queue] in
             workOwnsTicket = true
             defer { queue.finish(ticket) }
             pending[lease.runtimeID] = lease.providerID

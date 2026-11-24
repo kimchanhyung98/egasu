@@ -103,6 +103,7 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
   외부 로그인 반영과 시작 시 계정 복구는 Claude Code 공유 Keychain을 백그라운드에서 CLI와 같은 도구로 확인.
   egasu 계정별 저장본은 앱의 접근 권한으로 조회.
 - **[구독 타이머](/docs/refreshing.md#구독-타이머-자동-시작).** Codex·Claude·Antigravity·Kimi·Z.ai의 지원 한도를 확인하고 짧은 구독 메시지로 시작 유도.
+  설정 → 일반의 기본 켜짐 스위치 하나로 모든 계정의 자동 전송을 제어.
   Codex CLI 탐색 시 로그인 셸의 `PATH` 사용.
   Claude·Antigravity·Kimi·Z.ai는 CLI 준비가 끝난 뒤 서버 한도를 다시 조회.
   전송 예약 후 한도 관측값이 바뀌면 메시지를 생략하고 예약 횟수 유지.
@@ -113,6 +114,7 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
   기간 종료 전 잔량 알림은 한도별로 한 기간에 한 번 통지.
 - **[전역 단축키](/docs/settings.md#general).** Settings → General에서 지정한 키 조합으로 패널 열기·닫기.
 - **[계정 관리](/docs/accounts.md).** Accounts에서 계정 추가·전환·재로그인, API 키와 계정별 지표 표시·순서 관리.
+  대시보드·계정 목록·상세 사이를 이동할 때 본문과 표시 중인 바에 맞춰 패널 높이 조정.
   숨긴 계정 복원과 이름 변경·중단된 Claude 전환 복구 지원.
   기존 지표 설정의 이전·복구가 끝나기 전에는 원문을 보존하고 자동 이전 재시도.
   구형 표시 설정의 변환을 기다리는 동안 직접 바꾼 표시·숨김은 재실행·계정 전환 후에도 유지.

@@ -12,6 +12,7 @@
 "Always Show Pacing" = "使用ペースを常に表示";
 "Appearance" = "外観";
 "Auto" = "自動";
+"Auto-Start Subscription Timers" = "サブスクリプションタイマーを自動開始";
 "Bars" = "バー";
 "Beta Updates" = "ベータ版アップデート";
 "Cancel" = "キャンセル";
@@ -87,6 +88,7 @@
 "Reveal in Finder" = "Finderに表示";
 "Running Tokscale…" = "Tokscaleを実行中…";
 "Save" = "保存";
+"Sends a short request to start an unused subscription window for all supported accounts. The request can use some of your quota. Turning this off keeps usage updates on." = "対応するすべてのアカウントで、まだ始まっていない利用枠を短いリクエストで開始します。このリクエストも利用枠を消費する場合があります。オフにしても使用量の更新は続きます。";
 "Share Anonymous Usage" = "匿名の使用統計を共有";
 "Shares anonymous usage counts and error types to help improve egasu. No account details, credentials, or usage values are sent." = "egasuの改善のため、匿名の使用回数とエラーの種類を共有します。アカウント情報、認証情報、使用量の値は送信されません。";
 "Shares usage history through iCloud, so you can see one combined summary for all your Macs." = "iCloudで使用履歴を共有し、すべてのMacの使用量をまとめて確認できます。";

@@ -1,5 +1,24 @@
 import Darwin
 import Foundation
+import os
+
+/// 자동 전송 작업에만 연결되며, 설정 해제와 실제 자식 프로세스 생성을 직렬화.
+struct StreamingProcessLaunchPermission: Sendable {
+    @TaskLocal static var current: Self?
+    private let revoked = OSAllocatedUnfairLock(initialState: false)
+
+    var isRevoked: Bool { revoked.withLock { $0 } }
+
+    func revoke() { revoked.withLock { $0 = true } }
+
+    static func withPermission(_ spawn: () -> Int32) throws -> Int32 {
+        guard let current else { return spawn() }
+        return try current.revoked.withLockUnchecked { revoked in
+            guard !revoked else { throw CancellationError() }
+            return spawn()
+        }
+    }
+}
 
 struct StreamingProcessRequest: Sendable, Equatable {
     var executableURL: URL
@@ -312,17 +331,19 @@ struct StreamingProcessRunner: StreamingProcessRunning {
         let argv = [path] + arguments
         let environmentStrings = environment.map { "\($0.key)=\($0.value)" }.sorted()
         var pid = pid_t(0)
-        let spawnStatus = path.withCString { executable in
-            withCStringArray(argv) { argvPointer in
-                withCStringArray(environmentStrings) { environmentPointer in
-                    posix_spawn(
-                        &pid,
-                        executable,
-                        &fileActions,
-                        &attributes,
-                        argvPointer,
-                        environmentPointer
-                    )
+        let spawnStatus = try path.withCString { executable in
+            try withCStringArray(argv) { argvPointer in
+                try withCStringArray(environmentStrings) { environmentPointer in
+                    try StreamingProcessLaunchPermission.withPermission {
+                        posix_spawn(
+                            &pid,
+                            executable,
+                            &fileActions,
+                            &attributes,
+                            argvPointer,
+                            environmentPointer
+                        )
+                    }
                 }
             }
         }

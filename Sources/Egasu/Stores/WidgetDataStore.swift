@@ -204,11 +204,12 @@ final class WidgetDataStore {
     @discardableResult
     func refresh(
         providerID: String, force: Bool = false, trigger: RefreshTrigger = .scheduled,
-        notifyHistoryChange: Bool = true, codexBinding: CodexResetClaimBinding? = nil
+        notifyHistoryChange: Bool = true, codexBinding: CodexResetClaimBinding? = nil,
+        isCurrent: @escaping @MainActor () -> Bool = { true }
     ) async -> RefreshOutcome {
         let outcome = await refreshCoordinator.refresh(
             providerID: providerID, force: force, trigger: trigger,
-            notifyHistoryChange: notifyHistoryChange, codexBinding: codexBinding)
+            notifyHistoryChange: notifyHistoryChange, codexBinding: codexBinding, isCurrent: isCurrent)
         if trigger == .manual, outcome == .refreshed { await evaluateNotifications(now: now()) }
         return outcome
     }
@@ -295,8 +296,9 @@ final class WidgetDataStore {
     func refreshAfterWeeklyTimer(providerID: String, isCurrent: @escaping @MainActor () -> Bool) async {
         for _ in 0..<15 {
             guard !Task.isCancelled, isCurrent() else { return }
-            let outcome = await refresh(providerID: providerID, force: true, trigger: .weeklyTimer)
-            guard outcome == .skipped else { return }
+            let outcome = await refresh(
+                providerID: providerID, force: true, trigger: .weeklyTimer, isCurrent: isCurrent)
+            guard outcome == .skipped, isCurrent() else { return }
             do { try await Task.sleep(for: .seconds(1)) } catch { return }
         }
         AppDiagnostics.record(.weeklyTimer, result: .failure, providerID: providerID,

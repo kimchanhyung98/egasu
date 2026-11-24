@@ -213,6 +213,7 @@ final class SettingsTabsTests: XCTestCase {
             .background(Color.white)
             .environment(popover)
             .environment(iCloudSync)
+            .environment(UsageTimerSetting(defaults: defaults))
             .environment(UpdaterController())
             .environment(\.colorScheme, .light)
             .defaultAppStorage(defaults)
@@ -252,6 +253,7 @@ final class SettingsTabsTests: XCTestCase {
         try await waitForSettingsLayout(in: host) { appearances == 3 && operations.launchAtLogin.isEnabled }
         let resolved = try await renderedSettingsText(in: host)
         XCTAssertTrue(resolved.contains("launchatlogin"), resolved)
+        XCTAssertTrue(resolved.contains("autostartsubscriptiontimers"), resolved)
         XCTAssertFalse(resolved.contains("wouldntupdatelaunchatlogin"), resolved)
         XCTAssertEqual(requestedValues, [true])
     }
