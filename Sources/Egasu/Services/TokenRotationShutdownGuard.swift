@@ -1,7 +1,7 @@
 import Foundation
 
 /// OAuth refresh 요청부터 새 토큰 저장까지의 구간과 앱 종료의 경계.
-/// 서버는 요청을 받으면 이전 refresh token을 폐기하므로 저장 전 종료는 로그인 손실로 이어짐.
+/// 서버가 이전 refresh token을 폐기하면 저장 전 종료로 로그인을 잃을 수 있음.
 enum TokenRotationShutdownGuard {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var activeRotations = 0

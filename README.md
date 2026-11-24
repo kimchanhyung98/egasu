@@ -44,6 +44,7 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
 - **[Devin](/docs/providers/devin.md)** — 일간·주간 할당량, 추가 사용 잔액.
 - **[Grok](/docs/providers/grok.md)** — 결제 기간별 주간·월간 공유 한도, 종량제 지출 상한, 로컬 기록의 일별 지출·토큰.
 - **[Kimi](/docs/providers/kimi.md)** — 5시간·주간·월간 총한도, 추가 지출·잔액.
+  앱은 종료 요청을 받으면 진행 중인 OAuth 갱신의 저장 처리가 끝날 때까지 대기.
   세션 사용량이 0%여도 서버가 보고한 초기화 시각 표시.
   미충전 지갑의 금액도 0으로 표시.
   세션 한도만 있어도 게시 전 로그인 유지 여부 확인.

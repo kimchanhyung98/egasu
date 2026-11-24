@@ -138,7 +138,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         updater.start()
     }
 
-    /// 재로그인 시도 정리와 Claude 토큰 회전 저장, Runner 소유 프로세스 종료까지 대기.
+    /// 재로그인 시도 정리와 토큰 회전 저장, Runner 소유 프로세스 종료까지 대기.
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !isAwaitingProcessShutdown else { return .terminateLater }
         let reSignIn = container?.popover.beginReSignInShutdown()
@@ -149,7 +149,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             if hasActiveRotation {
                 await TokenRotationShutdownGuard.waitForIdle(warnAfter: .seconds(20)) {
-                    AppLog.warn(.lifecycle, "still waiting for a Claude token rotation before quitting")
+                    AppLog.warn(.lifecycle, "still waiting for a token rotation before quitting")
                 }
             }
             if let container, container.hasRunningBackgroundProcesses {
