@@ -195,6 +195,58 @@ final class ProviderSnapshotCacheSharedWriteTests: XCTestCase {
         XCTAssertEqual(app.producedByIdentityKey(providerID: "codex"), "local")
     }
 
+    func testMatchingRetainedHistoryUpdatesOnlyTheSessionWithoutExtendingQuotaFreshness() throws {
+        for failsBeforeWrite in [false, true] {
+            let suite = "EgasuTests.SharedCache." + UUID().uuidString
+            let defaults = try XCTUnwrap(FailingCacheSynchronizationDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            defaults.failsBeforeWrite = false
+            var clock = now
+            let app = ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite, ttl: 10, now: { clock })
+            var local = reading("codex", used: 30)
+            local.refreshedAt = now.addingTimeInterval(-4)
+            local.quotaObservedAt = now.addingTimeInterval(-6)
+            local.liveQuotaObservedAt = local.quotaObservedAt
+            local.codexResetClaimBinding = try XCTUnwrap(
+                recommendationCodexBinding(account: "local", source: .keychain))
+            app.store(local, producedByIdentityKey: "local")
+            let disk = ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite, now: { clock })
+            let newer = reading("codex", used: 80)
+            disk.store(newer, producedByIdentityKey: "external")
+
+            var retained = local
+            retained.usageHistory = ProviderUsageHistory(
+                series: DailyUsageSeries(daily: [
+                    DailyUsageEntry(date: "2027-01-15", totalTokens: 100, costUSD: 1)
+                ]))
+            retained.warning = "quota unavailable"
+            retained.isDegraded = true
+            retained.liveQuotaObservedAt = nil
+            retained.codexResetClaimBinding = nil
+            defaults.failsBeforeWrite = failsBeforeWrite
+            app.store(retained, producedByIdentityKey: "local", markSessionFresh: false)
+            var incompatible = retained
+            incompatible.warning = "wrong reading"
+            app.store(incompatible, producedByIdentityKey: "external", markSessionFresh: false)
+            incompatible.refreshedAt = now.addingTimeInterval(-2)
+            app.store(incompatible, producedByIdentityKey: "local", markSessionFresh: false)
+
+            let hit = try XCTUnwrap(app.snapshot(providerID: "codex"))
+            XCTAssertEqual(hit.usageHistory, retained.usageHistory)
+            XCTAssertEqual(hit.warning, retained.warning)
+            XCTAssertEqual(hit.isDegraded, true)
+            XCTAssertNil(hit.liveQuotaObservedAt)
+            XCTAssertNil(hit.codexResetClaimBinding)
+            XCTAssertEqual(hit.freshnessDate, local.freshnessDate)
+            XCTAssertEqual(app.producedByIdentityKey(providerID: "codex"), "local")
+            let reader = ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite)
+            XCTAssertEqual(reader.loadSnapshots(providerIDs: ["codex"])["codex"]?.lines, newer.lines)
+            XCTAssertEqual(reader.producedByIdentityKey(providerID: "codex"), "external")
+            clock = now.addingTimeInterval(5)
+            XCTAssertNil(app.snapshot(providerID: "codex"))
+        }
+    }
+
     func testHistoryOnlyWriteDoesNotReviveACardRemovedFromStorage() throws {
         let suite = "EgasuTests.SharedCache.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

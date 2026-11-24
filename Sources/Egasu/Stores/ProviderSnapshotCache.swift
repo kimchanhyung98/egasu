@@ -191,9 +191,10 @@ struct ProviderSnapshotCache {
             }
         } catch {
             AppLog.warn(.cache, "shared cache write failed: \(AppLog.errorDetails(error))")
-            if !merged && markSessionFresh {
+            if !merged {
                 _ = loadSession()
-                mergeSession(nil, snapshot: snapshot, identity: producedByIdentityKey, at: now(), live: true)
+                mergeSession(
+                    nil, snapshot: snapshot, identity: producedByIdentityKey, at: now(), live: markSessionFresh)
             }
         }
     }
@@ -249,7 +250,9 @@ struct ProviderSnapshotCache {
             let newerLocal =
                 local.map { $0.refreshedAt > snapshot.refreshedAt && (!live || $0.refreshedAt <= now) } ?? false
             let differentLocalAccount = !live && local != nil && visible.producedByIdentityKeys[id] != identity
-            if (live || acceptsStoredWrite) && !newerLocal && !differentLocalAccount {
+            let retainsLocalReading =
+                local?.refreshedAt == snapshot.refreshedAt && local?.freshnessDate == snapshot.freshnessDate
+            if (live || acceptsStoredWrite || retainsLocalReading) && !newerLocal && !differentLocalAccount {
                 visible.snapshots[id] = snapshot
                 visible.producedByIdentityKeys[id] = identity
                 if live {
