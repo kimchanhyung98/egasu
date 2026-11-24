@@ -602,16 +602,16 @@ final class AppContainer {
         let failure: ProviderRefreshFailure?
         switch result {
         case .success(let updated):
-            if codexRecoveryOnly || !updated {
-                switch journal {
-                case .success(nil):
-                    break
-                case .success(let transaction?):
-                    guard codexRecoveryOnly, accountProfiles.profile(id: transaction.profileID)?.family == "claude"
-                    else { return }
-                case .failure:
-                    return
-                }
+            let pending: AccountIdentityReplacement?
+            do {
+                pending = try journal.get()
+            } catch {
+                dataStore.accountReconciliationNotice = UserFacingErrors.message(error)
+                return
+            }
+            if let pending, codexRecoveryOnly || !updated {
+                guard codexRecoveryOnly, accountProfiles.profile(id: pending.profileID)?.family == "claude"
+                else { return }
             }
             family = codexRecoveryOnly ? "codex" : "claude"
             failure = nil

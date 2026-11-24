@@ -148,6 +148,73 @@ final class AccountReconciliationErrorTests: XCTestCase {
         }
     }
 
+    func testPostRecoveryJournalReadFailureShowsAccountsNotice() async throws {
+        for updated in [false, true] {
+            let keychain = ReplacementWriteKeychain()
+            let fixture = try CodexReSignInRecoveryTests.Fixture(keychain: keychain)
+            defer { fixture.cleanUp() }
+            try fixture.prepareInterruptedSignIn(replacementWasSaved: true, shared: fixture.previous)
+            let presentation = try Fixture()
+            defer { presentation.cleanUp() }
+            let dataStore = presentation.store
+            let coordinator = presentation.coordinator
+            let bytes = Data("unreadable".utf8)
+            func damageJournal() { fixture.defaults.set(bytes, forKey: AccountProfilesStore.identityReplacementKey) }
+            let started = expectation(description: "Loading a saved snapshot")
+            let resume = DispatchSemaphore(value: 0)
+            if !updated {
+                keychain.onRead = { _ in
+                    started.fulfill()
+                    XCTAssertEqual(resume.wait(timeout: .now() + 5), .success)
+                }
+            } else {
+                started.fulfill()
+            }
+            let work = Task {
+                await AppContainer.reconcileAndRefreshAccountCatalog(
+                    in: fixture.store,
+                    reconcile: {
+                        do {
+                            let value = try await fixture.importer
+                                .reconcileSelectedClaudeSharedAuthenticationAfterStartup(
+                                    in: fixture.store)
+                            return .success(value == .updated(profileID: fixture.profile.id))
+                        } catch {
+                            return .failure(error)
+                        }
+                    },
+                    refreshCatalog: { if updated { damageJournal() } })
+            }
+            await fulfillment(of: [started], timeout: 3)
+            if !updated {
+                defer { resume.signal() }
+                try fixture.store.rename(profileID: fixture.profile.id, to: "Renamed")
+                damageJournal()
+            }
+            let result = await work.value
+            XCTAssertEqual(try result?.get(), updated)
+            let recovered = try XCTUnwrap(result)
+            func publish() {
+                AppContainer.publishAccountReconciliation(
+                    recovered, codexRecoveryOnly: false, in: fixture.store, to: dataStore,
+                    accountSwitch: coordinator, startedAt: coordinator.generation)
+            }
+            publish()
+            XCTAssertEqual(fixture.defaults.data(forKey: AccountProfilesStore.identityReplacementKey), bytes)
+            XCTAssertNil(dataStore.codexReconciliationFailure)
+            XCTAssertNil(dataStore.claudeReconciliationFailure)
+            XCTAssertEqual(
+                dataStore.accountReconciliationNotice,
+                UserFacingErrors.message(AccountIdentityReplacementError.invalidTransaction))
+            let priorFailure = ProviderRefreshFailure(message: "Previous failure")
+            dataStore.setAccountReconciliationFailure(priorFailure, for: "claude")
+            dataStore.setAccountReconciliationFailure(priorFailure, for: "codex")
+            publish()
+            XCTAssertEqual(dataStore.claudeReconciliationFailure, priorFailure)
+            XCTAssertEqual(dataStore.codexReconciliationFailure, priorFailure)
+        }
+    }
+
     func testCodexRecoveryConflictUsesItsOwnErrorPresentation() {
         let failure = AppContainer.externalClaudeReconciliationFailure(for: CodexAuthError.credentialsChanged)
 
