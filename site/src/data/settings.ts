@@ -36,6 +36,9 @@ export const alertConditions = [
 export const settingGroups: SettingGroup[] = [
   { id: 'general', title: 'General', tab: 'General', rows: [
     { id: 'launchAtLogin', label: 'Launch at Login', control: { kind: 'toggle', on: false } },
+    { id: 'autoStartSubscriptionTimers', label: 'Auto-Start Subscription Timers',
+      info: 'Sends a short request to start an unused subscription window for all supported accounts. The request can use some of your quota. Turning this off keeps usage updates on.',
+      control: { kind: 'toggle', on: true } },
     { id: 'defaultTab', label: 'Default Tab', control: { kind: 'picker', value: 'Priority', options: ['Priority', 'All Usage'] } },
     { id: 'globalShortcut', label: 'Global Shortcut', info: 'Open egasu from anywhere',
       control: { kind: 'action', label: 'Record Shortcut', message: 'Record a global shortcut in the Mac app.' } },

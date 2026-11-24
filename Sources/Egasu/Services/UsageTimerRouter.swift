@@ -31,12 +31,14 @@ final class UsageTimerRouter {
     private lazy var coordinator = UsageTimerCoordinator<UsageTimerSession>(
         store: store,
         isCurrent: { [weak self] in self?.isCurrent($0, bindingID: $1, accountKey: $2) == true },
-        prepare: { [weak self] providerID, observation in
+        prepare: { [weak self] providerID, observation, isCurrent in
             guard let self, let ticket = await self.workQueue.acquire("weekly-timer:prepare") else { return nil }
             defer { self.workQueue.finish(ticket) }
             try Task.checkCancellation()
-            guard let provider = self.bindings[providerID]?.provider else { return nil }
-            return try await provider.prepareUsageTimer(observation, executors: self.executors)
+            guard isCurrent(), let provider = self.bindings[providerID]?.provider else { return nil }
+            return try await UsageTimerReadContext.$isCurrent.withValue(isCurrent) {
+                try await provider.prepareUsageTimer(observation, executors: self.executors)
+            }
         },
         execute: { [weak self] _, _, session, canLaunch in
             guard let self, let ticket = await self.workQueue.acquire("weekly-timer:execute") else {
@@ -57,11 +59,12 @@ final class UsageTimerRouter {
             }
             return result
         },
-        verify: { [weak self] _, session in
+        verify: { [weak self] _, session, isCurrent in
             guard let self, let ticket = await self.workQueue.acquire("weekly-timer:verify") else { return nil }
             defer { self.workQueue.finish(ticket) }
             try Task.checkCancellation()
-            return try await session.verify()
+            guard isCurrent() else { return nil }
+            return try await UsageTimerReadContext.$isCurrent.withValue(isCurrent) { try await session.verify() }
         },
         report: { [weak self] providerID, bindingID, timerID, message in
             guard let self, let binding = self.bindings[providerID], binding.id == bindingID,
@@ -73,16 +76,16 @@ final class UsageTimerRouter {
             AppDiagnostics.record(.weeklyTimer, result: message == nil ? .success : .failure,
                                   providerID: providerID)
         },
-        finished: { [weak self] providerID, _ in
+        finished: { [weak self] providerID, bindingID in
             guard let self, !self.isShuttingDown, self.usageTimerSetting.isEnabled,
-                let currentBindingID = self.bindings[providerID]?.id
+                self.bindings[providerID]?.id == bindingID
             else { return }
             let id = UUID()
             let task = Task { [weak self] in
                 guard let self else { return }
                 defer { self.followUpRefreshes[id] = nil }
                 await self.refresh(providerID) { [weak self] in
-                    self?.isShuttingDown == false && self?.bindings[providerID]?.id == currentBindingID
+                    self?.isShuttingDown == false && self?.bindings[providerID]?.id == bindingID
                         && self?.isProviderEnabled(providerID) == true
                 }
             }

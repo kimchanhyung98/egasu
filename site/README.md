@@ -244,6 +244,8 @@ Updates는 업데이트 피드가 포함된 배포판 기준으로 표시.
   언어 전환 후 번역된 기본 이름이 저장된 사용자 지정 이름과 같으면 해당 기본 이름을 영어로 표시.
   예시 사용량이 없는 항목은 로그인 안내를 표시하며 미리보기에서 제거 가능.
 - Settings의 기본 탭은 General·Display·Alerts·Advanced.
+  General의 구독 타이머 자동 시작은 기본 켜짐이며 변경한 값은 브라우저에 저장.
+  이 설정으로 실제 자동 전송을 바꾸려면 Mac 앱에서 설정.
   Beta Updates를 켜면 Labs 탭에 Soft Limit과 Terminal Helper 표시.
   Terminal Helper 설치·제거는 브라우저에 저장한 예시로 동작.
   Labs를 숨겨도 설치 상태를 유지하고 제거하려면 확인 필요.

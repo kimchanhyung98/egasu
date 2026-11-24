@@ -17,6 +17,31 @@ async function settings(app: Locator): Promise<void> {
   await expect(app).toHaveAttribute('data-screen', 'settings');
 }
 
+test('subscription timer automation preview translates and restores the saved toggle', async ({ page }) => {
+  await openHome(page);
+  await openSettings(page);
+  const app = page.locator('[data-mock]');
+  const english = app.getByRole('switch', { name: 'Auto-Start Subscription Timers', exact: true });
+  await expect(english).toBeChecked();
+  await english.click();
+  await expect(english).not.toBeChecked();
+  await expect(app.locator('[data-pill]')).toHaveText('Preview value changed. Apply this setting in the Mac app.');
+
+  for (const [language, label, info] of [
+    ['한국어', '구독 타이머 자동 시작', '꺼도 사용량은 계속 갱신됩니다.'],
+    ['日本語', 'サブスクリプションタイマーを自動開始', 'オフにしても使用量の更新は続きます。'],
+  ]) {
+    await choose(app, 'language', language);
+    await expect(app.getByRole('switch', { name: label, exact: true })).not.toBeChecked();
+    await expect(app.getByRole('button', { name: new RegExp(info) })).toHaveCount(1);
+  }
+
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-ready', '1');
+  await settings(app);
+  await expect(app.getByRole('switch', { name: 'サブスクリプションタイマーを自動開始', exact: true })).not.toBeChecked();
+});
+
 test('Korean applies immediately to settings, accounts, dashboard details, and metric settings', async ({ page }) => {
   await openHome(page);
   const app = page.locator('[data-mock]');

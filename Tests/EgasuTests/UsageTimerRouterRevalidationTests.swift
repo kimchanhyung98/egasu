@@ -218,32 +218,43 @@ final class UsageTimerRouterRevalidationTests: XCTestCase {
         let fixture = try UsageTimerRouterTests.Fixture()
         defer { fixture.remove() }
         let provider = ProviderStub(observedAt: fixture.clock.current())
-        let marker = fixture.root.appendingPathComponent("already-issued")
-        let issued = expectation(description: "Child process issued the request")
-        var releaseResponse: CheckedContinuation<Void, Never>?
+        let ready = fixture.root.appendingPathComponent("ready")
+        let release = fixture.root.appendingPathComponent("release")
         provider.sendAfterCheck = {
             let request = StreamingProcessRequest(
-                executableURL: URL(fileURLWithPath: "/usr/bin/touch"), arguments: [marker.path],
-                environment: [:], timeout: 3, outputLimit: 256)
+                executableURL: URL(fileURLWithPath: "/bin/sh"),
+                arguments: [
+                    "-c", #"echo $$ > "$1"; while [ ! -e "$2" ]; do /bin/sleep 0.02; done"#,
+                    "timer-child", ready.path, release.path
+                ],
+                environment: [:], timeout: 8, outputLimit: 256)
             do {
                 let result = try await StreamingProcessRunner().run(request)
                 XCTAssertEqual(result.exitCode, 0)
-            } catch { XCTFail("Unexpected process error: \(error)") }
-            await withCheckedContinuation { continuation in
-                releaseResponse = continuation
-                issued.fulfill()
+                return .init(launched: true, completed: result.exitCode == 0)
+            } catch {
+                XCTFail("Unexpected process error: \(error)")
+                return .init(launched: false, completed: false)
             }
-            return .init(launched: true, completed: true)
         }
         let router = UsageTimerRouter(
             providers: [provider], isProviderEnabled: { _ in true }, usageTimerSetting: setting,
             executor: fixture.executor(), store: fixture.store, report: { _, _ in }, refresh: { _, _ in },
             now: { fixture.clock.current() })
         router.receive(await provider.refresh(), trigger: .manual)
-        await fulfillment(of: [issued], timeout: 5)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+        let deadline = ContinuousClock.now + .seconds(4)
+        var pid: pid_t?
+        while pid == nil, ContinuousClock.now < deadline {
+            pid = (try? String(contentsOf: ready, encoding: .utf8)).flatMap {
+                pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+            if pid == nil { try await Task.sleep(for: .milliseconds(10)) }
+        }
+        let child = try XCTUnwrap(pid)
         setting.isEnabled = false
-        try XCTUnwrap(releaseResponse).resume()
+        setting.isEnabled = true
+        XCTAssertEqual(kill(child, 0), 0)
+        try Data().write(to: release)
         await router.waitForPendingWork(providerIDs: [provider.provider.id])
 
         let restored = UsageTimerAttemptStore(fileURL: fixture.store.fileURL)
@@ -453,7 +464,7 @@ final class UsageTimerRouterRevalidationTests: XCTestCase {
         XCTAssertTrue(executor.auths.isEmpty)
     }
 
-    private final class ProviderStub: UsageTimerProviding {
+    final class ProviderStub: UsageTimerProviding {
         static let sendFailure = "Usage timer message could not be prepared. Refresh to try again."
         let provider: Provider
         let widgetDescriptors: [WidgetDescriptor] = []
@@ -462,6 +473,8 @@ final class UsageTimerRouterRevalidationTests: XCTestCase {
         var onPrepare: (() async -> Void)?
         var sendAfterCheck: (() async -> UsageTimerExecutionResult)?
         private(set) var sendCount = 0
+        private(set) var verifyCount = 0
+        private(set) var prepareCount = 0
         private(set) var refreshCount = 0
         var usageTimerObservations: [UsageTimerObservation] { [observation] }
 
@@ -486,6 +499,7 @@ final class UsageTimerRouterRevalidationTests: XCTestCase {
         func prepareUsageTimer(
             _ observation: UsageTimerObservation, executors: UsageTimerExecutors
         ) async throws -> UsageTimerSession? {
+            prepareCount += 1
             await onPrepare?()
             return UsageTimerSession(
                 observation: observation,
@@ -497,7 +511,10 @@ final class UsageTimerRouterRevalidationTests: XCTestCase {
                     }
                     return .init(launched: false, completed: false, failureDescription: Self.sendFailure)
                 },
-                verify: { nil }
+                verify: { [self] in
+                    verifyCount += 1
+                    return nil
+                }
             )
         }
     }

@@ -296,8 +296,9 @@ final class WidgetDataStore {
     func refreshAfterWeeklyTimer(providerID: String, isCurrent: @escaping @MainActor () -> Bool) async {
         for _ in 0..<15 {
             guard !Task.isCancelled, isCurrent() else { return }
-            let outcome = await refresh(providerID: providerID, force: true, trigger: .weeklyTimer)
-            guard outcome == .skipped else { return }
+            let outcome = await refresh(
+                providerID: providerID, force: true, trigger: .weeklyTimer, isCurrent: isCurrent)
+            guard outcome == .skipped, isCurrent() else { return }
             do { try await Task.sleep(for: .seconds(1)) } catch { return }
         }
         AppDiagnostics.record(.weeklyTimer, result: .failure, providerID: providerID,

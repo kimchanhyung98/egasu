@@ -20,11 +20,14 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
         let continuation: CheckedContinuation<Void, Never>
     }
 
+    typealias CandidateValidity = @MainActor @Sendable () -> Bool
+
     private let store: UsageTimerAttemptStore
     private let isCurrent: @MainActor (String, UUID, String) -> Bool
-    private let prepare: @MainActor (String, UsageTimerObservation) async throws -> Session?
+    private let prepare:
+        @MainActor (String, UsageTimerObservation, @escaping CandidateValidity) async throws -> Session?
     private let execute: @MainActor (String, UUID, Session, @escaping @MainActor () -> Bool) async -> UsageTimerExecutionResult
-    private let verify: @MainActor (String, Session) async throws -> UsageTimerObservation?
+    private let verify: @MainActor (String, Session, @escaping CandidateValidity) async throws -> UsageTimerObservation?
     private let report: @MainActor (String, UUID, String, String?) -> Void
     private let finished: @MainActor (String, UUID) -> Void
     private let now: @MainActor () -> Date
@@ -44,9 +47,11 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
     init(
         store: UsageTimerAttemptStore = UsageTimerAttemptStore(),
         isCurrent: @escaping @MainActor (String, UUID, String) -> Bool,
-        prepare: @escaping @MainActor (String, UsageTimerObservation) async throws -> Session?,
+        prepare:
+            @escaping @MainActor (String, UsageTimerObservation, @escaping CandidateValidity) async throws -> Session?,
         execute: @escaping @MainActor (String, UUID, Session, @escaping @MainActor () -> Bool) async -> UsageTimerExecutionResult,
-        verify: @escaping @MainActor (String, Session) async throws -> UsageTimerObservation?,
+        verify:
+            @escaping @MainActor (String, Session, @escaping CandidateValidity) async throws -> UsageTimerObservation?,
         report: @escaping @MainActor (String, UUID, String, String?) -> Void,
         finished: @escaping @MainActor (String, UUID) -> Void = { _, _ in },
         now: @escaping @MainActor () -> Date = Date.init,
@@ -199,9 +204,11 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
             return
         }
 
+        let isCurrent = validity(for: candidate)
         var session: Session
         do {
-            guard let prepared = try await prepare(candidate.providerID, candidate.observation), current(candidate),
+            guard let prepared = try await prepare(candidate.providerID, candidate.observation, isCurrent),
+                current(candidate),
                   prepared.observation.storageKey == accountKey
             else { return }
             session = prepared
@@ -266,7 +273,8 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
                 try await wait(.seconds(UsageTimerObservation.verificationInterval))
                 guard current(candidate),
                       try store.latestObservationAt(accountKey: accountKey) == preparationObservedAt,
-                      let prepared = try await prepare(candidate.providerID, candidate.observation), current(candidate),
+                    let prepared = try await prepare(candidate.providerID, candidate.observation, isCurrent),
+                    current(candidate),
                       prepared.observation.storageKey == accountKey else { return }
                 session = prepared
             } catch is CancellationError {
@@ -371,7 +379,8 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
                 guard current(candidate) else { return false }
             }
             do {
-                guard let observation = try await verify(candidate.providerID, session), current(candidate),
+                guard let observation = try await verify(candidate.providerID, session, validity(for: candidate)),
+                    current(candidate),
                       observation.storageKey == candidate.observation.storageKey,
                       observation.observedAt >= endedAt
                 else { previousReset = nil; continue }
@@ -431,6 +440,10 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
             waiting.lastObservation = observation
             awaitingReset[observation.storageKey] = waiting
         }
+    }
+
+    private func validity(for candidate: Candidate) -> CandidateValidity {
+        { [weak self] in self?.current(candidate) == true }
     }
 
     private func current(_ candidate: Candidate) -> Bool {
