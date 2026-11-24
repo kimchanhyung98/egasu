@@ -60,16 +60,28 @@ final class DashboardTabSwitchTests: XCTestCase {
     func testAccountNavigationReservesTheWholeFooterOrNone() async throws {
         let popover = PopoverState()
         popover.openAccounts(nil)
-        var insets: [CGFloat] = []
+        var samples: [EdgeInsets] = []
+        var insets: [CGFloat] { samples.filter { $0.top > 0 }.map(\.bottom) }
         let footerHeight: CGFloat = 47
-        _ = show(
-            AccountInsetProbe(popover: popover, footerHeight: footerHeight) { insets.append($0) },
+        let (window, host) = show(
+            AccountInsetProbe(popover: popover, footerHeight: footerHeight) { samples.append($0) },
             size: CGSize(width: PanelMetrics.width, height: 200))
-        try await waitUntil { insets.last == footerHeight }
+        func waitForInset(_ expected: CGFloat, line: UInt = #line) async throws {
+            try await waitUntil(
+                diagnostic: {
+                    "Expected bottom inset \(expected), detail=\(String(describing: popover.accountDetailID)), "
+                        + "occlusion=\(window.occlusionState.rawValue), top/bottom=\(samples.map { [$0.top, $0.bottom] })"
+                },
+                {
+                    host.layoutSubtreeIfNeeded()
+                    return insets.last == expected
+                }, line: line)
+        }
+        try await waitForInset(footerHeight)
         popover.openAccounts("codex")
-        try await waitUntil { insets.last == 0 }
+        try await waitForInset(0)
         popover.back()
-        try await waitUntil { insets.last == footerHeight }
+        try await waitForInset(footerHeight)
         XCTAssertTrue(insets.allSatisfy { $0 == 0 || $0 == footerHeight }, "푸터 여백이 따로 애니메이션됨: \(insets)")
     }
 
@@ -185,12 +197,12 @@ final class DashboardTabSwitchTests: XCTestCase {
     }
 
     private func waitUntil(
-        timeout: Duration = .seconds(2), _ condition: () -> Bool,
+        timeout: Duration = .seconds(2), diagnostic: () -> String = { "Timed out waiting" }, _ condition: () -> Bool,
         file: StaticString = #filePath, line: UInt = #line
     ) async throws {
         let deadline = ContinuousClock.now + timeout
         while !condition() {
-            guard ContinuousClock.now < deadline else { return XCTFail("Timed out waiting", file: file, line: line) }
+            guard ContinuousClock.now < deadline else { return XCTFail(diagnostic(), file: file, line: line) }
             try await Task.sleep(for: .milliseconds(10))
         }
     }
@@ -262,14 +274,14 @@ private struct PanelMotionProbeView: View {
 private struct AccountInsetProbe: View {
     let popover: PopoverState
     let footerHeight: CGFloat
-    let record: (CGFloat) -> Void
+    let record: (EdgeInsets) -> Void
 
     var body: some View {
         PopoverScrollView { Color.blue.frame(height: 500) }
             .onScrollGeometryChange(for: EdgeInsets.self) {
                 $0.contentInsets
             } action: { _, insets in
-                if insets.top > 0 { record(insets.bottom) }
+                record(insets)
             }
             .panelBars {
                 Color.clear.frame(height: 30)
