@@ -1,6 +1,22 @@
 import SwiftUI
 import os
 
+struct PanelPageMeasurement: Equatable {
+    let tab: DashboardTab
+    let detail: String?
+    let height: CGFloat
+
+    init?(screen: PopoverScreen, tab: DashboardTab, detail: String?, hasFooter: Bool, geometry: ScrollGeometry) {
+        // 계정 화면의 바가 배치되기 전 높이와 떠나는 푸터의 이전 여백 제외.
+        if screen == .accounts {
+            guard geometry.contentInsets.top > 0, hasFooter == (geometry.contentInsets.bottom > 0) else { return nil }
+        }
+        self.tab = tab
+        self.detail = detail
+        height = geometry.contentSize.height + geometry.contentInsets.top + geometry.contentInsets.bottom
+    }
+}
+
 /// 이미 그린 높이에서 새 목표까지 남은 전환 진행률로 보간.
 struct PanelHeightPath: Equatable {
     var start: CGFloat = 0

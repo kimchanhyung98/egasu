@@ -33,5 +33,10 @@ jobs:
       - name: Build ARM64 app and tests
         run: swift build --arch arm64 --build-tests
 
+      - name: Run panel geometry tests
+        id: panel_geometry
+        run: swift test --filter DashboardTabSwitchTests
+
       - name: Run tests
+        if: ${{ !cancelled() && (success() || steps.panel_geometry.outcome == 'failure') }}
         run: swift test

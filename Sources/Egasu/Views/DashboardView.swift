@@ -220,12 +220,6 @@ struct DashboardView: View {
         return fromOffset + progress * (toOffset - fromOffset)
     }
 
-    private struct PageMeasurement: Equatable {
-        let tab: DashboardTab
-        let detail: String?
-        let height: CGFloat
-    }
-
     @ViewBuilder
     private func screenView(_ screen: PopoverScreen) -> some View {
         let detail = popover.displayedAccountDetail(on: screen)
@@ -233,17 +227,8 @@ struct DashboardView: View {
         let hasFooter = footer != nil
         let tab = popover.dashboardTab
         scrollBody(for: screen, accountDetailID: detail)
-            .onScrollGeometryChange(for: PageMeasurement?.self) { geometry in
-                // 처음 마운트된 페이지의 바가 아직 배치되지 않은 짧은 높이와 떠나는 푸터의 이전 여백 제외.
-                if screen == .accounts {
-                    guard geometry.contentInsets.top > 0, hasFooter == (geometry.contentInsets.bottom > 0) else {
-                        return nil
-                    }
-                }
-                return PageMeasurement(
-                    tab: tab, detail: detail,
-                    height: geometry.contentSize.height + geometry.contentInsets.top + geometry.contentInsets.bottom
-                )
+            .onScrollGeometryChange(for: PanelPageMeasurement?.self) { geometry in
+                PanelPageMeasurement(screen: screen, tab: tab, detail: detail, hasFooter: hasFooter, geometry: geometry)
             } action: { _, measurement in
                 if let measurement, measurement.height > 0 {
                     measuredIdeal[screen, measurement.tab, measurement.detail] = measurement.height
