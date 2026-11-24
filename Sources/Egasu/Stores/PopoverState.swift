@@ -70,6 +70,7 @@ final class PopoverState {
     var isAddingAccount = false
     /// 브라우저 재로그인이 진행 중인 등록 계정 — 취소 처리가 끝날 때까지 외부 클릭으로 닫지 않음.
     private(set) var signingInAgainAccountID: String?
+    private var isTerminating = false
     @ObservationIgnored private var reSignInTask: Task<Void, Never>?
     private let displaySettings: DisplaySettingsStore
     private var selectedDashboardTab: DashboardTab
@@ -90,7 +91,7 @@ final class PopoverState {
     }
 
     func startReSignIn(for profileID: String, operation: @escaping @MainActor () async -> Void) -> Task<Void, Never>? {
-        guard popoverShown, reSignInTask == nil else { return nil }
+        guard !isTerminating, popoverShown, reSignInTask == nil else { return nil }
         signingInAgainAccountID = profileID
         let task = Task {
             defer {
@@ -101,6 +102,12 @@ final class PopoverState {
         }
         reSignInTask = task
         return task
+    }
+
+    func beginReSignInShutdown() -> Task<Void, Never>? {
+        isTerminating = true
+        reSignInTask?.cancel()
+        return reSignInTask
     }
 
     let shareNotice = TransientNotice<Bool>(clearedValue: false, timeout: .seconds(2.5))
