@@ -1,4 +1,5 @@
 import AppKit
+import DesktopWidgetSupport
 import KeyboardShortcuts
 import SwiftUI
 
@@ -250,6 +251,15 @@ final class StatusItemController: NSObject {
     func showPopover(dashboardTab: DashboardTab) {
         container.popover.screen = .dashboard
         container.popover.dashboardTab = dashboardTab
+        presentPopover()
+    }
+
+    func openFromWidget(_ destination: DesktopWidgetDestination) {
+        container.popover.openFromWidget(destination, cardID: container.desktopWidgetCardID(for:))
+        presentPopover()
+    }
+
+    private func presentPopover() {
         if panel.isVisible {
             panel.makeKeyAndOrderFront(nil)
             statusItem.button?.highlight(true)

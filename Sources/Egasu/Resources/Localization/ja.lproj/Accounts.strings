@@ -82,3 +82,7 @@
 "Signed In" = "サインイン完了";
 "Check this account's sign-in status in Accounts." = "「アカウント」でこのアカウントのサインイン状態を確認してください。";
 "Sign In Again to %@" = "%@ に再度サインイン";
+"Current Login" = "現在のログイン";
+"Shared Usage" = "共通の使用量";
+"Account %lld" = "アカウント %lld";
+"%@ · Account %lld" = "%@ · アカウント %lld";

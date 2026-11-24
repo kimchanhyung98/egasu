@@ -82,3 +82,7 @@
 "Signed In" = "Signed In";
 "Check this account's sign-in status in Accounts." = "Check this account's sign-in status in Accounts.";
 "Sign In Again to %@" = "Sign In Again to %@";
+"Current Login" = "Current Login";
+"Shared Usage" = "Shared Usage";
+"Account %lld" = "Account %lld";
+"%@ · Account %lld" = "%@ · Account %lld";

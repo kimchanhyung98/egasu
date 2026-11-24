@@ -20,9 +20,11 @@ let package = Package(
         .package(url: "https://github.com/dduan/TOMLDecoder", exact: "0.4.5")
     ],
     targets: [
+        .target(name: "DesktopWidgetSupport"),
         .target(
             name: "Egasu",
             dependencies: [
+                "DesktopWidgetSupport",
                 .product(name: "KeyboardShortcuts", package: "KeyboardShortcuts"),
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "PostHog", package: "posthog-ios"),
@@ -60,7 +62,7 @@ let package = Package(
         ),
         .testTarget(
             name: "EgasuTests",
-            dependencies: ["Egasu"],
+            dependencies: ["Egasu", "DesktopWidgetSupport"],
             path: "Tests/EgasuTests",
             resources: [.copy("Fixtures/UsageCollection")],
             swiftSettings: [

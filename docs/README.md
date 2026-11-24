@@ -12,6 +12,7 @@
 
 - [대시보드](/docs/dashboard.md) — Priority·All Usage 탭, 지표 표시·고정·순서, 키보드 단축키
 - [메뉴 막대](/docs/menu-bar.md) — 표시 기준 선택과 Priority 고정
+- [데스크톱 위젯](/docs/desktop-widgets.md) — 위젯 추가, Priority와 계정별 지표 선택
 - [계정](/docs/accounts.md) — 계정 추가·전환·복구, API 키, 계정 이름·순서와 지표 설정
 - [설정](/docs/settings.md) — General·Display·Alerts·Advanced의 설정과 베타 업데이트를 켜면 열리는 Labs
 - [새로 고침과 캐싱](/docs/refreshing.md) — 데이터가 갱신되는 시점과 가져오기 실패 시 일어나는 일

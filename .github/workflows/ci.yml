@@ -33,5 +33,8 @@ jobs:
       - name: Build ARM64 app and tests
         run: swift build --arch arm64 --build-tests
 
+      - name: Build universal WidgetKit extension
+        run: script/build_widget_extension.sh com.kimchanhyung98.openusage.dev 1.0 1 release "arm64 x86_64"
+
       - name: Run tests
         run: swift test
