@@ -112,10 +112,11 @@ struct UsageTimerExecutors {
 }
 
 enum UsageTimerError: Error, LocalizedError {
-    case accountChanged, usageUnavailable, currentLoginRequired
+    case accountChanged, usageUnavailable, currentLoginRequired, noLongerEligible
 
     var errorDescription: String? {
         switch self {
+        case .noLongerEligible: nil
         case .accountChanged: "Usage timer account changed. Refresh this account and try again."
         case .usageUnavailable: "Usage timer could not verify current quota data. No message was sent."
         case .currentLoginRequired: "Usage timer requires this account to be signed in to the provider's CLI."

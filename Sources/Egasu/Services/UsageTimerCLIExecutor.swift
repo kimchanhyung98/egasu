@@ -54,6 +54,9 @@ extension UsageTimerCLIExecuting {
                             return false
                         }
                         return true
+                    } catch UsageTimerError.noLongerEligible {
+                        quotaChanged = true
+                        return false
                     } catch {
                         AppDiagnostics.failure(.weeklyTimer, error: error, localContext: "CLI launch validation failed")
                         validationFailure = error as? UsageTimerError ?? .usageUnavailable
