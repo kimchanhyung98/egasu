@@ -20,6 +20,12 @@ Claude가 요금제 이름을 보고하면 egasu의 프로바이더 이름 옆�
 Ultra를 직접 반환한 응답에는 과거 사용량 배수를 덧붙이지 않음.
 한도와 리셋 시각은 요금제 이름으로 계산하지 않고 서버 응답 사용.
 
+## 한도 초기화권 확인
+
+전체·Fable 초기화권 보유 여부와 만료일은 해당 Claude 계정의 **설정 → 사용량**에서 확인. [Claude 사용량 설정](https://claude.ai/settings/usage) · [Anthropic 초기화권 안내](https://support.claude.com/en/articles/17007452-what-is-a-limit-reset)
+egasu가 표시하는 Session·Weekly의 초기화 시각은 정기 한도 주기가 끝나는 시각.
+개별 초기화권의 보유 수량과 만료일은 카드에서 제공하지 않음.
+
 ## 구독 타이머
 
 응답에 존재하는 공통 Session·Weekly 구간의 사용률·초기화 시각이 손상됐으면 조회 오류로 처리.
