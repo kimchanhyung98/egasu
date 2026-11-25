@@ -85,6 +85,7 @@ final class WidgetDataStore {
     var providerErrors: [String: String] {
         refreshResults.compactMapValues { $0.failure?.message }
     }
+    @ObservationIgnored private var creditExpiryReminders: CodexCreditExpiryReminders?
     /// 할당량 알림 평가기 — 저장소는 순회마다 활성 한도 지표를 수집하여 전달.
     @ObservationIgnored private let notificationEvaluator = QuotaNotificationEvaluator()
     @ObservationIgnored private var isEvaluatingNotifications = false
@@ -92,23 +93,14 @@ final class WidgetDataStore {
 
     /// 실제 조회의 성공·실패마다 한 번 호출하는 통계 콜백 — 캐시 사용·생략·실패 대기는 제외.
     /// 테스트·미리보기에서는 nil로 전달 생략.
-    var onRefreshOutcome: (@MainActor (String, RefreshOutcome, ErrorCategory?, RefreshTrigger, Bool) -> Void)? {
-        get { refreshCoordinator.onRefreshOutcome }
-        set { refreshCoordinator.onRefreshOutcome = newValue }
-    }
+    var onRefreshOutcome: (@MainActor (String, RefreshOutcome, ErrorCategory?, RefreshTrigger, Bool) -> Void)?
     /// GUI의 한도 자동 제어 입력 — 캐시·실패·취소·카탈로그 변경으로 폐기된 결과 제외.
-    var onFreshSnapshot: (@MainActor (ProviderSnapshot, [WidgetDescriptor], RefreshTrigger) -> Void)? {
-        get { refreshCoordinator.onFreshSnapshot }
-        set { refreshCoordinator.onFreshSnapshot = newValue }
-    }
+    var onFreshSnapshot: (@MainActor (ProviderSnapshot, [WidgetDescriptor], RefreshTrigger) -> Void)?
     var isRefreshSuspended: (@MainActor (String) -> Bool)? {
         get { refreshCoordinator.isRefreshSuspended }
         set { refreshCoordinator.isRefreshSuspended = newValue }
     }
-    var onQuotaInvalidated: (@MainActor (Set<String>?) -> Void)? {
-        get { refreshCoordinator.onQuotaInvalidated }
-        set { refreshCoordinator.onQuotaInvalidated = newValue }
-    }
+    var onQuotaInvalidated: (@MainActor (Set<String>?) -> Void)?
     /// 로컬 이력 변경 콜백 — ICloudUsageSyncStore에서 연속 변경을 병합하여 파일 한 번 작성.
     var onLocalHistoryChanged: (@MainActor () -> Void)? {
         get { refreshCoordinator.onLocalHistoryChanged }
@@ -189,10 +181,73 @@ final class WidgetDataStore {
         refreshCoordinator.onSnapshotsChanged = { [weak self] rendered in
             self?.remoteOnlySpend = rendered.remoteOnlySpend
             self?.snapshots = rendered.snapshots
+            if self?.notificationSettings?().codexCreditExpiry == true { self?.updateCodexCreditReminders() }
+        }
+        refreshCoordinator.onRefreshOutcome = { [weak self] id, outcome, category, trigger, degraded in
+            guard let self else { return }
+            if outcome == .failed, category == .authExpired || category == .authInvalid || category == .notLoggedIn {
+                self.invalidateCreditReminders([id])
+            }
+            self.onRefreshOutcome?(id, outcome, category, trigger, degraded)
+        }
+        refreshCoordinator.onQuotaInvalidated = { [weak self] ids in
+            guard let self else { return }
+            if let ids { self.invalidateCreditReminders(ids) }
+            self.onQuotaInvalidated?(ids)
+        }
+        refreshCoordinator.onFreshSnapshot = { [weak self] snapshot, descriptors, trigger in
+            guard let self else { return }
+            if self.creditExpiryReminders?.accept(snapshot) == true,
+                self.notificationSettings?().codexCreditExpiry == true
+            {
+                self.updateCodexCreditReminders()
+            }
+            self.onFreshSnapshot?(snapshot, descriptors, trigger)
         }
         refreshCoordinator.onCatalogInvalidated = { [weak self] ids in
             self?.notificationEvaluator.reset(providerIDs: ids)
         }
+    }
+
+    private func invalidateCreditReminders(_ ids: Set<String>) {
+        guard let creditExpiryReminders else { return }
+        creditExpiryReminders.invalidate(ids)
+        if notificationSettings?().codexCreditExpiry == true { updateCodexCreditReminders() }
+    }
+
+    func configureCodexCreditReminders(scheduler: ScheduledReminders) {
+        guard let settings = notificationSettings?() else { return }
+        creditExpiryReminders = CodexCreditExpiryReminders(scheduler: scheduler, defaults: defaults)
+        settings.onCodexCreditExpiryChange = { [weak self] in self?.updateCodexCreditReminders() }
+        updateCodexCreditReminders()
+    }
+
+    func codexCreditConsumed(cardID: String, credit: CodexResetClaimService.MatchedCredit) {
+        guard let creditExpiryReminders, localSnapshots[cardID]?.codexResetClaimBinding == credit.binding else {
+            return
+        }
+        creditExpiryReminders.consumed(
+            account: creditReminderAccount(cardID), expiry: credit.expiry, creditID: credit.creditID,
+            remaining: credit.remainingAtExpiry, at: now())
+        updateCodexCreditReminders()
+    }
+
+    private func creditReminderAccount(_ cardID: String) -> String {
+        if case .account(let identity) = claimRefreshBinding(providerID: cardID) { return identity }
+        return cardID
+    }
+
+    private func updateCodexCreditReminders() {
+        guard let creditExpiryReminders else { return }
+        creditExpiryReminders.retainCards(Set(knownProviderIDs))
+        let enabled = notificationSettings?().codexCreditExpiry == true
+        let accounts = localSnapshots.compactMap { id, snapshot -> (String, String, ProviderSnapshot)? in
+            guard enabled, ProviderAccountID.family(of: id) == "codex", isProviderEnabled(id),
+                !creditExpiryReminders.invalidatedCards.contains(id), reconciliationFailure(for: id) == nil
+            else { return nil }
+            return (creditReminderAccount(id), resolveDisplayName?(id) ?? snapshot.displayName, snapshot)
+        }
+        creditExpiryReminders.reconcile(accounts: accounts, now: now())
     }
 
     /// 활성 프로바이더 순차 갱신 — force는 정상 캐시와 실패 대기 우회.

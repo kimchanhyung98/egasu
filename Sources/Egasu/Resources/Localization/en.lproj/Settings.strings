@@ -212,3 +212,6 @@
 "Suggest another Claude or Codex account. Switching always requires confirmation." = "Suggest another Claude or Codex account. Switching always requires confirmation.";
 "Suggest switching when any current base quota reaches this usage." = "Suggest switching when any current base quota reaches this usage.";
 "Every applicable base quota on a candidate must be below this usage." = "Every applicable base quota on a candidate must be below this usage.";
+"Codex Reset Credit Expiry" = "Codex Reset Credit Expiry";
+"Notify 24 and 12 hours before an unused Codex reset credit expires." = "Notify 24 and 12 hours before an unused Codex reset credit expires.";
+"An unused reset credit expires in %lld hours." = "An unused reset credit expires in %lld hours.";

@@ -10,6 +10,16 @@ final class NotificationSettingsStore {
 
     private static let codexResetWatchKey = "openusage.notifications.codexResetWatch"
 
+    private static let creditExpiryKey = "openusage.notifications.codexCreditExpiry"
+    var onCodexCreditExpiryChange: (@MainActor () -> Void)?
+    var codexCreditExpiry: Bool {
+        didSet {
+            guard oldValue != codexCreditExpiry else { return }
+            defaults.set(codexCreditExpiry, forKey: Self.creditExpiryKey)
+            onCodexCreditExpiryChange?()
+        }
+    }
+
     var onCodexResetWatchChange: (@MainActor () -> Void)?
 
     /// 남은 양이 Priority Critical 기준 이하 — 저장 키는 옛 Almost Out 그대로.
@@ -51,6 +61,7 @@ final class NotificationSettingsStore {
         self.closeToRunningOut = defaults.bool(forKey: PaceMilestone.closeToRunningOut.settingKey, default: false)
         self.useItOrLoseIt = defaults.bool(forKey: PaceMilestone.useItOrLoseIt.settingKey, default: false)
         self.quotaRecovered = defaults.bool(forKey: PaceMilestone.quotaRecovered.settingKey)
+        self.codexCreditExpiry = defaults.bool(forKey: Self.creditExpiryKey)
         self.codexResetWatch = defaults.bool(forKey: Self.codexResetWatchKey, default: false)
     }
 
@@ -65,5 +76,5 @@ final class NotificationSettingsStore {
     }
 
     /// trigger 하나 이상 on 여부 — 권한 요청 시점과 Settings 권한 notice 표시 판단에 사용
-    var anyEnabled: Bool { PaceMilestone.allCases.contains(where: isOn) || codexResetWatch }
+    var anyEnabled: Bool { PaceMilestone.allCases.contains(where: isOn) || codexResetWatch || codexCreditExpiry }
 }

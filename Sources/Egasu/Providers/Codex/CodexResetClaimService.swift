@@ -11,10 +11,11 @@ enum ResetClaimOutcome: Equatable, Sendable {
 /// 표시한 사용량의 인증 출처·주체로만 크레딧 소비. 재시도도 같은 확인·크레딧에 결합.
 @MainActor
 final class CodexResetClaimService {
-    fileprivate struct MatchedCredit {
+    struct MatchedCredit {
         let binding: CodexResetClaimBinding
         let expiry: Date
         let creditID: String
+        let remainingAtExpiry: Int
     }
 
     /// 카드 서비스 교체 후에도 같은 확인 요청의 크레딧·진행 상태 유지.
@@ -29,6 +30,7 @@ final class CodexResetClaimService {
     private let isCurrent: () -> Bool
     private let refreshAfterClaim: (CodexResetClaimBinding) async -> Void
     private let workQueue: BackgroundWorkQueue
+    var onConsumed: ((MatchedCredit) -> Void)?
     let requestState: RequestState
 
     init(
@@ -114,13 +116,14 @@ final class CodexResetClaimService {
                   let body = (try? JSONSerialization.jsonObject(with: list.body)) as? [String: Any] else {
                 return responseFailure(list, context: "credit list")
             }
-            guard let matched = Self.creditID(in: body, expiringAt: expiry) else {
+            guard let matched = Self.matchingCredit(in: body, expiringAt: expiry) else {
                 AppDiagnostics.record(.resetClaim, result: .success, category: .notAvailable, providerID: "codex")
                 await refreshIfBound(to: binding, ticket: ticket)
                 return .noCredit
             }
-            creditID = matched
-            requestState.matchedCredits[redeemRequestID] = MatchedCredit(binding: binding, expiry: expiry, creditID: matched)
+            creditID = matched.id
+            requestState.matchedCredits[redeemRequestID] = MatchedCredit(
+                binding: binding, expiry: expiry, creditID: matched.id, remainingAtExpiry: matched.remaining)
         }
 
         // GET 대기 중의 재로그인·로그아웃 확인. 같은 출처·주체의 정상 토큰 회전만 허용.
@@ -140,6 +143,9 @@ final class CodexResetClaimService {
         guard outcome != .failed else { return responseFailure(response, context: "consume") }
         AppDiagnostics.record(.resetClaim, result: .success, category: outcome == .success ? nil : .notAvailable,
                               providerID: "codex")
+        if outcome == .success, let matched = requestState.matchedCredits[redeemRequestID] {
+            onConsumed?(matched)
+        }
         await refreshIfBound(to: binding, ticket: ticket)
         return outcome
     }
@@ -197,14 +203,20 @@ final class CodexResetClaimService {
         return .failed
     }
 
-    /// 만료 시각 차이가 1초 미만인 첫 사용 가능 크레딧의 ID. `status`를 생략한 크레딧도 사용 가능으로 처리.
-    static func creditID(in body: [String: Any], expiringAt expiry: Date) -> String? {
+    /// 예약과 같은 초에 만료되는 권에서 선택. 원래 만료 시각이 일치하는 권 우선.
+    static func matchingCredit(in body: [String: Any], expiringAt expiry: Date) -> (id: String, remaining: Int)? {
         guard let credits = body["credits"] as? [[String: Any]] else { return nil }
-        return credits.first { credit in
-            if let status = credit["status"] as? String, status != "available" { return false }
-            guard let date = parseExpiry(credit["expires_at"]) else { return false }
-            return abs(date.timeIntervalSince(expiry)) < 1
-        }?["id"] as? String
+        let second = floor(expiry.timeIntervalSince1970)
+        let matching = credits.compactMap { credit -> (expiry: Date, id: String?)? in
+            if let status = credit["status"] as? String, status != "available" { return nil }
+            guard let date = parseExpiry(credit["expires_at"]), floor(date.timeIntervalSince1970) == second else {
+                return nil
+            }
+            return (date, credit["id"] as? String)
+        }
+        let exact = matching.first { $0.expiry == expiry && $0.id != nil }
+        guard let id = exact?.id ?? matching.compactMap(\.id).first else { return nil }
+        return (id, matching.count - 1)
     }
 
     /// Consume 응답 → popover outcome. protocol code 4종 모두 HTTP 200으로 도착(outcome은 body의 `code`) — non-2xx·미인식 code는 `.failed`.

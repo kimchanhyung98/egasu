@@ -31,6 +31,12 @@ struct SettingsAlertsTab: View {
                 SettingsTitle(
                     title: PaceMilestone.quotaRecovered.settingLabel, info: PaceMilestone.quotaRecovered.tooltip)
             }
+            Toggle(isOn: $notifications.codexCreditExpiry) {
+                SettingsTitle(
+                    title: CodexCreditExpiryReminders.label,
+                    info: L10n.settings("Notify 24 and 12 hours before an unused Codex reset credit expires.")
+                )
+            }
             Toggle(isOn: $notifications.codexResetWatch) {
                 SettingsTitle(
                     title: CodexResetWatchNotificationEvaluator.settingLabel,
