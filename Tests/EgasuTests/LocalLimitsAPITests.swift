@@ -276,6 +276,7 @@ final class LocalLimitsAPITests: XCTestCase {
             "cursor": ["totalUsage", "autoUsage", "apiUsage", "onDemand", "requests", "credits"],
             "antigravity": ["geminiSession", "geminiWeekly", "nonGeminiSession", "nonGeminiWeekly", "argonWeekly"],
             "copilot": ["premiumCredits", "extraUsage", "orgCredits", "orgSpend", "chat", "completions"],
+            "deepseek": ["balanceUSD", "balanceCNY"],
             "devin": ["daily", "weekly", "extraUsageBalance"],
             "grok": ["weekly", "monthly"],
             "kimi": ["session", "weekly", "totalUsage", "extraUsage", "extraUsageBalance"],
