@@ -125,7 +125,7 @@ Antigravity의 Argon 한도는 자동 메시지 대상에서 제외.
   사용량 조회에 쓴 계정의 OAuth access token을 임시 프로세스 환경에만 전달.
   임시 홈·설정 경로에서 사용량 조회에 사용한 OAuth 토큰으로 해당 계정만 인증.
   기존 CLI 로그인과 공유 홈 인증은 변경하지 않음.
-  실행 직전 해당 계정 인증을 다시 확인하고, 토큰 변경·삭제 시 전송 중단.
+  실행 직전 해당 계정 인증을 다시 확인하고, 토큰 변경·삭제 또는 조회 전용 권한(`user:profile`만 보유)으로 변경 시 전송 중단.
   공통 Session·Weekly 한도 소진 시 전송 중단.
   Haiku에 적용되지 않는 Fable·Sonnet 한도는 시작 조건에서 제외.
 - Kimi: Node.js Kimi Code CLI 2.0.1 이상의 공식 `kimi --prompt` 사용.
