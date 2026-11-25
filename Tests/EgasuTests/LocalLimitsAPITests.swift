@@ -280,6 +280,7 @@ final class LocalLimitsAPITests: XCTestCase {
             "grok": ["weekly", "monthly"],
             "kimi": ["session", "weekly", "totalUsage", "extraUsage", "extraUsageBalance"],
             "kiro": ["credits"],
+            "openai-api": [],
             "opencode": ["session", "weekly", "monthly", "goSession", "goWeekly", "goMonthly"],
             "openrouter": ["credits", "balance", "keyLimit"],
             "zai": ["session", "weekly", "monthly", "webSearches"]
