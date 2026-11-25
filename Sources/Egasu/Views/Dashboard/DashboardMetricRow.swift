@@ -18,15 +18,25 @@ struct DashboardMetricRow: View {
 
     var body: some View {
         Group {
-            if let summary = model.limitSummary {
+            if layoutStyle == .minimal, case .bar = model.mark {
+                HStack(spacing: DashboardGrid.columnGap) {
+                    Text(model.label)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(width: DashboardGrid.labelWidth, alignment: .leading)
+                        .opacity(model.isFaded ? 0.5 : 1)
+                    VStack(alignment: .trailing, spacing: 0) {
+                        row
+                        if let summary = model.limitSummary {
+                            limitSummaryText(summary)
+                        }
+                    }
+                }
+                .padding(.bottom, model.limitSummary == nil ? 0 : 4)
+            } else if let summary = model.limitSummary {
                 VStack(alignment: .leading, spacing: 0) {
                     row
-                    Text(summary)
-                        .font(Self.resetFont)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    limitSummaryText(summary)
                         .padding(.bottom, 4)
                 }
             } else {
@@ -59,8 +69,6 @@ struct DashboardMetricRow: View {
                         .padding(.vertical, 6)
                     } else {
                         HStack(spacing: DashboardGrid.columnGap) {
-                            label
-                                .frame(width: DashboardGrid.labelWidth, alignment: .leading)
                             level(fill: fill, severity: severity)
                                 .frame(height: DashboardGrid.levelHeight)
                             valueText(value, severity: severity)
@@ -116,6 +124,16 @@ struct DashboardMetricRow: View {
                 }
             }
         }
+    }
+
+    private func limitSummaryText(_ summary: String) -> some View {
+        Text(summary)
+            .font(Self.resetFont)
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+            .multilineTextAlignment(.trailing)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     private var label: some View {
