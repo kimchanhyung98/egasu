@@ -214,3 +214,12 @@
 "Quota Available Again" = "利用枠の回復";
 "Notify when fresh Claude, Codex, or Cursor usage confirms the same account has quota again" = "Claude、Codex、Cursorで同じアカウントの使用量を取得し、利用枠の回復を確認したときに通知";
 "This quota is available again." = "この利用枠が再び使えるようになりました。";
+"Balance (USD)" = "残高 (USD)";
+"Balance (CNY)" = "残高 (CNY)";
+"Topped Up (USD)" = "チャージ額 (USD)";
+"Topped Up (CNY)" = "チャージ額 (CNY)";
+"Granted (USD)" = "付与額 (USD)";
+"Granted (CNY)" = "付与額 (CNY)";
+"API Access" = "API 利用";
+"Available" = "利用可能";
+"Insufficient Balance" = "残高不足";

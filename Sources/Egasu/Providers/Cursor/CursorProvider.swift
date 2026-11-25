@@ -1,7 +1,7 @@
 import Foundation
 
 @MainActor
-final class CursorProvider: ProviderRuntime {
+final class CursorProvider: CredentialBoundSnapshotProvider {
     let provider = Provider(
         id: "cursor",
         displayName: "Cursor",
