@@ -66,7 +66,7 @@ struct DashboardProviderHeader: View {
 
     var body: some View {
         HStack(spacing: onCopyScreenshot == nil ? Theme.Spacing.s : 0) {
-            reorderArea(titleArea)
+            titleArea
             if let onCopyScreenshot {
                 CopyFeedbackButton(
                     accessibilityLabel: L10n.dashboard("Copy %@ Screenshot", family.displayName),
@@ -90,22 +90,41 @@ struct DashboardProviderHeader: View {
     }
 
     private var titleArea: some View {
-        HStack(spacing: Theme.Spacing.s) {
-            Text(family.displayName)
-                .font(DashboardGrid.headerFont)
-                .lineLimit(1)
+        HStack(spacing: 0) {
+            reorderArea(
+                Text(family.displayName)
+                    .font(DashboardGrid.headerFont)
+                    .lineLimit(1)
+                    .padding(.trailing, Theme.Spacing.s)
+            )
             if let serviceIssue {
                 let icon = ServerIssueIcon(issue: serviceIssue, providerName: family.displayName)
+                let summary = serviceIssue.accessibilityValue(providerName: family.displayName)
                 if let link = family.provider.visibleLinks.first(where: { $0.label == "Status" }),
                     let url = URL(string: link.url)
                 {
-                    Link(destination: url) { icon }
-                        .buttonStyle(.plain)
+                    let hint = L10n.dashboard("Opens %@ status page in your browser.", family.displayName)
+                    Link(destination: url) {
+                        icon
+                            .frame(height: DashboardGrid.headerHeight)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .hoverTooltip("\(summary) \(hint)")
+                    .accessibilityLabel(L10n.dashboard("Service Issue"))
+                    .accessibilityValue(summary)
+                    .accessibilityHint(hint)
                 } else {
                     icon
+                        .hoverTooltip(summary)
+                        .accessibilityAddTraits(.isStaticText)
+                        .accessibilityHint("")
                 }
             }
-            Spacer(minLength: DashboardGrid.columnGap)
+            reorderArea(
+                Spacer(minLength: DashboardGrid.columnGap)
+                    .padding(.leading, serviceIssue == nil ? 0 : Theme.Spacing.s)
+            )
         }
     }
 
