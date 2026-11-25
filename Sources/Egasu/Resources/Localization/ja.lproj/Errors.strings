@@ -340,3 +340,8 @@
 "You signed in to a different account. Try again with the account you selected." = "別のアカウントでサインインしました。選択したアカウントで再度サインインしてください。";
 "egasu couldn't verify the Codex user. Open the account in Accounts to sign in again." = "Codex のユーザーを確認できませんでした。「アカウント」で対象のアカウントを開き、再度サインインしてください。";
 "This Mac’s synced history changed again. egasu will retry on the next update." = "この Mac の同期履歴が再び変更されました。次の更新時に再試行します。";
+"Add an OpenAI organization Admin API key in Accounts." = "アカウントで OpenAI 組織の管理者 API キーを追加してください。";
+"OpenAI rejected the Admin API key. Replace it in Accounts." = "OpenAI が管理者 API キーを拒否しました。アカウントでキーを変更してください。";
+"The OpenAI Admin API key needs permission to read organization costs." = "OpenAI の管理者 API キーに組織の費用を参照する権限が必要です。";
+"Enter project IDs or leave the field empty for the whole organization." = "プロジェクト ID を入力してください。組織全体を参照する場合は空欄にします。";
+"The OpenAI billing connection changed during refresh. Refresh again." = "更新中に OpenAI の請求接続設定が変更されました。もう一度更新してください。";

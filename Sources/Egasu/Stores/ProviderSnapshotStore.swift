@@ -47,7 +47,7 @@ final class ProviderSnapshotStore {
         ProviderAccountID.family(of: providerID) == "claude" && identityKeys[providerID] == nil
     }
 
-    func discardMismatchedCursorReading(for providerID: String, currentIdentityKey: String?) -> Bool {
+    func discardMismatchedReading(for providerID: String, currentIdentityKey: String?) -> Bool {
         guard let local = localSnapshots[providerID] else { return false }
         let previousIdentity = local.producedByIdentityKey ?? cache.producedByIdentityKey(providerID: providerID)
         guard currentIdentityKey == nil || currentIdentityKey != previousIdentity else { return false }

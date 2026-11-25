@@ -91,7 +91,11 @@ struct ProviderSnapshotCache {
     }
 
     private func canReadSnapshot(_ providerID: String, in state: Session) -> Bool {
-        !ignoresPersistedSnapshotsFor.contains(providerID) || state.freshIDs.contains(providerID)
+        if providerID == "openai-api" {
+            return state.payload?.producedByIdentityKeys[providerID]
+                == OpenAICostsProvider.connectionID(in: userDefaults)
+        }
+        return !ignoresPersistedSnapshotsFor.contains(providerID) || state.freshIDs.contains(providerID)
     }
 
     func snapshot(providerID: String) -> ProviderSnapshot? {
@@ -302,6 +306,7 @@ struct ProviderSnapshotCache {
         }
         do {
             var payload = try decoder.decode(Payload.self, from: data)
+            payload.snapshots["openai-api"]?.producedByIdentityKey = payload.producedByIdentityKeys["openai-api"]
             for (id, timestamp) in payload.refreshTimestamps ?? [:] where payload.snapshots[id] != nil {
                 payload.snapshots[id]?.refreshedAt = Date(timeIntervalSinceReferenceDate: timestamp)
             }

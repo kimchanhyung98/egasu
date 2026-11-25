@@ -86,3 +86,9 @@
 "Shared Usage" = "공통 사용량";
 "Account %lld" = "계정 %lld";
 "%@ · Account %lld" = "%@ · 계정 %lld";
+"Enter an organization Admin API key with access to costs. egasu saves it in Keychain." = "조직 비용을 조회할 수 있는 관리자 API 키를 입력하세요. egasu가 키체인에 저장합니다.";
+"egasu removes the Admin API key from Keychain and stops tracking costs." = "키체인에서 관리자 API 키를 삭제하고 비용 조회를 중단합니다.";
+"Edit Billing Connection…" = "비용 조회 설정…";
+"Project IDs" = "프로젝트 ID";
+"Empty for the whole organization" = "비워 두면 조직 전체";
+"Separate project IDs with commas." = "프로젝트 ID는 쉼표로 구분하세요.";

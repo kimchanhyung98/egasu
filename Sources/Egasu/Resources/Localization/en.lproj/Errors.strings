@@ -340,3 +340,8 @@
 "You signed in to a different account. Try again with the account you selected." = "You signed in to a different account. Try again with the account you selected.";
 "egasu couldn't verify the Codex user. Open the account in Accounts to sign in again." = "egasu couldn't verify the Codex user. Open the account in Accounts to sign in again.";
 "This Mac’s synced history changed again. egasu will retry on the next update." = "This Mac’s synced history changed again. egasu will retry on the next update.";
+"Add an OpenAI organization Admin API key in Accounts." = "Add an OpenAI organization Admin API key in Accounts.";
+"OpenAI rejected the Admin API key. Replace it in Accounts." = "OpenAI rejected the Admin API key. Replace it in Accounts.";
+"The OpenAI Admin API key needs permission to read organization costs." = "The OpenAI Admin API key needs permission to read organization costs.";
+"Enter project IDs or leave the field empty for the whole organization." = "Enter project IDs or leave the field empty for the whole organization.";
+"The OpenAI billing connection changed during refresh. Refresh again." = "The OpenAI billing connection changed during refresh. Refresh again.";

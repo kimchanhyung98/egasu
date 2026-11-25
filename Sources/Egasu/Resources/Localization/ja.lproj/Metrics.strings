@@ -214,3 +214,9 @@
 "Quota Available Again" = "利用枠の回復";
 "Notify when fresh Claude, Codex, or Cursor usage confirms the same account has quota again" = "Claude、Codex、Cursorで同じアカウントの使用量を取得し、利用枠の回復を確認したときに通知";
 "This quota is available again." = "この利用枠が再び使えるようになりました。";
+"Billing Scope" = "費用の対象範囲";
+"Credit Balance" = "クレジット残高";
+"Last Updated" = "最終取得";
+"No costs reported" = "費用の報告なし";
+"Organization" = "組織全体";
+"Unavailable" = "取得不可";

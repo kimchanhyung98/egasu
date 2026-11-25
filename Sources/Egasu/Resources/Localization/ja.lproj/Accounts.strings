@@ -86,3 +86,9 @@
 "Shared Usage" = "共通の使用量";
 "Account %lld" = "アカウント%lld";
 "%@ · Account %lld" = "%@ · アカウント%lld";
+"Enter an organization Admin API key with access to costs. egasu saves it in Keychain." = "組織の費用を参照できる管理者 API キーを入力してください。egasu がキーチェーンに保存します。";
+"egasu removes the Admin API key from Keychain and stops tracking costs." = "管理者 API キーをキーチェーンから削除し、費用の取得を停止します。";
+"Edit Billing Connection…" = "費用の取得設定…";
+"Project IDs" = "プロジェクト ID";
+"Empty for the whole organization" = "空欄で組織全体";
+"Separate project IDs with commas." = "複数のプロジェクト ID はカンマで区切ります。";

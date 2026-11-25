@@ -169,6 +169,11 @@ final class ProviderRefreshCoordinator {
     func credentialsDidChange(for providerID: String) -> Int {
         let generation = credentialGenerations[providerID, default: 0] + 1
         credentialGenerations[providerID] = generation
+        if let costs = providersByID[providerID] as? OpenAICostsProvider,
+            snapshotStore.discardMismatchedReading(for: providerID, currentIdentityKey: costs.connectionID)
+        {
+            rebuildRenderedSnapshots()
+        }
         snapshotStore.invalidateLiveQuota(for: providerID)
         onQuotaInvalidated?([providerID])
         providersNeedingCredentialRefresh.insert(providerID)
@@ -280,7 +285,7 @@ final class ProviderRefreshCoordinator {
             guard !Task.isCancelled, isCurrent(), generation == catalogGeneration, isProviderEnabled(providerID),
                 isRefreshSuspended?(providerID) != true
             else { return .skipped }
-            if snapshotStore.discardMismatchedCursorReading(for: providerID, currentIdentityKey: cacheIdentity) {
+            if snapshotStore.discardMismatchedReading(for: providerID, currentIdentityKey: cacheIdentity) {
                 credentialsDidChange(for: providerID)
                 rebuildRenderedSnapshots()
             }

@@ -340,3 +340,8 @@
 "You signed in to a different account. Try again with the account you selected." = "다른 계정으로 로그인했습니다. 선택한 계정으로 다시 로그인하세요.";
 "egasu couldn't verify the Codex user. Open the account in Accounts to sign in again." = "Codex 로그인 사용자를 확인할 수 없습니다. 계정 탭에서 해당 계정을 열고 다시 로그인하세요.";
 "This Mac’s synced history changed again. egasu will retry on the next update." = "이 Mac의 동기화 이력이 다시 변경되었습니다. 다음 업데이트 때 다시 시도합니다.";
+"Add an OpenAI organization Admin API key in Accounts." = "계정에서 OpenAI 조직 관리자 API 키를 등록하세요.";
+"OpenAI rejected the Admin API key. Replace it in Accounts." = "OpenAI가 관리자 API 키를 거부했습니다. 계정에서 키를 교체하세요.";
+"The OpenAI Admin API key needs permission to read organization costs." = "OpenAI 관리자 API 키에 조직 비용 조회 권한이 필요합니다.";
+"Enter project IDs or leave the field empty for the whole organization." = "프로젝트 ID를 입력하거나 조직 전체를 조회하려면 비워 두세요.";
+"The OpenAI billing connection changed during refresh. Refresh again." = "조회 중 OpenAI 비용 연결 설정이 바뀌었습니다. 다시 새로 고쳐 주세요.";
