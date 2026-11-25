@@ -16,6 +16,15 @@ description: Sync egasu's pricing supplement with official provider prices and C
 
 ## Steps
 
+### 매 릴리스의 확인 범위
+
+1. 릴리스 후보의 `ProviderCatalog.make()`와 추가 예정 프로바이더 목록에서 대상을 확정.
+2. 변경 이력이 없는 프로바이더도 구독료·포함 크레딧·사용량의 단위를 공식 자료와 대조.
+3. 토큰 추정 경로는 입력·출력·캐시·Fast·장문 정가를 확인하고, 크레딧 환산 경로는 크레딧당 단가를 확인.
+4. 서버가 비용이나 잔액을 제공하는 경로는 통화·정밀도·기간을 확인.
+5. 아래 절차로 번들 스냅샷을 갱신한 뒤 과거 모델과 새 모델의 실제 이름으로 계산을 검증.
+6. 대상별 공식 출처·단위·변경 여부와 실제 계정에서 확인하지 못한 조건을 릴리스 검토 기록에 남김.
+
 ### 1. Pull the source of truth into context
 
 API 모델은 해당 프로바이더의 공식 가격 문서에서 정가·캐시·Fast·장문 조건 확인.
@@ -74,7 +83,7 @@ validator = step.split("          python3 - << 'PY'\n", 1)[1].split("\n         
 exec(compile(dedent(validator), str(path), "exec"))
 PY
 
-swift test --filter "ModelPricing|PricingBundledResource"
+swift test --filter "Pricing|ModelRates|CopilotPersonalCreditsTests|KiroUsageScannerTests"
 ```
 
 If a new alias rule maps a slug that appears in real usage, add a resolution test case in `Tests/EgasuTests/ModelPricingTests.swift`.
@@ -88,23 +97,35 @@ If a new alias rule maps a slug that appears in real usage, add a resolution tes
 
 ### 6. 태그 게시 결과 확인
 
-승인된 버전 태그를 푸시하거나 `Publish pricing supplement`를 대상 태그로 수동 실행한 뒤 게시 결과 확인.
+대상 태그의 가격표 게시와 후속 Pages 배포가 끝나면 해당 태그의 파일과 앱이 읽는 공개 파일을 바이트 단위로 비교.
+`tag`는 검증할 승인된 버전 태그로 설정.
 
 ```sh
-gh run list --repo kimchanhyung98/egasu --workflow=pricing-supplement.yml --limit 1
-curl -s https://egasu.chanhyung.kim/pricing_supplement.json | python3 -c "import json,sys; print(json.load(sys.stdin)['updated_at'])"
+python3 - "$tag" <<'PYTHON'
+import subprocess
+import sys
+from urllib.request import urlopen
+
+tag = sys.argv[1]
+path = "Sources/Egasu/Resources/pricing_supplement.json"
+expected = subprocess.check_output(["git", "show", f"refs/tags/{tag}:{path}"])
+with urlopen("https://egasu.chanhyung.kim/pricing_supplement.json", timeout=30) as response:
+    published = response.read()
+if published != expected:
+    sys.exit(f"{tag}: published pricing does not match the tagged file")
+print(f"{tag}: published pricing matches")
+PYTHON
 ```
 
-라이브 `updated_at`은 게시한 태그의 파일과 일치해야 함.
 가격표 workflow의 `gh-pages` 게시 후 `deploy-pages.yml`이 검증된 게시 커밋을 실제 사이트에 배포.
 수동 가격표 게시도 `gh workflow run pricing-supplement.yml --repo kimchanhyung98/egasu --ref main -f tag=<버전 태그>`처럼 대상 태그 필수.
 Pages 배포가 실패하면 해당 실행을 재시도하거나 `gh workflow run deploy-pages.yml --repo kimchanhyung98/egasu --ref main -f tag=<버전 태그> -f publication_run_id=<성공한 게시 실행 ID>`로 같은 게시 결과 재배포.
 
-## Optional: refresh bundled snapshots
+## 번들 스냅샷 갱신
 
 번들 LiteLLM/models.dev 스냅샷(`pricing_*_snapshot.json`)은 `./script/update_pricing_snapshots.sh`로 갱신하는 별도 항목.
 오프라인·원격 갱신 실패 시 번들 가격을 사용하므로 오래된 단가는 추정값에 영향.
-요청받았거나 릴리스 준비에 포함된 경우에만 갱신하고 별도 커밋으로 분리.
+베타·정식 릴리스 후보마다 재생성한 뒤 기존 키 보존과 달라진 단가 확인.
 
 ## Rules
 
