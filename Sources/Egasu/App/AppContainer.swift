@@ -247,12 +247,17 @@ final class AppContainer {
         )
         self.usageTimer = usageTimer
         dataStore.isRefreshSuspended = { [weak usageTimer] in usageTimer?.isRunning(providerID: $0) == true }
+        let quotaResetReminders = QuotaResetReminders()
         dataStore.onRefreshOutcome = { [weak telemetry, weak softLimitCoordinator] providerID, outcome, category, trigger, degraded in
             telemetry?.record(providerID: providerID, outcome: outcome, category: category, trigger: trigger, degraded: degraded)
-            if outcome == .failed { softLimitCoordinator?.invalidate(providerID: providerID) }
+            if outcome == .failed {
+                quotaResetReminders.refreshFailed(for: providerID, category: category)
+                softLimitCoordinator?.invalidate(providerID: providerID)
+            }
         }
         softLimitSettings.onChange = { [weak softLimitCoordinator] in softLimitCoordinator?.settingsDidChange() }
         dataStore.onQuotaInvalidated = { [weak softLimitCoordinator, weak usageTimer] providerIDs in
+            quotaResetReminders.invalidate(providerIDs)
             softLimitCoordinator?.accountsDidChange(providerIDs)
             usageTimer?.invalidate(providerIDs: providerIDs)
         }
@@ -261,6 +266,7 @@ final class AppContainer {
                 weak softLimitCoordinator, weak usageTimer, weak accountProfiles,
                 weak accountRecommendationSettings, weak dataStore
             ] snapshot, descriptors, trigger in
+            quotaResetReminders.receivedSnapshot(snapshot)
             softLimitCoordinator?.receive(snapshot, descriptors: descriptors)
             Task { [weak softLimitCoordinator] in await softLimitCoordinator?.check(providerID: snapshot.providerID) }
             usageTimer?.receive(snapshot, trigger: trigger)
@@ -302,6 +308,7 @@ final class AppContainer {
         Self.configureQuotaNotificationNames(dataStore: dataStore, accounts: accounts, profiles: accountProfiles) { [weak self] in
             self?.accountProfileID(for: $0)
         }
+        quotaResetReminders.observe(settings: notificationSettings, dataStore: dataStore, enablement: enablement)
         resetWatchCoordinator.observeActivity { [layout, resetWatchNotifications] in
             resetWatchNotifications.configurationDidChange()
             return Self.needsResetWatch(

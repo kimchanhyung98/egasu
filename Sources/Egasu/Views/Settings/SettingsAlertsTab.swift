@@ -27,6 +27,12 @@ struct SettingsAlertsTab: View {
         }
         SettingsAlertConditionsSection(display: display, notifications: notifications)
         Section {
+            Toggle(isOn: $notifications.weeklyMonthlyResetReminders) {
+                SettingsTitle(
+                    title: L10n.settings("Weekly and Monthly Reset Reminders"),
+                    info: L10n.settings("Notify 24 and 12 hours before each weekly or monthly limit resets.")
+                )
+            }
             Toggle(isOn: $notifications.quotaRecovered) {
                 SettingsTitle(
                     title: PaceMilestone.quotaRecovered.settingLabel, info: PaceMilestone.quotaRecovered.tooltip)

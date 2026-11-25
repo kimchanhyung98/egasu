@@ -32,6 +32,11 @@ final class NotificationSettingsStore {
         didSet { defaults.set(useItOrLoseIt, forKey: PaceMilestone.useItOrLoseIt.settingKey) }
     }
 
+    var weeklyMonthlyResetReminders: Bool {
+        didSet { defaults.set(weeklyMonthlyResetReminders, forKey: Self.quotaResetKey) }
+    }
+    private static let quotaResetKey = "openusage.notifications.weeklyMonthlyResetReminders"
+
     var quotaRecovered: Bool {
         didSet { defaults.set(quotaRecovered, forKey: PaceMilestone.quotaRecovered.settingKey) }
     }
@@ -50,6 +55,7 @@ final class NotificationSettingsStore {
         self.warning = defaults.bool(forKey: PaceMilestone.warning.settingKey, default: false)
         self.closeToRunningOut = defaults.bool(forKey: PaceMilestone.closeToRunningOut.settingKey, default: false)
         self.useItOrLoseIt = defaults.bool(forKey: PaceMilestone.useItOrLoseIt.settingKey, default: false)
+        self.weeklyMonthlyResetReminders = defaults.bool(forKey: Self.quotaResetKey)
         self.quotaRecovered = defaults.bool(forKey: PaceMilestone.quotaRecovered.settingKey)
         self.codexResetWatch = defaults.bool(forKey: Self.codexResetWatchKey, default: false)
     }
@@ -65,5 +71,7 @@ final class NotificationSettingsStore {
     }
 
     /// trigger 하나 이상 on 여부 — 권한 요청 시점과 Settings 권한 notice 표시 판단에 사용
-    var anyEnabled: Bool { PaceMilestone.allCases.contains(where: isOn) || codexResetWatch }
+    var anyEnabled: Bool {
+        weeklyMonthlyResetReminders || PaceMilestone.allCases.contains(where: isOn) || codexResetWatch
+    }
 }

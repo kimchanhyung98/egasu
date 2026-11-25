@@ -212,3 +212,8 @@
 "Suggest another Claude or Codex account. Switching always requires confirmation." = "Suggest another Claude or Codex account. Switching always requires confirmation.";
 "Suggest switching when any current base quota reaches this usage." = "Suggest switching when any current base quota reaches this usage.";
 "Every applicable base quota on a candidate must be below this usage." = "Every applicable base quota on a candidate must be below this usage.";
+"Weekly and Monthly Reset Reminders" = "Weekly and Monthly Reset Reminders";
+"Notify 24 and 12 hours before each weekly or monthly limit resets." = "Notify 24 and 12 hours before each weekly or monthly limit resets.";
+"Weekly Limit Reset" = "Weekly Limit Reset";
+"Monthly Limit Reset" = "Monthly Limit Reset";
+"This limit resets in %lld hours." = "This limit resets in %lld hours.";
