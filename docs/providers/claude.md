@@ -13,7 +13,7 @@ Claude Code 또는 Claude Desktop의 기존 로그인으로 Claude 구독 한도
 | Extra Usage | 월간 상한에서 차감된 추가 사용 크레딧 |
 | Today / Yesterday / Last 30 Days | 로컬 지출 — 비용, 토큰 또는 둘 다(아래 참조) |
 
-Claude가 요금제 이름을 보고하면 egasu의 프로바이더 이름 옆에 표시.
+Claude가 요금제 이름을 보고하면 대시보드 계정 줄의 배지에 표시.
 개인 요금제는 Free·Pro·Max·Ultra이며, 구독료와 팀 요금은 [구독 요금제](/docs/pricing.md#구독-요금제) 참조.
 이전 Max 5x는 Max, Max 20x는 Ultra로 표시.
 요청 제한 중 사용하는 이전 정상 응답의 저장된 이름에도 같은 표시 기준 적용.
@@ -229,7 +229,7 @@ egasu는 해당 저장소의 토큰과 계정 정보를 함께 읽고, 프로필
 ## 서비스 상태
 
 구독 한도·추가 사용량·로컬 지출·히스토리는 15분마다 갱신.
-표시 캐시는 15분간 유효하며 마지막 정상 한도 조회 후 30분이 지나면 **Outdated** 표시.
+표시 캐시는 15분간 유효하며 마지막 정상 한도 조회 후 30분이 지나면 계정 줄에 오래됨 시계 표시.
 공개 서버 상태는 아래 5분 일정으로 별도 확인.
 
 Claude가 활성화돼 있으면 실행 시, 활성화 시, 5분마다, 대시보드 수동 새로 고침 시 [Claude Status](https://status.claude.com/)의 Claude API와 Claude Code 컴포넌트 확인.

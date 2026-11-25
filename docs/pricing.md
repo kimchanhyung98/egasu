@@ -321,7 +321,7 @@ Auto·Composer 1/1.5/2·Bugbot의 기존 값도 보존하며, 현행 공식 단�
   `main` 병합만으로 가격표를 게시하지 않음.
   버전 태그 푸시 또는 대상 태그를 지정한 수동 게시와 [Pages 배포](/docs/updates.md#유지-관리자-게시-버전-보호)가 완료되면 포크 피드를 읽는 앱의 다음 갱신에서 반영.
   같은 태그의 앱 릴리스에는 첫 실행용 번들 사본 포함.
-  **pricing-update skill**(`.agents/skills/pricing-update/`)은 에이전트가 동기화 전 과정(Cursor 페이지 가져오기, diff, 편집, 검증, PR 열기)을 따라가도록 안내.
+  [pricing-update 스킬](/.skills/pricing-update/SKILL.md)은 에이전트가 동기화 전 과정(Cursor 페이지 가져오기, diff, 편집, 검증, PR 열기)을 따라가도록 안내.
 - **번들 스냅샷**(`pricing_litellm_snapshot.json`, `pricing_models_dev_snapshot.json`): 릴리스 전 `script/update_pricing_snapshots.sh`로 재생성.
   공개 가격표에서 사라진 기존 모델 단가는 과거 사용 기록 계산을 위해 보존.
   같은 모델이 현재 가격표에도 있으면 현재 값으로 갱신.
