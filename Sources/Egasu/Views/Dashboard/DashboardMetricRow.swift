@@ -73,7 +73,6 @@ struct DashboardMetricRow: View {
                         }
                     }
                 }
-                .opacity(model.isFaded ? 0.5 : 1)
             case .value(let text, let detail, let severity):
                 HStack(alignment: .firstTextBaseline, spacing: DashboardGrid.columnGap) {
                     label
@@ -122,6 +121,7 @@ struct DashboardMetricRow: View {
         Text(model.label)
             .font(layoutStyle == .cards ? .system(size: 13, weight: .semibold) : Self.font)
             .lineLimit(1)
+            .opacity(model.isFaded ? 0.5 : 1)
     }
 
     private var trend: some View {
@@ -142,8 +142,11 @@ struct DashboardMetricRow: View {
     }
 
     private func level(fill: Double, severity: WidgetData.MeterSeverity) -> some View {
-        LevelIndicator(fill: fill, severity: severity, paceMark: model.paceMark, softLimitMark: model.softLimitMark)
-            .hoverTooltip(paceTooltip)
+        LevelIndicator(
+            fill: fill, severity: severity, paceMark: model.paceMark, isFaded: model.isFaded,
+            softLimitMark: model.softLimitMark
+        )
+        .hoverTooltip(paceTooltip)
     }
 
     /// 값은 경고 전까지 행 기본 색.
@@ -177,6 +180,7 @@ struct DashboardMetricRow: View {
             .lineLimit(1)
             .contentTransition(.numericText())
             .fixedSize()
+            .opacity(model.isFaded ? 0.5 : 1)
         if let onToggleMeterStyle {
             Button(action: onToggleMeterStyle) { text }
                 .buttonStyle(.plain)
@@ -196,6 +200,7 @@ struct DashboardMetricRow: View {
             .monospacedDigit()
             .lineLimit(layoutStyle == .cards ? nil : 1)
             .fixedSize(horizontal: layoutStyle == .minimal, vertical: true)
+            .opacity(model.isFaded ? 0.5 : 1)
         if reset != nil, let onToggleResetDisplay {
             Button(action: onToggleResetDisplay) { text }
                 .buttonStyle(.plain)
