@@ -41,6 +41,7 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
   이력 조회 실패 시 같은 계정으로 확인한 마지막 정상 이력 유지.
 - **[Antigravity](/docs/providers/antigravity.md)** — Gemini 풀과 Claude 등 다른 모델 풀의 5시간·주간 한도, 계정별 Argon 주간 한도와 로컬 사용 이력.
 - **[Copilot](/docs/providers/copilot.md)** — AI 크레딧, 추가 사용량, 조직 사용량·청구액, 채팅·코드 완성 할당량.
+- **[DeepSeek](/docs/providers/deepseek.md)** — API 계정의 통화별 잔액, 충전액·지급액과 API 사용 가능 여부.
 - **[Devin](/docs/providers/devin.md)** — 일간·주간 할당량, 추가 사용 잔액.
 - **[Grok](/docs/providers/grok.md)** — 결제 기간별 주간·월간 공유 한도, 종량제 지출 상한, 로컬 기록의 일별 지출·토큰.
 - **[Kimi](/docs/providers/kimi.md)** — 5시간·주간·월간 총한도, 추가 지출·잔액.
@@ -55,7 +56,7 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
 - **[Z.ai](/docs/providers/zai.md)** — GLM Coding Plan의 세션·주간·월간 할당량과 웹 검색 한도.
 
 대부분의 프로바이더는 Mac의 Keychain, 인증 파일 또는 앱에 저장된 로그인 정보 재사용.
-[OpenRouter](/docs/providers/openrouter.md)와 [Z.ai](/docs/providers/zai.md)는 앱에 저장하거나 지원 환경 변수로 제공한 API 키 사용.
+[DeepSeek](/docs/providers/deepseek.md), [OpenRouter](/docs/providers/openrouter.md), [Z.ai](/docs/providers/zai.md)는 앱에 저장하거나 지원 환경 변수로 제공한 API 키 사용.
 쓸 수 있는 키가 없고 저장 파일을 읽지 못하면, 미등록 상태와 구분해 파일 접근 오류 표시.
 기존 설정 파일의 형식을 인식할 수 없으면 내용을 보존하고 API 키 저장 오류 표시.
 계정 제거 시 설정 파일의 API 키를 제거하고, JSON의 다른 설정은 보존.

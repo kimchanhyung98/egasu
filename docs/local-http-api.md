@@ -139,6 +139,7 @@ Antigravity는 잔여 비율에서 계산하므로 `used`·`remaining`이 정수
 | Cursor | `totalUsage`, `autoUsage`, `apiUsage`, `onDemand`, `requests`, `credits` |
 | Antigravity | `geminiSession`, `geminiWeekly`, `nonGeminiSession`, `nonGeminiWeekly`, `argonWeekly` |
 | Copilot | `premiumCredits`, `extraUsage`, `orgCredits`, `orgSpend`, `chat`, `completions` |
+| DeepSeek | `balanceUSD` (단위 `usd`), `balanceCNY` (단위 `cny`) |
 | Devin | `daily`, `weekly`, `extraUsageBalance` |
 | Grok | `weekly`, `monthly` |
 | Kimi | `session`, `weekly`, `totalUsage`, `extraUsage`, `extraUsageBalance` |
@@ -149,6 +150,8 @@ Antigravity는 잔여 비율에서 계산하므로 `used`·`remaining`이 정수
 
 차트, 색상, 부제목, 형식화된 배지, 레이아웃 상태, 과거 지출 기간은 이 계약에서 제외.
 Codex의 결합된 Credits UI 행은 `credits`와 `creditValue` 두 스칼라 리소스로 분리.
+`GET /v1/limits/deepseek`는 보고된 각 통화의 총잔액을 `available`에 숫자로 반환.
+잔액이 0인 통화도 포함하며, 보고된 통화가 없으면 `resources`는 빈 객체.
 
 ## 레거시 Usage 응답 형식
 

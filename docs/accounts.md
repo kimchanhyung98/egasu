@@ -32,7 +32,7 @@ Claude·Codex는 프로바이더별 최대 10개 계정 등록 가능.
 | 종류 | 프로바이더 | 진행 |
 |---|---|---|
 | 공식 로그인 | Claude, Codex | **Add Account** 클릭.<br>첫 계정이고 이 Mac에 이미 로그인돼 있으면 다시 로그인 없이 가져옴.<br>그 밖에는 공식 로그인이 브라우저에서 열림.<br>실패하거나 취소하면 아무것도 등록하지 않으며 **Try Again**으로 재시도. |
-| API 키 | OpenRouter, Z.ai | 키를 입력하고 **Add Account** 클릭.<br>**Get Your API Key** 링크로 키 발급 페이지 열기.<br>키는 이 Mac에 저장하며 환경 변수보다 우선, 저장 직후 사용량 조회.<br>이 Mac에 쓸 수 있는 키(환경 변수·저장 파일)가 이미 있으면 비워 둔 채 **Add Account**로 켜기만 가능. |
+| API 키 | DeepSeek, OpenRouter, Z.ai | 키를 입력하고 **Add Account** 클릭.<br>**Get Your API Key** 링크로 키 발급 페이지 열기.<br>키는 이 Mac에 저장하며 환경 변수보다 우선, 저장 직후 사용량 조회.<br>이 Mac에 쓸 수 있는 키(환경 변수·저장 파일)가 이미 있으면 비워 둔 채 **Add Account**로 켜기만 가능. |
 | 로컬 로그인 감지 | 그 밖의 프로바이더 | egasu가 이 Mac의 기존 로그인을 찾은 결과 표시 후 **Turn On**으로 켜기.<br>로그인을 찾지 못해도 켤 수 있으며, 조회 실패 시 대시보드에서 사유 표시. |
 
 Claude·Codex 계정의 추가·전환·재로그인 동작은 [Claude와 Codex 계정](/docs/accounts.md#claude와-codex-계정) 참조.
@@ -66,7 +66,7 @@ Claude·Codex 계정의 추가·전환·재로그인 동작은 [Claude와 Codex 
   이 경우 **Use This Account**는 비활성, **Remove Account…**는 [계정 제거 조건](/docs/accounts.md#계정-제거) 적용.
   재로그인 중 브라우저 로그인 창으로 이동해도 Accounts 패널 유지.
   계정 상세에서 뒤로 가거나 패널을 직접 닫으면 진행 중인 재로그인 취소.
-- OpenRouter·Z.ai: API 키 상태(Not Set, Can't Read Saved Key, From Your Environment, Saved in App, Custom Key)와 **Add API Key…**·**Replace API Key…**.
+- DeepSeek·OpenRouter·Z.ai: API 키 상태(Not Set, Can't Read Saved Key, From Your Environment, Saved in App, Custom Key)와 **Add API Key…**·**Replace API Key…**.
   저장한 키는 환경 변수보다 우선하며 저장 직후 새로 고침.
   저장 파일을 읽지 못하고 대체 키도 없으면 오류 표시.
   계정 추가 시에는 새 키 입력 필요.
