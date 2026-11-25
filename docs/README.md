@@ -42,6 +42,7 @@
 - [Kiro](/docs/providers/kiro.md)
 - [OpenCode](/docs/providers/opencode.md)
 - [OpenRouter](/docs/providers/openrouter.md)
+- [QwenCloud](/docs/providers/qwencloud.md)
 - [Z.ai](/docs/providers/zai.md)
 
 ## 개발자용
