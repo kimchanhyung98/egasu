@@ -14,6 +14,8 @@ struct SettingsDisplayTab: View {
                 L10n.settings("Icon Style"), selection: $display.menuBarStyle, options: MenuBarStyle.allCases
             ) { $0.label }
             .disabled(display.menuBarLimit == .iconOnly)
+            Toggle(L10n.settings("Show Reset Countdown"), isOn: $display.showsMenuBarResetCountdown)
+                .disabled(display.menuBarStyle != .text || display.menuBarLimit == .iconOnly)
             SettingsPicker(
                 L10n.settings("Max Items In Menu Bar"), selection: $display.menuBarLimit, options: MenuBarLimit.allCases
             ) { $0.label }
@@ -66,31 +68,42 @@ struct PriorityIconsPreview: View {
 
     private static let height: CGFloat = 30
     private static let scale: CGFloat = 0.8
-    private static let samples: [(provider: String, badge: String?, label: String, value: String, fraction: Double)] = [
-        ("claude", "P", "Weekly", "38%", 0.38), ("claude", "A1", "Session", "26%", 0.26),
-        ("codex", nil, "Weekly", "31%", 0.31),
-        ("cursor", nil, "Extra Usage", "$310", 0.62),
-        ("antigravity", nil, AntigravityMetric.sessionLabel, "12%", 0.12),
-        ("grok", nil, "Weekly", "9%", 0.09),
-        ("copilot", nil, "Credits", "7%", 0.07)
+    private static let samples:
+        [(provider: String, badge: String?, label: String, value: String, fraction: Double, minutesUntilReset: Int?)] =
+            [
+                ("claude", "P", "Weekly", "38%", 0.38, 3 * 1_440), ("claude", "A1", "Session", "26%", 0.26, 32),
+                ("codex", nil, "Weekly", "31%", 0.31, 6 * 1_440),
+                ("cursor", nil, "Extra Usage", "$310", 0.62, nil),
+                ("antigravity", nil, AntigravityMetric.sessionLabel, "12%", 0.12, 70),
+                ("grok", nil, "Weekly", "9%", 0.09, 4 * 1_440),
+                ("copilot", nil, "Credits", "7%", 0.07, nil)
     ]
 
-    static func sample(limit: MenuBarLimit) -> MenuBarContent {
+    static func sample(limit: MenuBarLimit, showResetCountdown: Bool = false) -> MenuBarContent {
         guard limit != .iconOnly else { return MenuBarContent(items: []) }
+        let now = Date(timeIntervalSinceReferenceDate: 0)
         let shown = samples.prefix(limit.count).enumerated().map { index, sample in
             let label = L10n.metrics(sample.label)
             return MenuBarContent.Item(
                 id: "sample.\(index)", icon: .providerMark(sample.provider), providerName: sample.provider,
                 badge: sample.badge, label: label,
                 shortLabel: MenuBarContentBuilder.shortLabel(label, metricLabel: sample.label),
-                value: sample.value, fraction: sample.fraction
+                value: sample.value, fraction: sample.fraction,
+                resetCountdown: showResetCountdown
+                    ? sample.minutesUntilReset.flatMap {
+                        MenuBarResetCountdown(reset: now.addingTimeInterval(Double($0) * 60), now: now)?.text
+                    } : nil
             )
         }
         return MenuBarContent(items: shown, overflow: samples.count - shown.count)
     }
 
     var body: some View {
-        let content = Self.sample(limit: dataStore.displaySettings.menuBarLimit)
+        let content = Self.sample(
+            limit: dataStore.displaySettings.menuBarLimit,
+            showResetCountdown: dataStore.displaySettings.menuBarStyle == .text
+                && dataStore.displaySettings.showsMenuBarResetCountdown
+        )
             .showingExtraIndicators(dataStore.displaySettings.showsMenuBarExtras)
         Color.primary
             .frame(height: Self.height)

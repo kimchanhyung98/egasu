@@ -163,7 +163,7 @@ struct MenuBarTextStrip: View {
         VStack(alignment: .leading, spacing: -2) {
             Text(item.shortLabel)
                 .font(.system(size: 9, weight: .medium))
-            Text(item.value)
+            Text(item.displayedValue)
                 .font(.system(size: 11, weight: .bold))
         }
         .fixedSize()

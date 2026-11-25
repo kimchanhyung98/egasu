@@ -12,6 +12,11 @@ struct MenuBarContent: Equatable {
         let shortLabel: String
         let value: String
         var fraction: Double? = nil
+        var resetCountdown: String?
+
+        var displayedValue: String {
+            resetCountdown.map { "\(value) \($0)" } ?? value
+        }
     }
 
     let items: [Item]
@@ -37,10 +42,32 @@ struct MenuBarContent: Equatable {
     }
 
     var accessibilityText: String {
-        let shown = items.map { "\($0.providerName) \($0.label) \($0.value)" }
+        let shown = items.map { item in
+            let reading = "\(item.providerName) \(item.label) \(item.value)"
+            guard let countdown = item.resetCountdown else { return reading }
+            return reading + ", " + L10n.metrics("Resets in %@", countdown)
+        }
         let more = overflow > 0 ? [L10n.dashboard("%lld more", overflow)] : []
         let update = updateAvailable ? [L10n.dashboard("Update Available")] : []
         return (shown + more + update).joined(separator: "; ")
+    }
+}
+
+struct MenuBarResetCountdown {
+    let text: String
+    let nextTick: Date
+
+    init?(reset: Date, now: Date) {
+        let seconds = reset.timeIntervalSince(now)
+        guard seconds > 0, let minutes = Int(exactly: floor(seconds / 60)) else { return nil }
+        switch minutes {
+        case 0: text = L10n.metrics("<1m")
+        case 1..<60: text = L10n.metrics("%lldm", minutes)
+        case 60..<1_440: text = L10n.metrics("%lldh+", minutes / 60)
+        default: text = L10n.metrics("%lldd+", minutes / 1_440)
+        }
+        // 정확히 60초 남았으면 1m. 분 경계 직후에 새 값을 계산해 같은 시각의 반복 예약 방지.
+        nextTick = minutes == 0 ? reset : reset.addingTimeInterval(0.001 - Double(minutes) * 60)
     }
 }
 
@@ -64,7 +91,8 @@ enum MenuBarContentBuilder {
     /// Priority 모드에서 고정하지 않은 소진됨은 남는 칸에만 표시하고 `+N`에 세지 않음.
     static func build(
         board: PriorityBoard, limit: MenuBarLimit, selection: MenuBarSelection = .runningOut,
-        multiAccountFamilies: Set<String> = [], style: MenuBarStyle = .text, now: Date = Date()
+        multiAccountFamilies: Set<String> = [], style: MenuBarStyle = .text, showResetCountdown: Bool = false,
+        now: Date = Date()
     ) -> MenuBarContent {
         guard limit != .iconOnly else { return MenuBarContent(items: []) }
         let counted: [(DashboardAccount, DashboardLine)] = switch selection {
@@ -84,11 +112,12 @@ enum MenuBarContentBuilder {
         }
         let countedEntries = withData(counted)
         let shownEntries = (countedEntries + withData(usedUp)).prefix(limit.count)
+        var nextCountdownTick: Date?
         let items = shownEntries.map { account, line, presented in
             let label = line.data.localizedTitle
             let isSibling = multiAccountFamilies.contains(AppContainer.dashboardFamilyID(for: account.id))
             let badge = isSibling ? account.name.map(AccountInitials.tag).flatMap { $0.isEmpty ? nil : $0 } : nil
-            return MenuBarContent.Item(
+            var item = MenuBarContent.Item(
                 id: line.id,
                 icon: account.provider.icon,
                 providerName: account.fullName,
@@ -98,6 +127,13 @@ enum MenuBarContentBuilder {
                 value: presented.menuBarValue,
                 fraction: presented.isBounded ? presented.fraction : nil
             )
+            if showResetCountdown, style == .text, presented.kind == .percent, presented.isQuotaMeter,
+                let reset = presented.resetsAt, let countdown = MenuBarResetCountdown(reset: reset, now: now)
+            {
+                item.resetCountdown = countdown.text
+                nextCountdownTick = min(nextCountdownTick ?? countdown.nextTick, countdown.nextTick)
+            }
+            return item
         }
         // 갱신에 실패한 예측은 기한에 사라지므로 넘친 항목 수도 다시 계산.
         let deadlines = countedEntries.compactMap { $0.2.forecastDeadline }.filter { $0 > now }
@@ -109,7 +145,7 @@ enum MenuBarContentBuilder {
         return MenuBarContent(
             items: items,
             overflow: max(0, countedEntries.count - items.count),
-            nextInvalidation: (deadlines + tick + [priorityDeadline].compactMap { $0 }).min()
+            nextInvalidation: (deadlines + tick + [priorityDeadline, nextCountdownTick].compactMap { $0 }).min()
         )
     }
 

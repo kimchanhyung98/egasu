@@ -139,7 +139,8 @@ final class StatusItemImageUpdater {
         let board = container.dataStore.priorityBoard(accounts: accounts, pinned: container.layout.priorityPinIDs, now: now)
         var content = MenuBarContentBuilder.build(
             board: board, limit: limit, selection: settings.menuBarSelection,
-            multiAccountFamilies: MenuBarContentBuilder.multiAccountFamilies(accounts), style: settings.menuBarStyle, now: now
+            multiAccountFamilies: MenuBarContentBuilder.multiAccountFamilies(accounts), style: settings.menuBarStyle,
+            showResetCountdown: settings.showsMenuBarResetCountdown, now: now
         )
         content.updateAvailable = updateAvailable
         content = content.showingExtraIndicators(showsExtras)
