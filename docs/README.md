@@ -40,6 +40,7 @@
 - [Grok](/docs/providers/grok.md)
 - [Kimi](/docs/providers/kimi.md)
 - [Kiro](/docs/providers/kiro.md)
+- [OpenAI API](/docs/providers/openai-api.md)
 - [OpenCode](/docs/providers/opencode.md)
 - [OpenRouter](/docs/providers/openrouter.md)
 - [Z.ai](/docs/providers/zai.md)
