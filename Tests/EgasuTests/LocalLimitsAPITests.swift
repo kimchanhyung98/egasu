@@ -282,6 +282,7 @@ final class LocalLimitsAPITests: XCTestCase {
             "kiro": ["credits"],
             "opencode": ["session", "weekly", "monthly", "goSession", "goWeekly", "goMonthly"],
             "openrouter": ["credits", "balance", "keyLimit"],
+            "qwencloud": ["weekly", "monthly"],
             "zai": ["session", "weekly", "monthly", "webSearches"]
         ]
 
