@@ -92,6 +92,24 @@ final class NovemberModelPricingTests: XCTestCase {
         XCTAssertEqual(isolated.resolve(model: "databricks/databricks-gemini-4-carbon"), reseller)
     }
 
+    func testHyphenatedCodex53UsesOfficialRatesAndOneFastMultiplier() throws {
+        for prefix in ["", "openai/"] {
+            for (suffix, multiplier) in [("", 1.0), ("-fast", 2.0)] {
+                let model = prefix + "gpt-5-3-codex" + suffix
+                let rates = try XCTUnwrap(pricing.resolve(model: model), model)
+                XCTAssertEqual(rates.inputPerMillion, 1.75 * multiplier, model)
+                XCTAssertEqual(rates.outputPerMillion, 14 * multiplier, model)
+                XCTAssertEqual(rates.cacheReadPerMillion, 0.175 * multiplier, model)
+                let tokens = TokenBreakdown(input: 1_000, cacheRead: 1_000, output: 1_000, isFast: true)
+                let cost = try XCTUnwrap(CodexUsagePricing.estimate(model: model, tokens: tokens, pricing: pricing))
+                XCTAssertEqual(cost, (1.75 + 0.175 + 14) * 2 / 1_000, accuracy: 1e-9, model)
+            }
+        }
+        let reseller = "perplexity_orchestrator/openai/gpt-5.3-codex"
+        XCTAssertEqual(pricing.resolve(model: reseller)?.inputPerMillion, 3.5)
+        XCTAssertEqual(pricing.resolve(model: reseller)?.outputPerMillion, 28)
+    }
+
     func testGoogleListPricesSurvivePromotionalCatalogRefresh() throws {
         for (model, input, read, output) in [
             ("gemini-4-carbon", 4.0, 0.2, 20.0),
