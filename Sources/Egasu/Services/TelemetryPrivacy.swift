@@ -4,7 +4,7 @@ import Foundation
 enum TelemetryPrivacy {
     static let providerFamilies: Set<String> = [
         "antigravity", "claude", "codex", "copilot", "cursor", "devin", "grok",
-        "kimi", "kiro", "opencode", "openrouter", "zai",
+        "kimi", "kiro", "opencode", "openrouter", "qwencloud", "zai"
     ]
     private static let metricNames: Set<String> = [
         "session", "weekly", "monthly", "daily", "today", "week", "month", "trend", "extra",

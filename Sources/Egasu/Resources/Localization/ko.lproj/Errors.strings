@@ -340,3 +340,10 @@
 "You signed in to a different account. Try again with the account you selected." = "다른 계정으로 로그인했습니다. 선택한 계정으로 다시 로그인하세요.";
 "egasu couldn't verify the Codex user. Open the account in Accounts to sign in again." = "Codex 로그인 사용자를 확인할 수 없습니다. 계정 탭에서 해당 계정을 열고 다시 로그인하세요.";
 "This Mac’s synced history changed again. egasu will retry on the next update." = "이 Mac의 동기화 이력이 다시 변경되었습니다. 다음 업데이트 때 다시 시도합니다.";
+"Install the QwenCloud CLI and refresh." = "QwenCloud CLI를 설치한 후 새로고침하세요.";
+"Sign in with `qwencloud auth login` and refresh." = "`qwencloud auth login`으로 로그인한 후 새로고침하세요.";
+"No active QwenCloud personal Token Plan." = "활성 상태인 QwenCloud 개인 Token Plan이 없습니다.";
+"QwenCloud did not report credit usage for this period." = "QwenCloud에서 이 기간의 크레딧 사용률을 제공하지 않았습니다.";
+"The QwenCloud CLI could not retrieve the subscription. Check the CLI and refresh." = "QwenCloud CLI에서 구독을 조회하지 못했습니다. CLI를 확인한 후 새로고침하세요.";
+"Sign in to the QwenCloud CLI using Keychain or encrypted file storage and refresh." = "Keychain 또는 암호화 파일 저장 방식을 사용해 QwenCloud CLI에 로그인한 후 새로고침하세요.";
+"QwenCloud sign-in changed while refreshing. Refresh again to use the current account." = "조회 중 QwenCloud 로그인이 바뀌었습니다. 현재 계정으로 다시 새로고침하세요.";

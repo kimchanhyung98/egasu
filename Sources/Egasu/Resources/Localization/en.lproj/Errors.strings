@@ -340,3 +340,10 @@
 "You signed in to a different account. Try again with the account you selected." = "You signed in to a different account. Try again with the account you selected.";
 "egasu couldn't verify the Codex user. Open the account in Accounts to sign in again." = "egasu couldn't verify the Codex user. Open the account in Accounts to sign in again.";
 "This Mac’s synced history changed again. egasu will retry on the next update." = "This Mac’s synced history changed again. egasu will retry on the next update.";
+"Install the QwenCloud CLI and refresh." = "Install the QwenCloud CLI and refresh.";
+"Sign in with `qwencloud auth login` and refresh." = "Sign in with `qwencloud auth login` and refresh.";
+"No active QwenCloud personal Token Plan." = "No active QwenCloud personal Token Plan.";
+"QwenCloud did not report credit usage for this period." = "QwenCloud did not report credit usage for this period.";
+"The QwenCloud CLI could not retrieve the subscription. Check the CLI and refresh." = "The QwenCloud CLI could not retrieve the subscription. Check the CLI and refresh.";
+"Sign in to the QwenCloud CLI using Keychain or encrypted file storage and refresh." = "Sign in to the QwenCloud CLI using Keychain or encrypted file storage and refresh.";
+"QwenCloud sign-in changed while refreshing. Refresh again to use the current account." = "QwenCloud sign-in changed while refreshing. Refresh again to use the current account.";
