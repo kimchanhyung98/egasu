@@ -27,7 +27,8 @@ AppKit, signing, telemetry) as agent skills.
     ├── fix-codesign-error/SKILL.md        # ex-slash-command
     └── test-macos-app/SKILL.md            # ex-slash-command
 
-.claude -> .agents                          # symlink so Claude Code finds them
+.agents/skills -> ../.skills                # 공용 스킬 디렉터리
+.claude/skills -> ../.skills                # Claude Code도 같은 스킬 사용
 ```
 
 ## Conversion notes (vs the source plugin)
