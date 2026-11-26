@@ -220,3 +220,76 @@ test('dashboard account display describes its localized action while preserving 
   await expect(cardName).toHaveAccessibleName('••••@example.com');
   await expect(cardName).toHaveAccessibleDescription(masked);
 });
+
+
+test('menu bar text options update names and periods, survive reload and disable for non-text styles', async ({ page }) => {
+  await page.addInitScript(() => {
+    if (localStorage.getItem('openusage.site.preview.v1')) return;
+    localStorage.setItem('openusage.site.preview.v1', JSON.stringify({
+      preferences: { menuBarItems: 'Pinned Only', menuBarLimit: 'Up to 1' },
+      activeAccounts: {},
+      pinnedMetrics: ['claude.weekly@account-1'], accountNames: { 'claude:account-1': 'Personal' },
+    }));
+  });
+  await openHome(page);
+  await openSettings(page);
+  const app = page.locator('[data-mock]');
+  await app.getByRole('tab', { name: 'Display', exact: true }).click();
+  const names = app.getByRole('switch', { name: 'Show Account Names', exact: true });
+  const metrics = app.getByRole('switch', { name: 'Show Metric Labels', exact: true });
+  const preview = app.locator('[data-menu-bar-preview]');
+  await expect(names).toHaveAttribute('aria-checked', 'false');
+  await expect(metrics).toHaveAttribute('aria-checked', 'true');
+  await expect(preview.locator('.am-menu-preview-label')).toHaveText('Weekly');
+  await names.click();
+  await expect(preview.locator('.am-menu-preview-label')).toHaveText('Personal');
+  await expect(preview).toContainText('7d');
+  await expect(preview.getByRole('img')).toHaveAccessibleName(/Claude Personal Weekly/);
+  await metrics.click();
+  await expect(preview).not.toContainText('7d');
+  await expect(preview.locator('.am-menu-preview-label')).toHaveText('Personal');
+  await page.reload();
+  await openSettings(page);
+  await app.getByRole('tab', { name: 'Display', exact: true }).click();
+  await expect(names).toHaveAttribute('aria-checked', 'true');
+  await expect(metrics).toHaveAttribute('aria-checked', 'false');
+  await chooseSetting(page, 'Icon Style', 'Bars');
+  await expect(names).toBeDisabled();
+  await expect(metrics).toBeDisabled();
+  await chooseSetting(page, 'Icon Style', 'Text');
+  await expect(names).toBeEnabled();
+  await chooseSetting(page, 'Max Items In Menu Bar', 'App Icon Only');
+  await expect(names).toBeDisabled();
+  await expect(metrics).toBeDisabled();
+  await chooseSetting(page, 'Max Items In Menu Bar', 'Up to 1');
+  await app.getByRole('tab', { name: 'Advanced', exact: true }).click();
+  await app.getByRole('switch', { name: 'Privacy Mode', exact: true }).click();
+  await app.getByRole('tab', { name: 'Display', exact: true }).click();
+  await expect(preview).not.toContainText('Personal');
+  await expect(preview.getByRole('img')).toHaveAccessibleName(/Claude Weekly/);
+  await expect(preview.getByRole('img')).not.toHaveAccessibleName(/Personal/);
+});
+
+test('menu bar names and initials use the selected language', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('openusage.site.preview.v1', JSON.stringify({
+    preferences: { menuBarItems: 'Pinned Only', menuBarLimit: 'Up to 1', language: '한국어' },
+    activeAccounts: {}, pinnedMetrics: ['claude.weekly@account-1'],
+  })));
+  await openHome(page);
+  const app = page.locator('[data-mock]');
+  await app.locator('[data-options]').click();
+  await app.locator('[data-go="settings"]').click();
+  await app.locator('[data-settings-tab="Display"]').click();
+  const preview = app.locator('[data-menu-bar-preview]');
+  await expect(preview.locator('.am-menu-preview-item > span:first-child')).toHaveText('Claude 계1');
+  await app.locator('[data-setting="menuBarAccountNames"]').click();
+  await expect(preview.locator('.am-menu-preview-label')).toHaveText('계정 1');
+  await expect(preview.getByRole('img')).toHaveAccessibleName(/계정 1/);
+  await app.locator('[data-settings-tab="General"]').click();
+  await app.locator('[data-picker="language"]').click();
+  await app.locator('[data-pick="language"][data-value="日本語"]').click();
+  await app.locator('[data-settings-tab="Display"]').click();
+  await expect(preview.locator('.am-menu-preview-label')).toHaveText('アカウント1');
+  await app.locator('[data-setting="menuBarAccountNames"]').click();
+  await expect(preview.locator('.am-menu-preview-item > span:first-child')).toHaveText('Claude ア');
+});

@@ -122,6 +122,7 @@ export function handleSettingsClick(target: Element, mock: HTMLElement): boolean
   }
   const toggle = target.closest<HTMLButtonElement>('button[data-setting]');
   if (toggle) {
+    if (toggle.disabled) return true;
     const id = toggle.dataset.setting!;
     if (id === 'softLimitEnabled' && !state.preferences[id]) {
       mock.querySelector<HTMLDialogElement>('[data-soft-limit-dialog]')!.showModal();
@@ -185,7 +186,11 @@ export function applySettingsToMock(mock: HTMLElement): void {
   }
   mock.querySelectorAll<HTMLInputElement>('[data-number-setting]').forEach((input) => { input.value = String(preferences[input.dataset.numberSetting!]); });
   mock.querySelectorAll<HTMLButtonElement>('[data-setting]').forEach((button) => {
-    const on = preferences[button.dataset.setting!] === true;
+    const id = button.dataset.setting!;
+    const on = preferences[id] === true;
+    if (id === 'menuBarMetricLabels' || id === 'menuBarAccountNames') {
+      button.disabled = preferences.iconStyle !== 'Text' || preferences.menuBarLimit === 'App Icon Only';
+    }
     button.classList.toggle('is-on', on);
     button.setAttribute('aria-checked', String(on));
   });
