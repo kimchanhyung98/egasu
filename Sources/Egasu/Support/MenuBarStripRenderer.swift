@@ -165,7 +165,7 @@ struct MenuBarTextStrip: View {
                 Text(item.displayedLabel)
                     .font(.system(size: 9, weight: .medium))
                     .lineLimit(1)
-                    .truncationMode(.tail)
+                    .truncationMode(.middle)
                     .frame(maxWidth: item.accountLabel == nil ? nil : 96, alignment: .leading)
             }
             Text(item.value)

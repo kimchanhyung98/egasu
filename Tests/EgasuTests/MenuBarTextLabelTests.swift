@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 @testable import Egasu
@@ -57,6 +58,38 @@ final class MenuBarTextLabelTests: XCTestCase {
         longItem.configureText(showMetric: true, accountName: longName, periodMs: MetricPeriod.weekMs)
         let capped = try XCTUnwrap(MenuBarStripRenderer.image(for: MenuBarContent(items: [longItem])))
         XCTAssertLessThan(capped.size.width, 130, "긴 계정명은 메뉴 막대 한 항목의 폭 안에서 줄임")
+    }
+
+    func testLongAccountNamesKeepTheirDistinguishingOrganizationSuffixes() throws {
+        let names = ["North", "South"].map { "same.long.account@example.invalid (\($0))" }
+        let images = try names.map { name in
+            var item = MenuBarContent.Item(
+                id: "claude.weekly", icon: .providerMark("claude"), providerName: "Claude — \(name)",
+                badge: "RT", label: "Weekly", shortLabel: "Weekly", value: "50%", fraction: 0.5
+            )
+            item.configureText(showMetric: true, accountName: name, periodMs: MetricPeriod.weekMs)
+            let content = MenuBarContent(items: [item])
+            XCTAssertTrue(content.accessibilityText.contains(name))
+            return try XCTUnwrap(MenuBarStripRenderer.image(for: content))
+        }
+        for image in images { XCTAssertLessThan(image.size.width, 130) }
+        XCTAssertTrue(try visiblePixels(images[0]) != visiblePixels(images[1]), "조직명이 다른 계정은 화면에서도 구분")
+    }
+
+    private func visiblePixels(_ image: NSImage) throws -> [UInt8] {
+        let cgImage = try XCTUnwrap(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        let bitmap = NSBitmapImageRep(cgImage: cgImage)
+        var pixels: [UInt8] = []
+        for y in 0..<bitmap.pixelsHigh {
+            for x in 0..<bitmap.pixelsWide {
+                let color = try XCTUnwrap(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB))
+                let alpha = color.alphaComponent
+                pixels += [color.redComponent, color.greenComponent, color.blueComponent].map {
+                    UInt8(clamping: Int((($0 * alpha + 1 - alpha) * 255).rounded()))
+                }
+            }
+        }
+        return pixels
     }
 
     func testLabelSettingsPersistAndPreviewUsesTheSamePeriods() throws {
