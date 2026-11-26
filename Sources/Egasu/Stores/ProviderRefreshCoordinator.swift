@@ -279,12 +279,15 @@ final class ProviderRefreshCoordinator {
         var cacheIdentity = snapshotStore.identityKeys[providerID]
         if !force || providerID == "openai-api",
             let runtime = providersByID[providerID] as? any CredentialBoundSnapshotProvider,
-            snapshotStore.localSnapshots[providerID] != nil
+            let snapshot = snapshotStore.localSnapshots[providerID]
         {
             let generation = catalogGeneration
+            let credentialGeneration = credentialGenerations[providerID, default: 0]
             cacheIdentity = await runtime.currentIdentityKey(allowKeychainInteraction: true)
             guard !Task.isCancelled, isCurrent(), generation == catalogGeneration, isProviderEnabled(providerID),
-                isRefreshSuspended?(providerID) != true
+                isRefreshSuspended?(providerID) != true,
+                credentialGeneration == credentialGenerations[providerID, default: 0],
+                snapshotStore.localSnapshots[providerID] == snapshot
             else { return .skipped }
             if snapshotStore.discardMismatchedReading(for: providerID, currentIdentityKey: cacheIdentity) {
                 credentialsDidChange(for: providerID)
