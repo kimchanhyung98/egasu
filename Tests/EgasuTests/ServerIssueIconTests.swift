@@ -60,6 +60,7 @@ final class ServerIssueIconTests: XCTestCase {
         let didCopy = expectation(description: "Copy action received")
         var order = [family.id, "other"]
         let size = CGSize(width: 320, height: DashboardGrid.headerHeight)
+        let panelSize = CGSize(width: size.width, height: 2 * size.height)
         let nextRow = CGRect(x: 0, y: size.height, width: size.width, height: size.height)
         let reorder = reorderDragGesture(
             id: family.id, coordinateSpaceName: "section", rowFrames: ["other": nextRow],
@@ -80,7 +81,6 @@ final class ServerIssueIconTests: XCTestCase {
             },
             reorderGesture: AnyGesture(reorder.map { _ in () })
         )
-        .coordinateSpace(name: "section")
         .environment(
             \.openURL,
             OpenURLAction {
@@ -89,13 +89,18 @@ final class ServerIssueIconTests: XCTestCase {
             })
         let laidOut = expectation(description: "Header laid out at panel size")
         let host = NSHostingView(
-            rootView: header.frame(width: size.width, height: size.height)
-                .onGeometryChange(for: CGSize.self) {
-                    $0.size
-                } action: { value in
-                    if value == size { laidOut.fulfill() }
-                })
-        let panel = MenuBarPanel(contentRect: CGRect(origin: .zero, size: size))
+            rootView: VStack(spacing: 0) {
+                header.frame(height: size.height)
+                Color.clear.frame(height: size.height).accessibilityHidden(true)
+            }
+            .frame(width: panelSize.width, height: panelSize.height)
+            .coordinateSpace(name: "section")
+            .onGeometryChange(for: CGSize.self) {
+                $0.size
+            } action: { value in
+                if value == panelSize { laidOut.fulfill() }
+            })
+        let panel = MenuBarPanel(contentRect: CGRect(origin: .zero, size: panelSize))
         panel.isReleasedWhenClosed = false
         panel.host(host)
         panel.setFrameOrigin(CGPoint(x: (NSScreen.screens.map(\.frame.maxX).max() ?? 0) + 1000, y: 0))
@@ -109,7 +114,7 @@ final class ServerIssueIconTests: XCTestCase {
                 let element = try XCTUnwrap(children.first { $0.accessibilityLabel?() == label }, label)
                 let frame = try XCTUnwrap(element.accessibilityFrame?(), label)
                 XCTAssertGreaterThan(frame.width, 0, label)
-                return panel.convertFromScreen(frame)
+                return host.convert(panel.convertFromScreen(frame), from: nil)
             }
             return try (
                 frame(for: L10n.dashboard("Service Issue")),
@@ -119,7 +124,7 @@ final class ServerIssueIconTests: XCTestCase {
         func send(_ type: NSEvent.EventType, at x: CGFloat, y: CGFloat = DashboardGrid.headerHeight / 2) throws {
             let event = try XCTUnwrap(
                 NSEvent.mouseEvent(
-                    with: type, location: CGPoint(x: x, y: y),
+                    with: type, location: host.convert(CGPoint(x: x, y: y), to: nil),
                     modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                     windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
                     pressure: type == .leftMouseUp ? 0 : 1
@@ -128,7 +133,7 @@ final class ServerIssueIconTests: XCTestCase {
         }
 
         let statusURL = try XCTUnwrap(URL(string: "https://status.openai.com/"))
-        for (index, y) in [CGFloat(2), size.height / 2].enumerated() {
+        for (index, y) in [size.height - 2, size.height / 2].enumerated() {
             try send(.leftMouseDown, at: skull.midX, y: y)
             try send(.leftMouseUp, at: skull.midX, y: y)
             XCTAssertEqual(urls, Array(repeating: statusURL, count: index + 1))
@@ -139,8 +144,8 @@ final class ServerIssueIconTests: XCTestCase {
         for x in [CGFloat(20), skull.minX - halfGap, skull.maxX + halfGap, size.width / 2] {
             order = [family.id, "other"]
             try send(.leftMouseDown, at: x)
-            try send(.leftMouseDragged, at: x, y: -size.height / 2)
-            try send(.leftMouseUp, at: x, y: -size.height / 2)
+            try send(.leftMouseDragged, at: x, y: nextRow.midY)
+            try send(.leftMouseUp, at: x, y: nextRow.midY)
             XCTAssertEqual(order, ["other", family.id], "드래그 시작 위치 x=\(x)")
         }
         await fulfillment(of: [didCopy], timeout: 2)
