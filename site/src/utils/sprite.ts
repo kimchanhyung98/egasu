@@ -20,8 +20,10 @@ export interface SpriteSymbol {
 }
 
 export function providerSymbols(): SpriteSymbol[] {
-  return providers.map(({ id }) => {
-    const svg = providerMarks[id];
+  return providers.map((provider) => {
+    const { id } = provider;
+    const mark = 'mark' in provider ? provider.mark : id;
+    const svg = providerMarks[mark];
     if (!svg) throw new Error(`Missing provider mark: ${id}`);
     const viewBox = svg.match(/viewBox="([^"]+)"/)?.[1] ?? '0 0 24 24';
     const body = svg
