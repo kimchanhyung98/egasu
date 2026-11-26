@@ -355,7 +355,7 @@ actor CodexLogUsageScanner {
     }
 
     /// Codex cost 계산 (ccusage 방식) — non-cached input은 input rate, cached input은 명시적 cache-read rate(할인 미공표 시 full input rate), output(reasoning 포함)은 output rate.
-    /// 지원 OpenAI model은 272k 초과 시 request 전체를 상위 rate로 전환.
+    /// 장문 보정 대상 OpenAI 모델은 명시된 기준을 초과하면 요청 전체에 상위 요율 적용. 기준 생략 시 272k 사용.
     static func cost(
         rates: ModelRates,
         event: Event,

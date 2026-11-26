@@ -131,7 +131,7 @@ enum CodexUsagePricing {
             effective.outputAbove200kPerMillion = rates.outputPerMillion * 1.5
             effective.cacheWriteAbove200kPerMillion = rates.cacheWritePerMillion * 2
             effective.cacheReadAbove200kPerMillion = rates.cacheReadPerMillion * 2
-            effective.longContextThresholdTokens = 272_000
+            effective.longContextThresholdTokens = rates.longContextThresholdTokens ?? 272_000
         default:
             break
         }
