@@ -94,10 +94,11 @@ final class CodexCreditExpiryReminderTests: XCTestCase {
         let store = defaults()
         let center = Center(start)
         let expiry = start.addingTimeInterval(48 * 3600)
-        let account = ("one", "A", snapshot(count: 2, expiries: [expiry, expiry], observed: start))
+        var account = ("one", "A", snapshot(count: 2, expiries: [expiry, expiry], observed: start))
         let scheduler = CodexCreditExpiryReminders(scheduler: center.scheduler(), defaults: store)
         await scheduler.reconcile(accounts: [account], now: start).value
         scheduler.consumed(account: "one", expiry: expiry, creditID: "first", remaining: 1, at: start)
+        account.2.refreshedAt = start.addingTimeInterval(1)
         await scheduler.reconcile(accounts: [account], now: start).value
         XCTAssertEqual(center.requests.count, 2)
         let relaunched = CodexCreditExpiryReminders(scheduler: center.scheduler(), defaults: store)
