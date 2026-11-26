@@ -2,6 +2,8 @@
 
 DeepSeek API 계정의 잔액과 API 호출 가능 여부 표시.
 
+![예시 응답으로 렌더링한 DeepSeek 잔액 카드](/docs/assets/deepseek-balance.png)
+
 ## 계정 등록
 
 1. Accounts → Add New Account에서 DeepSeek 선택.
@@ -16,7 +18,7 @@ DeepSeek API 계정의 잔액과 API 호출 가능 여부 표시.
 새로고침할 때 [잔액 API](https://api-docs.deepseek.com/api/get-user-balance/)에서 조회.
 서버가 보고한 USD와 CNY 총잔액을 각각 표시.
 각 금액에 포인터를 올리면 해당 통화의 충전액과 지급액 확인.
-소수점 이하 자릿수는 서버 표기를 유지.
+카드, 메뉴 막대와 [로컬 Usage API](/docs/local-http-api.md#레거시-usage-응답-형식)는 잔액의 소수점 이하 자릿수를 서버 표기대로 유지.
 명시한 잔액 0은 그대로 표시하고, 응답에 없는 통화는 카드에서 생략.
 잔액 목록이 비어 있으면 API 사용 가능 여부만 표시.
 

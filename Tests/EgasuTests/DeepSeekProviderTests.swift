@@ -56,6 +56,33 @@ final class DeepSeekProviderTests: XCTestCase {
         XCTAssertFalse(usd.hasData)
     }
 
+    func testLegacyUsagePreservesBalancesWithoutChangingWireShape() async throws {
+        let cny = entry.replacingOccurrences(of: "USD", with: "CNY")
+        let (provider, _) = provider(#"{"is_available":true,"balance_infos":[\#(entry),\#(cny)]}"#)
+        let snapshot = await provider.refresh()
+        let state = LocalUsageAPI.State(
+            enabledOrderedIDs: ["deepseek"], knownIDs: ["deepseek"], snapshots: ["deepseek": snapshot]
+        )
+
+        for path in ["/v1/usage", "/v1/usage/deepseek"] {
+            let response = L10n.withLanguage(.korean) {
+                LocalUsageAPI.respond(method: "GET", path: path, state: state)
+            }
+            XCTAssertEqual(response.status, 200)
+            let body = try XCTUnwrap(response.body)
+            let providers = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [[String: Any]])
+            let lines = try XCTUnwrap(providers.first?["lines"] as? [[String: Any]])
+            for currency in ["USD", "CNY"] {
+                let balance = try XCTUnwrap(lines.first { $0["label"] as? String == "Balance (\(currency))" })
+                XCTAssertEqual(Set(balance.keys), ["type", "label", "value", "color", "subtitle"])
+                XCTAssertEqual(balance["type"] as? String, "text")
+                XCTAssertEqual(balance["value"] as? String, "\(currency) 0.0000000100")
+                XCTAssertTrue(balance["color"] is NSNull)
+                XCTAssertTrue(balance["subtitle"] is NSNull)
+            }
+        }
+    }
+
     func testLocalLimitsExportsCurrencyBalancesSeparatelyAndOmitsUnreportedCurrency() async throws {
         for (entries, keys) in [(entry + "," + zero, ["balanceUSD", "balanceCNY"]), (entry, ["balanceUSD"]), ("", [])] {
             let (provider, _) = provider(#"{"is_available":true,"balance_infos":[\#(entries)]}"#)
