@@ -97,6 +97,67 @@ test('menu bar preview applies pinned selection and filters text values in Bars 
   await expect(app.locator('[data-menu-bar-preview]')).toHaveText('◉');
 });
 
+test('menu bar reset countdown applies only to eligible Text items and keeps its saved choice', async ({ page }) => {
+  await page.addInitScript(() => {
+    if (localStorage.getItem('openusage.site.preview.v1')) return;
+    localStorage.setItem('openusage.site.preview.v1', JSON.stringify({
+      preferences: { menuBarItems: 'Pinned Only', menuBarLimit: 'Up to 4' },
+      activeAccounts: {},
+      pinnedMetrics: ['codex.session@account-1', 'codex.weekly@account-1', 'antigravity.geminiPro', 'kiro.credits'],
+      enabledProviders: ['codex', 'antigravity', 'kiro'],
+    }));
+  });
+  await openHome(page);
+  await openSettings(page);
+  const app = page.locator('[data-mock]');
+  await app.getByRole('tab', { name: 'Display', exact: true }).click();
+  const countdown = app.getByRole('switch', { name: 'Show Reset Countdown', exact: true });
+  const preview = app.getByRole('region', { name: 'Menu Bar Preview', exact: true });
+  await expect(countdown).toBeEnabled();
+  await expect(countdown).not.toBeChecked();
+  await expect(preview.locator('.am-menu-preview-item')).toHaveCount(4);
+  await expect(preview).not.toContainText('3h+');
+  await countdown.click();
+  await expect(countdown).toBeChecked();
+  await expect(preview).toContainText('28% 3h+');
+  await expect(preview).toContainText('97% 4d+');
+  await expect(preview).not.toContainText('5h+');
+  await expect(preview).not.toContainText('15d+');
+  const session = preview.getByRole('img', { name: 'Codex Account 1 Session 28%, Resets in 3h+', exact: true });
+  await expect(session).toBeVisible();
+  await app.getByRole('switch', { name: 'Show Account Names', exact: true }).click();
+  await expect(session.locator('.am-menu-preview-label')).toHaveText('Account 1');
+  await expect(session).toContainText('5h');
+  const sameLine = await session.locator('.am-menu-preview-countdown').evaluate((amount) => {
+    const value = amount.firstChild;
+    const duration = amount.lastElementChild;
+    if (!value || !duration) return false;
+    const range = document.createRange();
+    range.selectNodeContents(value);
+    return Math.abs(range.getBoundingClientRect().top - duration.getBoundingClientRect().top) < 1;
+  });
+  expect(sameLine, 'the value and countdown stay on one line when the preview wraps').toBe(true);
+  await app.getByRole('switch', { name: 'Show Metric Labels', exact: true }).click();
+  await expect(session).not.toContainText('5h');
+  await expect(session).toContainText('28% 3h+');
+  await chooseSetting(page, 'Show Usage As', 'Left');
+  await expect(preview).toContainText('72% 3h+');
+  await chooseSetting(page, 'Icon Style', 'Bars');
+  await expect(countdown).toBeDisabled();
+  await expect(preview).not.toContainText('3h+');
+  await chooseSetting(page, 'Icon Style', 'Text');
+  await chooseSetting(page, 'Max Items In Menu Bar', 'App Icon Only');
+  await expect(countdown).toBeDisabled();
+  await expect(preview).toHaveText('◉');
+  await chooseSetting(page, 'Max Items In Menu Bar', 'Up to 4');
+  await expect(countdown).toBeChecked();
+  await page.reload();
+  await openSettings(page);
+  await app.getByRole('tab', { name: 'Display', exact: true }).click();
+  await expect(countdown).toBeChecked();
+  await expect(preview).toContainText('72% 3h+');
+});
+
 test('settings saved before the egasu rename are restored and remain editable', async ({ page }) => {
   await page.addInitScript(() => {
     if (localStorage.getItem('openusage.site.preview.v1')) return;

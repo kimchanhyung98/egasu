@@ -126,6 +126,8 @@ button.am-account-label { cursor: pointer; }
 .am-alert-columns { display: grid; grid-template-columns: 1fr 72px 72px; align-items: center; gap: 5px; padding: 9px 10px; }
 .am-alert-columns > :not(:first-child) { justify-self: center; text-align: center; font-size: 10px; padding: 0; }
 .am-menu-bar-preview { padding: 10px; display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 30px; }
+.am-menu-bar-preview:has(.am-menu-preview-countdown) { flex-wrap: wrap; }
+.am-menu-preview-countdown { white-space: nowrap; }
 .am-menu-preview-item { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; min-width: 0; }
 .am-menu-preview-detail { display: grid; min-width: 0; }
 .am-menu-preview-label { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

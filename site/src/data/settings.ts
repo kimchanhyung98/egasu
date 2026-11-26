@@ -63,6 +63,7 @@ export const settingGroups: SettingGroup[] = [
     { id: 'iconStyle', label: 'Icon Style', control: { kind: 'picker', value: 'Text', options: ['Text', 'Bars'] } },
     { id: 'menuBarMetricLabels', label: 'Show Metric Labels', control: { kind: 'toggle', on: true } },
     { id: 'menuBarAccountNames', label: 'Show Account Names', control: { kind: 'toggle', on: false } },
+    { id: 'menuBarResetCountdown', label: 'Show Reset Countdown', control: { kind: 'toggle', on: false } },
     { id: 'menuBarLimit', label: 'Max Items In Menu Bar', control: { kind: 'picker', value: 'Up to 3', options: ['App Icon Only', 'Up to 1', 'Up to 2', 'Up to 3', 'Up to 4', 'Up to 5'] } },
     { id: 'menuBarItems', label: 'Menu Bar Items',
       info: 'Choose Priority or Pinned Only, then pin metrics in All Usage to show them in the menu bar.',

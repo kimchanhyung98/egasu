@@ -1,4 +1,4 @@
-import { dashboardLines, priorityBoard, menuBarItems, menuBarText, priorityGauge } from '../data/preview-dashboard';
+import { dashboardLines, priorityBoard, menuBarItems, menuBarResetCountdown, menuBarText, priorityGauge } from '../data/preview-dashboard';
 import { accountFamilies } from '../data/accounts';
 import { metricKey, providerMetrics } from '../data/metrics';
 import { orderedMetrics, accountName, accountEmail, type PreviewState } from '../data/preview-state';
@@ -209,8 +209,10 @@ function renderMenuBar(mock: HTMLElement, state: PreviewState): void {
       } else value = `${Math.round(fraction * 100)}%`;
     } else value = item.row.kind === 'text' ? item.row.values[0] : item.row.kind === 'forecast' ? `${item.row.probability}%` : '';
     if (state.preferences.iconStyle !== 'Bars') {
+      const countdown = menuBarResetCountdown(state, item.row);
+      const reading = `${text.accessibilityLabel} ${value}`;
       label.setAttribute('role', 'img');
-      label.setAttribute('aria-label', `${text.accessibilityLabel} ${value}`);
+      label.setAttribute('aria-label', countdown ? `${reading}, Resets in ${countdown}` : reading);
       const mark = document.createElement('span');
       mark.textContent = [provider.name, text.badge].filter(Boolean).join(' ');
       mark.setAttribute('aria-hidden', 'true');
@@ -225,6 +227,12 @@ function renderMenuBar(mock: HTMLElement, state: PreviewState): void {
       }
       const amount = document.createElement('span');
       amount.textContent = value;
+      if (countdown) {
+        amount.className = 'am-menu-preview-countdown';
+        const duration = document.createElement('span');
+        duration.textContent = countdown;
+        amount.append(' ', duration);
+      }
       detail.append(name, amount);
       label.append(mark, detail);
     }
