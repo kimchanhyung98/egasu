@@ -11,7 +11,7 @@ let render = (): void => {};
 let notify = (_mock: HTMLElement, _message: string): void => {};
 let verifyingTerminalHelper = false;
 const pending = new WeakMap<HTMLElement, { family: string; id: string; button: HTMLElement }>();
-const notificationPreferences = ['warningNotification', 'criticalNotification', 'closeToRunningOut', 'useItOrLoseItNotification', 'quotaRecovered', 'codexResetWatch'];
+const notificationPreferences = ['warningNotification', 'criticalNotification', 'closeToRunningOut', 'useItOrLoseItNotification', 'quotaRecovered', 'codexCreditExpiry', 'codexResetWatch'];
 const appOnlyPreferences = new Set([
   'launchAtLogin', 'autoStartSubscriptionTimers', ...notificationPreferences, 'shareAnonymousUsage', 'updateAutomatically', 'betaUpdates', 'logLevel',
 ]);

@@ -89,6 +89,8 @@ export const settingGroups: SettingGroup[] = [
   ]) },
   { id: 'notifications', title: 'Other Notifications', tab: 'Alerts', rows: [
     { id: 'quotaRecovered', label: 'Quota Available Again', control: { kind: 'toggle', on: false }, info: 'Notify when fresh Claude, Codex, or Cursor usage confirms the same account has quota again' },
+    { id: 'codexCreditExpiry', label: 'Codex Reset Credit Expiry', control: { kind: 'toggle', on: false },
+      info: 'Notify 24 and 12 hours before an unused Codex reset credit expires.' },
     { id: 'codexResetWatch', label: 'Codex Reset Watch', control: { kind: 'toggle', on: false }, info: 'Alert when Reset Watch expects Codex limits to reset soon' },
   ] },
   { id: 'privacy', title: 'Privacy', tab: 'Advanced', rows: [

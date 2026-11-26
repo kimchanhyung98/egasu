@@ -215,3 +215,6 @@
 "Show Metric Labels" = "指標名を表示";
 "Show Account Names" = "アカウント名を表示";
 "Show Reset Countdown" = "リセットまでの時間を表示";
+"Codex Reset Credit Expiry" = "Codexリセット権の有効期限";
+"Notify 24 and 12 hours before an unused Codex reset credit expires." = "未使用のCodexリセット権の有効期限の24時間前と12時間前に通知します。";
+"An unused reset credit expires in %lld hours." = "未使用のリセット権の有効期限まであと%lld時間です。";

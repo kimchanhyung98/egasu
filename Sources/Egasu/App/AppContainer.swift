@@ -302,6 +302,11 @@ final class AppContainer {
         Self.configureQuotaNotificationNames(dataStore: dataStore, accounts: accounts, profiles: accountProfiles) { [weak self] in
             self?.accountProfileID(for: $0)
         }
+        dataStore.configureCodexCreditReminders(
+            scheduler: ScheduledReminders(prefix: CodexCreditExpiryReminders.prefix))
+        codexResetClaim.onUnavailable = { [weak dataStore] cardID, credits in
+            dataStore?.codexCreditsUnavailable(cardID: cardID, credits: credits)
+        }
         resetWatchCoordinator.observeActivity { [layout, resetWatchNotifications] in
             resetWatchNotifications.configurationDidChange()
             return Self.needsResetWatch(

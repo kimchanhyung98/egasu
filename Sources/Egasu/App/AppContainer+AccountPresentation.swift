@@ -9,11 +9,19 @@ extension AppContainer {
         profiles: AccountProfilesStore,
         profileID: @escaping @MainActor (String) -> String?
     ) {
+        func name(for profile: AccountProfile) -> String {
+            L10n.metrics("%@ — %@", profile.family.capitalized, profile.label)
+        }
         dataStore.resolveDisplayName = { cardID in
             guard let id = profileID(cardID), let profile = profiles.profile(id: id) else {
                 return accounts.resolvedDisplayName(cardID: cardID)
             }
-            return L10n.metrics("%@ — %@", profile.family.capitalized, profile.label)
+            return name(for: profile)
+        }
+        dataStore.resolveCreditAccountName = { id, workspace in
+            guard let profile = profiles.profile(id: id), profile.family == "codex", profile.identityKey == workspace
+            else { return nil }
+            return name(for: profile)
         }
     }
 
