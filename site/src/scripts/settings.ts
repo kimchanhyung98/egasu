@@ -1,6 +1,6 @@
 import { accountFamilies } from '../data/accounts';
 import { initialPreviewState, changePreference, activateAccount, restorePreviewState, previewTime, accountName, accountEmail, renameAccount, type PreviewState } from '../data/preview-state';
-import { softLimitAccountStatuses } from '../data/preview-dashboard';
+import { menuBarUsesText, softLimitAccountStatuses } from '../data/preview-dashboard';
 import { languageTags } from '../data/settings';
 import { closeMenu } from './menus';
 import { applyPreviewLanguage, localizePreview, previewAccountDisplayName, setPreviewAccountText } from './localization';
@@ -11,7 +11,7 @@ let render = (): void => {};
 let notify = (_mock: HTMLElement, _message: string): void => {};
 let verifyingTerminalHelper = false;
 const pending = new WeakMap<HTMLElement, { family: string; id: string; button: HTMLElement }>();
-const notificationPreferences = ['warningNotification', 'criticalNotification', 'closeToRunningOut', 'useItOrLoseItNotification', 'quotaRecovered', 'codexResetWatch'];
+const notificationPreferences = ['warningNotification', 'criticalNotification', 'closeToRunningOut', 'useItOrLoseItNotification', 'quotaRecovered', 'codexCreditExpiry', 'codexResetWatch'];
 const appOnlyPreferences = new Set([
   'launchAtLogin', 'autoStartSubscriptionTimers', ...notificationPreferences, 'shareAnonymousUsage', 'updateAutomatically', 'betaUpdates', 'logLevel',
 ]);
@@ -122,6 +122,7 @@ export function handleSettingsClick(target: Element, mock: HTMLElement): boolean
   }
   const toggle = target.closest<HTMLButtonElement>('button[data-setting]');
   if (toggle) {
+    if (toggle.disabled) return true;
     const id = toggle.dataset.setting!;
     if (id === 'softLimitEnabled' && !state.preferences[id]) {
       mock.querySelector<HTMLDialogElement>('[data-soft-limit-dialog]')!.showModal();
@@ -185,7 +186,11 @@ export function applySettingsToMock(mock: HTMLElement): void {
   }
   mock.querySelectorAll<HTMLInputElement>('[data-number-setting]').forEach((input) => { input.value = String(preferences[input.dataset.numberSetting!]); });
   mock.querySelectorAll<HTMLButtonElement>('[data-setting]').forEach((button) => {
-    const on = preferences[button.dataset.setting!] === true;
+    const id = button.dataset.setting!;
+    const on = preferences[id] === true;
+    if (id === 'menuBarMetricLabels' || id === 'menuBarAccountNames' || id === 'menuBarResetCountdown') {
+      button.disabled = !menuBarUsesText(state);
+    }
     button.classList.toggle('is-on', on);
     button.setAttribute('aria-checked', String(on));
   });

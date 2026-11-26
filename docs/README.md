@@ -36,12 +36,15 @@
 - [Codex](/docs/providers/codex.md)
 - [Copilot](/docs/providers/copilot.md)
 - [Cursor](/docs/providers/cursor.md)
+- [DeepSeek](/docs/providers/deepseek.md)
 - [Devin](/docs/providers/devin.md)
 - [Grok](/docs/providers/grok.md)
 - [Kimi](/docs/providers/kimi.md)
 - [Kiro](/docs/providers/kiro.md)
+- [OpenAI API](/docs/providers/openai-api.md)
 - [OpenCode](/docs/providers/opencode.md)
 - [OpenRouter](/docs/providers/openrouter.md)
+- [QwenCloud](/docs/providers/qwencloud.md)
 - [Z.ai](/docs/providers/zai.md)
 
 ## 개발자용

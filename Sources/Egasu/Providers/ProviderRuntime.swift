@@ -22,6 +22,12 @@ protocol ProviderRuntime: AnyObject {
     func hasLocalCredentials() async -> Bool
 }
 
+/// 현재 로컬 인증으로 캐시 귀속을 확인하는 프로바이더.
+@MainActor
+protocol CredentialBoundSnapshotProvider: ProviderRuntime {
+    func currentIdentityKey(allowKeychainInteraction: Bool) async -> String?
+}
+
 extension ProviderRuntime {
     var retainsDedicatedSpendOnScanFailure: Bool { false }
 

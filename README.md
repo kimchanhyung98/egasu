@@ -41,6 +41,7 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
   이력 조회 실패 시 같은 계정으로 확인한 마지막 정상 이력 유지.
 - **[Antigravity](/docs/providers/antigravity.md)** — Gemini 풀과 Claude 등 다른 모델 풀의 5시간·주간 한도, 계정별 Argon 주간 한도와 로컬 사용 이력.
 - **[Copilot](/docs/providers/copilot.md)** — AI 크레딧, 추가 사용량, 조직 사용량·청구액, 채팅·코드 완성 할당량.
+- **[DeepSeek](/docs/providers/deepseek.md)** — API 계정의 통화별 잔액(원래 소수 자릿수 유지), 충전액·지급액과 API 사용 가능 여부.
 - **[Devin](/docs/providers/devin.md)** — 일간·주간 할당량, 추가 사용 잔액.
 - **[Grok](/docs/providers/grok.md)** — 결제 기간별 주간·월간 공유 한도, 종량제 지출 상한, 로컬 기록의 일별 지출·토큰.
 - **[Kimi](/docs/providers/kimi.md)** — 5시간·주간·월간 총한도, 추가 지출·잔액.
@@ -49,13 +50,15 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
   미충전 지갑의 금액도 0으로 표시.
   세션 한도만 있어도 게시 전 로그인 유지 여부 확인.
 - **[Kiro](/docs/providers/kiro.md)** — 코딩 크레딧과 구독 요금제.
+- **[OpenAI API](/docs/providers/openai-api.md)** — 현재 관리자 키의 조직이나 선택한 프로젝트의 최근 30일 API 비용.
 - **[OpenCode](/docs/providers/opencode.md)** — Go 서버의 세션·주간·월간 사용률, Console과 Go의 로컬 지출·토큰.
   과거 Zen 기록도 Console 집계에 포함.
 - **[OpenRouter](/docs/providers/openrouter.md)** — 크레딧 잔액과 일간·주간·월간 지출.
+- **[QwenCloud](/docs/providers/qwencloud.md)** — 개인 Token Plan의 주간 또는 월간 크레딧 사용률과 초기화 시각.
 - **[Z.ai](/docs/providers/zai.md)** — GLM Coding Plan의 세션·주간·월간 할당량과 웹 검색 한도.
 
 대부분의 프로바이더는 Mac의 Keychain, 인증 파일 또는 앱에 저장된 로그인 정보 재사용.
-[OpenRouter](/docs/providers/openrouter.md)와 [Z.ai](/docs/providers/zai.md)는 앱에 저장하거나 지원 환경 변수로 제공한 API 키 사용.
+[DeepSeek](/docs/providers/deepseek.md), [OpenRouter](/docs/providers/openrouter.md), [Z.ai](/docs/providers/zai.md)는 앱에 저장하거나 지원 환경 변수로 제공한 API 키 사용.
 쓸 수 있는 키가 없고 저장 파일을 읽지 못하면, 미등록 상태와 구분해 파일 접근 오류 표시.
 기존 설정 파일의 형식을 인식할 수 없으면 내용을 보존하고 API 키 저장 오류 표시.
 계정 제거 시 설정 파일의 API 키를 제거하고, JSON의 다른 설정은 보존.
@@ -122,8 +125,10 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
 - **[계정 관리](/docs/accounts.md).** Accounts에서 계정 추가·전환·재로그인, API 키와 계정별 지표 표시·순서 관리.
   대시보드·계정 목록·상세 사이를 이동할 때 본문과 표시 중인 바에 맞춰 패널 높이 조정.
   숨긴 계정 복원과 이름 변경·중단된 Claude 전환 복구 지원.
+  구형 표시 설정을 이전할 때 새 프로바이더의 지표는 기본 표시하고 기존 프로바이더의 숨김·순서를 유지.
   기존 지표 설정의 이전·복구가 끝나기 전에는 원문을 보존하고 자동 이전 재시도.
   구형 표시 설정의 변환을 기다리는 동안 직접 바꾼 표시·숨김은 재실행·계정 전환 후에도 유지.
+  이전 대기 중 사용 가능해진 새 프로바이더는 재실행 후에도 지표 기본 표시 유지.
   기존 Claude 계정의 토큰 갱신 중에도 새 작업 공간의 로그인 등록 가능.
 - **[사용량 자동 갱신](/docs/refreshing.md).** 앱을 열면 저장된 사용량부터 표시.
   기본 갱신 주기는 Claude 15분, 나머지 프로바이더 5분.
