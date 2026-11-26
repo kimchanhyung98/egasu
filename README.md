@@ -67,6 +67,8 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
 
 - **[메뉴 막대](/docs/menu-bar.md).** 소진 임박·Priority·직접 고정한 항목 중 표시 기준 선택.
   텍스트 또는 막대로 최대 5개 표시.
+  Text 스타일에서 지표명과 계정명 표시를 각각 선택.
+  Text 스타일에서 퍼센트 한도 옆에 초기화까지 남은 시간 표시 가능.
   설정 → 표시의 **메뉴 막대 표시 항목** 옆 ⓘ에서 지표 고정 방법 확인.
 - **[macOS 데스크톱 위젯](/docs/desktop-widgets.md).** 새 위젯은 Priority로 시작.
   위젯 편집에서 All Usage로 바꾸면 여러 계정의 지표 중 원하는 항목만 표시.

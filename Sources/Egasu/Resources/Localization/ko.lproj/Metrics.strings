@@ -214,6 +214,9 @@
 "Quota Available Again" = "한도 회복";
 "Notify when fresh Claude, Codex, or Cursor usage confirms the same account has quota again" = "Claude·Codex·Cursor에서 같은 계정의 소진된 한도를 다시 사용할 수 있으면 알림";
 "This quota is available again." = "이 한도를 다시 사용할 수 있습니다.";
+"<1m" = "1분 미만";
+"%lldh+" = "%lld시간+";
+"%lldd+" = "%lld일+";
 "Balance (USD)" = "잔액 (USD)";
 "Balance (CNY)" = "잔액 (CNY)";
 "Topped Up (USD)" = "충전액 (USD)";
