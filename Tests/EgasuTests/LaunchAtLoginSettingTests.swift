@@ -51,6 +51,7 @@ final class LaunchAtLoginSettingTests: XCTestCase {
                     throw TestError.rejected
                 }
             )
+            setting.refreshStatus()
             setting.update(to: requested)
             XCTAssertNotNil(setting.errorMessage)
 
@@ -77,6 +78,7 @@ final class LaunchAtLoginSettingTests: XCTestCase {
                     throw TestError.rejected
                 }
             )
+            setting.refreshStatus()
             setting.update(to: requested)
 
             setting.refreshStatus()
@@ -98,6 +100,7 @@ final class LaunchAtLoginSettingTests: XCTestCase {
                     throw TestError.rejected
                 }
             )
+            setting.refreshStatus()
             setting.update(to: requested)
             XCTAssertEqual(setting.isEnabled, requested)
             XCTAssertNotNil(setting.errorMessage)
