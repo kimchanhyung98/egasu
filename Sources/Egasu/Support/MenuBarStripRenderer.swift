@@ -161,8 +161,13 @@ struct MenuBarTextStrip: View {
 
     private func labelledValue(_ item: MenuBarContent.Item) -> some View {
         VStack(alignment: .leading, spacing: -2) {
-            Text(item.shortLabel)
-                .font(.system(size: 9, weight: .medium))
+            if !item.displayedLabel.isEmpty {
+                Text(item.displayedLabel)
+                    .font(.system(size: 9, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: item.accountLabel == nil ? nil : 96, alignment: .leading)
+            }
             Text(item.displayedValue)
                 .font(.system(size: 11, weight: .bold))
         }

@@ -212,4 +212,6 @@
 "Suggest another Claude or Codex account. Switching always requires confirmation." = "Suggest another Claude or Codex account. Switching always requires confirmation.";
 "Suggest switching when any current base quota reaches this usage." = "Suggest switching when any current base quota reaches this usage.";
 "Every applicable base quota on a candidate must be below this usage." = "Every applicable base quota on a candidate must be below this usage.";
+"Show Metric Labels" = "Show Metric Labels";
+"Show Account Names" = "Show Account Names";
 "Show Reset Countdown" = "Show Reset Countdown";

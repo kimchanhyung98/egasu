@@ -6,12 +6,30 @@ struct MenuBarContent: Equatable {
         let id: String
         let icon: IconSource
         let providerName: String
-        /// 같은 프로바이더 계정이 여럿일 때만 계정 이니셜.
-        let badge: String?
+        var badge: String?
         let label: String
-        let shortLabel: String
+        var shortLabel: String
         let value: String
         var fraction: Double? = nil
+
+        var accountLabel: String?
+        var displayedLabel: String { accountLabel ?? shortLabel }
+
+        mutating func configureText(showMetric: Bool, accountName: String?, periodMs: Int?) {
+            accountLabel = accountName
+            if !showMetric { shortLabel = "" }
+            if accountName != nil {
+                badge = showMetric ? periodMs.flatMap(Self.periodBadge) : nil
+            }
+        }
+
+        private static func periodBadge(_ milliseconds: Int) -> String? {
+            guard milliseconds > 0 else { return nil }
+            for (unit, suffix) in [(MetricPeriod.dayMs, "d"), (3_600_000, "h"), (60_000, "m")] {
+                if milliseconds.isMultiple(of: unit) { return "\(milliseconds / unit)\(suffix)" }
+            }
+            return nil
+        }
         var resetCountdown: String?
 
         var displayedValue: String {
@@ -91,8 +109,9 @@ enum MenuBarContentBuilder {
     /// Priority 모드에서 고정하지 않은 소진됨은 남는 칸에만 표시하고 `+N`에 세지 않음.
     static func build(
         board: PriorityBoard, limit: MenuBarLimit, selection: MenuBarSelection = .runningOut,
-        multiAccountFamilies: Set<String> = [], style: MenuBarStyle = .text, showResetCountdown: Bool = false,
-        now: Date = Date()
+        multiAccountFamilies: Set<String> = [], style: MenuBarStyle = .text,
+        showMetricLabels: Bool = true, showAccountNames: Bool = false, hideAccountNames: Bool = false,
+        showResetCountdown: Bool = false, now: Date = Date()
     ) -> MenuBarContent {
         guard limit != .iconOnly else { return MenuBarContent(items: []) }
         let counted: [(DashboardAccount, DashboardLine)] = switch selection {
@@ -116,17 +135,26 @@ enum MenuBarContentBuilder {
         let items = shownEntries.map { account, line, presented in
             let label = line.data.localizedTitle
             let isSibling = multiAccountFamilies.contains(AppContainer.dashboardFamilyID(for: account.id))
-            let badge = isSibling ? account.name.map(AccountInitials.tag).flatMap { $0.isEmpty ? nil : $0 } : nil
+            let badge =
+                isSibling && !hideAccountNames
+                ? account.name.map(AccountInitials.tag).flatMap { $0.isEmpty ? nil : $0 } : nil
             var item = MenuBarContent.Item(
                 id: line.id,
                 icon: account.provider.icon,
-                providerName: account.fullName,
+                providerName: hideAccountNames ? account.providerName : account.fullName,
                 badge: badge,
                 label: label,
                 shortLabel: shortLabel(label, metricLabel: line.descriptor.metricLabel),
                 value: presented.menuBarValue,
                 fraction: presented.isBounded ? presented.fraction : nil
             )
+            if style == .text {
+                item.configureText(
+                    showMetric: showMetricLabels,
+                    accountName: showAccountNames && !hideAccountNames ? account.name : nil,
+                    periodMs: presented.periodDurationMs
+                )
+            }
             if showResetCountdown, style == .text, presented.kind == .percent, presented.isQuotaMeter,
                 presented.hasResetLabel(now: now),
                 let reset = presented.resetsAt, let countdown = MenuBarResetCountdown(reset: reset, now: now)

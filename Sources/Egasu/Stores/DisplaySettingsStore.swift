@@ -21,6 +21,8 @@ final class DisplaySettingsStore {
     static let menuBarStyleKey = "openusage.layout.v1.menuBarStyle"
     static let menuBarLimitKey = "menuBarLimit"
     static let menuBarSelectionKey = "menuBarSelection"
+    static let menuBarMetricLabelsKey = "menuBarMetricLabels"
+    static let menuBarAccountNamesKey = "menuBarAccountNames"
     static let menuBarResetCountdownKey = "menuBarResetCountdown"
     static let menuBarExtrasKey = "menuBarExtras"
     static let legacyMenuBarAlwaysShowsKey = "menuBarAlwaysShows"
@@ -50,6 +52,14 @@ final class DisplaySettingsStore {
 
     var menuBarSelection: MenuBarSelection {
         didSet { defaults.set(menuBarSelection.rawValue, forKey: Self.menuBarSelectionKey) }
+    }
+
+    var showsMenuBarMetricLabels: Bool {
+        didSet { defaults.set(showsMenuBarMetricLabels, forKey: Self.menuBarMetricLabelsKey) }
+    }
+
+    var showsMenuBarAccountNames: Bool {
+        didSet { defaults.set(showsMenuBarAccountNames, forKey: Self.menuBarAccountNamesKey) }
     }
 
     var showsMenuBarResetCountdown: Bool {
@@ -105,6 +115,8 @@ final class DisplaySettingsStore {
         menuBarLimit = defaults.enumValue(forKey: Self.menuBarLimitKey, default: .upToThree)
         let legacySelection: MenuBarSelection = defaults.bool(forKey: Self.legacyMenuBarAlwaysShowsKey, default: false) ? .priority : .runningOut
         menuBarSelection = defaults.enumValue(forKey: Self.menuBarSelectionKey, default: legacySelection)
+        showsMenuBarMetricLabels = defaults.bool(forKey: Self.menuBarMetricLabelsKey, default: true)
+        showsMenuBarAccountNames = defaults.bool(forKey: Self.menuBarAccountNamesKey, default: false)
         showsMenuBarResetCountdown = defaults.bool(forKey: Self.menuBarResetCountdownKey, default: false)
         showsMenuBarExtras = defaults.bool(forKey: Self.menuBarExtrasKey, default: true)
         priorityLimits = PriorityLimits(
