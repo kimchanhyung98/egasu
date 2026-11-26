@@ -39,6 +39,39 @@ const source = (path: string): string => readFileSync(new URL(`../../Sources/Ega
 const englishSource = (path: string): string => source(path)
   .replace(/\bL10n\.\w+\(\s*("(?:\\.|[^"\\])*")\s*\)/g, '$1');
 
+function nativeCodexCreditExpiry() {
+  const label = englishSource('Stores/CodexCreditExpiryReminders.swift')
+    .match(/static var label:\s*String\s*\{\s*"([^"]+)"\s*\}/)?.[1];
+  const info = englishSource('Views/Settings/SettingsAlertsTab.swift')
+    .match(/Toggle\(isOn:\s*\$notifications\.codexCreditExpiry\)\s*\{\s*SettingsTitle\(\s*title:\s*CodexCreditExpiryReminders\.label,\s*info:\s*"([^"]+)"/)?.[1];
+  assert.ok(label);
+  assert.ok(info);
+  return { label, info };
+}
+
+test('Codex reset credit expiry mirrors the native toggle and saved choice', () => {
+  const native = nativeCodexCreditExpiry();
+  const group = settingGroups.find((group) => group.id === 'notifications');
+  assert.ok(group);
+  const index = group.rows.findIndex((row) => row.id === 'codexCreditExpiry');
+  assert.ok(index > 0);
+  const row = group.rows[index];
+  assert.equal(group.rows[index - 1]?.id, 'quotaRecovered');
+  assert.equal(group.rows[index + 1]?.id, 'codexResetWatch');
+  assert.equal(row.label, native.label);
+  assert.equal(row.info, native.info);
+  assert.deepEqual(row.control, { kind: 'toggle', on: false });
+  assert.match(source('Stores/NotificationSettingsStore.swift'),
+    /self\.codexCreditExpiry = defaults\.bool\(forKey: Self\.creditExpiryKey\)/);
+  const initial = initialPreviewState();
+  assert.equal(initial.preferences.codexCreditExpiry, false);
+  const changed = changePreference(initial, 'codexCreditExpiry', true);
+  const restored = restorePreviewState(JSON.parse(JSON.stringify(changed)));
+  assert.equal(restored.preferences.codexCreditExpiry, true);
+  assert.equal(restored.preferences.quotaRecovered, false);
+  assert.equal(restored.preferences.codexResetWatch, false);
+});
+
 test('Settings follows the native tab order and covers its named sections', () => {
   const cases = source('Stores/PopoverState.swift').match(/enum SettingsTab:[^{]+\{\s*case ([^\n]+)/)?.[1];
   assert.ok(cases);
@@ -87,7 +120,7 @@ test('Settings matches native control names within each tab', () => {
     const native = controlsIn(`Settings${tab}Tab`).concat(sectionsByTab[tab].flatMap(controlsIn))
       .filter((label) => !(tab === 'General' && label === 'iCloud Sync'));
     if (tab === 'Alerts') {
-      native.push(recoveryLabel, resetWatchLabel, ...conditions.flatMap(([, name]) => [
+      native.push(recoveryLabel, nativeCodexCreditExpiry().label, resetWatchLabel, ...conditions.flatMap(([, name]) => [
         `${name}, Show in Priority`, `${name}, Receive Alerts`,
       ]));
     }
