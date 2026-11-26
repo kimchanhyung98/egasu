@@ -83,7 +83,7 @@ validator = step.split("          python3 - << 'PY'\n", 1)[1].split("\n         
 exec(compile(dedent(validator), str(path), "exec"))
 PY
 
-swift test --filter "Pricing|ModelRates|CopilotPersonalCreditsTests|KiroUsageScannerTests"
+swift test --filter "Pricing|ModelRates|CopilotPersonalCreditsMapperTests|KiroUsageScannerTests"
 ```
 
 If a new alias rule maps a slug that appears in real usage, add a resolution test case in `Tests/EgasuTests/ModelPricingTests.swift`.
