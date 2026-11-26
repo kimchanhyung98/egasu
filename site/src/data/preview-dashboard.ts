@@ -2,7 +2,8 @@ import { cards, cardRows, accountCardVariants, emptyCard, type Card } from './da
 import { boundedView, type Row, type BoundedRow } from './demo.ts';
 import { providers } from './providers.ts';
 import { metricID, metricKey, isSharedMetric, providerMetrics, softLimitWindows, softLimitWindowFor, type SoftLimitWindow } from './metrics.ts';
-import { orderedMetrics, type PreviewState } from './preview-state.ts';
+import { orderedMetrics, accountName, type PreviewState } from './preview-state.ts';
+import { accountFamilies } from './accounts.ts';
 
 export type PriorityGroup = 'runningOut' | 'usedUp' | 'useItOrLoseIt';
 export interface DashboardLine {
@@ -124,6 +125,30 @@ export function priorityBoard(state: PreviewState) {
   };
 }
 
+export function menuBarText(state: PreviewState, line: DashboardLine, localizedAccountName?: string) {
+  const provider = providers.find((provider) => provider.id === line.provider);
+  const family = accountFamilies.find((family) => family.id === line.provider);
+  const hasAccount = family?.profiles.some((profile) => profile.id === line.accountID);
+  const name = hasAccount && !state.preferences.privacyMode
+    ? localizedAccountName ?? accountName(state, line.provider, line.accountID) : '';
+  const showMetric = state.preferences.menuBarMetricLabels === true;
+  const showName = state.preferences.menuBarAccountNames === true && name !== '';
+  const shortLabels: Record<string, string> = { Today: 'T', Yesterday: 'Y', 'Last 30 Days': 'M' };
+  const shortLabel = shortLabels[line.row.label]
+    ?? line.row.label.replace(/ (models|bot|usage)$/i, '');
+  const period = line.row.kind === 'bounded' ? line.row.periodHours : 0;
+  const periodBadge = period <= 0 ? '' : period % 24 === 0 ? `${period / 24}d`
+    : Number.isInteger(period) ? `${period}h` : Number.isInteger(period * 60) ? `${period * 60}m` : '';
+  const initials = name.trim().split(/\s+/).map((word) => Array.from(word)[0]);
+  const accountBadge = initials.length > 1 ? `${initials[0]}${initials.at(-1)}` : initials[0] ?? '';
+  return {
+    label: showName ? name : showMetric ? shortLabel : '',
+    accountLabel: showName,
+    badge: showName ? showMetric ? periodBadge : '' : family && family.profiles.length > 1 ? accountBadge.toUpperCase() : '',
+    accessibilityLabel: [provider?.name, name, line.row.label].filter(Boolean).join(' '),
+  };
+}
+
 export function menuBarItems(state: PreviewState) {
   const board = priorityBoard(state);
   const lines = dashboardLines(state);
@@ -140,4 +165,17 @@ export function menuBarItems(state: PreviewState) {
   const items = [...counted, ...usedUp].slice(0, count);
   const overflow = state.preferences.menuBarExtras && count ? Math.max(0, counted.length - count) : 0;
   return { items, overflow };
+}
+
+export function menuBarUsesText(state: PreviewState): boolean {
+  return state.preferences.iconStyle === 'Text' && state.preferences.menuBarLimit !== 'App Icon Only';
+}
+
+export function menuBarResetCountdown(state: PreviewState, row: Row): string | undefined {
+  if (state.preferences.menuBarResetCountdown !== true || !menuBarUsesText(state)
+    || !reportsLimit(row) || row.unit !== undefined || row.notStarted) return;
+  // 공개 예시의 리셋까지 남은 시간은 대시보드와 동일하게 고정. elapsed는 pace 계산용.
+  if (row.resetRelative === 'Resets in <1m') return '<1m';
+  const duration = row.resetRelative?.match(/^Resets in ([1-9]\d*)([dhm])(?: |$)/);
+  if (duration) return `${duration[1]}${duration[2]}${duration[2] === 'm' ? '' : '+'}`;
 }

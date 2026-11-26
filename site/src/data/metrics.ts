@@ -55,6 +55,11 @@ const declared: Record<string, Array<[string, string]>> = {
     ['copilot.chat', 'Chat'],
     ['copilot.completions', 'Completions'],
   ],
+  deepseek: [
+    ['deepseek.balanceUSD', 'Balance (USD)'],
+    ['deepseek.balanceCNY', 'Balance (CNY)'],
+    ['deepseek.api', 'API Access'],
+  ],
   devin: [
     ['devin.daily', 'Daily'],
     ['devin.weekly', 'Weekly'],

@@ -1,4 +1,5 @@
 // 랜딩페이지 카피와 기능 탭 문구.
+import { providers } from './providers';
 import { site } from './site';
 
 const brand = site.brand;
@@ -26,7 +27,7 @@ export const copy = {
   // 푸터 포크 고지는 문장 안에 링크가 들어가 문자열 하나로 담기지 않으므로 Footer.astro가 직접 씀.
 
   'meta-title': `${brand} — Mac에서 한눈에 보는 AI 사용량`,
-  'meta-desc': '12개 AI 서비스의 사용량, 비용, 여러 계정과 Codex 초기화 예측을 Mac 메뉴 막대에서 확인. 한국어·영어·일본어를 지원하는 무료 오픈소스 앱.',
+  'meta-desc': `${providers.length}개 AI 서비스의 사용량, 비용, 여러 계정과 Codex 초기화 예측을 Mac 메뉴 막대에서 확인. 한국어·영어·일본어를 지원하는 무료 오픈소스 앱.`,
 
   '404-h': '여기에는 아무것도 없습니다.',
   '404-link': '첫 페이지로',

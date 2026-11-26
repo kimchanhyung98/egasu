@@ -10,7 +10,8 @@ const files = import.meta.glob('../../../Sources/Egasu/Resources/ProviderIcons/*
   eager: true,
 }) as Record<string, string>;
 
-const wanted = new Set<string>(providers.map((p) => p.id));
+const providerMarks = Object.fromEntries(Object.entries(files).map(([path, svg]) =>
+  [path.slice(path.lastIndexOf('/') + 1, -4), svg]));
 
 export interface SpriteSymbol {
   id: string;
@@ -19,17 +20,15 @@ export interface SpriteSymbol {
 }
 
 export function providerSymbols(): SpriteSymbol[] {
-  return Object.entries(files)
-    .map(([path, svg]) => {
-      const id = path.split('/').pop()!.replace(/\.svg$/, '');
-      const viewBox = svg.match(/viewBox="([^"]+)"/)?.[1] ?? '0 0 24 24';
-      const body = svg
-        .replace(/^[\s\S]*?<svg[^>]*>/, '')
-        .replace(/<\/svg>\s*$/, '')
-        .replace(/\sfill="(?!none")[^"]*"/g, '')
-        .trim();
-      return { id, viewBox, body };
-    })
-    .filter((s) => wanted.has(s.id))
-    .sort((a, b) => a.id.localeCompare(b.id));
+  return providers.map(({ id }) => {
+    const svg = providerMarks[id];
+    if (!svg) throw new Error(`Missing provider mark: ${id}`);
+    const viewBox = svg.match(/viewBox="([^"]+)"/)?.[1] ?? '0 0 24 24';
+    const body = svg
+      .replace(/^[\s\S]*?<svg[^>]*>/, '')
+      .replace(/<\/svg>\s*$/, '')
+      .replace(/\sfill="(?!none")[^"]*"/g, '')
+      .trim();
+    return { id, viewBox, body };
+  });
 }

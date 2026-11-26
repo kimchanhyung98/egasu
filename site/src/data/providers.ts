@@ -5,6 +5,7 @@ export const providers = [
   { id: 'cursor', name: 'Cursor' },
   { id: 'antigravity', name: 'Antigravity' },
   { id: 'copilot', name: 'Copilot' },
+  { id: 'deepseek', name: 'DeepSeek' },
   { id: 'devin', name: 'Devin' },
   { id: 'grok', name: 'Grok' },
   { id: 'kimi', name: 'Kimi' },
