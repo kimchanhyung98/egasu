@@ -532,8 +532,7 @@ final class WidgetDataStore {
             resource.matches(line), case let .progress(_, used, limit, format, reset, _, _) = line,
             used.isFinite, used >= 0, limit.isFinite, limit > 0, reset.map({ $0 > now }) != false
         else { return nil }
-        // Cursor 요청 수 대체값은 Requests 행에서만 관측해 Total Usage의 구독 기준선을 보존.
-        if descriptor.id == "cursor.usage", format == .count(suffix: "requests") { return nil }
+        guard !descriptor.isCursorRequestLimitAlias(format: format) else { return nil }
         let scope = snapshot.quotaRecoveryScopes[descriptor.metricLabel] ?? .account
         guard scope != .unverified else { return nil }
         return .init(account: account, isExhausted: used >= limit, scope: scope)

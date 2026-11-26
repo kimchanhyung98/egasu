@@ -141,6 +141,28 @@ test('Labs contains the same feature groups as the native app', () => {
   for (const label of ['Install…', 'Uninstall', 'Unavailable']) assert.ok(helper.includes(`"${label}"`), label);
 });
 
+test('Weekly and monthly reset reminders mirror the native toggle and saved choice', () => {
+  const native = englishSource('Views/Settings/SettingsAlertsTab.swift')
+    .match(/Toggle\(isOn:\s*\$notifications\.weeklyMonthlyResetReminders\)\s*\{\s*SettingsTitle\(\s*title:\s*"([^"]+)",\s*info:\s*"([^"]+)"/);
+  assert.ok(native);
+  const group = settingGroups.find((group) => group.id === 'notifications');
+  assert.ok(group);
+  const row = group.rows[0];
+  assert.equal(row.id, 'weeklyMonthlyResetReminders');
+  assert.equal(row.label, native[1]);
+  assert.equal(row.info, native[2]);
+  assert.deepEqual(row.control, { kind: 'toggle', on: false });
+  assert.match(source('Stores/NotificationSettingsStore.swift'),
+    /self\.weeklyMonthlyResetReminders = defaults\.bool\(forKey: Self\.quotaResetKey\)/);
+  const initial = initialPreviewState();
+  assert.equal(initial.preferences.weeklyMonthlyResetReminders, false);
+  const changed = changePreference(initial, 'weeklyMonthlyResetReminders', true);
+  const restored = restorePreviewState(JSON.parse(JSON.stringify(changed)));
+  assert.equal(restored.preferences.weeklyMonthlyResetReminders, true);
+  assert.equal(restored.preferences.quotaRecovered, false);
+  assert.equal(restored.preferences.codexResetWatch, false);
+});
+
 test('Alerts, Soft Limit, and Tokscale expose their preview controls', () => {
   const expectedRows = {
     thresholds: { tab: 'Alerts', rows: { warning: 'picker', critical: 'picker' } },

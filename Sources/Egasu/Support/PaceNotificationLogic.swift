@@ -78,7 +78,7 @@ struct NotificationState: Equatable, Sendable {
     var exhaustedAccounts: [QuotaRecoveryScope: String] = [:]
     var positiveUsageObservedAt: Date?
     /// 사용량이 먼저 0으로 돌아온 관측 — 이후 확인한 주기의 시작과 종료를 비교.
-    struct Recovery: Equatable, Sendable {
+    struct Recovery: Codable, Equatable, Sendable {
         let lastPositiveAt: Date
         let priorReset: Date
     }

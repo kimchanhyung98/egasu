@@ -88,6 +88,8 @@ export const settingGroups: SettingGroup[] = [
     { id: condition.notify, label: `${condition.label}, Receive Alerts`, control: { kind: 'toggle', on: false } },
   ]) },
   { id: 'notifications', title: 'Other Notifications', tab: 'Alerts', rows: [
+    { id: 'weeklyMonthlyResetReminders', label: 'Weekly and Monthly Reset Reminders', control: { kind: 'toggle', on: false },
+      info: 'Notify 24 and 12 hours before weekly or monthly limits reset for Claude, Codex, and Cursor.' },
     { id: 'quotaRecovered', label: 'Quota Available Again', control: { kind: 'toggle', on: false }, info: 'Notify when fresh Claude, Codex, or Cursor usage confirms the same account has quota again' },
     { id: 'codexCreditExpiry', label: 'Codex Reset Credit Expiry', control: { kind: 'toggle', on: false },
       info: 'Notify 24 and 12 hours before an unused Codex reset credit expires.' },

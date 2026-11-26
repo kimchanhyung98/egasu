@@ -313,7 +313,9 @@ struct ProviderSnapshotCache {
         }
         do {
             var payload = try decoder.decode(Payload.self, from: data)
-            payload.snapshots["openai-api"]?.producedByIdentityKey = payload.producedByIdentityKeys["openai-api"]
+            for (id, identity) in payload.producedByIdentityKeys where Self.requiresCredentialIdentity(id) {
+                payload.snapshots[id]?.producedByIdentityKey = identity
+            }
             for (id, timestamp) in payload.refreshTimestamps ?? [:] where payload.snapshots[id] != nil {
                 payload.snapshots[id]?.refreshedAt = Date(timeIntervalSinceReferenceDate: timestamp)
             }
