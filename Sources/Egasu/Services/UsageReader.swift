@@ -336,6 +336,11 @@ public struct UsageReader {
             } else {
                 await dataStore.refreshAll(force: force, trigger: .cli)
             }
+            if !TokenRotationShutdownGuard.isIdle {
+                await TokenRotationShutdownGuard.waitForIdle(warnAfter: .seconds(20)) {
+                    AppLog.warn(.lifecycle, "CLI still waiting for a token rotation before exiting")
+                }
+            }
             if providersOverride == nil {
                 await PersistentJSONLScanCaches.flushPendingWrites()
             }
