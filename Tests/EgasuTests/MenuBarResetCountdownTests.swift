@@ -89,6 +89,29 @@ final class MenuBarResetCountdownTests: XCTestCase {
         }
     }
 
+    func testNotStartedSessionsHaveNoCountdownButActiveZeroUsageSessionsDo() {
+        L10n.withLanguage(.english) {
+            for remaining in [false, true] {
+                var data = WidgetData(
+                    title: "Session", icon: .providerMark("antigravity"), kind: .percent, used: 0, limit: 100,
+                    displayMode: remaining ? .remaining : .used, resetsAt: now.addingTimeInterval(7_200)
+                )
+                data.sessionStartSignal = .zeroUsage
+                let descriptor = WidgetDescriptor(
+                    id: "antigravity.geminiPro", providerID: "antigravity", metricLabel: "Session", sample: data)
+                let notStarted = makeContent([DashboardLine(descriptor: descriptor, data: data)], at: now)
+                XCTAssertNil(notStarted.items.first?.resetCountdown)
+                XCTAssertNil(notStarted.nextInvalidation)
+                XCTAssertFalse(notStarted.accessibilityText.contains("Resets in"))
+
+                data.sessionStartSignal = .missingResetDate
+                let active = makeContent([DashboardLine(descriptor: descriptor, data: data)], at: now)
+                XCTAssertEqual(active.items.first?.resetCountdown, "2h+")
+                XCTAssertNotNil(active.nextInvalidation)
+            }
+        }
+    }
+
     func testDefaultAndStoredOption() throws {
         let suite = "MenuBarResetCountdownTests.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

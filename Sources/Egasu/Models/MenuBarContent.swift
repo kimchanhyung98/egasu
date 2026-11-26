@@ -128,6 +128,7 @@ enum MenuBarContentBuilder {
                 fraction: presented.isBounded ? presented.fraction : nil
             )
             if showResetCountdown, style == .text, presented.kind == .percent, presented.isQuotaMeter,
+                presented.hasResetLabel(now: now),
                 let reset = presented.resetsAt, let countdown = MenuBarResetCountdown(reset: reset, now: now)
             {
                 item.resetCountdown = countdown.text
