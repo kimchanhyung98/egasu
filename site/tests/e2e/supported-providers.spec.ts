@@ -1,3 +1,4 @@
+import { providers } from '../../src/data/providers';
 import { test, expect, openHome, openAccounts } from './fixtures';
 
 const services = [
@@ -32,3 +33,36 @@ for (const { id, name, metrics } of services) {
     await expect(detail.getByText('Add and sign in to accounts in the Mac app.')).toBeVisible();
   });
 }
+
+test('a saved provider order survives a catalog update with the other preview settings', async ({ page }) => {
+  const added = services.at(-1)!.id;
+  const oldOrder = providers.map((provider) => provider.id).filter((id) => id !== added).reverse();
+  await page.addInitScript((providerOrder) => {
+    const key = 'openusage.site.preview.v1';
+    if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify({
+      preferences: { language: '한국어', theme: 'Dark' }, activeAccounts: {}, providerOrder,
+      hiddenMetrics: ['claude.session@account-1'], pinnedMetrics: ['codex.weekly@account-1'],
+      accountNames: { 'claude:account-1': 'Work' },
+    }));
+  }, oldOrder);
+  await openHome(page);
+  const app = page.locator('[data-mock]');
+  await expect(app).toHaveAttribute('lang', 'ko');
+  await expect(app).toHaveAttribute('data-theme', 'dark');
+  const expected = [...oldOrder, added];
+  const familyIDs = await app.locator('[data-dashboard-panel="All Usage"] [data-family]').evaluateAll((families) =>
+    families.map((family) => family.getAttribute('data-family')));
+  expect(familyIDs).toEqual(expected);
+
+  await app.locator('[data-options]').click();
+  await app.locator('.am-optmenu [data-go="accounts"]').click();
+  await app.locator('[data-add-account]').click();
+  await app.locator(`[data-add-provider="${added}"]`).click();
+  await page.reload();
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('openusage.site.preview.v1')!));
+  expect(stored).toMatchObject({
+    preferences: { language: '한국어', theme: 'Dark' }, providerOrder: expected,
+    hiddenMetrics: ['claude.session@account-1'], pinnedMetrics: ['codex.weekly@account-1'],
+    accountNames: { 'claude:account-1': 'Work' },
+  });
+});
