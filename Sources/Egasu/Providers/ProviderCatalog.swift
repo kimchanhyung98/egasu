@@ -67,6 +67,7 @@ enum ProviderCatalog {
             GrokProvider(),
             KimiProvider(terminalEnvironment: kimiTerminalEnvironment),
             KiroProvider(),
+            OpenAICostsProvider(defaults: defaults),
             OpenCodeProvider(
                 authStore: OpenCodeAuthStore(environment: openCodeEnvironment),
                 usageScanner: OpenCodeUsageScanner(databasePaths: {

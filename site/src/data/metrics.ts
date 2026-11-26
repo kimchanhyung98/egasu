@@ -82,6 +82,12 @@ const declared: Record<string, Array<[string, string]>> = {
     ['kimi.extraBalance', 'Extra Balance'],
   ],
   kiro: [['kiro.credits', 'Credits']],
+  'openai-api': [
+    ['openai-api.costs', 'Last 30 Days'],
+    ['openai-api.scope', 'Billing Scope'],
+    ['openai-api.balance', 'Credit Balance'],
+    ['openai-api.updated', 'Last Updated'],
+  ],
   opencode: [
     ['opencode.session', 'Session'],
     ['opencode.weekly', 'Weekly'],

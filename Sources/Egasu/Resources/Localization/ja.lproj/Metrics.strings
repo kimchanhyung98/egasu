@@ -226,3 +226,9 @@
 "API Access" = "API 利用";
 "Available" = "利用可能";
 "Insufficient Balance" = "残高不足";
+"Billing Scope" = "費用の対象範囲";
+"Credit Balance" = "クレジット残高";
+"Last Updated" = "最終取得";
+"No costs reported" = "費用の報告なし";
+"Organization" = "組織全体";
+"Unavailable" = "取得不可";

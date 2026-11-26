@@ -348,3 +348,8 @@
 "DeepSeek returned invalid balance data." = "DeepSeek の残高データを読み取れませんでした。";
 "DeepSeek request failed (HTTP %@)." = "DeepSeek へのリクエストに失敗しました (HTTP %@)。";
 "The DeepSeek API key changed. Refresh again to use the current key." = "DeepSeek API キーが変更されました。現在のキーでもう一度更新してください。";
+"Add an OpenAI organization Admin API key in Accounts." = "アカウントで OpenAI 組織の管理者 API キーを追加してください。";
+"OpenAI rejected the Admin API key. Replace it in Accounts." = "OpenAI が管理者 API キーを拒否しました。アカウントでキーを変更してください。";
+"The OpenAI Admin API key needs permission to read organization costs." = "OpenAI の管理者 API キーに組織の費用を参照する権限が必要です。";
+"Enter project IDs or leave the field empty for the whole organization." = "プロジェクト ID を入力してください。組織全体を参照する場合は空欄にします。";
+"The OpenAI billing connection changed during refresh. Refresh again." = "更新中に OpenAI の請求接続設定が変更されました。もう一度更新してください。";

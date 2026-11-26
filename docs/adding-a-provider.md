@@ -130,11 +130,12 @@ OpenRouter처럼 사용자 제공 API 키가 필요한 프로바이더는 `APIKe
 - 인증 스토어의 `keyStatus()`는 `notSet` / `fromEnvironment` / `saved` / `overrideActive` 중 현재 상태 반환.
 - `currentAPIKey()`는 현재 키를 반환하는 내부 계약.
   Accounts UI는 저장 키의 가림 해제를 제공하지 않음.
-- `saveAPIKey(_:)`와 `deleteAPIKey()`는 인증 스토어가 읽는 설정 파일의 저장 키 관리.
-  설정 파일이 환경 변수보다 우선하므로 저장된 키가 환경 변수의 키를 대체.
+- `saveAPIKey(_:)`와 `deleteAPIKey()`는 프로바이더의 인증 저장소에 키를 저장하거나 삭제.
+  설정 파일을 사용하는 프로바이더는 환경 변수보다 파일의 키를 우선 사용.
 - 프로바이더는 위 동작을 인증 스토어에 위임.
 - `AppContainer`는 `APIKeyManaging` 프로바이더를 `apiKeyProviders`로 수집.
   Accounts의 계정 상세 화면은 이 목록에서 해당 프로바이더를 찾아 카드 표시.
 
-키는 인증 스토어가 이미 확인하는 파일에 저장.
+OpenAI API 조직 관리자 키는 egasu 전용 Keychain 항목에서만 관리.
+파일 기반 인증 스토어의 키는 이미 확인하는 파일에 저장.
 사용자가 같은 파일을 직접 편집할 수 있도록 별도 저장소 도입 금지.

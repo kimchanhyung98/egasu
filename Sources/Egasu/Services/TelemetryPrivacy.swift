@@ -4,7 +4,7 @@ import Foundation
 enum TelemetryPrivacy {
     static let providerFamilies: Set<String> = [
         "antigravity", "claude", "codex", "copilot", "cursor", "deepseek", "devin", "grok",
-        "kimi", "kiro", "opencode", "openrouter", "zai",
+        "kimi", "kiro", "openai-api", "opencode", "openrouter", "zai"
     ]
     private static let metricNames: Set<String> = [
         "session", "weekly", "monthly", "daily", "today", "week", "month", "trend", "extra",
@@ -13,7 +13,7 @@ enum TelemetryPrivacy {
         "sonnetThinking", "gptOss", "geminiPro", "geminiFlash", "geminiWeekly", "claude", "claudeWeekly", "argonWeekly",
         "rateLimitResets", "spark", "sparkWeekly", "sparkMonthly", "usage", "onDemand", "requests", "yesterday",
         "last30", "keyLimit",
-        "total", "extraBalance", "balanceUSD", "balanceCNY"
+        "total", "extraBalance", "balanceUSD", "balanceCNY", "costs", "scope", "updated"
     ]
 
     /// 알려진 이벤트 형식만 허용 — 값이 없거나 모르면 기존 형식 2 사용.

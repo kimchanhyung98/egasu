@@ -10,6 +10,7 @@ export const providers = [
   { id: 'grok', name: 'Grok' },
   { id: 'kimi', name: 'Kimi' },
   { id: 'kiro', name: 'Kiro' },
+  { id: 'openai-api', name: 'OpenAI API', mark: 'codex' },
   { id: 'opencode', name: 'OpenCode' },
   { id: 'openrouter', name: 'OpenRouter' },
   { id: 'zai', name: 'Z.ai' },

@@ -226,3 +226,9 @@
 "API Access" = "API 사용";
 "Available" = "사용 가능";
 "Insufficient Balance" = "잔액 부족";
+"Billing Scope" = "비용 조회 범위";
+"Credit Balance" = "크레딧 잔액";
+"Last Updated" = "마지막 조회";
+"No costs reported" = "보고된 비용 없음";
+"Organization" = "조직 전체";
+"Unavailable" = "확인 불가";
