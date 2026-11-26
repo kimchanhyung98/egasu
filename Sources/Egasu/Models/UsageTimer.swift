@@ -89,6 +89,7 @@ struct UsageTimerExecutionResult: Sendable {
     var failureDescription: String? = nil
     var verificationCanClearFailure = true
     var launchObservationInvalidated = false
+    var loginNoLongerEligible = false
 }
 
 struct UsageTimerSession: UsageTimerPreparedSession {

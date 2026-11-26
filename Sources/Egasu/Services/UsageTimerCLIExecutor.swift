@@ -55,7 +55,8 @@ extension UsageTimerCLIExecuting {
                         }
                         return true
                     } catch UsageTimerError.noLongerEligible {
-                        quotaChanged = true
+                        guard await canLaunch() else { return false }
+                        validationFailure = .noLongerEligible
                         return false
                     } catch {
                         AppDiagnostics.failure(.weeklyTimer, error: error, localContext: "CLI launch validation failed")
@@ -64,6 +65,7 @@ extension UsageTimerCLIExecuting {
                     }
                 }
                 result.launchObservationInvalidated = quotaChanged
+                result.loginNoLongerEligible = validationFailure == .noLongerEligible
                 if result.verificationCanClearFailure, quotaChanged || validationFailure != nil {
                     result.failureDescription = validationFailure?.errorDescription
                 }
