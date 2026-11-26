@@ -4,6 +4,7 @@ import { test, expect, openHome, openAccounts } from './fixtures';
 const services = [
   { id: 'deepseek', name: 'DeepSeek', metrics: ['Balance (USD)', 'Balance (CNY)', 'API Access'] },
   { id: 'openai-api', name: 'OpenAI API', metrics: ['Last 30 Days', 'Billing Scope', 'Credit Balance', 'Last Updated'] },
+  { id: 'qwencloud', name: 'QwenCloud', metrics: ['Weekly', 'Monthly'] },
 ];
 
 for (const { id, name, metrics } of services) {

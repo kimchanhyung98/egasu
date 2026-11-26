@@ -146,6 +146,7 @@ Antigravity는 잔여 비율에서 계산하므로 `used`·`remaining`이 정수
 | Kiro | `credits` |
 | OpenCode | 계정 실측(%) `goSession`, `goWeekly`, `goMonthly`. 로컬 추정(USD) `session`, `weekly`, `monthly` |
 | OpenRouter | `credits`, `balance`, `keyLimit` |
+| QwenCloud | 개인 Token Plan의 주기에 따라 `weekly` 또는 `monthly` (%) |
 | Z.ai | `session`, `weekly`, `monthly`, `webSearches` |
 
 차트, 색상, 부제목, 형식화된 배지, 레이아웃 상태, 과거 지출 기간은 이 계약에서 제외.

@@ -76,6 +76,7 @@ enum ProviderCatalog {
                 })
             ),
             OpenRouterProvider(),
+            QwenCloudProvider(),
             ZAIProvider()
         ]
         return runtimes

@@ -122,7 +122,8 @@ public struct UsageReader {
         if let stamped = loaded.verifiedIdentity {
             verified = await currentIdentity(for: id, context: context) == stamped
         } else {
-            verified = !isManagedFamily && id != "cursor" && loaded.didRefreshPreflight
+            verified =
+                !isManagedFamily && !ProviderSnapshotCache.requiresCredentialIdentity(id) && loaded.didRefreshPreflight
         }
         guard let current = activeSoftLimitSettings() else { return .disabled }
         let now = Date()
@@ -188,10 +189,12 @@ public struct UsageReader {
     }
 
     private func currentIdentity(for id: String, context: ReadContext) async -> String? {
-        if let identityKeysOverride { return identityKeysOverride()[id] }
-        if id == "cursor", let cursor = context.providers.first(where: { $0.provider.id == id }) as? CursorProvider {
-            return await cursor.currentIdentityKey()
+        if let key = identityKeysOverride?()[id] { return key }
+        let provider = context.providers.first { $0.provider.id == id }
+        if let runtime = provider as? any CredentialBoundSnapshotProvider {
+            return await runtime.currentIdentityKey(allowKeychainInteraction: true)
         }
+        if identityKeysOverride != nil { return nil }
         let observer = context.accountObserver
         let outcome = await loadOffMainActor { id == "claude" ? observer.observeClaude() : observer.observeCodex() }
         guard case let .resolved(key, _, _) = outcome else { return nil }

@@ -462,17 +462,22 @@ struct SecurityKeychainAccessor: KeychainAccessing {
     /// launch 경로용 attributes-only 존재 probe — in-process Security framework 쿼리, secret 미요청·UI 금지로 unlock prompt·launch 지연 불가.
     /// probe 실패(잠김·거부)는 `nil`("unknown")로만 보고 — 확정 답 금지.
     func genericPasswordExists(service: String) -> Bool? {
+        genericPasswordExists(service: service, account: nil)
+    }
+
+    func genericPasswordExists(service: String, account: String?) -> Bool? {
         guard NativeKeychainAccess.tryAcquire() else {
             AppLog.debug(.keychain, "keychain existence probe skipped: another operation is in progress")
             return nil
         }
         defer { NativeKeychainAccess.release() }
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecUseAuthenticationUI as String: kSecUseAuthenticationUIFail,
+            kSecUseAuthenticationUI as String: kSecUseAuthenticationUIFail
         ]
+        if let account { query[kSecAttrAccount as String] = account }
         switch SecItemCopyMatching(query as CFDictionary, nil) {
         case errSecSuccess: return true
         case errSecItemNotFound: return false

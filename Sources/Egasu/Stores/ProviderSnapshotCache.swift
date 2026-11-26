@@ -218,7 +218,7 @@ struct ProviderSnapshotCache {
     }
 
     static func requiresCredentialIdentity(_ providerID: String) -> Bool {
-        ["cursor", "deepseek", "openai-api"].contains(ProviderAccountID.family(of: providerID))
+        ["cursor", "deepseek", "openai-api", "qwencloud"].contains(ProviderAccountID.family(of: providerID))
     }
 
     /// 저장 entry를 `currentIdentityKey`로 귀속할 수 없는지 — entry 존재 + 현재 identity known + stamp 누락/타 account.

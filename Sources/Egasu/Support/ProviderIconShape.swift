@@ -24,6 +24,7 @@ struct ProviderIcon: View {
         } else {
             Image(systemName: ProviderMarks.symbolFallback(for: source.providerID))
                 .foregroundStyle(Theme.iconGray)
+                .accessibilityHidden(true)
         }
     }
 }
@@ -86,6 +87,7 @@ enum ProviderMarks {
         case "grok": return "bolt.fill"
         case "opencode": return "chevron.left.forwardslash.chevron.right"
         case "openrouter": return "point.3.connected.trianglepath.dotted"
+        case "qwencloud": return "cloud"
         case "zai": return "z.signal"
         default: return "app.dashed"
         }

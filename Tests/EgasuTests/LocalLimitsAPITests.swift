@@ -284,6 +284,7 @@ final class LocalLimitsAPITests: XCTestCase {
             "openai-api": [],
             "opencode": ["session", "weekly", "monthly", "goSession", "goWeekly", "goMonthly"],
             "openrouter": ["credits", "balance", "keyLimit"],
+            "qwencloud": ["weekly", "monthly"],
             "zai": ["session", "weekly", "monthly", "webSearches"]
         ]
 

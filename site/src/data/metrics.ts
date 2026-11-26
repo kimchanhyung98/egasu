@@ -106,6 +106,10 @@ const declared: Record<string, Array<[string, string]>> = {
     ['openrouter.month', 'This Month'],
     ['openrouter.keyLimit', 'Key Limit'],
   ],
+  qwencloud: [
+    ['qwencloud.weekly', 'Weekly'],
+    ['qwencloud.monthly', 'Monthly'],
+  ],
   zai: [
     ['zai.session', 'Session'],
     ['zai.weekly', 'Weekly'],
@@ -200,6 +204,8 @@ export const softLimitWindows: Partial<Record<string, readonly SoftLimitWindow[]
   'kiro.credits': ['Monthly'],
   'opencode.weekly': ['Weekly'],
   'opencode.monthly': ['Monthly'],
+  'qwencloud.weekly': ['Weekly'],
+  'qwencloud.monthly': ['Monthly'],
   'zai.weekly': ['Weekly'],
   'zai.monthly': ['Monthly'],
   'zai.webSearches': ['Weekly', 'Monthly'],
