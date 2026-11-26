@@ -212,6 +212,9 @@
 "Suggest another Claude or Codex account. Switching always requires confirmation." = "別のClaudeまたはCodexアカウントを提案します。切り替えには必ず確認が必要です。";
 "Suggest switching when any current base quota reaches this usage." = "現在のアカウントの基本利用枠のいずれかがこの使用率に達すると、切り替えを提案します。";
 "Every applicable base quota on a candidate must be below this usage." = "候補アカウントのすべての基本利用枠の使用率が、この値未満である必要があります。";
+"Show Metric Labels" = "指標名を表示";
+"Show Account Names" = "アカウント名を表示";
+"Show Reset Countdown" = "リセットまでの時間を表示";
 "Codex Reset Credit Expiry" = "Codexリセット権の有効期限";
 "Notify 24 and 12 hours before an unused Codex reset credit expires." = "未使用のCodexリセット権の有効期限の24時間前と12時間前に通知します。";
 "An unused reset credit expires in %lld hours." = "未使用のリセット権の有効期限まであと%lld時間です。";
