@@ -79,6 +79,10 @@
 | - | Standard | 모델별 종량제 | - | 크레딧 구매 시 수수료 5.5% |
 | - | Business | 모델별 종량제 | - | 크레딧 구매 시 수수료 8% |
 | - | Enterprise | 문의 | 계약별 | 추론 요율·플랫폼 수수료 구분 |
+| [QwenCloud 개인](https://docs.qwencloud.com/token-plan/personal/token-plan-personal-overview) | Lite | $6 | - | 싱가포르 웹 판매가, 월 20,000크레딧 |
+| - | Essential | $10 | - | 싱가포르 웹 판매가, 월 45,000크레딧 |
+| - | Standard | $18 | - | 싱가포르 웹 판매가, 월 80,000크레딧 |
+| - | Pro | $43 | - | 싱가포르 웹 판매가, 월 200,000크레딧 |
 | [Z.ai GLM Coding](https://zcode.z.ai/pricing.html) | Lite | $18 | 결제 화면 확인 | 5시간 2,000·주간 10,000크레딧 |
 | - | Pro | $80 | 결제 화면 확인 | 5시간 12,000·주간 60,000크레딧 |
 | - | Max | $168 | 결제 화면 확인 | 5시간 28,000·주간 140,000크레딧 |
@@ -87,12 +91,25 @@
   인증된 Ultra 계정은 5시간 한도 없이 주간 Pro 사용량의 10배 사용 가능.
   앱은 예전 `max`·`20x` 응답도 Ultra로 표시하되, 사용량·리셋 시각은 서버 응답 유지.
   [Ultra 안내](https://support.claude.com/en/articles/17728952-what-is-the-ultra-plan) 참조.
+- Claude Max·Ultra의 별도 API 크레딧은 매 결제 주기 $100·$200.
+  Team은 지급 시점의 Standard 좌석당 $20·Premium 좌석당 $100을 합산하며, 팀 전체 월 $500 상한.
+  정상 활성 구독 7일 경과 후 구독자나 Team 오너가 권한 있는 Console 조직 하나를 연결·신청해야 지급.
+  연간 Team도 매월 지급하며 미사용분은 해당 주기 말 소멸·이월 없음.
+  연결한 Console 조직의 Claude API·Playground·Managed Agents에 적용하며, Agent SDK는 해당 조직의 API 키를 쓸 때 적용.
+  대화형 Claude Code·Claude 앱 초과 사용·타사 클라우드에는 미적용.
+  앱의 토큰 정가 추정에서 차감하지 않음. [월 API 크레딧 조건](https://support.claude.com/en/articles/17154008-monthly-api-credits-for-max-ultra-and-team-plans)
 - Cursor·Grok 신규 요금제의 포함 사용량은 주간 공유 풀.
   기존 Cursor·SuperGrok·X Premium 구독은 유지 가능하며, 새 요금제로 자동 치환하지 않음.
   Cursor의 [기존 요금제](https://cursor.com/docs/account/pricing/legacy-cursor-plans)는 기존 월간 풀과 추가 사용량 계약 유지.
 - Copilot의 기존 연간 Pro·Pro+ 계약은 만료까지 이전 요청 기반 청구 유지 가능.
   새 월간 AI 크레딧 계약과 구분하며, 1 AI 크레딧은 $0.01.
   [기존 청구 안내](https://docs.github.com/en/copilot/reference/copilot-billing/request-based-billing-legacy/what-changed-with-billing) 참조.
+- Antigravity 기업용 Gemini Enterprise Standard·Plus의 Gemini 모델용 포함 크레딧은 좌석당 월 $10·$15로 표기.
+  실제로는 에디션·프로젝트·위치별로 월 표시액의 1/4에 해당 라이선스 좌석 수를 곱한 주간 한도 공유.
+  첫 AI 개발 도구 요청부터 7일마다 초기화하며, Antigravity·IDE·Android Studio에서 공유하고 미사용분 이월 없음.
+  적격 Cloud Billing 계정이 필요하며 개인 Google AI Pro·Ultra나 좌석 없는 종량제와 구분.
+  제3자 모델은 관리자 허용 후 별도 토큰 과금이며 체험·구계약 조건은 공식 자료 확인.
+  [Antigravity 모델별 조건](https://antigravity.google/pricing) · [기업 주간 한도](https://docs.cloud.google.com/gemini/enterprise/docs/quotas-and-pay-as-you-go-usage)
 - Kimi 기존 Moderato·Allegretto·Allegro·Vivace와 중국 Andante 구독은 이름·갱신·한도 유지 가능.
   새 요금제는 Kimi Code의 5시간 한도만 유지하고 주간 한도 제거.
   월간 공통 크레딧 풀은 별도 적용하며, API 응답에 없는 요금제·주간 한도는 추정하지 않음.
@@ -104,6 +121,11 @@
   실측값이 없으면 로컬 원장의 지출로 추정하며, 모델별 잔여량은 산출하지 않음. [OpenCode 지원 범위](/docs/providers/opencode.md)
 - OpenRouter는 모델 추론 요금에 플랫폼 수수료를 중복 가산하지 않음.
   `is_free_tier`만으로 Standard·Business·Enterprise 판별 불가.
+- QwenCloud 개인 요금은 공식 웹 판매가이며 신규 고객의 한시 할인과 구분.
+  Pro 인하 가격은 기존 구독의 다음 결제 주기부터 적용. [가격 조정 조건](https://docs.qwencloud.com/changelog/token-plan-credits-1109)
+  활성 구독에서 월 기본 크레딧을 먼저 쓰고, 이후 $15·20,000크레딧의 추가 팩 차감.
+  팩은 동시 5개까지 보유 가능하며 1개월 뒤 미사용분 소멸.
+  기본분과 팩을 모두 소진하면 종량제로 자동 전환하지 않고 사용 중지. [개인 크레딧 조건](https://docs.qwencloud.com/token-plan/personal/token-plan-personal-overview)
 - Z.ai 판매 페이지에는 Lite $12.60·Pro $56·Max $117.60의 할인 금액도 표시.
   할인 적용 기간·결제 주기는 페이지에서 확정하지 않아 월 정가와 분리하며, 최종 조건은 결제 화면 확인.
   사용량 기준은 [GLM Coding Plan 안내](https://docs.z.ai/devpack/overview) 참조.
