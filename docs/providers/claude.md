@@ -22,7 +22,7 @@ Ultra를 직접 반환한 응답에는 과거 사용량 배수를 덧붙이지 �
 
 ## 한도 초기화권 확인
 
-전체·Fable 초기화권 보유 여부와 만료일은 해당 Claude 계정의 **설정 → 사용량**에서 확인. [Claude 사용량 설정](https://claude.ai/settings/usage) · [Anthropic 초기화권 안내](https://support.claude.com/en/articles/17007452-what-is-a-limit-reset)
+5시간·주간·Fable 초기화권 보유 여부와 만료일은 해당 Claude 계정의 **설정 → 사용량**에서 확인. [Claude 사용량 설정](https://claude.ai/settings/usage) · [Anthropic 초기화권 안내](https://support.claude.com/en/articles/17007452-what-is-a-limit-reset)
 egasu가 표시하는 Session·Weekly의 초기화 시각은 정기 한도 주기가 끝나는 시각.
 개별 초기화권의 보유 수량과 만료일은 카드에서 제공하지 않음.
 
