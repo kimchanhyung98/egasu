@@ -147,6 +147,7 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
 - **[프록시](/docs/proxy.md).** `~/.openusage/config.json`에 설정한 SOCKS5·HTTP·HTTPS 프록시로 프로바이더 요청 전달.
   지정한 포트는 1~65535 범위에서 사용.
 - **[네이티브 설정](/docs/settings.md).** General·Display·Alerts·Advanced에서 로그인 시 실행, 단축키, 표시, 알림과 진단 설정.
+  General 탭에 들어가면 macOS 로그인 항목의 현재 상태 표시.
   베타 업데이트를 켜면 [실험실(Labs)](/docs/settings.md#labs)에서 주간·월간 구독 한도에 사용률 기준선을 설정하거나 터미널 도우미 설치·제거 가능.
   실험실의 **명령 복사**로 Codex·Claude·Kimi 시작 전에 소프트 한도를 확인.
 - **[자동 업데이트](/docs/updates.md).** Sparkle이 새 버전의 서명을 확인한 뒤 설치하며, 베타 채널은 설정에서 선택.

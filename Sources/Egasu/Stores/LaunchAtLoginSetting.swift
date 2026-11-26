@@ -10,7 +10,7 @@ final class LaunchAtLoginSetting {
         L10n.errors("macOS wouldn't update Launch at Login. Check System Settings → Login Items.")
     }
 
-    private(set) var isEnabled: Bool
+    private(set) var isEnabled = false
     private(set) var errorMessage: String?
     private var failedRequestedValue: Bool?
 
@@ -29,7 +29,6 @@ final class LaunchAtLoginSetting {
     ) {
         self.currentStatus = currentStatus
         self.setSystemEnabled = setEnabled
-        self.isEnabled = currentStatus()
     }
 
     /// 시스템 설정에서 바꾼 상태 반영 — Settings에 들어올 때마다.
