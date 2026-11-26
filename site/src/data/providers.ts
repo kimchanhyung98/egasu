@@ -13,5 +13,6 @@ export const providers = [
   { id: 'openai-api', name: 'OpenAI API', mark: 'codex' },
   { id: 'opencode', name: 'OpenCode' },
   { id: 'openrouter', name: 'OpenRouter' },
+  { id: 'qwencloud', name: 'QwenCloud', mark: 'cloud' },
   { id: 'zai', name: 'Z.ai' },
 ] as const;
