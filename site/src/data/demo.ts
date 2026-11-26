@@ -38,6 +38,7 @@ export interface BoundedRow {
   used: number;
   limit: number;
   periodHours: number;
+  unit?: 'count' | 'dollars';
   estimated?: boolean;
   /** 리셋 주기 중 지난 비율 0~1. pace 눈금 위치이자 소진 투영의 입력. */
   elapsed: number;

@@ -13,6 +13,7 @@ export const previewTranslations: Record<string, { ko: string; ja: string }> = {
   "Could not rename this account.": { ko: "계정 이름을 변경하지 못했습니다.", ja: "アカウント名を変更できませんでした。" },
   "Account Settings": { ko: "계정별 설정", ja: "アカウント設定" },
   "Shared Settings": { ko: "공통 설정", ja: "共通設定" },
+  "%@, Resets in %@": { ko: "%@, %@ 후 초기화", ja: "%@、%@後にリセット" },
   "%@, Show in Priority": { ko: "%@, 우선순위에 표시", ja: "%@、優先に表示" },
   "%@, Receive Alerts": { ko: "%@, 알림 받기", ja: "%@、通知を受け取る" },
   "Unpin %@": { ko: "%@ 고정 해제", ja: "%@の固定を解除" },

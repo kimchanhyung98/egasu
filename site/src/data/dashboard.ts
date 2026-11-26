@@ -119,7 +119,7 @@ export const cards: Card[] = [
     provider: 'kiro',
     title: 'Kiro',
     always: [
-      { kind: 'bounded', label: 'Credits', periodHours: 30 * 24, used: 23, limit: 50, elapsed: 0.5,
+      { kind: 'bounded', label: 'Credits', periodHours: 30 * 24, unit: 'count', used: 23, limit: 50, elapsed: 0.5,
         resetAbsolute: 'Resets Nov 10 at 10:00', resetRelative: 'Resets in 15d' },
     ],
     onDemand: [],
@@ -132,7 +132,7 @@ export const cards: Card[] = [
     title: 'OpenCode',
     plan: 'Go',
     always: [
-      { kind: 'bounded', label: 'Monthly', periodHours: 30 * 24, estimated: true, used: 24, limit: 60, elapsed: 0.5,
+      { kind: 'bounded', label: 'Monthly', periodHours: 30 * 24, unit: 'dollars', estimated: true, used: 24, limit: 60, elapsed: 0.5,
         resetAbsolute: 'Resets Nov 10 at 10:00', resetRelative: 'Resets in 15d' },
     ],
     onDemand: [],
