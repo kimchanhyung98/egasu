@@ -62,6 +62,7 @@ enum ProviderCatalog {
             CursorProvider(),
             AntigravityProvider(),
             CopilotProvider(defaults: defaults),
+            DeepSeekProvider(),
             DevinProvider(),
             GrokProvider(),
             KimiProvider(terminalEnvironment: kimiTerminalEnvironment),

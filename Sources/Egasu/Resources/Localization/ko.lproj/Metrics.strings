@@ -217,3 +217,12 @@
 "<1m" = "1분 미만";
 "%lldh+" = "%lld시간+";
 "%lldd+" = "%lld일+";
+"Balance (USD)" = "잔액 (USD)";
+"Balance (CNY)" = "잔액 (CNY)";
+"Topped Up (USD)" = "충전액 (USD)";
+"Topped Up (CNY)" = "충전액 (CNY)";
+"Granted (USD)" = "지급액 (USD)";
+"Granted (CNY)" = "지급액 (CNY)";
+"API Access" = "API 사용";
+"Available" = "사용 가능";
+"Insufficient Balance" = "잔액 부족";

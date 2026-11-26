@@ -250,12 +250,11 @@ export function restorePreviewState(value: unknown): PreviewState {
     }
     state.metricOrder[key] = merged;
   }
-  for (const [key, candidates] of [['providerOrder', state.providerOrder]] as const) {
-    const order = stored[key];
-    if (order !== undefined) {
-      if (!Array.isArray(order) || order.length !== candidates.length || new Set(order).size !== order.length || !order.every((id) => candidates.includes(id))) throw new Error('Invalid preview order.');
-      state.providerOrder = order;
-    }
+  const providerOrder = stored.providerOrder;
+  if (providerOrder !== undefined) {
+    if (!Array.isArray(providerOrder) || new Set(providerOrder).size !== providerOrder.length
+      || !providerOrder.every((id) => state.providerOrder.includes(id))) throw new Error('Invalid preview order.');
+    state.providerOrder = [...providerOrder, ...state.providerOrder.filter((id) => !providerOrder.includes(id))];
   }
   for (const [family, order] of Object.entries(record(stored.accountOrder ?? {}))) {
     const valid = Object.hasOwn(state.accountOrder, family) ? state.accountOrder[family] : undefined;

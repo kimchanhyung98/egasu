@@ -262,10 +262,9 @@ public struct UsageReader {
             matchedIDs?.contains(id) ?? enablement.isEnabled(id)
         }
         var identityKeys = context.identityKeys
-        if includesProvider("cursor"),
-            let cursor = providers.first(where: { $0.provider.id == "cursor" }) as? CursorProvider
-        {
-            identityKeys["cursor"] = await cursor.currentIdentityKey()
+        for case let runtime as any CredentialBoundSnapshotProvider in providers
+        where includesProvider(runtime.provider.id) {
+            identityKeys[runtime.provider.id] = await runtime.currentIdentityKey(allowKeychainInteraction: true)
         }
         let preflightCardID = preflight?.cardID
         // 계정 귀속 또는 유효한 실측 한도가 없는 표시용 캐시는 사전 검사에서 재조회.

@@ -217,3 +217,12 @@
 "<1m" = "1分未満";
 "%lldh+" = "%lld時間+";
 "%lldd+" = "%lld日+";
+"Balance (USD)" = "残高 (USD)";
+"Balance (CNY)" = "残高 (CNY)";
+"Topped Up (USD)" = "チャージ額 (USD)";
+"Topped Up (CNY)" = "チャージ額 (CNY)";
+"Granted (USD)" = "付与額 (USD)";
+"Granted (CNY)" = "付与額 (CNY)";
+"API Access" = "API 利用";
+"Available" = "利用可能";
+"Insufficient Balance" = "残高不足";

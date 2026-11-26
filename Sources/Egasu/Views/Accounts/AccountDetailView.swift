@@ -286,6 +286,9 @@ struct ProviderAccountRows: View {
             try Self.remove(providerID: provider.id, keyProvider: keyProvider) {
                 container.setProviderEnabled($0, for: $1)
             }
+            if keyProvider is DeepSeekProvider {
+                container.dataStore.credentialsDidChange(for: provider.id)
+            }
         } catch {
             self.error = UserFacingErrors.message(error)
             return

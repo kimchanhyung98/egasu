@@ -340,3 +340,11 @@
 "You signed in to a different account. Try again with the account you selected." = "다른 계정으로 로그인했습니다. 선택한 계정으로 다시 로그인하세요.";
 "egasu couldn't verify the Codex user. Open the account in Accounts to sign in again." = "Codex 로그인 사용자를 확인할 수 없습니다. 계정 탭에서 해당 계정을 열고 다시 로그인하세요.";
 "This Mac’s synced history changed again. egasu will retry on the next update." = "이 Mac의 동기화 이력이 다시 변경되었습니다. 다음 업데이트 때 다시 시도합니다.";
+"Add a DeepSeek API key in Accounts or set DEEPSEEK_API_KEY." = "계정에서 DeepSeek API 키를 추가하거나 DEEPSEEK_API_KEY를 설정하세요.";
+"Couldn't save the DeepSeek API key." = "DeepSeek API 키를 저장하지 못했습니다.";
+"Couldn't remove the saved DeepSeek API key." = "저장한 DeepSeek API 키를 삭제하지 못했습니다.";
+"DeepSeek rejected the API key. Check your key in Accounts." = "DeepSeek에서 API 키를 거부했습니다. 계정에서 키를 확인하세요.";
+"Couldn't reach DeepSeek. Check your connection." = "DeepSeek에 연결할 수 없습니다. 네트워크 연결을 확인하세요.";
+"DeepSeek returned invalid balance data." = "DeepSeek에서 반환한 잔액 데이터를 읽을 수 없습니다.";
+"DeepSeek request failed (HTTP %@)." = "DeepSeek 요청에 실패했습니다(HTTP %@).";
+"The DeepSeek API key changed. Refresh again to use the current key." = "DeepSeek API 키가 바뀌었습니다. 현재 키로 다시 새로고침하세요.";

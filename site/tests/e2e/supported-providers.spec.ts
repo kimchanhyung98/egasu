@@ -1,0 +1,66 @@
+import { providers } from '../../src/data/providers';
+import { test, expect, openHome, openAccounts } from './fixtures';
+
+const services = [
+  { id: 'deepseek', name: 'DeepSeek', metrics: ['Balance (USD)', 'Balance (CNY)', 'API Access'] },
+];
+
+for (const { id, name, metrics } of services) {
+  test(`${name} appears on the home page and can be added without connecting an account`, async ({ page }) => {
+    await openHome(page);
+    const supportedList = page.getByRole('list', { name: '지원 AI 서비스' });
+    const service = supportedList.getByRole('listitem').filter({ hasText: name });
+    await expect(service).toHaveText(name);
+    const count = await supportedList.getByRole('listitem').count();
+    await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', new RegExp(`^${count}개`));
+    const symbol = await service.locator('use').getAttribute('href');
+    expect(symbol).toBe(`#pi-${id}`);
+    await expect(page.locator(`${symbol} path`)).not.toHaveCount(0);
+
+    await openAccounts(page);
+    const app = page.locator('[data-mock]');
+    await app.locator('[data-add-account]').click();
+    await app.getByRole('button', { name, exact: true }).click();
+    await expect(app.getByRole('status')).toHaveText('Sample provider added. Connect your account in the Mac app.');
+    await app.locator(`[data-account-list-row][data-provider="${id}"] .am-open`).click();
+    const detail = app.locator(`[data-account-detail="${id}"]`);
+    await expect(detail.locator('[data-metric-toggle]')).toHaveCount(metrics.length);
+    for (const [index, label] of metrics.entries()) {
+      await expect(detail.locator('[data-metric-toggle]').nth(index)).toHaveAccessibleName(label);
+    }
+    await expect(detail.getByText('Add and sign in to accounts in the Mac app.')).toBeVisible();
+  });
+}
+
+test('a saved provider order survives a catalog update with the other preview settings', async ({ page }) => {
+  const added = services.at(-1)!.id;
+  const oldOrder = providers.map((provider) => provider.id).filter((id) => id !== added).reverse();
+  await page.addInitScript((providerOrder) => {
+    const key = 'openusage.site.preview.v1';
+    if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify({
+      preferences: { language: '한국어', theme: 'Dark' }, activeAccounts: {}, providerOrder,
+      hiddenMetrics: ['claude.session@account-1'], pinnedMetrics: ['codex.weekly@account-1'],
+      accountNames: { 'claude:account-1': 'Work' },
+    }));
+  }, oldOrder);
+  await openHome(page);
+  const app = page.locator('[data-mock]');
+  await expect(app).toHaveAttribute('lang', 'ko');
+  await expect(app).toHaveAttribute('data-theme', 'dark');
+  const expected = [...oldOrder, added];
+  const familyIDs = await app.locator('[data-dashboard-panel="All Usage"] [data-family]').evaluateAll((families) =>
+    families.map((family) => family.getAttribute('data-family')));
+  expect(familyIDs).toEqual(expected);
+
+  await app.locator('[data-options]').click();
+  await app.locator('.am-optmenu [data-go="accounts"]').click();
+  await app.locator('[data-add-account]').click();
+  await app.locator(`[data-add-provider="${added}"]`).click();
+  await page.reload();
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('openusage.site.preview.v1')!));
+  expect(stored).toMatchObject({
+    preferences: { language: '한국어', theme: 'Dark' }, providerOrder: expected,
+    hiddenMetrics: ['claude.session@account-1'], pinnedMetrics: ['codex.weekly@account-1'],
+    accountNames: { 'claude:account-1': 'Work' },
+  });
+});

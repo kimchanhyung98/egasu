@@ -217,3 +217,12 @@
 "<1m" = "<1m";
 "%lldh+" = "%lldh+";
 "%lldd+" = "%lldd+";
+"Balance (USD)" = "Balance (USD)";
+"Balance (CNY)" = "Balance (CNY)";
+"Topped Up (USD)" = "Topped Up (USD)";
+"Topped Up (CNY)" = "Topped Up (CNY)";
+"Granted (USD)" = "Granted (USD)";
+"Granted (CNY)" = "Granted (CNY)";
+"API Access" = "API Access";
+"Available" = "Available";
+"Insufficient Balance" = "Insufficient Balance";

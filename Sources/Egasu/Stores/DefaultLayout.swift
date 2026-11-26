@@ -39,6 +39,8 @@ enum DefaultLayout {
         "zai.session", "zai.weekly", "zai.webSearches"
     ]
 
+    static let legacyV1ProviderIDs = Set(legacyV1DefaultMetricIDs.map(ProviderAccountID.providerID(ofMetric:)))
+
     static func metricIDs(in registry: WidgetRegistry) -> [String] {
         var seen = Set<String>()
         return registry.descriptors.compactMap { descriptor in

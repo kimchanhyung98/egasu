@@ -169,6 +169,11 @@ final class ProviderRefreshCoordinator {
     func credentialsDidChange(for providerID: String) -> Int {
         let generation = credentialGenerations[providerID, default: 0] + 1
         credentialGenerations[providerID] = generation
+        if providersByID[providerID] is DeepSeekProvider,
+            snapshotStore.discardMismatchedReading(for: providerID, currentIdentityKey: nil)
+        {
+            rebuildRenderedSnapshots()
+        }
         snapshotStore.invalidateLiveQuota(for: providerID)
         onQuotaInvalidated?([providerID])
         providersNeedingCredentialRefresh.insert(providerID)
@@ -272,15 +277,18 @@ final class ProviderRefreshCoordinator {
         guard isRefreshSuspended?(providerID) != true else { return .skipped }
         let family = AppLog.providerFamily(providerID)
         var cacheIdentity = snapshotStore.identityKeys[providerID]
-        if !force, let cursor = providersByID[providerID] as? CursorProvider,
-            snapshotStore.localSnapshots[providerID] != nil
+        if !force, let runtime = providersByID[providerID] as? any CredentialBoundSnapshotProvider,
+            let snapshot = snapshotStore.localSnapshots[providerID]
         {
             let generation = catalogGeneration
-            cacheIdentity = await cursor.currentIdentityKey()
+            let credentialGeneration = credentialGenerations[providerID, default: 0]
+            cacheIdentity = await runtime.currentIdentityKey(allowKeychainInteraction: true)
             guard !Task.isCancelled, isCurrent(), generation == catalogGeneration, isProviderEnabled(providerID),
-                isRefreshSuspended?(providerID) != true
+                isRefreshSuspended?(providerID) != true,
+                credentialGeneration == credentialGenerations[providerID, default: 0],
+                snapshotStore.localSnapshots[providerID] == snapshot
             else { return .skipped }
-            if snapshotStore.discardMismatchedCursorReading(for: providerID, currentIdentityKey: cacheIdentity) {
+            if snapshotStore.discardMismatchedReading(for: providerID, currentIdentityKey: cacheIdentity) {
                 credentialsDidChange(for: providerID)
                 rebuildRenderedSnapshots()
             }
@@ -341,11 +349,11 @@ final class ProviderRefreshCoordinator {
                 presentation: .init("Refresh timed out. Retrying is available after the previous request finishes.")
             )
             snapshot = timeout
-            if let cursor = provider as? CursorProvider {
+            if let runtime = provider as? any CredentialBoundSnapshotProvider {
                 // 제한 시간 뒤에는 현재 로그인만 짧게 확인. 확인한 계정의 캐시만 표시.
                 let verification = await ProviderRefreshDeadline.run(timeout: .seconds(1)) {
                     var verified = timeout
-                    verified.producedByIdentityKey = await cursor.currentIdentityKey(allowKeychainInteraction: false)
+                    verified.producedByIdentityKey = await runtime.currentIdentityKey(allowKeychainInteraction: false)
                     return verified
                 }
                 if case .snapshot(let verified) = verification { snapshot = verified }

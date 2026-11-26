@@ -47,7 +47,7 @@ final class ProviderSnapshotStore {
         ProviderAccountID.family(of: providerID) == "claude" && identityKeys[providerID] == nil
     }
 
-    func discardMismatchedCursorReading(for providerID: String, currentIdentityKey: String?) -> Bool {
+    func discardMismatchedReading(for providerID: String, currentIdentityKey: String?) -> Bool {
         guard let local = localSnapshots[providerID] else { return false }
         let previousIdentity = local.producedByIdentityKey ?? cache.producedByIdentityKey(providerID: providerID)
         guard currentIdentityKey == nil || currentIdentityKey != previousIdentity else { return false }
@@ -122,7 +122,7 @@ final class ProviderSnapshotStore {
     private func previousSnapshot(for incoming: ProviderSnapshot) -> ProviderSnapshot? {
         let id = incoming.providerID
         let local = localSnapshots[id]
-        guard ProviderAccountID.family(of: id) == "cursor" else { return local }
+        guard ProviderSnapshotCache.requiresCredentialIdentity(id) else { return local }
         guard let identity = incoming.producedByIdentityKey else { return nil }
         if local?.producedByIdentityKey == identity { return local }
         guard cache.producedByIdentityKey(providerID: id) == identity else { return nil }
@@ -160,7 +160,7 @@ final class ProviderSnapshotStore {
                 render = true
                 let removedHistory = localSnapshots.removeValue(forKey: providerID)?.usageHistory != nil
                 notifyHistoryChange = removedHistory
-            } else if ProviderAccountID.family(of: providerID) == "cursor" {
+            } else if ProviderSnapshotCache.requiresCredentialIdentity(providerID) {
                 let local = localSnapshots[providerID]
                 var retained = previousSnapshot(for: snapshot)
                 retained?.liveQuotaObservedAt = nil
@@ -241,7 +241,8 @@ final class ProviderSnapshotStore {
         }
         localSnapshots[providerID] = snapshot
         // 현재 계정 식별 정보로 저장 결과 귀속 — 비계정 프로바이더·계정 미확인 카드는 식별 키 생략.
-        let catalogIdentity = ProviderAccountID.family(of: providerID) == "cursor" ? nil : identityKeys[providerID]
+        let catalogIdentity =
+            ProviderSnapshotCache.requiresCredentialIdentity(providerID) ? nil : identityKeys[providerID]
         cache.store(snapshot, producedByIdentityKey: snapshot.producedByIdentityKey ?? catalogIdentity)
         if !unresolvedClaudeIdentity { unresolvedIdentityCacheRejections.remove(providerID) }
         return .succeeded(snapshot, degraded: degraded)

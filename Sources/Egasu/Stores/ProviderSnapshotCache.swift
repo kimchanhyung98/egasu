@@ -210,14 +210,18 @@ struct ProviderSnapshotCache {
         loadPayload().producedByIdentityKeys[providerID]
     }
 
+    static func requiresCredentialIdentity(_ providerID: String) -> Bool {
+        ["cursor", "deepseek"].contains(ProviderAccountID.family(of: providerID))
+    }
+
     /// 저장 entry를 `currentIdentityKey`로 귀속할 수 없는지 — entry 존재 + 현재 identity known + stamp 누락/타 account.
     /// 모든 read 경로(launch paint 필터·refresh cache-hit gate·one-shot CLI의 persisted-freshness 읽기)가 이를
     /// 부재로 취급해야 같은 home에서의 swap이 이전 account 데이터를 서빙하지 않음.
-    /// 현재 계정을 확인할 수 없는 Cursor 캐시는 표시·재사용 제외.
+    /// 인증에 귀속된 캐시는 현재 계정이 확인될 때만 재사용.
     func hasStaleAccountStamp(providerID: String, currentIdentityKey: String?) -> Bool {
         let payload = loadPayload()
         guard payload.snapshots[providerID] != nil else { return false }
-        guard let currentIdentityKey else { return ProviderAccountID.family(of: providerID) == "cursor" }
+        guard let currentIdentityKey else { return Self.requiresCredentialIdentity(providerID) }
         return payload.producedByIdentityKeys[providerID] != currentIdentityKey
     }
 

@@ -47,7 +47,11 @@ final class LocalUsageAPITests: XCTestCase {
     }
 
     func testWireShapeMatchesDocumentedFormat() throws {
-        let response = LocalUsageAPI.respond(method: "GET", path: "/v1/usage/claude", state: makeState())
+        var state = makeState()
+        state.snapshots["claude"]?.metricPresentations = ["Today": .verbatim("Display only")]
+        let response = L10n.withLanguage(.korean) {
+            LocalUsageAPI.respond(method: "GET", path: "/v1/usage/claude", state: state)
+        }
 
         XCTAssertEqual(response.status, 200)
         let array = try XCTUnwrap(try json(response.body) as? [[String: Any]])
