@@ -110,17 +110,21 @@ final class ShareCardRendererTests: XCTestCase {
     }
 
     func testSoftLimitGuideStaysInsideNativeAndSharedTracks() throws {
+        let readings: [(threshold: Double, used: Double)] = [
+            (0.01, 78), (0.5, 78), (0.9, 40), (0.9, 95), (0.9, 100), (1, 78), (1, 100)
+        ]
         for style in DashboardLayoutStyle.allCases {
             for mode in [WidgetDisplayMode.used, .remaining] {
                 for appearance in [ColorScheme.light, .dark] {
                     for asShapes in [false, true] {
-                        for (threshold, used) in [(0.01, 78.0), (0.5, 78), (0.9, 78), (1, 78), (1, 100)] {
+                        for (threshold, used) in readings {
                             var row = WidgetData(
                                 title: "Weekly", icon: .providerMark("codex"), kind: .percent, used: used, limit: 100)
                             row.displayMode = mode
                             row.softLimitUsedFraction = threshold
                             var model = row.dashboardRow()
                             if threshold == 0.5 { model.paceMark = model.softLimitMark }
+                            if threshold == 0.9 && used == 95 { model.paceMark = mode == .used ? 0.89 : 0.11 }
                             let marked = try meterBitmap(
                                 model, style: style, appearance: appearance, asShapes: asShapes)
                             model.softLimitMark = nil
@@ -131,15 +135,39 @@ final class ShareCardRendererTests: XCTestCase {
                             let scale = CGFloat(marked.pixelsWide) / marked.size.width
                             XCTAssertFalse(bounds.isNull, context)
                             XCTAssertLessThanOrEqual(bounds.width, ceil(scale) + 1, context)
-                            XCTAssertLessThanOrEqual(bounds.height, ceil(scale * 4) + 1, context)
-                            if threshold == 0.9, !asShapes,
+                            if threshold == 0.9 {
+                                let x = Int(scale * (style == .minimal ? 125 : 30))
+                                let y = Int(bounds.midY)
+                                let background = plain.colorAt(x: 0, y: y)
+                                var top = y
+                                var bottom = y
+                                while top > 0 && plain.colorAt(x: x, y: top - 1) != background { top -= 1 }
+                                while bottom + 1 < plain.pixelsHigh && plain.colorAt(x: x, y: bottom + 1) != background
+                                {
+                                    bottom += 1
+                                }
+                                XCTAssertEqual(bounds.minY, CGFloat(top), accuracy: 1, context)
+                                XCTAssertEqual(bounds.maxY, CGFloat(bottom + 1), accuracy: 1, context)
+                                let colors = (Int(bounds.minX)..<Int(bounds.maxX)).compactMap {
+                                    marked.colorAt(x: $0, y: y)?.usingColorSpace(.sRGB)
+                                }
+                                let target: CGFloat = appearance == .dark ? 1 : 0
+                                XCTAssertTrue(
+                                    colors.contains {
+                                        [$0.redComponent, $0.greenComponent, $0.blueComponent].allSatisfy {
+                                            abs($0 - target) < 0.03
+                                        }
+                                    }, context)
+                            }
+                            if threshold == 0.9,
                                 let directory = ProcessInfo.processInfo.environment["EGASU_SOFT_LIMIT_RENDER_DIR"]
                             {
                                 let folder = URL(fileURLWithPath: directory)
                                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
                                 let png = try XCTUnwrap(marked.representation(using: .png, properties: [:]))
-                                try png.write(
-                                    to: folder.appendingPathComponent("meter-\(style)-\(mode)-\(appearance).png"))
+                                let surface = asShapes ? "shared" : "native"
+                                let name = "meter-\(style)-\(mode)-\(appearance)-\(surface)-\(Int(used)).png"
+                                try png.write(to: folder.appendingPathComponent(name))
                             }
                         }
                     }

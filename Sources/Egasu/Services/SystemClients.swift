@@ -452,7 +452,7 @@ struct SecurityKeychainAccessor: KeychainAccessing {
     }
 
     func readGenericPassword(service: String) throws -> String? {
-        try readPassword(["find-generic-password", "-s", service, "-w"], service: service)
+        try readPassword(["find-generic-password", "-s", service, "-w"])
     }
 
     func readGenericPassword(service: String, allowInteraction: Bool) throws -> String? {
@@ -486,7 +486,7 @@ struct SecurityKeychainAccessor: KeychainAccessing {
     }
 
     func readGenericPasswordForCurrentUser(service: String) throws -> String? {
-        try readPassword(["find-generic-password", "-a", currentUserAccount(), "-s", service, "-w"], service: service)
+        try readPassword(["find-generic-password", "-a", currentUserAccount(), "-s", service, "-w"])
     }
 
     func readGenericPasswordForCurrentUser(service: String, allowInteraction: Bool) throws -> String? {
@@ -494,14 +494,14 @@ struct SecurityKeychainAccessor: KeychainAccessing {
     }
 
     func readGenericPassword(service: String, account: String) throws -> String? {
-        try readPassword(["find-generic-password", "-a", account, "-s", service, "-w"], service: service)
+        try readPassword(["find-generic-password", "-a", account, "-s", service, "-w"])
     }
 
     func readCLISharedPassword(service: String, forCurrentUser: Bool) throws -> String? {
         let accountArguments = forCurrentUser ? ["-a", currentUserAccount()] : []
         return try readPassword(
             ["find-generic-password"] + accountArguments + ["-s", service, "-w"],
-            service: service, isSharedCredential: true)
+            isSharedCredential: true)
     }
 
     func genericPasswordModificationDate(service: String) throws -> Date? {
@@ -539,7 +539,7 @@ struct SecurityKeychainAccessor: KeychainAccessing {
     }
 
     private func readPassword(
-        _ arguments: [String], service: String, isSharedCredential: Bool = false
+        _ arguments: [String], isSharedCredential: Bool = false
     ) throws -> String? {
         let result = try processRunner.run(
             executable: "/usr/bin/security",
@@ -554,7 +554,7 @@ struct SecurityKeychainAccessor: KeychainAccessing {
                 throw KeychainError.readFailed("")
             }
             // 잠김·거부 Keychain 진단용 로그 — caller가 `try?`로 nil 처리해도 여기서 기록 필수.
-            AppLog.warn(.keychain, "read failed for service '\(service)' (exit \(result.exitCode))")
+            AppLog.warn(.keychain, "keychain read failed (exit \(result.exitCode))")
             throw KeychainError.readFailed(result.stderr)
         }
         let value = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)

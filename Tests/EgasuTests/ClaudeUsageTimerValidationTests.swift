@@ -4,6 +4,181 @@ import XCTest
 
 @MainActor
 final class ClaudeUsageTimerValidationTests: XCTestCase {
+    func testProfileOnlyTokenPreservesFreshQuotaWithoutSchedulingAMessage() async throws {
+        for trigger in [RefreshTrigger.manual, .scheduled, .weeklyTimerCheck] {
+            let fixture = try Fixture()
+            defer { fixture.remove() }
+            fixture.files.base.files[Fixture.credentialPath] =
+                Fixture.credential("file-token", scopes: ["user:profile"])
+
+            let suite = "ClaudeProfileOnlyTimer.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let router = UsageTimerRouter(
+                providers: [fixture.provider], isProviderEnabled: { _ in true },
+                usageTimerSetting: UsageTimerSetting(defaults: defaults), cliExecutor: fixture.cli,
+                store: UsageTimerAttemptStore(fileURL: fixture.directory.appendingPathComponent("attempts.json")),
+                report: { _, _ in }, refresh: { _, _ in }, wait: { _ in })
+            let snapshot = await ProviderRefreshContext.$isManual.withValue(trigger == .manual) {
+                await fixture.provider.refresh()
+            }
+            router.receive(snapshot, trigger: trigger)
+            await router.waitForPendingWork(providerIDs: [snapshot.providerID])
+
+            XCTAssertNotNil(snapshot.line(label: "Session"))
+            XCTAssertNotNil(snapshot.liveQuotaObservedAt)
+            XCTAssertTrue(fixture.provider.usageTimerObservations.isEmpty)
+            XCTAssertNil(fixture.cli.token)
+        }
+    }
+
+    func testRotatedProfileOnlyCredentialDeliversLiveQuotaAndCannotScheduleAMessage() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        fixture.files.base.files[Fixture.credentialPath] = """
+            {"claudeAiOauth":{"accessToken":"file-token","refreshToken":"refresh","expiresAt":1,
+             "scopes":["user:profile","user:inference"]}}
+            """
+
+        let snapshot = await fixture.provider.refresh()
+
+        XCTAssertTrue(fixture.http.requests.contains { $0.url.path == "/v1/oauth/token" })
+        XCTAssertTrue(
+            fixture.http.requests.contains {
+                $0.url.path == "/api/oauth/usage" && $0.headers["Authorization"] == "Bearer fresh"
+            })
+        let stored = try fixture.files.readText(Fixture.credentialPath)
+        XCTAssertEqual(ClaudeAuthStore.parseCredentials(stored)?.claudeAiOauth?.scopes, ["user:profile"])
+        XCTAssertNotNil(snapshot.liveQuotaObservedAt)
+        XCTAssertNotNil(snapshot.line(label: "Weekly"))
+        XCTAssertTrue(fixture.provider.usageTimerObservations.isEmpty)
+        XCTAssertNil(fixture.cli.token)
+    }
+
+    func testOmittedEmptyAndUnrecognizedScopesKeepExistingTimerBehavior() async throws {
+        for scopes in [nil, [], ["user:profile", "future:scope"]] as [[String]?] {
+            let fixture = try Fixture()
+            defer { fixture.remove() }
+            fixture.files.base.files[Fixture.credentialPath] = Fixture.credential("file-token", scopes: scopes)
+
+            _ = await fixture.provider.refresh()
+            let expected = try XCTUnwrap(fixture.provider.usageTimerObservations.first)
+            let prepared = try await fixture.provider.prepareUsageTimer(expected, executors: fixture.executors)
+            let session = try XCTUnwrap(prepared)
+            let result = await session.send { true }
+
+            XCTAssertTrue(result.completed)
+            XCTAssertEqual(fixture.cli.token, "file-token")
+        }
+    }
+
+    func testDroppingInferenceScopeSkipsPreparedMessageEvenIfTheAccountTokenRotated() async throws {
+        for token in ["file-token", "rotated-token"] {
+            let fixture = try Fixture()
+            defer { fixture.remove() }
+            _ = await fixture.provider.refresh()
+            let expected = try XCTUnwrap(fixture.provider.usageTimerObservations.first)
+            let prepared = try await fixture.provider.prepareUsageTimer(expected, executors: fixture.executors)
+            let session = try XCTUnwrap(prepared)
+            fixture.files.base.files[Fixture.credentialPath] = Fixture.credential(token, scopes: ["user:profile"])
+
+            let result = await session.send { true }
+
+            XCTAssertFalse(result.launched)
+            XCTAssertTrue(result.loginNoLongerEligible)
+            XCTAssertNil(result.failureDescription)
+            XCTAssertNil(fixture.cli.token)
+            let rechecked = try await fixture.provider.prepareUsageTimer(expected, executors: fixture.executors)
+            XCTAssertNil(rechecked)
+        }
+    }
+
+    func testProfileOnlyChangeBeforeLaunchDoesNotConsumeTimerSendLimit() async throws {
+        try await verifyProfileOnlyChangeBeforeLaunch(invalidateBinding: false)
+    }
+
+    func testProfileOnlyChangeDuringBindingInvalidationPreservesTimerSendLimit() async throws {
+        try await verifyProfileOnlyChangeBeforeLaunch(invalidateBinding: true)
+    }
+
+    private func verifyProfileOnlyChangeBeforeLaunch(invalidateBinding: Bool) async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let snapshot = await fixture.provider.refresh()
+        let observation = try XCTUnwrap(fixture.provider.usageTimerObservations.first)
+        let store = UsageTimerAttemptStore(fileURL: fixture.directory.appendingPathComponent("attempts.json"))
+        let previousSendDate = observation.observedAt.addingTimeInterval(-600)
+        var previousSend = try XCTUnwrap(
+            store.begin(
+                accountKey: observation.storageKey, resetBefore: nil, now: previousSendDate,
+                budgetWindow: observation.budgetWindow))
+        previousSend.execution = .completed
+        previousSend.messageLaunched = true
+        try store.update(accountKey: observation.storageKey, attempt: previousSend)
+
+        let suite = "ClaudeLaunchScopeChange.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var warnings: [[String]] = []
+        let router = UsageTimerRouter(
+            providers: [fixture.provider], isProviderEnabled: { _ in true },
+            usageTimerSetting: UsageTimerSetting(defaults: defaults), cliExecutor: fixture.cli, store: store,
+            report: { _, messages in
+                if let messages { warnings.append(messages) }
+            },
+            refresh: { _, _ in }, wait: { _ in })
+        let checkingLogin = expectation(description: "CLI launch rechecks the saved login")
+        let finishLoginCheck = DispatchSemaphore(value: 0)
+        fixture.cli.beforeLaunchCheck = { [files = fixture.files] in
+            files.base.files[Fixture.credentialPath] =
+                Fixture.credential("rotated-token", scopes: ["user:profile"])
+            files.beforeCredentialRead = {
+                checkingLogin.fulfill()
+                _ = finishLoginCheck.wait(timeout: .now() + 8)
+            }
+        }
+
+        router.receive(snapshot, trigger: .manual)
+        await fulfillment(of: [checkingLogin], timeout: 5)
+        if invalidateBinding { router.invalidate(providerIDs: [snapshot.providerID]) }
+        finishLoginCheck.signal()
+        await router.waitForPendingWork(providerIDs: [snapshot.providerID])
+
+        let attempt = try XCTUnwrap(store.attempt(for: observation.storageKey))
+        XCTAssertNotEqual(attempt.id, previousSend.id)
+        XCTAssertNil(fixture.cli.token)
+        XCTAssertTrue(warnings.isEmpty)
+        XCTAssertEqual(
+            try store.sendLimitResetsAt(
+                accountKey: observation.storageKey, now: attempt.notBefore, budgetWindow: observation.budgetWindow),
+            invalidateBinding ? previousSendDate.addingTimeInterval(observation.budgetWindow) : nil)
+    }
+
+    func testReplacedTokenRequiresMatchingAccountAndOrganizationToSkipTheLoginWarning() async throws {
+        let accountOnly = #"{"oauthAccount":{"accountUuid":"account-a"}}"#
+        for (original, replacement) in [
+            (Fixture.metadata, Fixture.metadata.replacingOccurrences(of: "test-org", with: "other-org")),
+            (accountOnly, accountOnly)
+        ] {
+            let fixture = try Fixture()
+            defer { fixture.remove() }
+            fixture.files.base.files[Fixture.metadataPath] = original
+            _ = await fixture.provider.refresh()
+            let expected = try XCTUnwrap(fixture.provider.usageTimerObservations.first)
+            let prepared = try await fixture.provider.prepareUsageTimer(expected, executors: fixture.executors)
+            let session = try XCTUnwrap(prepared)
+            fixture.files.base.files[Fixture.metadataPath] = replacement
+            fixture.files.base.files[Fixture.credentialPath] = Fixture.credential(
+                "other-token", scopes: ["user:profile"])
+
+            let result = await session.send { true }
+
+            XCTAssertFalse(result.launched)
+            XCTAssertEqual(result.failureDescription, UsageTimerError.currentLoginRequired.errorDescription)
+            XCTAssertNil(fixture.cli.token)
+        }
+    }
+
     func testStaleKeychainDoesNotHideSuccessfulFileCredentialDuringTimerPreparation() async throws {
         let fixture = try Fixture(staleKeychain: true)
         defer { fixture.remove() }
@@ -165,6 +340,11 @@ final class ClaudeUsageTimerValidationTests: XCTestCase {
             originalKeychain = keychain.currentUserValues
             let files = files
             http = RoutingHTTPClient { request in
+                if request.url.path == "/v1/oauth/token" {
+                    let body =
+                        #"{"access_token":"fresh","refresh_token":"rotated","scope":"user:profile","expires_in":3600}"#
+                    return .init(statusCode: 200, headers: [:], body: Data(body.utf8))
+                }
                 if request.headers["Authorization"] == "Bearer stale" {
                     return .init(statusCode: 401, headers: [:], body: Data())
                 }
@@ -197,8 +377,12 @@ final class ClaudeUsageTimerValidationTests: XCTestCase {
         }
 
         func remove() { try? FileManager.default.removeItem(at: directory) }
-        nonisolated static func credential(_ token: String) -> String {
-            #"{"claudeAiOauth":{"accessToken":"\#(token)","expiresAt":4102444800000,"scopes":["user:profile"]}}"#
+        nonisolated static func credential(_ token: String, scopes: [String]? = ["user:profile", "user:inference"])
+            -> String
+        {
+            let oauth = ClaudeOAuth(accessToken: token, expiresAt: 4_102_444_800_000, scopes: scopes)
+            let data = try! JSONEncoder().encode(ClaudeCredentialsFile(claudeAiOauth: oauth))
+            return String(decoding: data, as: UTF8.self)
         }
     }
 
@@ -209,10 +393,15 @@ final class ClaudeUsageTimerValidationTests: XCTestCase {
         ])
         var rotateAfterSaved = false
         var blockNextStateSave = false
+        var beforeCredentialRead: (@Sendable () -> Void)?
         var quotaBody: Data?
         init(directory: URL) { self.directory = directory }
         func exists(_ path: String) -> Bool { base.exists(path) }
         func readText(_ path: String) throws -> String {
+            if path == Fixture.credentialPath, let beforeCredentialRead {
+                self.beforeCredentialRead = nil
+                beforeCredentialRead()
+            }
             if rotateAfterSaved, path == Fixture.credentialPath,
                 let contents = try? FileManager.default.contentsOfDirectory(
                     at: directory, includingPropertiesForKeys: nil),
@@ -229,9 +418,12 @@ final class ClaudeUsageTimerValidationTests: XCTestCase {
 
     private final class CLI: UsageTimerCLIExecuting {
         var token: String?
+        var beforeLaunchCheck: (() -> Void)?
+
         func execute(
             _ configuration: UsageTimerCLIConfiguration, canLaunch: @escaping @MainActor () async -> Bool
         ) async -> UsageTimerExecutionResult {
+            beforeLaunchCheck?()
             guard await canLaunch(), case .claude(let accessToken) = configuration else {
                 return .init(launched: false, completed: false)
             }

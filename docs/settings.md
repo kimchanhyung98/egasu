@@ -14,7 +14,7 @@
 
 | 설정 | 옵션 | 동작 |
 |---|---|---|
-| Launch at Login(로그인 시 실행) | 켜기 / 끄기 | 앱을 로그인 항목으로 등록(시스템의 로그인 항목 레지스트리가 기준).<br>Settings를 열 때마다 시스템의 현재 등록 상태를 다시 읽음. |
+| Launch at Login(로그인 시 실행) | 켜기 / 끄기 | 앱을 로그인 항목으로 등록(시스템의 로그인 항목 레지스트리가 기준).<br>General 탭에 들어갈 때마다 현재 등록 상태를 한 번 조회. |
 | Auto-Start Subscription Timers(구독 타이머 자동 시작) | 켜기 / 끄기 | 기본값 켜짐.<br>모든 지원 계정의 미사용 구독 구간을 짧은 메시지로 시작하며, 이후 추가한 계정에도 같은 설정 적용.<br>끄면 전송 대기 중인 메시지를 포함해 새 자동 전송을 중지하고 사용량 조회는 계속.<br>[지원 한도와 전송 조건](/docs/refreshing.md#구독-타이머-자동-시작) 참조. |
 | Default Tab(기본 탭) | Priority / All Usage | 앱 시작 시 열 탭 선택(기본값 Priority).<br>패널만 닫았다 열면 마지막 선택 탭 유지.<br>기본 탭을 바꾸면 현재 탭도 전환.<br>우선순위 표시를 모두 꺼 둔 동안에는 전체 사용량을 열고, 조건을 다시 켜면 선택한 탭 표시. |
 | Global Shortcut(전역 단축키) | 키 조합 지정 | 어디서든 패널을 토글하는 전역 단축키.<br>필드를 클릭하고 조합키 입력, ⓧ를 누르면 지워지고 단축키 비활성. |
@@ -92,7 +92,7 @@ Display의 **Menu Bar Icons** 미리보기는 고른 스타일·개수와 추가
 | Icon Style(아이콘 스타일) | Text / Bars | Text는 프로바이더 마크·지표 이름·값, Bars는 한 아이콘에 쌓은 막대.<br>저장값이 없으면 기본값 Text.<br>즉시 적용하고 재실행 뒤에도 유지.<br>Bars는 한도가 있는 지표만 표시하며 Used / Left 설정 적용.<br>App Icon Only에서는 비활성. |
 | Show Metric Labels(지표명 표시) | 켜기 / 끄기 | 기본값 켜기. Text 스타일에서 지표명 표시. 계정명을 표시하는 항목에서는 한도 기간을 배지로 표시. |
 | Show Account Names(계정명 표시) | 켜기 / 끄기 | 기본값 끄기. Text 스타일에서 등록한 계정명을 값 위에 표시. 개인정보 보호 모드에서는 계정명과 이니셜 숨김. |
-| Show Reset Countdown(초기화까지 남은 시간 표시) | 켜기 / 끄기 | 기본값 끄기. Text 스타일에서 향후 초기화 시각이 있는 퍼센트 한도의 값 옆에 남은 시간 표시. |
+| Show Reset Countdown(초기화까지 남은 시간 표시) | 켜기 / 끄기 | 기본값 끄기. Text 스타일에서 향후 초기화 시각이 있는 퍼센트 한도의 값 옆에 남은 시간 표시.<br>미시작 세션에서는 생략.<br>개인정보 보호 모드를 켠 상태에서 화면 공유·녹화를 감지해 사용량을 숨기는 동안에는 카운트다운도 숨김. |
 | Max Items In Menu Bar(메뉴 막대 최대 항목) | App Icon Only / Up to 1 ~ Up to 5 | 선택한 기준에 맞는 지표의 표시 개수 제한.<br>기본값은 Up to 3.<br>추가 표시가 켜져 있으면 넘친 항목 수를 `+N`으로 표시.<br>App Icon Only는 항상 egasu 아이콘 표시.<br>[메뉴 막대](/docs/menu-bar.md) 참조. |
 | Menu Bar Items(메뉴 막대 표시 항목) | Running Out / Priority / Pinned Only | 기본값 Running Out은 고정 여부와 관계없이 소진 임박 한도 표시.<br>Priority는 Pinned → Running Out → Use It or Lose It → Used Up 순서이며 고정한 지표는 소진 완료여도 앞쪽 고정 목록 유지.<br>Pinned Only는 직접 고정한 지표만 저장된 계정·지표 순서로 표시.<br>저장한 표시 기준이 있으면 유지.<br>저장값이 없고 이전 **Always Show In Menu Bar**가 켜져 있으면 Priority, 그 외 Running Out.<br>App Icon Only에서는 비활성.<br>[표시 기준](/docs/menu-bar.md#표시-항목) 참조. |
 | Show Extra Indicators(추가 표시) | 켜기 / 끄기 | 메뉴 막대의 생략된 항목 수(`+N`)와 업데이트 표시 제어.<br>기본값 켜기.<br>끄면 Bars는 막대 아이콘만 표시.<br>즉시 적용하고 재실행 뒤에도 유지.<br>macOS 알림·업데이트 확인·대시보드 안내와 독립. |

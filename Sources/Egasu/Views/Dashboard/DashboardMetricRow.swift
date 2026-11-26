@@ -18,15 +18,25 @@ struct DashboardMetricRow: View {
 
     var body: some View {
         Group {
-            if let summary = model.limitSummary {
+            if layoutStyle == .minimal, case .bar = model.mark {
+                HStack(spacing: DashboardGrid.columnGap) {
+                    Text(model.label)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(width: DashboardGrid.labelWidth, alignment: .leading)
+                        .opacity(model.isFaded ? 0.5 : 1)
+                    VStack(alignment: .trailing, spacing: 0) {
+                        row
+                        if let summary = model.limitSummary {
+                            limitSummaryText(summary)
+                        }
+                    }
+                }
+                .padding(.bottom, model.limitSummary == nil ? 0 : 4)
+            } else if let summary = model.limitSummary {
                 VStack(alignment: .leading, spacing: 0) {
                     row
-                    Text(summary)
-                        .font(Self.resetFont)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    limitSummaryText(summary)
                         .padding(.bottom, 4)
                 }
             } else {
@@ -59,8 +69,6 @@ struct DashboardMetricRow: View {
                         .padding(.vertical, 6)
                     } else {
                         HStack(spacing: DashboardGrid.columnGap) {
-                            label
-                                .frame(width: DashboardGrid.labelWidth, alignment: .leading)
                             level(fill: fill, severity: severity)
                                 .frame(height: DashboardGrid.levelHeight)
                             valueText(value, severity: severity)
@@ -73,7 +81,6 @@ struct DashboardMetricRow: View {
                         }
                     }
                 }
-                .opacity(model.isFaded ? 0.5 : 1)
             case .value(let text, let detail, let severity):
                 HStack(alignment: .firstTextBaseline, spacing: DashboardGrid.columnGap) {
                     label
@@ -118,10 +125,21 @@ struct DashboardMetricRow: View {
         }
     }
 
+    private func limitSummaryText(_ summary: String) -> some View {
+        Text(summary)
+            .font(Self.resetFont)
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+            .multilineTextAlignment(.trailing)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
     private var label: some View {
         Text(model.label)
             .font(layoutStyle == .cards ? .system(size: 13, weight: .semibold) : Self.font)
             .lineLimit(1)
+            .opacity(model.isFaded ? 0.5 : 1)
     }
 
     private var trend: some View {
@@ -142,8 +160,11 @@ struct DashboardMetricRow: View {
     }
 
     private func level(fill: Double, severity: WidgetData.MeterSeverity) -> some View {
-        LevelIndicator(fill: fill, severity: severity, paceMark: model.paceMark, softLimitMark: model.softLimitMark)
-            .hoverTooltip(paceTooltip)
+        LevelIndicator(
+            fill: fill, severity: severity, paceMark: model.paceMark, isFaded: model.isFaded,
+            softLimitMark: model.softLimitMark
+        )
+        .hoverTooltip(paceTooltip)
     }
 
     /// 값은 경고 전까지 행 기본 색.
@@ -177,6 +198,7 @@ struct DashboardMetricRow: View {
             .lineLimit(1)
             .contentTransition(.numericText())
             .fixedSize()
+            .opacity(model.isFaded ? 0.5 : 1)
         if let onToggleMeterStyle {
             Button(action: onToggleMeterStyle) { text }
                 .buttonStyle(.plain)
@@ -196,6 +218,7 @@ struct DashboardMetricRow: View {
             .monospacedDigit()
             .lineLimit(layoutStyle == .cards ? nil : 1)
             .fixedSize(horizontal: layoutStyle == .minimal, vertical: true)
+            .opacity(model.isFaded ? 0.5 : 1)
         if reset != nil, let onToggleResetDisplay {
             Button(action: onToggleResetDisplay) { text }
                 .buttonStyle(.plain)

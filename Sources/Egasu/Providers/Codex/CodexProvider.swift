@@ -447,9 +447,16 @@ final class CodexProvider: ProviderRuntime {
         try UsageTimerReadContext.check()
         guard try allowsCredentialRefresh() else { throw CodexAuthError.credentialsChanged }
         let original = authState
+        try Task.checkCancellation()
+        try TokenRotationShutdownGuard.begin()
+        defer { TokenRotationShutdownGuard.end() }
+
         let response: CodexRefreshResponse
         do {
-            response = try await usageClient.refreshToken(refreshToken)
+            // 조회가 취소되어도 이미 보낸 갱신 요청의 응답을 받아 원래 인증 저장소에 반영.
+            response = try await Task { [usageClient] in
+                try await usageClient.refreshToken(refreshToken)
+            }.value
         } catch {
             AppDiagnostics.failure(.credentialRefresh, error: error, providerID: provider.id, localContext: "token refresh request failed")
             throw error

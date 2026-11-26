@@ -126,7 +126,7 @@ extension ClaudeProvider {
             }
             let haikuLimits = mapped.lines.filter { $0.label == "Session" || $0.label == "Weekly" }
             usageTimerObservations =
-                UsageTimerObservation.hasExhaustedQuota(haikuLimits)
+                working.oauth.hasOnlyProfileScope || UsageTimerObservation.hasExhaustedQuota(haikuLimits)
                 ? []
                 : [
                     UsageTimerObservation.from(

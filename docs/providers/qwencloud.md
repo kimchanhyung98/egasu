@@ -6,12 +6,23 @@ QwenCloud CLI에 로그인한 개인 구독의 기본 크레딧 사용률과 다
 
 ## 연결
 
+CLI 로그인 파일의 기본 위치는 `~/.qwencloud/credentials`이며 `QWENCLOUD_CONFIG_DIR`로 변경 가능.
+CLI v1.7.0의 `auth login`도 기존 평문 파일을 읽으면서 이전·삭제할 수 있음.
+Keychain에 저장하지 못하면 같은 경로에 쓴 암호화 파일까지 삭제될 수 있어, 기존 평문 파일의 안전한 보관이 로그인 명령보다 먼저 필요. [공식 CLI 로그인](https://github.com/QwenCloud/qwencloud-cli/blob/v1.7.0/src/commands/auth/login.ts#L73-L80) · [평문 이전](https://github.com/QwenCloud/qwencloud-cli/blob/v1.7.0/src/auth/credentials.ts#L130-L146) · [저장 경로](https://github.com/QwenCloud/qwencloud-cli/blob/v1.7.0/src/auth/credentials.ts#L220-L240)
+
 1. [공식 CLI 안내](https://docs.qwencloud.com/api-reference/preparation/cli)에 따라 QwenCloud CLI 설치.
-2. 터미널에서 `qwencloud auth login`으로 로그인.
-3. egasu의 Accounts → Add New Account에서 QwenCloud를 선택한 뒤 **Turn On** 클릭.
+2. 기존 평문 `credentials` 파일이 있으면 CLI 설정 폴더 밖의 본인만 읽을 수 있는 새로운 위치로 옮겨 보관.
+3. `QWENCLOUD_KEYRING=plaintext` 설정이 남아 있으면 해당 평문 저장 설정 해제.
+4. 터미널에서 `qwencloud auth login`으로 Keychain 또는 암호화 파일 저장소에 로그인.
+5. egasu의 Accounts → Add New Account에서 QwenCloud를 선택한 뒤 **Turn On** 클릭.
+
+새 로그인과 egasu 조회가 정상임을 확인하기 전에는 보관본 유지.
+로그인에 실패하면 보관본을 유지한 채 CLI 수정 여부나 공식 지원부터 확인.
+이전 파일을 복구해야 하면 원래 경로가 비어 있을 때만 보관본을 복사하고 보관본은 유지.
+Keychain 로그인 성공 후 `credentials` 파일이 없는 것은 정상일 수 있으므로 파일 부재만으로 평문 보관본을 복구하지 않음.
+환경변수 설정을 바꿨다면 egasu를 재실행한 뒤 조회.
 
 자동 감지는 실행 가능한 CLI와 CLI 로그인 파일 또는 Keychain 항목의 존재를 로컬에서 확인.
-CLI가 로그인 파일을 찾는 기본 위치는 `~/.qwencloud/credentials`이며 `QWENCLOUD_CONFIG_DIR`로 변경 가능.
 키와 토큰은 CLI가 관리.
 암호화 파일로만 로그인한 경우 같은 파일에서 조회한 사용률을 재사용.
 CLI 실행 중 암호화 파일이 바뀌면 해당 조회 결과를 폐기.
@@ -20,8 +31,7 @@ Keychain 로그인이나 저장소 확인 실패 시에는 새로고침마다 CL
 CLI 실행 도중의 Keychain 로그인 교체는 확인할 수 없음.
 Keychain에서도 조회에 성공하면 카드와 로컬 API `/v1/limits/qwencloud`에 현재 사용률 표시.
 소프트 한도 기능을 켠 경우, CLI 사전 검사(`egasu soft-limit check qwencloud`)는 계정 신원을 확인할 수 없는 Keychain 로그인에서 `unknown` 반환.
-CLI v1.7.0은 평문 로그인 파일을 조회 중에 이전하면서 원본을 삭제할 수 있음.
-이 파일이 있으면 egasu가 조회를 중단하고 Keychain 또는 암호화 파일 로그인 안내를 표시. [공식 CLI의 로그인 파일 처리](https://github.com/QwenCloud/qwencloud-cli/blob/v1.7.0/src/auth/credentials.ts#L140-L159)
+평문 파일이 있으면 egasu가 CLI를 실행하지 않고 Keychain 또는 암호화 파일 로그인 안내를 표시.
 
 ## 사용량
 

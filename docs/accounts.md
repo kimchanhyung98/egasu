@@ -36,7 +36,7 @@ Claude·Codex는 프로바이더별 최대 10개 계정 등록 가능.
 | API 키 | DeepSeek, OpenRouter, Z.ai | 키를 입력하고 **Add Account** 클릭.<br>**Get Your API Key** 링크로 키 발급 페이지 열기.<br>키는 이 Mac에 저장하며 환경 변수보다 우선, 저장 직후 사용량 조회.<br>이 Mac에 쓸 수 있는 키(환경 변수·저장 파일)가 이미 있으면 비워 둔 채 **Add Account**로 켜기만 가능. |
 | 로컬 로그인 감지 | 그 밖의 프로바이더 | egasu가 이 Mac의 기존 로그인을 찾은 결과 표시 후 **Turn On**으로 켜기.<br>로그인을 찾지 못해도 켤 수 있으며, 조회 실패 시 대시보드에서 사유 표시. |
 
-QwenCloud 개인 Token Plan은 터미널에서 `qwencloud auth login`으로 로그인한 뒤 로컬 로그인 감지 방식으로 추가. [QwenCloud](/docs/providers/qwencloud.md)
+QwenCloud 개인 Token Plan은 [로그인 파일 보존·연결 안내](/docs/providers/qwencloud.md#연결)에 따라 CLI에 로그인한 뒤 로컬 로그인 감지 방식으로 추가.
 
 Claude·Codex 계정의 추가·전환·재로그인 동작은 [Claude와 Codex 계정](/docs/accounts.md#claude와-codex-계정) 참조.
 
