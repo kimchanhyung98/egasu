@@ -45,13 +45,15 @@ final class QuotaResetReminderScopeTests: XCTestCase {
         let now = Date.now
         let reset = Date(timeIntervalSince1970: floor(now.timeIntervalSince1970) + 172_800)
         let providers = unsupported.map { runtime(id: $0, now: now, reset: reset) }
+        let identity = "fixture-account"
         let writer = ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite)
         for runtime in providers {
-            writer.store(runtime.snapshot, producedByIdentityKey: nil)
+            writer.store(runtime.snapshot, producedByIdentityKey: identity)
         }
         let store = WidgetDataStore(
             registry: WidgetRegistry.from(providers), providers: providers,
-            cache: ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite), defaults: defaults)
+            cache: ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite), defaults: defaults,
+            providerIdentityKeys: Dictionary(uniqueKeysWithValues: unsupported.map { ($0, identity) }))
         XCTAssertEqual(Set(store.localSnapshots.keys), Set(unsupported).subtracting(["opencode"]))
 
         let oldRequests = providers.flatMap { runtime in
