@@ -4,6 +4,65 @@ import XCTest
 
 @MainActor
 final class WidgetDataStoreCredentialRefreshTests: XCTestCase {
+    func testStaleCredentialLookupCannotDiscardACompletedRefresh() async throws {
+        try await verifyStaleCredentialLookupPreservesTheNewSnapshot(notifyChange: true)
+    }
+
+    func testStaleCredentialLookupCannotDiscardACompletedRefreshAfterExternalChange() async throws {
+        try await verifyStaleCredentialLookupPreservesTheNewSnapshot(notifyChange: false)
+    }
+
+    func testStaleCredentialLookupCannotDiscardACompletedRefreshAfterExternalRoundTrip() async throws {
+        try await verifyStaleCredentialLookupPreservesTheNewSnapshot(
+            notifyChange: false, lookupIdentity: "account-b", replacementIdentity: "account-a")
+    }
+
+    private func verifyStaleCredentialLookupPreservesTheNewSnapshot(
+        notifyChange: Bool, lookupIdentity: String = "account-a", replacementIdentity: String = "account-b"
+    ) async throws {
+        let suite = "EgasuTests.StaleCredentialLookup.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let lookupStarted = expectation(description: "Started reading the old account identity")
+        let (pendingLookup, resumeLookup) = AsyncStream<Void>.makeStream()
+        defer { resumeLookup.finish() }
+        let runtime = CredentialLookupProvider(lookupStarted: lookupStarted, pendingLookup: pendingLookup)
+        let id = runtime.provider.id
+        let store = WidgetDataStore(
+            registry: .from([runtime]), providers: [runtime],
+            cache: ProviderSnapshotCache(userDefaults: defaults, persistsWrites: false), defaults: defaults)
+        var invalidations = 0
+        store.onQuotaInvalidated = { ids in
+            if ids?.contains(id) == true { invalidations += 1 }
+        }
+
+        let initial = await store.refresh(providerID: id, force: true)
+        XCTAssertEqual(initial, .refreshed)
+        let initialSnapshot = try XCTUnwrap(store.localSnapshots[id])
+        XCTAssertEqual(initialSnapshot.producedByIdentityKey, "account-a")
+
+        runtime.identity = lookupIdentity
+        let staleRefresh = Task { await store.refresh(providerID: id) }
+        await fulfillment(of: [lookupStarted], timeout: 2)
+
+        runtime.identity = replacementIdentity
+        if notifyChange { store.credentialsDidChange(for: id) }
+        let replacement = await store.refresh(providerID: id, force: true)
+        XCTAssertEqual(replacement, .refreshed)
+        let newSnapshot = try XCTUnwrap(store.localSnapshots[id])
+        XCTAssertEqual(newSnapshot.producedByIdentityKey, replacementIdentity)
+        XCTAssertNotEqual(newSnapshot, initialSnapshot)
+        let invalidationsBeforeResume = invalidations
+
+        resumeLookup.finish()
+        let staleOutcome = await staleRefresh.value
+
+        XCTAssertEqual(staleOutcome, .skipped)
+        XCTAssertEqual(store.localSnapshots[id], newSnapshot)
+        XCTAssertEqual(runtime.fetchedIdentities, ["account-a", replacementIdentity])
+        XCTAssertEqual(invalidations, invalidationsBeforeResume)
+    }
+
     private func fixture(blockedKeys: Set<String> = ["fixture-a", "fixture-b"], failedKeys: Set<String> = [],
                          environmentKey: String? = nil, control: CredentialControlProvider? = nil) -> Fixture {
         let suite = "EgasuTests.CredentialRefresh.\(UUID().uuidString)"
@@ -330,6 +389,41 @@ final class WidgetDataStoreCredentialRefreshTests: XCTestCase {
     private final class TestClock {
         var date = Date()
     }
+}
+
+@MainActor
+private final class CredentialLookupProvider: CredentialBoundSnapshotProvider {
+    let provider = Provider(id: "deepseek", displayName: "DeepSeek", icon: .providerMark("deepseek"))
+    let widgetDescriptors: [WidgetDescriptor] = []
+    var identity = "account-a"
+    private(set) var fetchedIdentities: [String] = []
+
+    private let lookupStarted: XCTestExpectation
+    private let pendingLookup: AsyncStream<Void>
+
+    init(lookupStarted: XCTestExpectation, pendingLookup: AsyncStream<Void>) {
+        self.lookupStarted = lookupStarted
+        self.pendingLookup = pendingLookup
+    }
+
+    func currentIdentityKey(allowKeychainInteraction _: Bool) async -> String? {
+        let capturedIdentity = identity
+        lookupStarted.fulfill()
+        for await _ in pendingLookup {}
+        return capturedIdentity
+    }
+
+    func refresh() async -> ProviderSnapshot {
+        fetchedIdentities.append(identity)
+        let reading = "\(identity) reading \(fetchedIdentities.count)"
+        var snapshot = ProviderSnapshot(
+            providerID: provider.id, displayName: provider.displayName, lines: [.text(label: "Account", value: reading)]
+        )
+        snapshot.producedByIdentityKey = identity
+        return snapshot
+    }
+
+    func hasLocalCredentials() async -> Bool { true }
 }
 
 @MainActor

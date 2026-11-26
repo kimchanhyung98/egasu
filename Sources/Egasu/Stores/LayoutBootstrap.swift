@@ -35,9 +35,9 @@ enum LayoutBootstrap {
         let savedPlaced = persistence.hasStoredDisabledMetrics ? nil : persistence.loadPlaced()
         let pinnedCards = (persistence.loadPriorityPins() ?? []).map(ProviderAccountID.providerID(ofMetric:))
         let placedCards = (savedPlaced ?? []).map { ProviderAccountID.providerID(ofMetric: $0.descriptorID) }
-        let recordedCards = Set(savedProviderOrder ?? [])
-            .union(pinnedCards).union(savedOrder.keys).union(placedCards)
-        let cards = recordedCards.union(knownCardIDs).union(registry.providers.map(\.id)).union(legacyCards ?? [])
+        let recordedCards = Set(savedProviderOrder ?? []).union(savedOrder.keys).union(placedCards)
+        let cards = recordedCards.union(pinnedCards).union(knownCardIDs)
+            .union(registry.providers.map(\.id)).union(legacyCards ?? [])
         var order = copiesFamily
             ? LayoutOrdering.normalizedMetricOrder(savedOrder, registry: registry) : savedOrder
         let hasOnDemandState = persistence.hasOnDemandState
@@ -79,7 +79,7 @@ enum LayoutBootstrap {
                     : saved
                 let enabled = Set(legacyPlaced.map(\.descriptorID))
                 let seededDefaults = persistence.loadSeededDefaults()
-                // 신규 감지 목록은 이전 도중에도 갱신되므로 기존 레이아웃의 근거에서 제외.
+                // 신규 감지 목록과 Priority 고정은 이전 도중에도 바뀌므로 기존 레이아웃의 근거에서 제외.
                 let existingCards: Set<String>
                 if let legacyCards {
                     existingCards = legacyCards.union(placedCards)
