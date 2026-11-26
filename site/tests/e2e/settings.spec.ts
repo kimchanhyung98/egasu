@@ -345,12 +345,13 @@ test('menu bar names and initials use the selected language', async ({ page }) =
   await expect(preview.locator('.am-menu-preview-item > span:first-child')).toHaveText('Claude 계1');
   await app.locator('[data-setting="menuBarAccountNames"]').click();
   await expect(preview.locator('.am-menu-preview-label')).toHaveText('계정 1');
-  await expect(preview.getByRole('img')).toHaveAccessibleName(/계정 1/);
+  await expect(preview.getByRole('img')).toHaveAccessibleName(/Claude 계정 1 주간/);
   await app.locator('[data-settings-tab="General"]').click();
   await app.locator('[data-picker="language"]').click();
   await app.locator('[data-pick="language"][data-value="日本語"]').click();
   await app.locator('[data-settings-tab="Display"]').click();
   await expect(preview.locator('.am-menu-preview-label')).toHaveText('アカウント1');
+  await expect(preview.getByRole('img')).toHaveAccessibleName(/Claude アカウント1 週間/);
   await app.locator('[data-setting="menuBarAccountNames"]').click();
   await expect(preview.locator('.am-menu-preview-item > span:first-child')).toHaveText('Claude ア');
 });
