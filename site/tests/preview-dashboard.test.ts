@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { initialPreviewState, setMetric, activateAccount, changePreference, restorePreviewState, moveMetric, orderedMetrics, setProviderEnabled } from '../src/data/preview-state.ts';
+import { initialPreviewState, setMetric, activateAccount, changePreference, restorePreviewState, moveMetric, orderedMetrics, setProviderEnabled, renameAccount } from '../src/data/preview-state.ts';
 import { cards } from '../src/data/dashboard.ts';
 import { metricID } from '../src/data/metrics.ts';
-import { priorityBoard, dashboardLines, menuBarItems, softLimitAccountStatuses } from '../src/data/preview-dashboard.ts';
+import { priorityBoard, dashboardLines, menuBarItems, menuBarText, softLimitAccountStatuses } from '../src/data/preview-dashboard.ts';
 
 test('Priority separates low and spent limits and keeps pinned limits in one section', () => {
   let state = initialPreviewState();
@@ -254,4 +254,50 @@ test('dashboard restore rejects unknown metric ids, private scopes and unsupport
     assert.throws(() => restorePreviewState({ ...before, hiddenMetrics: [key] }), key);
   }
   assert.throws(() => restorePreviewState({ ...before, pinnedMetrics: ['codex.trend'] }));
+});
+
+
+test('menu bar text separates account names, period badges, metric labels and private names', () => {
+  let state = initialPreviewState();
+  const line = dashboardLines(state).find((line) => line.key === 'claude.weekly@account-1');
+  assert.ok(line);
+  assert.deepEqual(menuBarText(state, line), {
+    label: 'Weekly', accountLabel: false, badge: 'A1', accessibilityLabel: 'Claude Account 1 Weekly',
+  });
+  state = renameAccount(state, 'claude', 'account-1', 'Personal');
+  state = changePreference(state, 'menuBarAccountNames', true);
+  assert.deepEqual(menuBarText(state, line), {
+    label: 'Personal', accountLabel: true, badge: '7d', accessibilityLabel: 'Claude Personal Weekly',
+  });
+  state = changePreference(state, 'menuBarMetricLabels', false);
+  assert.deepEqual(menuBarText(state, line), {
+    label: 'Personal', accountLabel: true, badge: '', accessibilityLabel: 'Claude Personal Weekly',
+  });
+  state = changePreference(state, 'privacyMode', true);
+  assert.deepEqual(menuBarText(state, line), {
+    label: '', accountLabel: false, badge: '', accessibilityLabel: 'Claude Weekly',
+  });
+  state = changePreference(state, 'menuBarMetricLabels', true);
+  assert.equal(menuBarText(state, line).label, 'Weekly');
+  const noAccount = dashboardLines(state).find((line) => line.key === 'claude.today');
+  assert.ok(noAccount);
+  assert.equal(menuBarText(state, noAccount).label, 'T');
+  state = changePreference(state, 'privacyMode', false);
+  assert.ok(line.row.kind === 'bounded');
+  assert.equal(menuBarText(state, { ...line, row: { ...line.row, periodHours: 0.5 } }).badge, '30m');
+  assert.equal(menuBarText(state, { ...line, row: { ...line.row, periodHours: 5 } }).badge, '5h');
+});
+
+test('menu bar accessibility and visible labels share the localized metric title', () => {
+  const initial = initialPreviewState();
+  const line = dashboardLines(initial).find((line) => line.key === 'claude.weekly@account-1');
+  assert.ok(line);
+  for (const [name, title] of [['계정 1', '주간'], ['アカウント1', '週間']]) {
+    const localized = { accountName: name, metricLabel: (label: string) => label === 'Weekly' ? title : label };
+    const text = menuBarText(initial, line, localized);
+    assert.equal(text.label, title);
+    assert.equal(text.accessibilityLabel, `Claude ${name} ${title}`);
+    const privateState = changePreference(initial, 'privacyMode', true);
+    assert.equal(menuBarText(privateState, line, localized).accessibilityLabel, `Claude ${title}`);
+  }
 });

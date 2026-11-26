@@ -34,6 +34,10 @@ function localeForLanguage(language: string): PreviewLocale {
   return language === '한국어' ? 'ko' : language === '日本語' ? 'ja' : 'en';
 }
 
+export function previewMetricLabel(state: PreviewState, label: string): string {
+  return translator(localeForLanguage(String(state.preferences.language)), 'Metrics')(label);
+}
+
 /** 기본 이름의 번역이 사용자 지정 이름과 겹치면 기본 이름만 영어로 표시. */
 export function previewAccountDisplayName(state: PreviewState, family: string, id: string): { name: string; literal: boolean; displayed: string } {
   const name = accountName(state, family, id);
