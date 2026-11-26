@@ -88,13 +88,19 @@ final class QuotaResetReminders {
             let descriptorsByCard = dataStore.limitDescriptorsByProvider.filter { Self.supports($0.key) }
             let metricIDs = Set(descriptorsByCard.values.joined().map { ProviderAccountID.canonicalMetricID($0.id) })
             let failures = dataStore.refreshResults
+            let snapshots = dataStore.localSnapshots
             let now = Date.now
-            var observedKeys: Set<LimitKey> = []
-            let reminders = descriptorsByCard.flatMap { card, descriptors -> [ScheduledReminder] in
+            var latest:
+                [LimitKey: (
+                    snapshot: ProviderSnapshot, descriptor: WidgetDescriptor, name: String,
+                    identity: String, observedAt: Date
+                )] = [:]
+            for (card, descriptors) in descriptorsByCard {
                 guard enablement.isEnabled(card), !invalidated.contains(card),
-                    let snapshot = dataStore.localSnapshots[card], failures[card]?.failure?.authenticationIssue == nil,
+                    let snapshot = snapshots[card], failures[card]?.failure?.authenticationIssue == nil,
+                    snapshot.authenticationIssue == nil, snapshot.refreshFailure == nil,
                     dataStore.reconciliationFailure(for: card) == nil
-                else { return [] }
+                else { continue }
                 let catalogIdentity: String?
                 if case .account(let current) = dataStore.claimRefreshBinding(providerID: card) {
                     catalogIdentity = current
@@ -102,20 +108,34 @@ final class QuotaResetReminders {
                     catalogIdentity = nil
                 }
                 guard let identity = Self.accountIdentity(for: snapshot, catalogIdentity: catalogIdentity) else {
-                    return []
+                    continue
                 }
                 let managed = ProviderAccountID.families.contains(ProviderAccountID.family(of: card))
                 let hasAccountName = (!managed || catalogIdentity != nil) && Self.canUseRegisteredName(for: snapshot)
                 let accountName = hasAccountName ? dataStore.resolveDisplayName?(card) : nil
                 let name = accountName ?? ProviderAccountID.cardTitle(providerID: card, fallback: snapshot.displayName)
                 let observedAt = snapshot.liveQuotaObservedAt ?? snapshot.freshnessDate
-                return Self.reminders(
-                    for: snapshot, descriptors: descriptors, account: name, now: now, accountIdentity: identity
+                // 최신 관측에서 초기화 시각이 사라진 경우도 이전 별칭의 예약을 대체.
+                for descriptor in descriptors {
+                    let key = LimitKey(descriptorID: descriptor.id, account: identity)
+                    if let previous = latest[key] {
+                        if previous.observedAt > observedAt { continue }
+                        if previous.observedAt == observedAt, previous.snapshot.providerID <= card { continue }
+                    }
+                    latest[key] = (snapshot, descriptor, name, identity, observedAt)
+                }
+            }
+
+            var observedKeys: Set<LimitKey> = []
+            let reminders = latest.values.flatMap { reading in
+                Self.reminders(
+                    for: reading.snapshot, descriptors: [reading.descriptor], account: reading.name,
+                    now: now, accountIdentity: reading.identity
                 ) { key, period, reset, duration, used in
                     observedKeys.insert(key)
                     return self.elapsedHours(
                         key: key, period: period, reset: reset, duration: duration,
-                        used: used, observedAt: observedAt, now: now)
+                        used: used, observedAt: reading.observedAt, now: now)
                 }
             }
             // 카드에서 잠시 빠진 계정도 남은 주기 동안 기록 유지.
