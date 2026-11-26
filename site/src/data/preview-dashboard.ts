@@ -125,17 +125,21 @@ export function priorityBoard(state: PreviewState) {
   };
 }
 
-export function menuBarText(state: PreviewState, line: DashboardLine, localizedAccountName?: string) {
+export function menuBarText(state: PreviewState, line: DashboardLine, localized: {
+  accountName?: string; metricLabel?: (label: string) => string;
+} = {}) {
   const provider = providers.find((provider) => provider.id === line.provider);
   const family = accountFamilies.find((family) => family.id === line.provider);
   const hasAccount = family?.profiles.some((profile) => profile.id === line.accountID);
   const name = hasAccount && !state.preferences.privacyMode
-    ? localizedAccountName ?? accountName(state, line.provider, line.accountID) : '';
+    ? localized.accountName ?? accountName(state, line.provider, line.accountID) : '';
   const showMetric = state.preferences.menuBarMetricLabels === true;
   const showName = state.preferences.menuBarAccountNames === true && name !== '';
+  const metricLabel = localized.metricLabel?.(line.row.label) ?? line.row.label;
   const shortLabels: Record<string, string> = { Today: 'T', Yesterday: 'Y', 'Last 30 Days': 'M' };
-  const shortLabel = shortLabels[line.row.label]
-    ?? line.row.label.replace(/ (models|bot|usage)$/i, '');
+  const shortKey = shortLabels[line.row.label];
+  const shortLabel = shortKey ? localized.metricLabel?.(shortKey) ?? shortKey
+    : metricLabel.replace(/ (models|bot|usage)$/i, '');
   const period = line.row.kind === 'bounded' ? line.row.periodHours : 0;
   const periodBadge = period <= 0 ? '' : period % 24 === 0 ? `${period / 24}d`
     : Number.isInteger(period) ? `${period}h` : Number.isInteger(period * 60) ? `${period * 60}m` : '';
@@ -145,7 +149,7 @@ export function menuBarText(state: PreviewState, line: DashboardLine, localizedA
     label: showName ? name : showMetric ? shortLabel : '',
     accountLabel: showName,
     badge: showName ? showMetric ? periodBadge : '' : family && family.profiles.length > 1 ? accountBadge.toUpperCase() : '',
-    accessibilityLabel: [provider?.name, name, line.row.label].filter(Boolean).join(' '),
+    accessibilityLabel: [provider?.name, name, metricLabel].filter(Boolean).join(' '),
   };
 }
 
