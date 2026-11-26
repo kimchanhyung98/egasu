@@ -13,7 +13,7 @@ final class CodexCreditExpiryReminders {
     private struct Claim: Codable {
         let at: Date
         let expiry: Date
-        let remaining: Int
+        let remaining: Int?
         let creditIDs: Set<String>
     }
 
@@ -48,13 +48,20 @@ final class CodexCreditExpiryReminders {
     }
 
     /// 소비 직후의 조회가 실패하거나 재시작해도 이전 캐시로 사용한 권을 다시 예약하지 않음.
-    func consumed(account: String, expiry: Date, creditID: String, remaining: Int, at date: Date) {
+    func consumed(account: String, expiry: Date, creditID: String, remaining: Int?, at date: Date) {
         let bucket = Self.bucket(account: account, expiry: expiry)
         let credit = Self.digest(creditID)
         var consumed = claims[bucket]?.creditIDs ?? []
         guard consumed.insert(credit).inserted else { return }
-        let upperBound = claims[bucket].map { min(remaining, max(0, $0.remaining - 1)) } ?? remaining
+        let previousBound = claims[bucket]?.remaining.map { max(0, $0 - 1) }
+        let upperBound = [remaining, previousBound].compactMap { $0 }.min()
         claims[bucket] = Claim(at: date, expiry: expiry, remaining: upperBound, creditIDs: consumed)
+        saveClaims()
+    }
+
+    func noneAvailable(account: String, expiry: Date, at date: Date) {
+        let key = Self.bucket(account: account, expiry: expiry)
+        claims[key] = Claim(at: date, expiry: expiry, remaining: 0, creditIDs: [])
         saveClaims()
     }
 
@@ -71,28 +78,28 @@ final class CodexCreditExpiryReminders {
                 let count = values.first?.number, count > 0
             else { continue }
             let known = expiries.filter { $0 > now }.sorted().prefix(Int(exactly: count) ?? 0)
-            var occurrences: [String: Int] = [:]
-            for expiry in known {
-                let key = Self.bucket(account: account.key, expiry: expiry)
-                let occurrence = occurrences[key, default: 0]
+            for (second, expiries) in Dictionary(grouping: known, by: { floor($0.timeIntervalSince1970) }) {
+                let key = Self.bucket(account: account.key, expiry: Date(timeIntervalSince1970: second))
+                var remaining = expiries.count
                 if let claim = claims[key] {
                     if let observed = account.snapshot.liveQuotaObservedAt ?? account.snapshot.quotaObservedAt,
                         observed > claim.at
                     {
                         claims.removeValue(forKey: key)
-                    } else if occurrence >= claim.remaining {
-                        continue
+                    } else {
+                        remaining = claim.remaining ?? max(0, remaining - claim.creditIDs.count)
                     }
                 }
-                occurrences[key] = occurrence + 1
-                for hours in [24, 12] {
-                    let date = Date(timeIntervalSince1970: floor(expiry.timeIntervalSince1970) - Double(hours * 3600))
-                    guard date > now else { continue }
-                    reminders.append(
-                        ScheduledReminder(
-                            id: "\(Self.prefix)\(key).\(occurrence).\(hours)", date: date, title: Self.label,
-                            subtitle: account.name,
-                            body: L10n.settings("An unused reset credit expires in %lld hours.", hours)))
+                for occurrence in 0..<min(remaining, expiries.count) {
+                    for hours in [24, 12] {
+                        let date = Date(timeIntervalSince1970: second - Double(hours * 3600))
+                        guard date > now else { continue }
+                        reminders.append(
+                            ScheduledReminder(
+                                id: "\(Self.prefix)\(key).\(occurrence).\(hours)", date: date, title: Self.label,
+                                subtitle: account.name,
+                                body: L10n.settings("An unused reset credit expires in %lld hours.", hours)))
+                    }
                 }
             }
         }

@@ -15,7 +15,18 @@ final class CodexResetClaimService {
         let binding: CodexResetClaimBinding
         let expiry: Date
         let creditID: String
-        let remainingAtExpiry: Int
+        let remainingAtExpiry: Int?
+    }
+
+    enum CreditSelection: Equatable {
+        case available(id: String, remaining: Int?)
+        case unavailable
+        case unknown
+    }
+
+    enum UnavailableCredits {
+        case credit(MatchedCredit)
+        case expiry(binding: CodexResetClaimBinding, date: Date)
     }
 
     /// 카드 서비스 교체 후에도 같은 확인 요청의 크레딧·진행 상태 유지.
@@ -30,7 +41,7 @@ final class CodexResetClaimService {
     private let isCurrent: () -> Bool
     private let refreshAfterClaim: (CodexResetClaimBinding) async -> Void
     private let workQueue: BackgroundWorkQueue
-    var onConsumed: ((MatchedCredit) -> Void)?
+    var onUnavailable: ((UnavailableCredits) -> Void)?
     let requestState: RequestState
 
     init(
@@ -116,14 +127,19 @@ final class CodexResetClaimService {
                   let body = (try? JSONSerialization.jsonObject(with: list.body)) as? [String: Any] else {
                 return responseFailure(list, context: "credit list")
             }
-            guard let matched = Self.matchingCredit(in: body, expiringAt: expiry) else {
+            switch Self.creditSelection(in: body, expiringAt: expiry) {
+            case .unknown:
+                return responseFailure(list, context: "credit list")
+            case .unavailable:
+                onUnavailable?(.expiry(binding: binding, date: expiry))
                 AppDiagnostics.record(.resetClaim, result: .success, category: .notAvailable, providerID: "codex")
                 await refreshIfBound(to: binding, ticket: ticket)
                 return .noCredit
+            case .available(let id, let remaining):
+                creditID = id
+                requestState.matchedCredits[redeemRequestID] = MatchedCredit(
+                    binding: binding, expiry: expiry, creditID: id, remainingAtExpiry: remaining)
             }
-            creditID = matched.id
-            requestState.matchedCredits[redeemRequestID] = MatchedCredit(
-                binding: binding, expiry: expiry, creditID: matched.id, remainingAtExpiry: matched.remaining)
         }
 
         // GET 대기 중의 재로그인·로그아웃 확인. 같은 출처·주체의 정상 토큰 회전만 허용.
@@ -143,8 +159,8 @@ final class CodexResetClaimService {
         guard outcome != .failed else { return responseFailure(response, context: "consume") }
         AppDiagnostics.record(.resetClaim, result: .success, category: outcome == .success ? nil : .notAvailable,
                               providerID: "codex")
-        if outcome == .success, let matched = requestState.matchedCredits[redeemRequestID] {
-            onConsumed?(matched)
+        if outcome == .success || outcome == .noCredit, let matched = requestState.matchedCredits[redeemRequestID] {
+            onUnavailable?(.credit(matched))
         }
         await refreshIfBound(to: binding, ticket: ticket)
         return outcome
@@ -203,20 +219,26 @@ final class CodexResetClaimService {
         return .failed
     }
 
-    /// 예약과 같은 초에 만료되는 권에서 선택. 원래 만료 시각이 일치하는 권 우선.
-    static func matchingCredit(in body: [String: Any], expiringAt expiry: Date) -> (id: String, remaining: Int)? {
-        guard let credits = body["credits"] as? [[String: Any]] else { return nil }
-        let second = floor(expiry.timeIntervalSince1970)
-        let matching = credits.compactMap { credit -> (expiry: Date, id: String?)? in
-            if let status = credit["status"] as? String, status != "available" { return nil }
-            guard let date = parseExpiry(credit["expires_at"]), floor(date.timeIntervalSince1970) == second else {
-                return nil
-            }
+    /// 같은 초의 권 중 원래 만료 시각 우선. 목록이 불완전하면 부재를 확정하지 않음.
+    static func creditSelection(in body: [String: Any], expiringAt expiry: Date) -> CreditSelection {
+        guard let credits = body["credits"] as? [[String: Any]] else {
+            let confirmedEmpty = body["credits"] == nil && ProviderParse.number(body["available_count"]) == 0
+            return confirmedEmpty ? .unavailable : .unknown
+        }
+        let available = credits.filter { ($0["status"] as? String ?? "available") == "available" }
+        let dated = available.compactMap { credit -> (expiry: Date, id: String?)? in
+            guard let date = parseExpiry(credit["expires_at"]) else { return nil }
             return (date, credit["id"] as? String)
         }
+        let countMatches = body["available_count"].map { ProviderParse.number($0) == Double(available.count) } ?? true
+        let complete = dated.count == available.count && countMatches
+        let second = floor(expiry.timeIntervalSince1970)
+        let matching = dated.filter { floor($0.expiry.timeIntervalSince1970) == second }
         let exact = matching.first { $0.expiry == expiry && $0.id != nil }
-        guard let id = exact?.id ?? matching.compactMap(\.id).first else { return nil }
-        return (id, matching.count - 1)
+        if let id = exact?.id ?? matching.compactMap(\.id).first {
+            return .available(id: id, remaining: complete ? matching.count - 1 : nil)
+        }
+        return matching.isEmpty && complete ? .unavailable : .unknown
     }
 
     /// Consume 응답 → popover outcome. protocol code 4종 모두 HTTP 200으로 도착(outcome은 body의 `code`) — non-2xx·미인식 code는 `.failed`.

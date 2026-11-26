@@ -25,6 +25,7 @@ final class WidgetDataStore {
     /// Soft Limit 표시 설정 — nil이면 안내선 없음.
     private let softLimitSettings: (@MainActor () -> SoftLimitSettingsStore)?
     /// 할당량 알림의 계정명 조회 — 결과가 nil이면 프로바이더 이름 사용.
+    @ObservationIgnored var resolveCreditAccountName: (@MainActor (String, String) -> String?)?
     @ObservationIgnored var resolveDisplayName: (@MainActor (String) -> String?)?
     /// 조건별 알림 전달 — false이면 전송 완료로 기록하지 않고 다음 평가에서 재시도.
     private let postNotification: QuotaNotificationEvaluator.Post
@@ -222,19 +223,29 @@ final class WidgetDataStore {
         updateCodexCreditReminders()
     }
 
-    func codexCreditConsumed(cardID: String, credit: CodexResetClaimService.MatchedCredit) {
-        guard let creditExpiryReminders, localSnapshots[cardID]?.codexResetClaimBinding == credit.binding else {
-            return
+    func codexCreditsUnavailable(cardID: String, credits: CodexResetClaimService.UnavailableCredits) {
+        guard let creditExpiryReminders, let snapshot = localSnapshots[cardID],
+            let binding = snapshot.codexResetClaimBinding, let account = creditReminderAccount(snapshot)
+        else { return }
+        switch credits {
+        case .credit(let credit) where credit.binding == binding:
+            creditExpiryReminders.consumed(
+                account: account, expiry: credit.expiry, creditID: credit.creditID,
+                remaining: credit.remainingAtExpiry, at: now())
+        case .expiry(let confirmedBinding, let date) where confirmedBinding == binding:
+            creditExpiryReminders.noneAvailable(account: account, expiry: date, at: now())
+        default: return
         }
-        creditExpiryReminders.consumed(
-            account: creditReminderAccount(cardID), expiry: credit.expiry, creditID: credit.creditID,
-            remaining: credit.remainingAtExpiry, at: now())
         updateCodexCreditReminders()
     }
 
-    private func creditReminderAccount(_ cardID: String) -> String {
-        if case .account(let identity) = claimRefreshBinding(providerID: cardID) { return identity }
-        return cardID
+    private func creditReminderAccount(_ snapshot: ProviderSnapshot) -> String? {
+        if case .account(let identity) = claimRefreshBinding(providerID: snapshot.providerID) {
+            if let reading = snapshot.codexSwitchIdentity, reading != identity { return nil }
+            return identity
+        }
+        guard let binding = snapshot.codexResetClaimBinding else { return nil }
+        return snapshot.codexSwitchIdentity ?? binding.verifiedAccountKey
     }
 
     private func updateCodexCreditReminders() {
@@ -243,9 +254,12 @@ final class WidgetDataStore {
         let enabled = notificationSettings?().codexCreditExpiry == true
         let accounts = localSnapshots.compactMap { id, snapshot -> (String, String, ProviderSnapshot)? in
             guard enabled, ProviderAccountID.family(of: id) == "codex", isProviderEnabled(id),
-                !creditExpiryReminders.invalidatedCards.contains(id), reconciliationFailure(for: id) == nil
+                !creditExpiryReminders.invalidatedCards.contains(id), reconciliationFailure(for: id) == nil,
+                let account = creditReminderAccount(snapshot)
             else { return nil }
-            return (creditReminderAccount(id), resolveDisplayName?(id) ?? snapshot.displayName, snapshot)
+            let provider = ProviderAccountID.cardTitle(providerID: id, fallback: snapshot.displayName)
+            let name = resolveCreditAccountName?(id, account) ?? provider
+            return (account, name, snapshot)
         }
         creditExpiryReminders.reconcile(accounts: accounts, now: now())
     }

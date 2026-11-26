@@ -8,7 +8,7 @@ final class CodexResetClaimRouter {
     private var servicesByCard: [String: CodexResetClaimService]
     private let refreshAfterClaim: (String, CodexResetClaimBinding) async -> Void
     private let workQueue: BackgroundWorkQueue
-    var onConsumed: ((String, CodexResetClaimService.MatchedCredit) -> Void)?
+    var onUnavailable: ((String, CodexResetClaimService.UnavailableCredits) -> Void)?
     private var generation = 0
     private var identityKeysByCard: [String: String] = [:]
 
@@ -76,7 +76,7 @@ final class CodexResetClaimRouter {
                 },
                 workQueue: workQueue
             )
-            service.onConsumed = { [weak self] credit in self?.onConsumed?(cardID, credit) }
+            service.onUnavailable = { [weak self] credits in self?.onUnavailable?(cardID, credits) }
             return (cardID, service)
         }
         servicesByCard = Dictionary(uniqueKeysWithValues: services)

@@ -304,8 +304,8 @@ final class AppContainer {
         }
         dataStore.configureCodexCreditReminders(
             scheduler: ScheduledReminders(prefix: CodexCreditExpiryReminders.prefix))
-        codexResetClaim.onConsumed = { [weak dataStore] cardID, credit in
-            dataStore?.codexCreditConsumed(cardID: cardID, credit: credit)
+        codexResetClaim.onUnavailable = { [weak dataStore] cardID, credits in
+            dataStore?.codexCreditsUnavailable(cardID: cardID, credits: credits)
         }
         resetWatchCoordinator.observeActivity { [layout, resetWatchNotifications] in
             resetWatchNotifications.configurationDidChange()
