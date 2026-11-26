@@ -4,7 +4,7 @@ import { metricKey, providerMetrics } from '../data/metrics';
 import { orderedMetrics, accountName, accountEmail, type PreviewState } from '../data/preview-state';
 import { providers } from '../data/providers';
 import { alertConditions } from '../data/settings';
-import { previewAccountDisplayName, setPreviewAccountText } from './localization';
+import { previewAccountDisplayName, previewMetricLabel, setPreviewAccountText } from './localization';
 
 export function renderDashboard(mock: HTMLElement, state: PreviewState): void {
   if (!mock.querySelector('[data-dashboard-panel]')) return;
@@ -195,8 +195,10 @@ function renderMenuBar(mock: HTMLElement, state: PreviewState): void {
     const provider = providers.find((provider) => provider.id === item.provider)!;
     const hasAccount = accountFamilies.some((family) => family.id === item.provider
       && family.profiles.some((profile) => profile.id === item.accountID));
-    const text = menuBarText(state, item, hasAccount
-      ? previewAccountDisplayName(state, item.provider, item.accountID).displayed : undefined);
+    const text = menuBarText(state, item, {
+      accountName: hasAccount ? previewAccountDisplayName(state, item.provider, item.accountID).displayed : undefined,
+      metricLabel: (label) => previewMetricLabel(state, label),
+    });
     let value = '';
     if (item.row.kind === 'bounded') {
       const fraction = state.preferences.showUsageAs === 'Left' ? 1 - item.row.used / item.row.limit : item.row.used / item.row.limit;

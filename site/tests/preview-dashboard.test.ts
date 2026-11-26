@@ -287,3 +287,17 @@ test('menu bar text separates account names, period badges, metric labels and pr
   assert.equal(menuBarText(state, { ...line, row: { ...line.row, periodHours: 0.5 } }).badge, '30m');
   assert.equal(menuBarText(state, { ...line, row: { ...line.row, periodHours: 5 } }).badge, '5h');
 });
+
+test('menu bar accessibility and visible labels share the localized metric title', () => {
+  const initial = initialPreviewState();
+  const line = dashboardLines(initial).find((line) => line.key === 'claude.weekly@account-1');
+  assert.ok(line);
+  for (const [name, title] of [['계정 1', '주간'], ['アカウント1', '週間']]) {
+    const localized = { accountName: name, metricLabel: (label: string) => label === 'Weekly' ? title : label };
+    const text = menuBarText(initial, line, localized);
+    assert.equal(text.label, title);
+    assert.equal(text.accessibilityLabel, `Claude ${name} ${title}`);
+    const privateState = changePreference(initial, 'privacyMode', true);
+    assert.equal(menuBarText(privateState, line, localized).accessibilityLabel, `Claude ${title}`);
+  }
+});
