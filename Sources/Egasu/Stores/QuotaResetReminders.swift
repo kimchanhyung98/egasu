@@ -31,6 +31,18 @@ final class QuotaResetReminders {
         let elapsedHours: Set<Int>
     }
 
+    private struct Source {
+        let observedAt: Date
+        let card: String
+
+        func isOlder(than other: Self?) -> Bool {
+            guard let other else { return false }
+            if observedAt != other.observedAt { return observedAt < other.observedAt }
+            return card > other.card
+        }
+    }
+
+    @ObservationIgnored private var observations: [LimitKey: (source: Source, hasReset: Bool)] = [:]
     @ObservationIgnored private var windows: [LimitKey: Window]
     private let scheduler: ScheduledReminders
     private let defaults: UserDefaults
@@ -82,9 +94,9 @@ final class QuotaResetReminders {
 
     func observe(settings: NotificationSettingsStore, dataStore: WidgetDataStore, enablement: ProviderEnablementStore) {
         observe { [weak self, weak settings, weak dataStore, weak enablement] invalidated in
-            guard settings?.weeklyMonthlyResetReminders == true, let self, let dataStore, let enablement else {
-                return []
-            }
+            guard let self, let settings, let dataStore, let enablement else { return [] }
+            let alertsEnabled = settings.weeklyMonthlyResetReminders
+            guard alertsEnabled || !self.observations.isEmpty else { return [] }
             let descriptorsByCard = dataStore.limitDescriptorsByProvider.filter { Self.supports($0.key) }
             let metricIDs = Set(descriptorsByCard.values.joined().map { ProviderAccountID.canonicalMetricID($0.id) })
             let failures = dataStore.refreshResults
@@ -92,11 +104,11 @@ final class QuotaResetReminders {
             let now = Date.now
             var latest:
                 [LimitKey: (
-                    snapshot: ProviderSnapshot, descriptor: WidgetDescriptor, name: String,
-                    identity: String, observedAt: Date
+                    snapshot: ProviderSnapshot, descriptor: WidgetDescriptor, identity: String, source: Source
                 )] = [:]
+            var active: [LimitKey: (source: Source, name: String, descriptor: WidgetDescriptor)] = [:]
             for (card, descriptors) in descriptorsByCard {
-                guard enablement.isEnabled(card), !invalidated.contains(card),
+                guard !invalidated.contains(card),
                     let snapshot = snapshots[card], failures[card]?.failure?.authenticationIssue == nil,
                     snapshot.authenticationIssue == nil, snapshot.refreshFailure == nil,
                     dataStore.reconciliationFailure(for: card) == nil
@@ -110,33 +122,55 @@ final class QuotaResetReminders {
                 guard let identity = Self.accountIdentity(for: snapshot, catalogIdentity: catalogIdentity) else {
                     continue
                 }
-                let managed = ProviderAccountID.families.contains(ProviderAccountID.family(of: card))
-                let hasAccountName = (!managed || catalogIdentity != nil) && Self.canUseRegisteredName(for: snapshot)
-                let accountName = hasAccountName ? dataStore.resolveDisplayName?(card) : nil
-                let name = accountName ?? ProviderAccountID.cardTitle(providerID: card, fallback: snapshot.displayName)
-                let observedAt = snapshot.liveQuotaObservedAt ?? snapshot.freshnessDate
+                var name: String?
+                if alertsEnabled, enablement.isEnabled(card) {
+                    let managed = ProviderAccountID.families.contains(ProviderAccountID.family(of: card))
+                    let hasAccountName =
+                        (!managed || catalogIdentity != nil) && Self.canUseRegisteredName(for: snapshot)
+                    let accountName = hasAccountName ? dataStore.resolveDisplayName?(card) : nil
+                    name = accountName ?? ProviderAccountID.cardTitle(providerID: card, fallback: snapshot.displayName)
+                }
+                let source = Source(observedAt: snapshot.liveQuotaObservedAt ?? snapshot.freshnessDate, card: card)
                 // 최신 관측에서 초기화 시각이 사라진 경우도 이전 별칭의 예약을 대체.
                 for descriptor in descriptors {
                     let key = LimitKey(descriptorID: descriptor.id, account: identity)
-                    if let previous = latest[key] {
-                        if previous.observedAt > observedAt { continue }
-                        if previous.observedAt == observedAt, previous.snapshot.providerID <= card { continue }
+                    if !source.isOlder(than: latest[key]?.source) {
+                        latest[key] = (snapshot, descriptor, identity, source)
                     }
-                    latest[key] = (snapshot, descriptor, name, identity, observedAt)
+                    if let name, !source.isOlder(than: active[key]?.source) {
+                        active[key] = (source, name, descriptor)
+                    }
                 }
             }
 
+            self.observations = self.observations.filter { latest[$0.key] != nil }
             var observedKeys: Set<LimitKey> = []
-            let reminders = latest.values.flatMap { reading in
-                Self.reminders(
-                    for: reading.snapshot, descriptors: [reading.descriptor], account: reading.name,
+            var reminders: [ScheduledReminder] = []
+            for (key, reading) in latest {
+                let presentation = active[key]
+                let previous = self.observations[key]
+                guard presentation != nil || previous != nil else { continue }
+                if let previous, reading.source.isOlder(than: previous.source) {
+                    if previous.hasReset, let window = self.windows[key], let presentation {
+                        observedKeys.insert(key)
+                        reminders += Self.reminders(
+                            key: key, period: window.period, reset: window.reset, account: presentation.name,
+                            descriptor: presentation.descriptor, now: now, elapsedHours: { window.elapsedHours })
+                    }
+                    continue
+                }
+
+                let requests = Self.reminders(
+                    for: reading.snapshot, descriptors: [reading.descriptor], account: presentation?.name ?? "",
                     now: now, accountIdentity: reading.identity
                 ) { key, period, reset, duration, used in
                     observedKeys.insert(key)
                     return self.elapsedHours(
                         key: key, period: period, reset: reset, duration: duration,
-                        used: used, observedAt: reading.observedAt, now: now)
+                        used: used, observedAt: reading.source.observedAt, now: now)
                 }
+                self.observations[key] = (reading.source, observedKeys.contains(key))
+                if presentation != nil { reminders += requests }
             }
             // 카드에서 잠시 빠진 계정도 남은 주기 동안 기록 유지.
             self.windows = self.windows.filter { key, window in
@@ -255,20 +289,28 @@ final class QuotaResetReminders {
                 return descriptor.acceptsMissingSoftLimitDuration && descriptor.softLimitWindows == [window]
             }
             guard let window else { continue }
-            let title = window == .weekly ? L10n.settings("Weekly Limit Reset") : L10n.settings("Monthly Limit Reset")
-            guard let resetSeconds = Int64(exactly: reset.timeIntervalSince1970.rounded(.down)) else { continue }
             let key = LimitKey(descriptorID: descriptor.id, account: accountIdentity)
-            let elapsed = elapsedHours(key, window, reset, duration, used)
-            for hours in leadHours where !elapsed.contains(hours) {
-                let fire = fireDate(reset: reset, hours: hours)
-                guard fire > now else { continue }
-                reminders.append(
-                    ScheduledReminder(
-                        id: "\(prefix)\(key.requestKey).\(resetSeconds).\(hours)", date: fire, title: title,
-                        subtitle: L10n.metrics("%@ %@", account, descriptor.sample.localizedTitle),
-                        body: L10n.settings("This limit resets in %lld hours.", hours)))
-            }
+            reminders += self.reminders(
+                key: key, period: window, reset: reset, account: account, descriptor: descriptor, now: now,
+                elapsedHours: { elapsedHours(key, window, reset, duration, used) })
         }
         return reminders
+    }
+
+    private static func reminders(
+        key: LimitKey, period: SoftLimitWindow, reset: Date, account: String, descriptor: WidgetDescriptor,
+        now: Date, elapsedHours: () -> Set<Int>
+    ) -> [ScheduledReminder] {
+        guard let resetSeconds = Int64(exactly: reset.timeIntervalSince1970.rounded(.down)) else { return [] }
+        let elapsed = elapsedHours()
+        let title = period == .weekly ? L10n.settings("Weekly Limit Reset") : L10n.settings("Monthly Limit Reset")
+        return leadHours.compactMap { hours in
+            let fire = fireDate(reset: reset, hours: hours)
+            guard !elapsed.contains(hours), fire > now else { return nil }
+            return ScheduledReminder(
+                id: "\(prefix)\(key.requestKey).\(resetSeconds).\(hours)", date: fire, title: title,
+                subtitle: L10n.metrics("%@ %@", account, descriptor.sample.localizedTitle),
+                body: L10n.settings("This limit resets in %lld hours.", hours))
+        }
     }
 }
