@@ -105,6 +105,109 @@ final class QuotaResetReminderScopeTests: XCTestCase {
             replacementBinding: second.binding)
     }
 
+    func testSameAccountAliasCardsUseLatestWeeklyResetInEitherOrder() async throws {
+        for latestOnShared in [false, true] {
+            try await checkConcurrentCodexAliases(latestOnShared: latestOnShared, latestHasWeekly: true)
+        }
+    }
+
+    func testSameAccountAliasDropsEarlierReservationWhenLatestWeeklyResetIsMissing() async throws {
+        for latestOnShared in [false, true] {
+            try await checkConcurrentCodexAliases(latestOnShared: latestOnShared, latestHasWeekly: false)
+        }
+    }
+
+    private func checkConcurrentCodexAliases(latestOnShared: Bool, latestHasWeekly: Bool) async throws {
+        let suite = "QuotaResetReminderScopeTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = NotificationSettingsStore(defaults: defaults)
+        settings.weeklyMonthlyResetReminders = true
+        let enablement = ProviderEnablementStore(defaults: defaults)
+        let now = Date(timeIntervalSince1970: floor(Date.now.timeIntervalSince1970))
+        let oldReset = now.addingTimeInterval(48 * 3600)
+        let latestReset = oldReset.addingTimeInterval(2 * 3600)
+        let monthlyReset = latestReset.addingTimeInterval(7 * 24 * 3600)
+        let profileID = UUID().uuidString
+        let shared = "codex"
+        let saved = AccountUsageCardPlanner.cardID(family: shared, profileID: profileID)
+        let oldCard = latestOnShared ? saved : shared
+        let latestCard = latestOnShared ? shared : saved
+
+        func provider(id: String, isLatest: Bool) throws -> TestProviderRuntime {
+            let observedAt = isLatest ? now : now.addingTimeInterval(-60)
+            let fixture = runtime(id: id, now: observedAt, reset: isLatest ? latestReset : oldReset)
+            let source: CodexAuthState.Source = id == shared ? .keychain : .accountSnapshot(profileID: profileID)
+            let user = try codexUser(subject: "same-user", source: source)
+            var snapshot = fixture.snapshot
+            snapshot.displayName = "Codex"
+            snapshot.liveQuotaAccountKey = user.key
+            snapshot.liveQuotaObservedAt = observedAt
+            snapshot.codexResetClaimBinding = user.binding
+            snapshot.codexSwitchIdentity = user.workspace
+            // 완료 시각이 늦어진 이전 조회로 실제 관측 순서를 바꾸지 않음.
+            snapshot.refreshedAt = isLatest ? now : now.addingTimeInterval(60)
+            snapshot.lines = []
+            if !isLatest || latestHasWeekly {
+                snapshot.lines.append(
+                    .progress(
+                        label: "Weekly", used: isLatest ? 0 : 40, limit: 100, format: .percent,
+                        resetsAt: isLatest ? latestReset : oldReset, periodDurationMs: MetricPeriod.weekMs))
+            }
+            if isLatest {
+                snapshot.lines.append(
+                    .progress(
+                        label: "Monthly", used: 20, limit: 100, format: .percent,
+                        resetsAt: monthlyReset, periodDurationMs: MetricPeriod.monthMs))
+            }
+            return TestProviderRuntime(
+                provider: fixture.provider, descriptors: fixture.widgetDescriptors, snapshot: snapshot)
+        }
+
+        let old = try provider(id: oldCard, isLatest: false)
+        let latest = try provider(id: latestCard, isLatest: true)
+        let verifiedAccount = try XCTUnwrap(old.snapshot.liveQuotaAccountKey)
+        XCTAssertEqual(latest.snapshot.liveQuotaAccountKey, verifiedAccount)
+        let providers = latestOnShared ? [latest, old] : [old, latest]
+        let store = WidgetDataStore(
+            registry: WidgetRegistry.from(providers), providers: providers,
+            cache: ProviderSnapshotCache(userDefaults: defaults, persistsWrites: false), defaults: defaults,
+            providerIdentityKeys: [shared: "workspace-a", saved: "workspace-a"])
+        for runtime in providers {
+            let outcome = await store.refresh(providerID: runtime.provider.id, force: true)
+            XCTAssertEqual(outcome, .refreshed)
+        }
+        XCTAssertEqual(Set(store.localSnapshots.keys), [shared, saved])
+
+        let previous = QuotaResetReminders.reminders(
+            for: old.snapshot, descriptors: old.widgetDescriptors, account: "Codex", now: now,
+            accountIdentity: verifiedAccount)
+        XCTAssertEqual(previous.count, 2)
+        var pending = Dictionary(uniqueKeysWithValues: previous.map { ($0.id, $0) })
+        let scheduled = expectation(description: "가장 늦은 월간 알림 예약")
+        let lastDate = monthlyReset.addingTimeInterval(-12 * 3600)
+        let scheduler = ScheduledReminders(
+            prefix: QuotaResetReminders.prefix, now: { now }, pending: { Array(pending.values) },
+            schedule: { reminder, isCurrent in
+                guard isCurrent() else { return }
+                pending[reminder.id] = reminder
+                if reminder.date == lastDate { scheduled.fulfill() }
+            },
+            remove: { ids in
+                for id in ids { pending[id] = nil }
+            })
+        let observer = QuotaResetReminders(scheduler: scheduler, defaults: defaults)
+        observer.observe(settings: settings, dataStore: store, enablement: enablement)
+        await fulfillment(of: [scheduled], timeout: 3)
+
+        let resets = latestHasWeekly ? [latestReset, monthlyReset] : [monthlyReset]
+        XCTAssertEqual(
+            pending.values.map(\.date).sorted(),
+            resets.flatMap { reset in [reset.addingTimeInterval(-24 * 3600), reset.addingTimeInterval(-12 * 3600)] },
+            "latest=\(latestCard)")
+        XCTAssertTrue(Set(pending.keys).isDisjoint(with: previous.map(\.id)))
+    }
+
     func testSharedCodexReadingsUseProviderNameWithAnotherUsersRegisteredLabel() async throws {
         for source in [CodexAuthState.Source.file(path: "/fixture/auth.json"), .keychain, nil] {
             try await checkCodexReminderName(card: "codex", subject: "user-b", source: source, name: "Codex")
