@@ -53,7 +53,7 @@
 | [Devin](https://devin.ai/pricing) | Free | $0 | - | 제한된 에이전트 사용량 |
 | - | Pro | $20 | - | 개인 |
 | - | Max | $200 | - | 개인, 더 높은 사용량 한도 |
-| - | Teams | 기본 $80 + 개발 좌석당 $40 | - | 최대 200명 |
+| - | Teams | $80 | - | 최대 100명 |
 | - | Enterprise | 문의 | 문의 | 맞춤 계약 |
 | [Kimi: 글로벌](https://www.kimi.ai/help/membership/membership-overview) | Plus | $19 | $180 | 연간 결제 월 환산 $15, Kimi Code 포함 |
 | - | Pro | $39 | $372 | 연간 결제 월 환산 $31 |
@@ -73,7 +73,7 @@
 | - | Teams / Enterprise 크레딧 풀 | $20/좌석 | - | 최소 2석, 좌석당 월 500크레딧 |
 | [OpenCode](https://opencode.ai/docs/go/) | Go | $10 | - | 개인 워크스페이스, 모델별 사용량 한도 |
 | - | Go Plus | $40 | - | 개인 워크스페이스, 더 높은 모델별 한도 |
-| - | Go Teams | $20/멤버 | - | 멤버별 한도, 서비스 계정 제외 |
+| - | Go Teams | $20/멤버 | - | 최소 2명, 멤버별 한도, 서비스 계정 제외 |
 | - | Console, 종전 Zen | 모델별 종량제 | - | [공식 모델 요금](https://opencode.ai/v2/docs/console/models/), 구독 선택 사항 |
 | [OpenRouter](https://openrouter.ai/pricing) | Free | $0 | - | 무료 모델·요청 한도 적용 |
 | - | Standard | 모델별 종량제 | - | 크레딧 구매 시 수수료 5.5% |
@@ -128,6 +128,8 @@ Kiro도 모델 가격 엔진 대신 로컬 턴별 크레딧에 공식 추가 크
 |---|---:|---:|---:|---:|---|
 | Claude Fable 5.2 | 8 | 10(5분) | 0.20 | 40 | [Anthropic 가격](https://platform.claude.com/docs/en/about-claude/pricing) |
 | Claude Mythos 5.2 | 8 | 10(5분) | 0.20 | 40 | 같은 공식 표 |
+| GPT-6.2 Astra | 8 | 10(30분) | 0.40 | 40 | [OpenAI 가격표](https://developers.openai.com/api/docs/pricing) |
+| GPT-6.2 Sol | 2 | 2.50(30분) | 0.10 | 10 | 같은 공식 표 |
 | GPT-5.6 Sol | 5 | 6.25(30분) | 0.50 | 30 | [OpenAI 공개 정가](https://openai.com/index/previewing-gpt-5-6-sol/) |
 | Gemini 4 Carbon | 4 | 별도 요율 없음 | 0.20 | 20 | [Google 가격](https://aistudio.google.com/docs/pricing#gemini-4-carbon) |
 | Gemini 4 Argon | 4 | 별도 요율 없음 | 0.20 | 20 | [Google 가격](https://aistudio.google.com/docs/pricing#gemini-4-argon) |
@@ -245,13 +247,14 @@ Claude 로그는 기본 모델명을 유지하면서 응답 사용량의 `usage.
 기본 모델명으로 요율을 먼저 조회한 뒤 해당 항목의 Fast 배율 적용.
 `usage.speed`만으로 `-fast` 모델명을 다시 조회하지 않음.
 이 경로는 배율 누락을 가격 미확정으로 구분하지 않아, 기본 모델 요율이 있으면 표준 요율로 추정하는 한계 있음.
-대부분의 카탈로그 구간은 프롬프트 토큰 200k 초과부터 시작하고, GPT-5.4·GPT-5.5와 해당 Pro 모델, GPT-5.6 Sol·Terra·Luna, GPT-6 Astra·Sol·Luna·Rosalind, GPT-6.1 Sol·Terra의 Codex 요청은 입력 토큰 272k 초과에서 전환.
+대부분의 카탈로그 구간은 프롬프트 토큰 200k 초과부터 시작하고, GPT-5.4·GPT-5.5와 해당 Pro 모델, GPT-5.6 Sol·Terra·Luna, GPT-6 Astra·Sol·Luna·Rosalind, GPT-6.1 Sol·Terra, GPT-6.2 Astra·Sol의 Codex 요청은 입력 토큰 272k 초과에서 전환.
 Codex 로그와 Pi·OMP의 Codex 추정에는 같은 요청별 규칙을 사용하며, 일반 입력과 캐시 읽기·쓰기를 합친 수로 구간 판정.
 Codex 로그는 한 번의 집계 안에서 같은 가격 산정용 모델 이름·Ultrafast 구분의 요율 해석 결과를 재사용하며, 가격 미확정 결과도 포함.
 토큰 수·Fast 요청 여부·장문 요금 구간은 이벤트마다 계산.
 집계가 끝나면 해석 결과를 폐기하므로, 다음 집계는 그때 확보한 가격표로 다시 결정.
 해당 Codex 장문 구간은 현재 기본 단가의 입력·캐시 2배, 출력 1.5배로 계산하므로 기본 단가 갱신도 함께 반영.
-GPT-6 Astra와 GPT-6.1 Sol의 Ultrafast는 별도 공개 단가 사용 — 일반 요금의 6배이며 Fast 배율 중복 적용 없음.
+GPT-6 Astra, GPT-6.1 Sol, GPT-6.2 Astra·Sol의 Ultrafast 비용 추정에는 일반 요금의 6배인 공개 정가 적용.
+GPT-6.2 Ultrafast의 한시 가격은 미국 태평양 시각 2027년 2월 28일까지 일반 요금의 3배. [OpenAI 모델별 요금](https://developers.openai.com/api/docs/models/gpt-6.2-astra)
 Codex의 `ultrafast-fast`처럼 두 속도를 결합한 모델 이름은 가격 미확정 처리.
 Codex 로그의 `thread_settings_applied.service_tier` 또는 그 안의 `thread_settings.service_tier`가 `ultrafast`이면 해당 요금 적용.
 같은 시각·모델·토큰 수라도 Standard·Fast·Ultrafast 이벤트는 구분하여 집계하고, 같은 티어의 동일 사본만 중복 제거.
@@ -321,10 +324,9 @@ Auto·Composer 1/1.5/2·Bugbot의 기존 값도 보존하며, 현행 공식 단�
   `main` 병합만으로 가격표를 게시하지 않음.
   버전 태그 푸시 또는 대상 태그를 지정한 수동 게시와 [Pages 배포](/docs/updates.md#유지-관리자-게시-버전-보호)가 완료되면 포크 피드를 읽는 앱의 다음 갱신에서 반영.
   같은 태그의 앱 릴리스에는 첫 실행용 번들 사본 포함.
-  [pricing-update 스킬](/.skills/pricing-update/SKILL.md)은 에이전트가 동기화 전 과정(Cursor 페이지 가져오기, diff, 편집, 검증, PR 열기)을 따라가도록 안내.
+  매 릴리스 후보에서 기존·추가 예정 프로바이더의 공식 가격과 단위를 확인. [가격 점검 절차](/.skills/pricing-update/SKILL.md#매-릴리스의-확인-범위)
 - **번들 스냅샷**(`pricing_litellm_snapshot.json`, `pricing_models_dev_snapshot.json`): 릴리스 전 `script/update_pricing_snapshots.sh`로 재생성.
   공개 가격표에서 사라진 기존 모델 단가는 과거 사용 기록 계산을 위해 보존.
   같은 모델이 현재 가격표에도 있으면 현재 값으로 갱신.
   온라인 갱신에 성공하면 받은 가격을 다음 조회부터 사용.
   갱신 전이나 갱신 실패 시에는 번들·캐시의 기존 가격 사용.
-  오래된 번들 가격이 추정값에 영향을 줄 수 있으므로 릴리스 전 갱신 여부 확인.

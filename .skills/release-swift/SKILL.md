@@ -28,6 +28,9 @@ Sparkle `appcast.xml`은 `gh-pages`에 기록한 뒤 Pages로 배포.
 
 Next number in the current lane (default bump: patch). Beta builds add a `-beta.N` suffix. Confirm with the owner before proceeding.
 
+버전 승인 후 베타·정식 릴리스 후보 모두 [프로바이더 가격 점검](/.skills/pricing-update/SKILL.md) 수행.
+가격·번들 변경도 아래 변경 내역에 포함.
+
 ### 2. Generate the changelog
 
 Collect commits since the **previous release in the same channel** and categorize each:
@@ -113,6 +116,7 @@ curl -fsSL "$feed_url" | grep -F "$asset_name"
 별도 수동 재배포는 `gh workflow run deploy-pages.yml --repo kimchanhyung98/egasu --ref main -f tag=<버전 태그> -f publication_run_id=<성공한 게시 실행 ID>` 사용.
 최신 `gh-pages`를 임의로 배포하지 않으며, 태그 기록이 없는 옛 산출물·만료된 산출물은 대상 태그로 새 게시 필요.
 Sparkle의 실제 반영 확인은 라이브 URL 기준.
+가격표 게시와 Pages 배포가 끝나면 [태그 게시 결과 확인](/.skills/pricing-update/SKILL.md#6-태그-게시-결과-확인)으로 태그와 배포 파일 일치 확인.
 
 Require `isDraft=false`, `isPrerelease=true` for beta or `false` for stable, the selected `$asset_name` asset, `bodyLen>0`, and the version present in the appcast. If a draft was left behind, migrate its notes/assets onto the published release, then delete it — but only once a separate PUBLISHED release for the tag already exists:
 
