@@ -214,3 +214,6 @@
 "Quota Available Again" = "Quota Available Again";
 "Notify when fresh Claude, Codex, or Cursor usage confirms the same account has quota again" = "Notify when fresh Claude, Codex, or Cursor usage confirms the same account has quota again";
 "This quota is available again." = "This quota is available again.";
+"<1m" = "<1m";
+"%lldh+" = "%lldh+";
+"%lldd+" = "%lldd+";

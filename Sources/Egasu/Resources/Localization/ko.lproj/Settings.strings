@@ -217,3 +217,9 @@
 "Weekly Limit Reset" = "주간 한도 초기화";
 "Monthly Limit Reset" = "월간 한도 초기화";
 "This limit resets in %lld hours." = "%lld시간 후 이 한도가 초기화됩니다.";
+"Show Metric Labels" = "지표명 표시";
+"Show Account Names" = "계정명 표시";
+"Show Reset Countdown" = "초기화까지 남은 시간 표시";
+"Codex Reset Credit Expiry" = "Codex 초기화권 만료 알림";
+"Notify 24 and 12 hours before an unused Codex reset credit expires." = "미사용 Codex 초기화권이 만료되기 24시간 전과 12시간 전에 알립니다.";
+"An unused reset credit expires in %lld hours." = "미사용 초기화권이 %lld시간 후 만료됩니다.";

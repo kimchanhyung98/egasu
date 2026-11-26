@@ -309,6 +309,11 @@ final class AppContainer {
             self?.accountProfileID(for: $0)
         }
         quotaResetReminders.observe(settings: notificationSettings, dataStore: dataStore, enablement: enablement)
+        dataStore.configureCodexCreditReminders(
+            scheduler: ScheduledReminders(prefix: CodexCreditExpiryReminders.prefix))
+        codexResetClaim.onUnavailable = { [weak dataStore] cardID, credits in
+            dataStore?.codexCreditsUnavailable(cardID: cardID, credits: credits)
+        }
         resetWatchCoordinator.observeActivity { [layout, resetWatchNotifications] in
             resetWatchNotifications.configurationDidChange()
             return Self.needsResetWatch(

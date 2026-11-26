@@ -90,6 +90,9 @@ Display의 **Menu Bar Icons** 미리보기는 고른 스타일·개수와 추가
 | 설정 | 옵션 | 동작 |
 |---|---|---|
 | Icon Style(아이콘 스타일) | Text / Bars | Text는 프로바이더 마크·지표 이름·값, Bars는 한 아이콘에 쌓은 막대.<br>저장값이 없으면 기본값 Text.<br>즉시 적용하고 재실행 뒤에도 유지.<br>Bars는 한도가 있는 지표만 표시하며 Used / Left 설정 적용.<br>App Icon Only에서는 비활성. |
+| Show Metric Labels(지표명 표시) | 켜기 / 끄기 | 기본값 켜기. Text 스타일에서 지표명 표시. 계정명을 표시하는 항목에서는 한도 기간을 배지로 표시. |
+| Show Account Names(계정명 표시) | 켜기 / 끄기 | 기본값 끄기. Text 스타일에서 등록한 계정명을 값 위에 표시. 개인정보 보호 모드에서는 계정명과 이니셜 숨김. |
+| Show Reset Countdown(초기화까지 남은 시간 표시) | 켜기 / 끄기 | 기본값 끄기. Text 스타일에서 향후 초기화 시각이 있는 퍼센트 한도의 값 옆에 남은 시간 표시. |
 | Max Items In Menu Bar(메뉴 막대 최대 항목) | App Icon Only / Up to 1 ~ Up to 5 | 선택한 기준에 맞는 지표의 표시 개수 제한.<br>기본값은 Up to 3.<br>추가 표시가 켜져 있으면 넘친 항목 수를 `+N`으로 표시.<br>App Icon Only는 항상 egasu 아이콘 표시.<br>[메뉴 막대](/docs/menu-bar.md) 참조. |
 | Menu Bar Items(메뉴 막대 표시 항목) | Running Out / Priority / Pinned Only | 기본값 Running Out은 고정 여부와 관계없이 소진 임박 한도 표시.<br>Priority는 Pinned → Running Out → Use It or Lose It → Used Up 순서이며 고정한 지표는 소진 완료여도 앞쪽 고정 목록 유지.<br>Pinned Only는 직접 고정한 지표만 저장된 계정·지표 순서로 표시.<br>저장한 표시 기준이 있으면 유지.<br>저장값이 없고 이전 **Always Show In Menu Bar**가 켜져 있으면 Priority, 그 외 Running Out.<br>App Icon Only에서는 비활성.<br>[표시 기준](/docs/menu-bar.md#표시-항목) 참조. |
 | Show Extra Indicators(추가 표시) | 켜기 / 끄기 | 메뉴 막대의 생략된 항목 수(`+N`)와 업데이트 표시 제어.<br>기본값 켜기.<br>끄면 Bars는 막대 아이콘만 표시.<br>즉시 적용하고 재실행 뒤에도 유지.<br>macOS 알림·업데이트 확인·대시보드 안내와 독립. |
@@ -164,6 +167,7 @@ Critical은 항상 Warning보다 낮음 — 한쪽을 다른 쪽과 겹치게 �
 | Use It or Lose It | 켜기 / 끄기 | 하루보다 긴 한도의 초기화가 24시간 이내로 남았고 잔량을 정수 퍼센트로 반올림한 값이 50%를 넘으면 통지. 달러 기반 한도 제외. |
 | Quota Available Again | 켜기 / 끄기 | 같은 계정에서 소진된 한도를 다시 사용할 수 있다고 실측하면 한 번 통지. 기본 꺼짐. |
 | Weekly and Monthly Reset Reminders | 켜기 / 끄기 | Claude·Codex·Cursor의 계정이 확인된 주간·월간 한도가 초기화되기 24시간 전과 12시간 전에 각각 한 번 통지. 기본 꺼짐. |
+| Codex Reset Credit Expiry(초기화권 만료 알림) | 켜기 / 끄기 | 계정별 미사용 초기화권의 만료 24시간 전과 12시간 전에 각각 한 번 통지. 기본 꺼짐. |
 | Codex Reset Watch | 켜기 / 끄기 | 공개 Reset Watch에서 새 유효 예측이나 리셋 예정 정보를 확인하면 통지. |
 
 앞의 네 할당량 알림은 조건에 새로 진입할 때 통지하며 같은 상태에서 반복하지 않음.
@@ -183,6 +187,15 @@ Claude 또는 Codex 카드의 계정을 식별할 수 없는 경우, 계정 목�
 **Use It or Lose It**은 같은 기간에 한 번 통지하며, 실행 시 이미 해당 조건이면 통지 없이 기준선 기록.
 사용량이 먼저 0으로 돌아와도 이후 초기화 시각과 주기로 새 기간의 시작이 확인되면 해당 기간에 다시 통지 가능.
 데이터를 읽을 수 없는 지표는 알림 제외.
+만료 시각을 아는 초기화권의 미래 알림만 macOS에 예약.
+같은 워크스페이스에서도 Codex 사용자별로 예약과 초기화권 사용 기록을 구분.
+앱을 다시 열면 첫 사용량 조회에서 사용자와 워크스페이스를 확인한 뒤 예약.
+설정을 끄거나 서버가 초기화권 사용·사용 불가를 확인하면 해당 권의 남은 예약 취소.
+서버가 전체 목록을 반환하지 않으면 선택한 권 한 장의 예약만 취소.
+같은 시각에 만료되는 다른 미사용 권의 예약은 유지.
+저장된 프로필의 인증으로 조회한 초기화권에는 해당 프로필 이름을 표시.
+기본 인증 파일이나 Keychain 로그인으로 조회한 경우에는 Codex로 표시.
+초기화권 사용 요청에서 일시적인 통신 오류가 나면 그 오류만으로 기존 예약을 취소하지 않음.
 **Codex Reset Watch**는 할당량 경고·회복 알림과 독립적으로 동작.
 egasu 알림은 같은 그룹으로 분류하며, 배너 표시 방식은 macOS 알림 설정에 따름.
 
@@ -208,7 +221,7 @@ Cursor에서 같은 월간 요청 한도를 두 지표로 표시해도 요청 �
 설정을 끄면 이 알림의 남은 예약을 취소.
 계정 변경이나 인증 실패로 취소한 예약은 앱을 다시 열어도 해당 계정의 한도를 다시 확인한 뒤에만 등록.
 **Use It or Lose It**도 켠 경우 잔량 조건을 새로 충족하면 별도의 잔량 안내를 받을 수 있음.
-**Quota Available Again**과 **Codex Reset Watch**도 개별 설정.
+**Quota Available Again**, **Codex Reset Credit Expiry**, **Codex Reset Watch**도 개별 설정.
 **Codex Reset Watch**는 Codex 프로바이더가 켜져 있으면 예측 지표를 숨겨도 알림만 사용 가능.
 처음 켠 뒤 조회에서 현재 유효한 이벤트를 확인한 경우도 통지 대상.
 기록이 남아 있는 공개 이벤트는 이 Mac에서 한 번 통지하며, 계정 수와 관계없이 같은 알림은 하나만 발생.

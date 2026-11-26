@@ -217,3 +217,9 @@
 "Weekly Limit Reset" = "Weekly Limit Reset";
 "Monthly Limit Reset" = "Monthly Limit Reset";
 "This limit resets in %lld hours." = "This limit resets in %lld hours.";
+"Show Metric Labels" = "Show Metric Labels";
+"Show Account Names" = "Show Account Names";
+"Show Reset Countdown" = "Show Reset Countdown";
+"Codex Reset Credit Expiry" = "Codex Reset Credit Expiry";
+"Notify 24 and 12 hours before an unused Codex reset credit expires." = "Notify 24 and 12 hours before an unused Codex reset credit expires.";
+"An unused reset credit expires in %lld hours." = "An unused reset credit expires in %lld hours.";
