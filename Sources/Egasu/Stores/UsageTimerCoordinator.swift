@@ -338,7 +338,7 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
             fail(candidate, "Usage timer automation could not update its saved state.")
         }
         guard current(candidate), launchObservationIsCurrent != nil else { return }
-        if observationChanged && result.verificationCanClearFailure { return }
+        if (observationChanged || result.loginNoLongerEligible) && result.verificationCanClearFailure { return }
         guard result.launched else {
             fail(candidate, result.failureDescription ?? "Usage timer message could not be started. Refresh after five minutes to try again.")
             return

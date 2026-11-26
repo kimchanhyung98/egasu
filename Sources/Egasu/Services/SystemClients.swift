@@ -355,6 +355,7 @@ protocol KeychainAccessing: Sendable {
     func genericPasswordExists(service: String) -> Bool?
     func writeGenericPassword(service: String, value: String) throws
     func deleteGenericPassword(service: String) throws
+    func deleteGenericPasswordForCurrentUser(service: String) throws
     func readGenericPasswordForCurrentUser(service: String) throws -> String?
     func readGenericPasswordForCurrentUser(service: String, allowInteraction: Bool) throws -> String?
     func writeGenericPasswordForCurrentUser(service: String, value: String) throws
@@ -386,6 +387,10 @@ extension KeychainAccessing {
 
     func readGenericPasswordForCurrentUser(service: String) throws -> String? {
         try readGenericPassword(service: service)
+    }
+
+    func deleteGenericPasswordForCurrentUser(service: String) throws {
+        try deleteGenericPassword(service: service)
     }
 
     func readGenericPasswordForCurrentUser(service: String, allowInteraction: Bool) throws -> String? {
@@ -447,7 +452,7 @@ struct SecurityKeychainAccessor: KeychainAccessing {
     }
 
     func readGenericPassword(service: String) throws -> String? {
-        try readPassword(["find-generic-password", "-s", service, "-w"], service: service)
+        try readPassword(["find-generic-password", "-s", service, "-w"])
     }
 
     func readGenericPassword(service: String, allowInteraction: Bool) throws -> String? {
@@ -457,17 +462,22 @@ struct SecurityKeychainAccessor: KeychainAccessing {
     /// launch 경로용 attributes-only 존재 probe — in-process Security framework 쿼리, secret 미요청·UI 금지로 unlock prompt·launch 지연 불가.
     /// probe 실패(잠김·거부)는 `nil`("unknown")로만 보고 — 확정 답 금지.
     func genericPasswordExists(service: String) -> Bool? {
+        genericPasswordExists(service: service, account: nil)
+    }
+
+    func genericPasswordExists(service: String, account: String?) -> Bool? {
         guard NativeKeychainAccess.tryAcquire() else {
             AppLog.debug(.keychain, "keychain existence probe skipped: another operation is in progress")
             return nil
         }
         defer { NativeKeychainAccess.release() }
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecUseAuthenticationUI as String: kSecUseAuthenticationUIFail,
+            kSecUseAuthenticationUI as String: kSecUseAuthenticationUIFail
         ]
+        if let account { query[kSecAttrAccount as String] = account }
         switch SecItemCopyMatching(query as CFDictionary, nil) {
         case errSecSuccess: return true
         case errSecItemNotFound: return false
@@ -476,7 +486,7 @@ struct SecurityKeychainAccessor: KeychainAccessing {
     }
 
     func readGenericPasswordForCurrentUser(service: String) throws -> String? {
-        try readPassword(["find-generic-password", "-a", currentUserAccount(), "-s", service, "-w"], service: service)
+        try readPassword(["find-generic-password", "-a", currentUserAccount(), "-s", service, "-w"])
     }
 
     func readGenericPasswordForCurrentUser(service: String, allowInteraction: Bool) throws -> String? {
@@ -484,14 +494,14 @@ struct SecurityKeychainAccessor: KeychainAccessing {
     }
 
     func readGenericPassword(service: String, account: String) throws -> String? {
-        try readPassword(["find-generic-password", "-a", account, "-s", service, "-w"], service: service)
+        try readPassword(["find-generic-password", "-a", account, "-s", service, "-w"])
     }
 
     func readCLISharedPassword(service: String, forCurrentUser: Bool) throws -> String? {
         let accountArguments = forCurrentUser ? ["-a", currentUserAccount()] : []
         return try readPassword(
             ["find-generic-password"] + accountArguments + ["-s", service, "-w"],
-            service: service, isSharedCredential: true)
+            isSharedCredential: true)
     }
 
     func genericPasswordModificationDate(service: String) throws -> Date? {
@@ -529,7 +539,7 @@ struct SecurityKeychainAccessor: KeychainAccessing {
     }
 
     private func readPassword(
-        _ arguments: [String], service: String, isSharedCredential: Bool = false
+        _ arguments: [String], isSharedCredential: Bool = false
     ) throws -> String? {
         let result = try processRunner.run(
             executable: "/usr/bin/security",
@@ -544,7 +554,7 @@ struct SecurityKeychainAccessor: KeychainAccessing {
                 throw KeychainError.readFailed("")
             }
             // 잠김·거부 Keychain 진단용 로그 — caller가 `try?`로 nil 처리해도 여기서 기록 필수.
-            AppLog.warn(.keychain, "read failed for service '\(service)' (exit \(result.exitCode))")
+            AppLog.warn(.keychain, "keychain read failed (exit \(result.exitCode))")
             throw KeychainError.readFailed(result.stderr)
         }
         let value = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -565,11 +575,19 @@ struct SecurityKeychainAccessor: KeychainAccessing {
     }
 
     func deleteGenericPassword(service: String) throws {
-        // `security` 1회 호출은 item 1개만 삭제 — account-scoped와 unscoped item 공존 가능, not-found까지 반복해 전부 제거.
+        try deletePassword(arguments: ["delete-generic-password", "-s", service])
+    }
+
+    func deleteGenericPasswordForCurrentUser(service: String) throws {
+        try deletePassword(arguments: ["delete-generic-password", "-s", service, "-a", currentUserAccount()])
+    }
+
+    private func deletePassword(arguments: [String]) throws {
+        // `security`는 호출당 한 항목만 삭제하므로 지정한 범위에 일치하는 항목이 없어질 때까지 반복.
         for _ in 0..<8 {
             let result = try processRunner.run(
                 executable: "/usr/bin/security",
-                arguments: ["delete-generic-password", "-s", service],
+                arguments: arguments,
                 environment: [:],
                 timeout: 5
             )

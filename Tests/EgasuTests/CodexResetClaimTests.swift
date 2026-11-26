@@ -21,14 +21,15 @@ final class CodexResetClaimTests: XCTestCase {
     }
 
     private nonisolated static func listBody(expiry: Date = expiry, status: String = "available") -> Data {
-        Data("""
-        {"credits": [
-            {"id": "RateLimitResetCredit_other", "status": "available",
-             "expires_at": "\(EgasuISO8601.string(from: expiry.addingTimeInterval(999_999)))"},
-            {"id": "RateLimitResetCredit_target", "status": "\(status)",
-             "expires_at": "\(EgasuISO8601.string(from: expiry))"}
-        ], "available_count": 2}
-        """.utf8)
+        Data(
+            """
+            {"credits": [
+                {"id": "RateLimitResetCredit_other", "status": "available",
+                 "expires_at": "\(EgasuISO8601.string(from: expiry.addingTimeInterval(999_999)))"},
+                {"id": "RateLimitResetCredit_target", "status": "\(status)",
+                 "expires_at": "\(EgasuISO8601.string(from: expiry))"}
+            ], "available_count": \(status == "available" ? 2 : 1)}
+            """.utf8)
     }
 
     private nonisolated static func consumeBody(code: String) -> Data {
@@ -139,28 +140,52 @@ final class CodexResetClaimTests: XCTestCase {
     func testCreditMatchingByExpiry() throws {
         let body = try XCTUnwrap(ProviderParse.jsonObject(Self.listBody()))
         XCTAssertEqual(
-            CodexResetClaimService.creditID(in: body, expiringAt: Self.expiry),
-            "RateLimitResetCredit_target"
+            CodexResetClaimService.creditSelection(in: body, expiringAt: Self.expiry),
+            .available(id: "RateLimitResetCredit_target", remaining: 0)
         )
         // sub-second 절삭은 허용, 다른 credit의 expiry는 불허
         XCTAssertEqual(
-            CodexResetClaimService.creditID(in: body, expiringAt: Self.expiry.addingTimeInterval(0.5)),
-            "RateLimitResetCredit_target"
+            CodexResetClaimService.creditSelection(in: body, expiringAt: Self.expiry.addingTimeInterval(0.5)),
+            .available(id: "RateLimitResetCredit_target", remaining: 0)
         )
-        XCTAssertNil(CodexResetClaimService.creditID(in: body, expiringAt: Self.expiry.addingTimeInterval(3600)))
+        XCTAssertEqual(
+            CodexResetClaimService.creditSelection(in: body, expiringAt: Self.expiry.addingTimeInterval(3600)),
+            .unavailable)
+    }
+
+    func testClaimSelectsDisplayedExpiryAndCountsOnlyItsNotificationSecond() async {
+        let earlier = Self.expiry.timeIntervalSince1970 - 0.25
+        let requested = Self.expiry.addingTimeInterval(0.25)
+        let body = Data(
+            """
+            {"credits":[
+              {"id":"previous-second","expires_at":\(earlier)},
+              {"id":"this-second","expires_at":\(requested.timeIntervalSince1970)}
+            ]}
+            """.utf8)
+        let (service, _) = makeService(listBody: body)
+        var claimed: CodexResetClaimService.MatchedCredit?
+        service.onUnavailable = { change in
+            if case .credit(let credit) = change { claimed = credit }
+        }
+        let result = await service.claim(
+            creditExpiringAt: requested, redeemRequestID: "selection", binding: Self.binding)
+        XCTAssertEqual(result, .success)
+        XCTAssertEqual(claimed?.creditID, "this-second")
+        XCTAssertEqual(claimed?.remainingAtExpiry, 0)
     }
 
     func testCreditMatchingSkipsNonAvailableStatusButKeepsMissingStatus() throws {
         let redeemed = try XCTUnwrap(ProviderParse.jsonObject(Self.listBody(status: "redeemed")))
-        XCTAssertNil(CodexResetClaimService.creditID(in: redeemed, expiringAt: Self.expiry))
+        XCTAssertEqual(CodexResetClaimService.creditSelection(in: redeemed, expiringAt: Self.expiry), .unavailable)
 
         // `status` 필드 부재는 available로 간주 — mapper 필터와 동일
         let noStatus = try XCTUnwrap(ProviderParse.jsonObject(Data(
             #"{"credits": [{"id": "RateLimitResetCredit_bare", "expires_at": \#(Self.expiry.timeIntervalSince1970)}]}"#.utf8
         )))
         XCTAssertEqual(
-            CodexResetClaimService.creditID(in: noStatus, expiringAt: Self.expiry),
-            "RateLimitResetCredit_bare"
+            CodexResetClaimService.creditSelection(in: noStatus, expiringAt: Self.expiry),
+            .available(id: "RateLimitResetCredit_bare", remaining: 0)
         )
     }
 
@@ -169,10 +194,21 @@ final class CodexResetClaimTests: XCTestCase {
     func testClaimMatchesCreditConsumesItAndRefreshes() async throws {
         let refreshes = RefreshCounter()
         let (service, http) = makeService(refreshes: refreshes)
+        var consumed = false
+        service.onUnavailable = { change in
+            guard case .credit(let credit) = change else { return XCTFail("Expected a single credit") }
+            XCTAssertEqual(credit.creditID, "RateLimitResetCredit_target")
+            XCTAssertEqual(credit.binding, Self.binding)
+            XCTAssertEqual(credit.expiry, Self.expiry)
+            XCTAssertEqual(credit.remainingAtExpiry, 0)
+            XCTAssertEqual(refreshes.count, 0)
+            consumed = true
+        }
 
         let outcome = await service.claim(creditExpiringAt: Self.expiry, redeemRequestID: "redeem-1", binding: Self.binding)
 
         XCTAssertEqual(outcome, .success)
+        XCTAssertTrue(consumed)
         XCTAssertEqual(refreshes.count, 1, "a successful claim forces a Codex refresh before returning")
         XCTAssertEqual(http.requests.map(\.url),
                        [CodexUsageClient.resetCreditsURL, CodexUsageClient.consumeResetCreditURL])

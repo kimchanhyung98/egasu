@@ -81,7 +81,7 @@ struct AddAccountSheet: View {
     }
 }
 
-/// API 키를 앱 설정 파일에 저장하여 환경 변수보다 우선 적용 — 프로바이더 활성화 후 즉시 조회.
+/// API 키를 프로바이더의 인증 저장소에 저장하고 활성화 후 즉시 조회.
 /// 이 Mac에 쓸 수 있는 키가 이미 있으면 입력 없이 켜기만 가능.
 private struct APIKeyAddStep: View {
     let provider: any APIKeyManaging
@@ -91,9 +91,11 @@ private struct APIKeyAddStep: View {
     @Environment(AppContainer.self) private var container
     @Environment(WidgetDataStore.self) private var dataStore
     @State private var apiKey = ""
+    @State private var projects = ""
     @State private var error: String?
     @State private var hasExistingKey = false
 
+    private var openAI: OpenAICostsProvider? { provider as? OpenAICostsProvider }
     private var trimmedKey: String { apiKey.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
@@ -101,8 +103,12 @@ private struct APIKeyAddStep: View {
             SheetHeader(
                 icon: provider.provider.icon,
                 title: L10n.accounts("Add %@", provider.provider.displayName),
-                message: L10n.accounts(
-                    "Enter an API key from your %@ account. egasu saves it on this Mac.", provider.provider.displayName),
+                message: openAI == nil
+                    ? L10n.accounts(
+                        "Enter an API key from your %@ account. egasu saves it on this Mac.",
+                        provider.provider.displayName)
+                    : L10n.accounts(
+                        "Enter an organization Admin API key with access to costs. egasu saves it in Keychain."),
                 link: keyPage.map { (L10n.accounts("Get Your API Key"), $0) }
             )
             Form {
@@ -112,6 +118,9 @@ private struct APIKeyAddStep: View {
                         prompt: Text(L10n.accounts(hasExistingKey ? "Optional" : "Required"))
                     )
                     .onSubmit(add)
+                    if openAI != nil {
+                        OpenAIProjectField(input: $projects)
+                    }
                 } footer: {
                     if let error {
                         Text(error)
@@ -122,7 +131,7 @@ private struct APIKeyAddStep: View {
             }
             .formStyle(.grouped)
             .scrollDisabled(true)
-            .frame(height: error == nil ? 76 : 100)
+            .frame(height: (error == nil ? 76 : 100) + (openAI == nil ? 0 : 52))
             SheetButtons(
                 secondary: SheetAction(title: L10n.accounts("Cancel"), shortcut: .cancelAction, action: cancel),
                 primary: SheetAction(
@@ -141,7 +150,12 @@ private struct APIKeyAddStep: View {
         .onAppear {
             let status = provider.apiKeyStatus
             hasExistingKey = status != .notSet && status != .unreadable
-            if status == .unreadable { error = UserAPIKeyStore.unreadableKeyMessage.localized }
+            projects = openAI?.projectIDs.joined(separator: ", ") ?? ""
+            if status == .unreadable {
+                error =
+                    openAI == nil
+                    ? UserAPIKeyStore.unreadableKeyMessage.localized : L10n.accounts("Can't Read Saved Key")
+            }
         }
     }
 
@@ -154,14 +168,16 @@ private struct APIKeyAddStep: View {
 
     private func add() {
         guard AddAccountSheet.canAddAPIKey(apiKey, hasExistingKey: hasExistingKey) else { return }
-        guard !trimmedKey.isEmpty else {
-            // 이미 있는 키(환경 변수·저장 파일) 사용 — 켜면 바로 조회.
-            container.setProviderEnabled(true, for: provider.provider.id)
-            onAdded()
-            return
-        }
         do {
-            try provider.saveAPIKey(trimmedKey)
+            if let openAI {
+                try openAI.saveConnection(key: trimmedKey, projects: projects)
+            } else if trimmedKey.isEmpty {
+                container.setProviderEnabled(true, for: provider.provider.id)
+                onAdded()
+                return
+            } else {
+                try provider.saveAPIKey(trimmedKey)
+            }
         } catch {
             self.error = UserFacingErrors.message(error)
             return

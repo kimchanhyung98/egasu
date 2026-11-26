@@ -226,7 +226,7 @@ struct ProblemCard: View {
 }
 
 /// 등록 계정 이외의 계정 관리 — API 키 교체와 "Remove Account…" 제공.
-/// 감지형은 추적만 끄고 로그인은 그대로, API 키형은 설정 파일의 키를 지우고 끔.
+/// 감지형은 추적만 끄고 로그인 유지. API 키형은 인증 저장소의 키 삭제.
 struct ProviderAccountRows: View {
     let provider: Provider
     let keyProvider: (any APIKeyManaging)?
@@ -260,14 +260,19 @@ struct ProviderAccountRows: View {
                     Button(L10n.accounts("Remove Account"), role: .destructive, action: remove)
                     Button(L10n.accounts("Cancel"), role: .cancel) {}
                 } message: {
-                    Text(
-                        keyProvider == nil
-                            ? L10n.accounts(
+                    if keyProvider is OpenAICostsProvider {
+                        Text(L10n.accounts("egasu removes the Admin API key from Keychain and stops tracking costs."))
+                    } else if keyProvider == nil {
+                        Text(
+                            L10n.accounts(
                                 "egasu stops tracking this account. Your %@ sign-in stays as it is.",
-                                provider.displayName)
-                            : L10n.accounts(
+                                provider.displayName))
+                    } else {
+                        Text(
+                            L10n.accounts(
                                 "egasu removes API keys from local configuration files and stops tracking this account. Environment keys remain available when you add the account again."
                             ))
+                    }
                 }
             }
             .cardSurface()
@@ -286,6 +291,9 @@ struct ProviderAccountRows: View {
             try Self.remove(providerID: provider.id, keyProvider: keyProvider) {
                 container.setProviderEnabled($0, for: $1)
             }
+            if keyProvider is DeepSeekProvider || keyProvider is OpenAICostsProvider {
+                container.dataStore.credentialsDidChange(for: provider.id)
+            }
         } catch {
             self.error = UserFacingErrors.message(error)
             return
@@ -293,7 +301,7 @@ struct ProviderAccountRows: View {
         onRemoved()
     }
 
-    /// 설정 파일 삭제가 끝나면 추적 해제. UI에 보이는 키 상태와 무관하게 저장 파일을 확인.
+    /// 저장된 키 삭제가 끝나면 추적 해제.
     static func remove(
         providerID: String,
         keyProvider: (any APIKeyManaging)?,

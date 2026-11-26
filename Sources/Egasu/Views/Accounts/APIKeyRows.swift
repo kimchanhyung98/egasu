@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// API 키 관리 행 — 교체 버튼을 누르면 입력란과 Cancel·Save 버튼 표시.
-/// 키를 인증 저장소의 설정 파일에 저장하여 환경 변수보다 우선 적용 — 저장 직후 새로 고침.
+/// 키를 프로바이더의 인증 저장소에 저장하고 바로 새로 고침.
 /// 인증 실패는 문제 카드에 표시 — 저장 키의 가림 해제 기능은 제공하지 않음.
 struct APIKeyRows: View {
     let provider: any APIKeyManaging
@@ -10,6 +10,7 @@ struct APIKeyRows: View {
     @State private var status: APIKeyStatus = .notSet
     @State private var isEditing = false
     @State private var input = ""
+    @State private var projects = ""
     @State private var error: String?
     @FocusState private var isFieldFocused: Bool
 
@@ -29,9 +30,10 @@ struct APIKeyRows: View {
             } else {
                 Button {
                     error = nil
+                    projects = (provider as? OpenAICostsProvider)?.projectIDs.joined(separator: ", ") ?? ""
                     isEditing = true
                 } label: {
-                    Text(L10n.accounts(status == .notSet ? "Add API Key…" : "Replace API Key…"))
+                    Text(editorTitle)
                         .foregroundStyle(.tint)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .accountActionRowPadding()
@@ -53,6 +55,11 @@ struct APIKeyRows: View {
         .onAppear { status = provider.apiKeyStatus }
     }
 
+    private var editorTitle: String {
+        if provider is OpenAICostsProvider { return L10n.accounts("Edit Billing Connection…") }
+        return L10n.accounts(status == .notSet ? "Add API Key…" : "Replace API Key…")
+    }
+
     private var editor: some View {
         VStack(alignment: .trailing, spacing: 8) {
             SecureField(L10n.accounts("New API Key"), text: $input)
@@ -60,6 +67,9 @@ struct APIKeyRows: View {
                 .focused($isFieldFocused)
                 .onAppear { isFieldFocused = true }
                 .onSubmit(save)
+            if provider is OpenAICostsProvider {
+                OpenAIProjectField(input: $projects)
+            }
             HStack(spacing: 8) {
                 Button(L10n.customize("Cancel")) {
                     input = ""
@@ -68,7 +78,7 @@ struct APIKeyRows: View {
                 }
                 Button(L10n.customize("Save"), action: save)
                     .buttonStyle(.borderedProminent)
-                    .disabled(trimmedInput.isEmpty)
+                    .disabled(trimmedInput.isEmpty && !(provider is OpenAICostsProvider && status == .saved))
             }
             .controlSize(.small)
         }
@@ -90,9 +100,14 @@ struct APIKeyRows: View {
 
     private func save() {
         let key = trimmedInput
-        guard !key.isEmpty else { return }
         do {
-            try provider.saveAPIKey(key)
+            if let openAI = provider as? OpenAICostsProvider {
+                guard !key.isEmpty || status == .saved else { return }
+                try openAI.saveConnection(key: key, projects: projects)
+            } else {
+                guard !key.isEmpty else { return }
+                try provider.saveAPIKey(key)
+            }
             input = ""
             isEditing = false
             error = nil

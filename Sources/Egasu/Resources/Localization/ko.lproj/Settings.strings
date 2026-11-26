@@ -212,3 +212,14 @@
 "Suggest another Claude or Codex account. Switching always requires confirmation." = "다른 Claude 또는 Codex 계정을 추천합니다. 전환 전에는 항상 승인이 필요합니다.";
 "Suggest switching when any current base quota reaches this usage." = "현재 계정의 기본 구독 한도 중 하나가 이 사용률에 도달하면 전환을 추천합니다.";
 "Every applicable base quota on a candidate must be below this usage." = "후보 계정의 모든 기본 구독 한도 사용률이 이 값 미만이어야 합니다.";
+"Weekly and Monthly Reset Reminders" = "주간·월간 한도 초기화 알림";
+"Notify 24 and 12 hours before weekly or monthly limits reset for Claude, Codex, and Cursor." = "Claude·Codex·Cursor의 주간·월간 한도가 초기화되기 24시간 전과 12시간 전에 알려줍니다.";
+"Weekly Limit Reset" = "주간 한도 초기화";
+"Monthly Limit Reset" = "월간 한도 초기화";
+"This limit resets in %lld hours." = "%lld시간 후 이 한도가 초기화됩니다.";
+"Show Metric Labels" = "지표명 표시";
+"Show Account Names" = "계정명 표시";
+"Show Reset Countdown" = "초기화까지 남은 시간 표시";
+"Codex Reset Credit Expiry" = "Codex 초기화권 만료 알림";
+"Notify 24 and 12 hours before an unused Codex reset credit expires." = "미사용 Codex 초기화권이 만료되기 24시간 전과 12시간 전에 알립니다.";
+"An unused reset credit expires in %lld hours." = "미사용 초기화권이 %lld시간 후 만료됩니다.";
