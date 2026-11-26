@@ -298,7 +298,7 @@ public struct UsageReader {
                 (ProviderAccountID.family(of: $0) == "claude" && identityKeys[$0] == nil)
                     || cache.hasStaleAccountStamp(providerID: $0, currentIdentityKey: identityKeys[$0])
             })
-        let cachedSnapshots = cache.loadSnapshots(providerIDs: allProviderIDs)
+        let cachedSnapshots = cache.loadSnapshots(providerIDs: allProviderIDs, identityKeys: identityKeys)
             .filter { providerID, _ in !staleAccountStampIDs.contains(providerID) }
         let savedOrder = LayoutPersistence(
             defaults: defaults,
@@ -307,7 +307,8 @@ public struct UsageReader {
         let orderedIDs = registry.orderedProviderIDs(savedOrder: savedOrder)
         let enabledOrderedIDs = orderedIDs.filter(includesProvider)
         let needsRefresh = force || enabledOrderedIDs.contains {
-            cache.snapshot(providerID: $0) == nil || staleAccountStampIDs.contains($0)
+                cache.snapshot(providerID: $0, currentIdentityKey: identityKeys[$0]) == nil
+                    || staleAccountStampIDs.contains($0)
         }
         var snapshots = cachedSnapshots
         var warnings: [String] = []

@@ -79,24 +79,31 @@ struct ProviderSnapshotCache {
 
     /// 대상 provider의 저장 snapshot 전부(만료 포함) — 표시용(stale-while-revalidate).
     /// refresh gating은 TTL 검사하는 `snapshot(providerID:)` 경유.
-    func loadSnapshots(providerIDs: [String]) -> [String: ProviderSnapshot] {
+    func loadSnapshots(providerIDs: [String], identityKeys: [String: String] = [:]) -> [String: ProviderSnapshot] {
         let providerIDSet = Set(providerIDs)
         let state = loadSession()
         let loaded =
             state.payload?.snapshots.filter { providerID, _ in
-                providerIDSet.contains(providerID) && canReadSnapshot(providerID, in: state)
+                providerIDSet.contains(providerID)
+                    && canReadSnapshot(providerID, identity: identityKeys[providerID], in: state)
             } ?? [:]
         AppLog.debug(.cache, "loaded \(loaded.count) snapshots from disk")
         return loaded
     }
 
-    private func canReadSnapshot(_ providerID: String, in state: Session) -> Bool {
-        !ignoresPersistedSnapshotsFor.contains(providerID) || state.freshIDs.contains(providerID)
+    private func canReadSnapshot(_ providerID: String, identity: String?, in state: Session) -> Bool {
+        if providerID == "openai-api" {
+            guard let identity else { return false }
+            return state.payload?.producedByIdentityKeys[providerID] == identity
+        }
+        return !ignoresPersistedSnapshotsFor.contains(providerID) || state.freshIDs.contains(providerID)
     }
 
-    func snapshot(providerID: String) -> ProviderSnapshot? {
+    func snapshot(providerID: String, currentIdentityKey: String? = nil) -> ProviderSnapshot? {
         let state = loadSession()
-        guard canReadSnapshot(providerID, in: state), let snapshot = state.payload?.snapshots[providerID] else {
+        guard canReadSnapshot(providerID, identity: currentIdentityKey, in: state),
+            let snapshot = state.payload?.snapshots[providerID]
+        else {
             return nil
         }
         let writtenThisSession = state.freshIDs.contains(providerID)
@@ -211,7 +218,7 @@ struct ProviderSnapshotCache {
     }
 
     static func requiresCredentialIdentity(_ providerID: String) -> Bool {
-        ["cursor", "qwencloud"].contains(ProviderAccountID.family(of: providerID))
+        ["cursor", "deepseek", "openai-api", "qwencloud"].contains(ProviderAccountID.family(of: providerID))
     }
 
     /// 저장 entry를 `currentIdentityKey`로 귀속할 수 없는지 — entry 존재 + 현재 identity known + stamp 누락/타 account.
@@ -306,6 +313,7 @@ struct ProviderSnapshotCache {
         }
         do {
             var payload = try decoder.decode(Payload.self, from: data)
+            payload.snapshots["openai-api"]?.producedByIdentityKey = payload.producedByIdentityKeys["openai-api"]
             for (id, timestamp) in payload.refreshTimestamps ?? [:] where payload.snapshots[id] != nil {
                 payload.snapshots[id]?.refreshedAt = Date(timeIntervalSinceReferenceDate: timestamp)
             }

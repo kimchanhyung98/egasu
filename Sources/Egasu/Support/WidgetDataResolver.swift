@@ -34,6 +34,13 @@ enum WidgetDataResolver {
             if let message = snapshot.metricPresentations?[descriptor.metricLabel] {
                 result.valueTextOverride = message.localized
             }
+            if !descriptor.detailLabels.isEmpty {
+                let details = descriptor.detailLabels.compactMap { label -> String? in
+                    guard case .text(_, let value, _, _) = snapshot.line(label: label) else { return nil }
+                    return L10n.metrics(label) + " " + value
+                }
+                result.valueTooltipNote = details.joined(separator: "\n").nilIfEmpty
+            }
             result.codexResetClaimBinding = snapshot.codexResetClaimBinding
         } else if let snapshot, descriptor.sample.isUsagePeriod,
             snapshot.usageHistory != nil, snapshot.refreshFailure == nil,

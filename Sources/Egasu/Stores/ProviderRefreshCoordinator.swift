@@ -169,6 +169,11 @@ final class ProviderRefreshCoordinator {
     func credentialsDidChange(for providerID: String) -> Int {
         let generation = credentialGenerations[providerID, default: 0] + 1
         credentialGenerations[providerID] = generation
+        if providersByID[providerID] is DeepSeekProvider || providersByID[providerID] is OpenAICostsProvider,
+            snapshotStore.discardMismatchedReading(for: providerID, currentIdentityKey: nil)
+        {
+            rebuildRenderedSnapshots()
+        }
         snapshotStore.invalidateLiveQuota(for: providerID)
         onQuotaInvalidated?([providerID])
         providersNeedingCredentialRefresh.insert(providerID)
@@ -272,7 +277,8 @@ final class ProviderRefreshCoordinator {
         guard isRefreshSuspended?(providerID) != true else { return .skipped }
         let family = AppLog.providerFamily(providerID)
         var cacheIdentity = snapshotStore.identityKeys[providerID]
-        if !force, let runtime = providersByID[providerID] as? any CredentialBoundSnapshotProvider,
+        if !force || providerID == "openai-api",
+            let runtime = providersByID[providerID] as? any CredentialBoundSnapshotProvider,
             snapshotStore.localSnapshots[providerID] != nil
         {
             let generation = catalogGeneration

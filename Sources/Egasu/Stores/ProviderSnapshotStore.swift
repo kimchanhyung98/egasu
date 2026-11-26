@@ -59,7 +59,7 @@ final class ProviderSnapshotStore {
         guard !unresolvedIdentityCacheRejections.contains(providerID),
             !cache.hasStaleAccountStamp(providerID: providerID, currentIdentityKey: currentIdentityKey)
         else { return nil }
-        return cache.snapshot(providerID: providerID)
+        return cache.snapshot(providerID: providerID, currentIdentityKey: currentIdentityKey)
     }
 
     func invalidateLiveQuota(for providerID: String, responseIdentity: String? = nil) {
@@ -109,7 +109,7 @@ final class ProviderSnapshotStore {
     }
 
     private func loadMatchingCache(providerIDs: [String]) -> [String: ProviderSnapshot] {
-        cache.loadSnapshots(providerIDs: providerIDs).filter { cardID, _ in
+        cache.loadSnapshots(providerIDs: providerIDs, identityKeys: identityKeys).filter { cardID, _ in
             guard !unresolvedIdentityCacheRejections.contains(cardID) else { return false }
             guard !cache.hasStaleAccountStamp(providerID: cardID, currentIdentityKey: identityKeys[cardID]) else {
                 AppLog.info(.cache, "stale account cache discarded for \(AppLog.providerFamily(cardID))")
@@ -126,7 +126,7 @@ final class ProviderSnapshotStore {
         guard let identity = incoming.producedByIdentityKey else { return nil }
         if local?.producedByIdentityKey == identity { return local }
         guard cache.producedByIdentityKey(providerID: id) == identity else { return nil }
-        var stored = cache.loadSnapshots(providerIDs: [id])[id]
+        var stored = cache.loadSnapshots(providerIDs: [id], identityKeys: [id: identity])[id]
         stored?.producedByIdentityKey = identity
         return stored
     }

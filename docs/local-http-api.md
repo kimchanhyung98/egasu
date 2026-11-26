@@ -139,6 +139,7 @@ Antigravity는 잔여 비율에서 계산하므로 `used`·`remaining`이 정수
 | Cursor | `totalUsage`, `autoUsage`, `apiUsage`, `onDemand`, `requests`, `credits` |
 | Antigravity | `geminiSession`, `geminiWeekly`, `nonGeminiSession`, `nonGeminiWeekly`, `argonWeekly` |
 | Copilot | `premiumCredits`, `extraUsage`, `orgCredits`, `orgSpend`, `chat`, `completions` |
+| DeepSeek | `balanceUSD` (단위 `usd`), `balanceCNY` (단위 `cny`) |
 | Devin | `daily`, `weekly`, `extraUsageBalance` |
 | Grok | `weekly`, `monthly` |
 | Kimi | `session`, `weekly`, `totalUsage`, `extraUsage`, `extraUsageBalance` |
@@ -150,6 +151,8 @@ Antigravity는 잔여 비율에서 계산하므로 `used`·`remaining`이 정수
 
 차트, 색상, 부제목, 형식화된 배지, 레이아웃 상태, 과거 지출 기간은 이 계약에서 제외.
 Codex의 결합된 Credits UI 행은 `credits`와 `creditValue` 두 스칼라 리소스로 분리.
+`GET /v1/limits/deepseek`는 보고된 각 통화의 총잔액을 `available`에 숫자로 반환.
+잔액이 0인 통화도 포함하며, 보고된 통화가 없으면 `resources`는 빈 객체.
 
 ## 레거시 Usage 응답 형식
 
@@ -206,6 +209,8 @@ Claude의 이전 한도를 재사용한 경우, 마지막 정상 한도 조회 �
 
 지출 행에 마우스를 올렸을 때 나오는 앱 내 모델별 내역은 아직 이 API에 없음.
 지출 행은 계속 동일한 `text` 행으로 직렬화되므로 기존 로컬 연동의 현재 형태 유지.
+DeepSeek의 통화별 총잔액은 `text` 행의 `value`에 통화 코드와 서버가 보고한 금액 문자열을 반환.
+예를 들어 `USD 0.0000000100`은 끝자리 0까지 유지.
 
 두 응답 형식 모두에서 Claude·Codex의 `displayName`은 `Claude`·`Codex` 같은 프로바이더명 유지.
 All Usage 레이아웃과 관계없이 루프백 HTTP 응답에 계정명이나 대시보드의 `{Provider}: {name}` 제목을 포함하지 않음.

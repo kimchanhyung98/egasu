@@ -3,8 +3,8 @@ import Foundation
 /// 계정과 무관한 고정 분류만 telemetry 경계를 통과하도록 제한.
 enum TelemetryPrivacy {
     static let providerFamilies: Set<String> = [
-        "antigravity", "claude", "codex", "copilot", "cursor", "devin", "grok",
-        "kimi", "kiro", "opencode", "openrouter", "qwencloud", "zai"
+        "antigravity", "claude", "codex", "copilot", "cursor", "deepseek", "devin", "grok",
+        "kimi", "kiro", "openai-api", "opencode", "openrouter", "qwencloud", "zai"
     ]
     private static let metricNames: Set<String> = [
         "session", "weekly", "monthly", "daily", "today", "week", "month", "trend", "extra",
@@ -13,7 +13,7 @@ enum TelemetryPrivacy {
         "sonnetThinking", "gptOss", "geminiPro", "geminiFlash", "geminiWeekly", "claude", "claudeWeekly", "argonWeekly",
         "rateLimitResets", "spark", "sparkWeekly", "sparkMonthly", "usage", "onDemand", "requests", "yesterday",
         "last30", "keyLimit",
-        "total", "extraBalance"
+        "total", "extraBalance", "balanceUSD", "balanceCNY", "costs", "scope", "updated"
     ]
 
     /// 알려진 이벤트 형식만 허용 — 값이 없거나 모르면 기존 형식 2 사용.
