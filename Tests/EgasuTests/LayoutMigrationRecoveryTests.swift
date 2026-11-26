@@ -118,12 +118,15 @@ final class LayoutMigrationRecoveryTests: XCTestCase {
             let detection = try XCTUnwrap(
                 NewProviderSeeder.reconcileIfNeeded(providers: providers, enablement: firstEnablement))
             await detection.value
+            firstLayout.setMetric("deepseek.balanceCNY", pinned: true)
+            XCTAssertTrue(firstLayout.isMetricPinned("deepseek.balanceCNY"))
 
             let (pendingLayout, pendingEnablement) = launch()
             XCTAssertEqual(pendingEnablement.knownIDs, ["claude", "deepseek"])
             XCTAssertTrue(pendingEnablement.isEnabled("deepseek"))
             XCTAssertNil(NewProviderSeeder.reconcileIfNeeded(providers: providers, enablement: pendingEnablement))
             XCTAssertEqual(deepSeekIDs.filter { pendingLayout.isMetricEnabled($0) }, deepSeekIDs)
+            XCTAssertTrue(pendingLayout.isMetricPinned("deepseek.balanceCNY"))
             XCTAssertFalse(pendingLayout.isMetricEnabled("claude.weekly"))
             XCTAssertFalse(persistence.hasStoredDisabledMetrics)
             XCTAssertEqual(persistence.loadPlaced(), placed)
@@ -132,10 +135,12 @@ final class LayoutMigrationRecoveryTests: XCTestCase {
             if hideBalance { pendingLayout.setMetricEnabled("deepseek.balanceUSD", false) }
             let repairedOrder = ["claude.weekly", "claude.session"]
             persistence.saveMetricOrder(["claude": repairedOrder])
-            let (repairedLayout, _) = launch()
+            let (repairedLayout, repairedEnablement) = launch()
 
             let expected = hideBalance ? Array(deepSeekIDs.dropFirst()) : deepSeekIDs
             XCTAssertEqual(deepSeekIDs.filter { repairedLayout.isMetricEnabled($0) }, expected)
+            XCTAssertTrue(repairedLayout.isMetricPinned("deepseek.balanceCNY"))
+            XCTAssertTrue(repairedEnablement.knownIDs.contains("deepseek"))
             XCTAssertTrue(repairedLayout.isMetricEnabled("claude.session"))
             XCTAssertFalse(repairedLayout.isMetricEnabled("claude.weekly"))
             XCTAssertEqual(Array(repairedLayout.metricOrder(for: "claude").prefix(2)), repairedOrder)
