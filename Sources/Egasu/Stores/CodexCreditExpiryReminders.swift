@@ -17,6 +17,39 @@ final class CodexCreditExpiryReminders {
         let creditIDs: Set<String>
     }
 
+    private struct Inventory: Equatable {
+        let observedAt: Date
+        let quotaObservedAt: Date?
+        let count: Int?
+        let expiries: [Date]
+
+        init(_ snapshot: ProviderSnapshot) {
+            quotaObservedAt = snapshot.liveQuotaObservedAt ?? snapshot.quotaObservedAt
+            observedAt = quotaObservedAt ?? snapshot.refreshedAt
+            if case .values(_, let values, _, let dates, _, _) = snapshot.line(label: "Rate Limit Resets") {
+                count = values.first.flatMap { Int(exactly: $0.number) }
+                expiries = dates.sorted()
+            } else {
+                count = nil
+                expiries = []
+            }
+        }
+
+        // 같은 시각에는 확정된 0개, 만료일이 있는 응답, 개수만 있는 응답 순으로 채택.
+        var precedence: (Date, Int) {
+            if count == 0 { return (observedAt, 3) }
+            guard let count, count > 0 else { return (observedAt, 0) }
+            return (observedAt, expiries.isEmpty ? 1 : 2)
+        }
+    }
+
+    private struct Observation {
+        let inventory: Inventory
+        let undatedCount: Int
+        var remaining: [TimeInterval: Int]
+    }
+
+    private var observations: [String: Observation] = [:]
     private var claims: [String: Claim]
     private static let invalidatedKey = "openusage.notifications.codexCreditExpiry.invalidatedCards"
     private(set) var invalidatedCards: Set<String> {
@@ -56,12 +89,19 @@ final class CodexCreditExpiryReminders {
         let previousBound = claims[bucket]?.remaining.map { max(0, $0 - 1) }
         let upperBound = [remaining, previousBound].compactMap { $0 }.min()
         claims[bucket] = Claim(at: date, expiry: expiry, remaining: upperBound, creditIDs: consumed)
+        let second = floor(expiry.timeIntervalSince1970)
+        if let known = observations[account]?.remaining[second] {
+            let available = remaining == nil ? known - 1 : known
+            let retained = min(available, upperBound ?? available)
+            observations[account]?.remaining[second] = retained > 0 ? retained : nil
+        }
         saveClaims()
     }
 
     func noneAvailable(account: String, expiry: Date, at date: Date) {
         let key = Self.bucket(account: account, expiry: expiry)
         claims[key] = Claim(at: date, expiry: expiry, remaining: 0, creditIDs: [])
+        observations[account]?.remaining.removeValue(forKey: floor(expiry.timeIntervalSince1970))
         saveClaims()
     }
 
@@ -71,33 +111,32 @@ final class CodexCreditExpiryReminders {
     ) -> Task<Void, Never> {
         let previousClaimsCount = claims.count
         claims = claims.filter { $0.value.expiry > now }
-        var reminders: [ScheduledReminder] = []
+        var latest: [String: (inventory: Inventory, cardID: String, name: String)] = [:]
         for account in accounts {
-            guard
-                case .values(_, let values, _, let expiries, _, _) = account.snapshot.line(label: "Rate Limit Resets"),
-                let count = values.first?.number, count > 0
-            else { continue }
-            let known = expiries.filter { $0 > now }.sorted().prefix(Int(exactly: count) ?? 0)
-            for (second, expiries) in Dictionary(grouping: known, by: { floor($0.timeIntervalSince1970) }) {
-                let key = Self.bucket(account: account.key, expiry: Date(timeIntervalSince1970: second))
-                var remaining = expiries.count
-                if let claim = claims[key] {
-                    if let observed = account.snapshot.liveQuotaObservedAt ?? account.snapshot.quotaObservedAt,
-                        observed > claim.at
-                    {
-                        claims.removeValue(forKey: key)
-                    } else {
-                        remaining = claim.remaining ?? max(0, remaining - claim.creditIDs.count)
-                    }
-                }
-                for occurrence in 0..<min(remaining, expiries.count) {
+            let inventory = Inventory(account.snapshot)
+            let cardID = account.snapshot.providerID
+            if let selected = latest[account.key] {
+                if selected.inventory.precedence > inventory.precedence { continue }
+                if selected.inventory.precedence == inventory.precedence, selected.cardID <= cardID { continue }
+            }
+            latest[account.key] = (inventory, cardID, account.name)
+        }
+
+        observations = observations.filter { latest[$0.key] != nil }
+        var reminders: [ScheduledReminder] = []
+        for (account, selected) in latest {
+            let observation = observation(for: account, inventory: selected.inventory, now: now)
+            observations[account] = observation
+            for (second, remaining) in observation.remaining {
+                let key = Self.bucket(account: account, expiry: Date(timeIntervalSince1970: second))
+                for occurrence in 0..<remaining {
                     for hours in [24, 12] {
                         let date = Date(timeIntervalSince1970: second - Double(hours * 3600))
                         guard date > now else { continue }
                         reminders.append(
                             ScheduledReminder(
                                 id: "\(Self.prefix)\(key).\(occurrence).\(hours)", date: date, title: Self.label,
-                                subtitle: account.name,
+                                subtitle: selected.name,
                                 body: L10n.settings("An unused reset credit expires in %lld hours.", hours)))
                     }
                 }
@@ -105,6 +144,50 @@ final class CodexCreditExpiryReminders {
         }
         if claims.count != previousClaimsCount { saveClaims() }
         return scheduler.reconcile(reminders)
+    }
+
+    private func observation(for account: String, inventory: Inventory, now: Date) -> Observation {
+        let previous = observations[account]
+        if let previous,
+            previous.inventory == inventory || previous.inventory.precedence > inventory.precedence
+        {
+            return previous
+        }
+        guard let count = inventory.count, count > 0 else {
+            return Observation(inventory: inventory, undatedCount: 0, remaining: [:])
+        }
+        if inventory.expiries.isEmpty {
+            var remaining = previous?.remaining.filter { $0.key > now.timeIntervalSince1970 } ?? [:]
+            let undatedCount = previous?.undatedCount ?? 0
+            if remaining.values.reduce(0, +) > count - undatedCount {
+                // 모든 권의 만료일이 같을 때만 줄어든 개수를 해당 만료일에 적용.
+                if undatedCount == 0, remaining.count == 1, let second = remaining.keys.first {
+                    remaining[second] = count
+                } else {
+                    remaining.removeAll()
+                }
+            }
+            let knownCount = remaining.values.reduce(0, +)
+            return Observation(inventory: inventory, undatedCount: count - knownCount, remaining: remaining)
+        }
+
+        let known = inventory.expiries.filter { $0 > now }.prefix(count)
+        let dates = Dictionary(grouping: known, by: { floor($0.timeIntervalSince1970) })
+        var remaining: [TimeInterval: Int] = [:]
+        for (second, expiries) in dates {
+            let key = Self.bucket(account: account, expiry: Date(timeIntervalSince1970: second))
+            var available = expiries.count
+            if let claim = claims[key] {
+                if let observed = inventory.quotaObservedAt, observed > claim.at {
+                    claims.removeValue(forKey: key)
+                } else {
+                    available = min(available, claim.remaining ?? (available - claim.creditIDs.count))
+                }
+            }
+            if available > 0 { remaining[second] = available }
+        }
+        return Observation(
+            inventory: inventory, undatedCount: max(0, count - inventory.expiries.count), remaining: remaining)
     }
 
     private static func bucket(account: String, expiry: Date) -> String {
