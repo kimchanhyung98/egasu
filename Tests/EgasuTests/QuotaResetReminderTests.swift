@@ -21,7 +21,7 @@ final class QuotaResetReminderTests: XCTestCase {
             ], refreshedAt: now)
         return QuotaResetReminders.reminders(
             for: snapshot, descriptors: CodexProvider(provider: provider).widgetDescriptors,
-            account: "Account A", now: now)
+            account: "Account A", now: now, accountIdentity: id)
     }
 
     func testEachEligibleAccountAndLimitReceivesTwoSpecificFutureReminders() {
@@ -34,37 +34,15 @@ final class QuotaResetReminderTests: XCTestCase {
             XCTAssertTrue(weekly.allSatisfy { $0.title == "Weekly Limit Reset" && $0.subtitle == "Account A Weekly" })
             XCTAssertTrue(
                 monthly.allSatisfy { $0.title == "Monthly Limit Reset" && $0.subtitle == "Account A Monthly" })
-            XCTAssertEqual(Set((weekly + monthly + reminders(id: "codex:/second")).map(\.id)).count, 6)
+            XCTAssertEqual(Set((weekly + monthly + reminders(id: "codex@second")).map(\.id)).count, 6)
             XCTAssertTrue(reminders(label: "Session", duration: MetricPeriod.sessionMs).isEmpty)
             XCTAssertTrue(reminders(duration: 2 * MetricPeriod.dayMs).isEmpty)
+            XCTAssertTrue(reminders(duration: MetricPeriod.weekMs - 3_600_000).isEmpty)
             XCTAssertTrue(reminders(duration: nil).isEmpty)
             XCTAssertTrue(reminders(remainingHours: nil).isEmpty)
             XCTAssertTrue(reminders(remainingHours: 12).isEmpty)
             XCTAssertEqual(reminders(remainingHours: 20).count, 1)
         }
-    }
-
-    func testGrokDeclaredBillingPeriodMustAgreeWithItsCalendarDates() throws {
-        let runtime = GrokProvider()
-        func requests(type: String, duration: TimeInterval) throws -> [ScheduledReminder] {
-            let reset = now.addingTimeInterval(48 * 3600)
-            let body = GrokCreditsFixtures.responseBody(
-                periodType: type, start: reset.addingTimeInterval(-duration).ISO8601Format(), end: reset.ISO8601Format()
-            )
-            let response = HTTPResponse(statusCode: 200, headers: [:], body: body)
-            let usage = try GrokUsageMapper.mapCreditsConfig(response)
-            let snapshot = ProviderSnapshot.make(
-                provider: runtime.provider, plan: nil, lines: usage.lines, refreshedAt: now)
-            return QuotaResetReminders.reminders(
-                for: snapshot, descriptors: runtime.widgetDescriptors, account: "Grok", now: now)
-        }
-        let week = 7.0 * 86_400
-        let month = 31.0 * 86_400
-        XCTAssertTrue(try requests(type: GrokCreditsConfigDecoder.monthlyPeriodType, duration: week).isEmpty)
-        XCTAssertTrue(try requests(type: GrokCreditsConfigDecoder.weeklyPeriodType, duration: month).isEmpty)
-        XCTAssertEqual(try requests(type: GrokCreditsConfigDecoder.weeklyPeriodType, duration: week - 3600).count, 2)
-        XCTAssertEqual(try requests(type: GrokCreditsConfigDecoder.monthlyPeriodType, duration: month + 3600).count, 2)
-        XCTAssertTrue(reminders(duration: MetricPeriod.weekMs - 3_600_000).isEmpty)
     }
 
     func testFailedReservationsRetryWithoutRepostingAnUnchangedSecondAccount() async {
@@ -102,8 +80,11 @@ final class QuotaResetReminderTests: XCTestCase {
             ], refreshedAt: now)
         func scheduled(_ snapshot: ProviderSnapshot) -> [ScheduledReminder] {
             QuotaResetReminders.reminders(
-                for: snapshot, descriptors: runtime.widgetDescriptors, account: "Cursor", now: now)
+                for: snapshot, descriptors: runtime.widgetDescriptors, account: "Cursor", now: now,
+                accountIdentity: "account-a")
         }
+        XCTAssertTrue(scheduled(reading).isEmpty)
+        reading.producedByIdentityKey = "account-b"
         XCTAssertTrue(scheduled(reading).isEmpty)
         reading.producedByIdentityKey = "account-a"
         XCTAssertEqual(scheduled(reading).count, 2)
@@ -127,20 +108,260 @@ final class QuotaResetReminderTests: XCTestCase {
         XCTAssertEqual(reminders().count, 2)
     }
 
+    func testCursorRequestFallbackRemindsOncePerLeadTime() throws {
+        let runtime = CursorProvider()
+        let mapped = try CursorUsageSummaryMapper.map(
+            summary: nil,
+            requestUsage: [
+                "startOfMonth": now.addingTimeInterval(-28 * 86_400).ISO8601Format(),
+                "gpt-4": ["maxRequestUsage": 100, "numRequests": 2]
+            ],
+            planName: nil, unavailableMessage: "")
+        XCTAssertNotNil(mapped.lines.first { $0.label == "Total usage" })
+        XCTAssertNotNil(mapped.lines.first { $0.label == "Requests" })
+        var snapshot = ProviderSnapshot.make(
+            provider: runtime.provider, plan: nil, lines: mapped.lines, refreshedAt: now)
+        snapshot.producedByIdentityKey = "account-a"
+        let requests = QuotaResetReminders.reminders(
+            for: snapshot, descriptors: runtime.widgetDescriptors, account: "A", now: now, accountIdentity: "account-a")
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertTrue(requests.allSatisfy { $0.id.hasPrefix("openusage.quota-reset.cursor.requests.") })
+    }
+
+    func testUnknownCodexAccountCancelsCachedRemindersOnLaunch() async throws {
+        try await checkCachedCodexRemindersCancelled(catalogIdentity: nil)
+    }
+
+    func testRegisteredCodexWorkspaceCancelsCachedRemindersWithoutLiveUserOnLaunch() async throws {
+        try await checkCachedCodexRemindersCancelled(catalogIdentity: "previous")
+    }
+
+    private func checkCachedCodexRemindersCancelled(catalogIdentity: String?) async throws {
+        let suite = "QuotaResetReminderTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = NotificationSettingsStore(defaults: defaults)
+        settings.weeklyMonthlyResetReminders = true
+        let runtime = CodexProvider()
+        let now = Date.now
+        let reset = now.addingTimeInterval(172_800)
+        var snapshot = ProviderSnapshot.make(
+            provider: runtime.provider, plan: nil,
+            lines: [
+                .progress(
+                    label: "Weekly", used: 3, limit: 100, format: .percent, resetsAt: reset,
+                    periodDurationMs: MetricPeriod.weekMs)
+            ], refreshedAt: now, liveQuotaObservedAt: now, liveQuotaAccountKey: "verified-user")
+        snapshot.codexSwitchIdentity = "previous"
+        let writer = ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite)
+        writer.store(snapshot, producedByIdentityKey: "previous")
+        let reader = ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite)
+        let store = WidgetDataStore(
+            registry: WidgetRegistry.from([runtime]), providers: [runtime], cache: reader, defaults: defaults,
+            providerIdentityKeys: catalogIdentity.map { ["codex": $0] } ?? [:])
+        XCTAssertNotNil(store.localSnapshots["codex"])
+        XCTAssertNil(store.localSnapshots["codex"]?.liveQuotaAccountKey)
+        let pending = QuotaResetReminders.reminders(
+            for: snapshot, descriptors: runtime.widgetDescriptors, account: "Codex", now: now,
+            accountIdentity: "previous")
+        XCTAssertEqual(pending.count, 2)
+        let cancelled = expectation(description: "이전 계정의 예약 취소")
+        let scheduler = ScheduledReminders(
+            prefix: QuotaResetReminders.prefix, pending: { pending },
+            schedule: { _, _ in XCTFail("이전 계정의 알림을 예약했습니다.") },
+            remove: { ids in
+                XCTAssertEqual(Set(ids), Set(pending.map(\.id)))
+                cancelled.fulfill()
+            })
+        let observer = QuotaResetReminders(scheduler: scheduler, defaults: defaults)
+        observer.observe(settings: settings, dataStore: store, enablement: ProviderEnablementStore(defaults: defaults))
+        await fulfillment(of: [cancelled], timeout: 3)
+    }
+
+    func testScheduleChangeDoesNotReviveElapsedLeadTimeAfterRelaunch() async throws {
+        try await checkLeadTimesAfterRelaunch(earlyReset: false)
+    }
+
+    func testEarlyResetRearmsLeadTimesAfterRelaunch() async throws {
+        try await checkLeadTimesAfterRelaunch(earlyReset: true)
+    }
+
+    private func checkLeadTimesAfterRelaunch(earlyReset: Bool) async throws {
+        let suite = "QuotaResetReminderTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = NotificationSettingsStore(defaults: defaults)
+        settings.weeklyMonthlyResetReminders = true
+        let enablement = ProviderEnablementStore(defaults: defaults)
+        let now = Date.now
+        let oldReset = now.addingTimeInterval(86_100)
+        let newReset = earlyReset ? now.addingTimeInterval(7 * 86_400) : oldReset.addingTimeInterval(600)
+        let provider = CodexProvider.makeProvider()
+        func snapshot(reset: Date, used: Double) -> ProviderSnapshot {
+            var snapshot = ProviderSnapshot.make(
+                provider: provider, plan: nil,
+                lines: [
+                    .progress(
+                        label: "Weekly", used: used, limit: 100, format: .percent, resetsAt: reset,
+                        periodDurationMs: MetricPeriod.weekMs)
+                ], refreshedAt: now, liveQuotaObservedAt: now, liveQuotaAccountKey: "verified-account-a")
+            snapshot.codexSwitchIdentity = "account-a"
+            return snapshot
+        }
+        let first = snapshot(reset: oldReset, used: 40)
+        let second = snapshot(reset: newReset, used: earlyReset ? 0 : 40)
+        let runtime = TogglingProviderRuntime(
+            provider: provider, descriptors: CodexProvider(provider: provider).widgetDescriptors,
+            first: first, second: second)
+        let cache = ProviderSnapshotCache(userDefaults: defaults, persistsWrites: false)
+        let store = WidgetDataStore(
+            registry: WidgetRegistry.from([runtime]), providers: [runtime], cache: cache, defaults: defaults,
+            providerIdentityKeys: ["codex": "account-a"])
+        var pending: [String: ScheduledReminder] = [:]
+        var attempts: [ScheduledReminder] = []
+        let firstScheduled = expectation(description: "기존 12시간 전 예약")
+        let secondScheduled = expectation(description: "연장된 12시간 전 예약")
+        let scheduler = ScheduledReminders(
+            prefix: QuotaResetReminders.prefix, pending: { Array(pending.values) },
+            schedule: { item, isCurrent in
+                guard isCurrent() else { return }
+                pending[item.id] = item
+                attempts.append(item)
+                if abs(item.date.timeIntervalSince(oldReset.addingTimeInterval(-43_200))) < 1 {
+                    firstScheduled.fulfill()
+                }
+                if abs(item.date.timeIntervalSince(newReset.addingTimeInterval(-43_200))) < 1 {
+                    secondScheduled.fulfill()
+                }
+            },
+            remove: { ids in ids.forEach { pending[$0] = nil } })
+        var observer: QuotaResetReminders? = QuotaResetReminders(scheduler: scheduler, defaults: defaults)
+        observer?.observe(settings: settings, dataStore: store, enablement: enablement)
+        await store.refresh(providerID: "codex", force: true)
+        await fulfillment(of: [firstScheduled], timeout: 3)
+
+        observer = nil
+        observer = QuotaResetReminders(scheduler: scheduler, defaults: defaults)
+        observer?.observe(settings: settings, dataStore: store, enablement: enablement)
+        await store.refresh(providerID: "codex", force: true)
+        await fulfillment(of: [secondScheduled], timeout: 3)
+        XCTAssertEqual(attempts.count, earlyReset ? 3 : 2)
+        XCTAssertEqual(pending.count, earlyReset ? 2 : 1)
+    }
+
+    func testAccountSwitchKeepsTheSamePendingReminderIdentifier() async throws {
+        try await checkReminderAfterAccountSwitch(sameResetOnFirstRefresh: true)
+    }
+
+    func testAccountSwitchPreservesElapsedLeadTimesWhenResetMoves() async throws {
+        try await checkReminderAfterAccountSwitch(sameResetOnFirstRefresh: false)
+    }
+
+    private func checkReminderAfterAccountSwitch(sameResetOnFirstRefresh: Bool) async throws {
+        let suite = "QuotaResetReminderTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = NotificationSettingsStore(defaults: defaults)
+        settings.weeklyMonthlyResetReminders = true
+        let enablement = ProviderEnablementStore(defaults: defaults)
+        let now = Date.now
+        let oldReset = Date(timeIntervalSince1970: floor(now.timeIntervalSince1970) + 86_100)
+        let extendedReset = oldReset.addingTimeInterval(600)
+        let shared = CodexProvider.makeProvider()
+        let saved = CodexProvider.makeProvider(id: "codex@profile-a")
+
+        func snapshot(_ provider: Provider, _ reset: Date, workspace: String) -> ProviderSnapshot {
+            let payload = Data(#"{"sub":"fixture-user"}"#.utf8).base64EncodedString()
+            let auth = CodexAuth(tokens: CodexTokens(accessToken: "e30.\(payload).signature", accountID: workspace))
+            let source: CodexAuthState.Source = provider.id == saved.id ? .accountSnapshot(profileID: "a") : .keychain
+            let binding = CodexResetClaimBinding(authState: CodexAuthState(auth: auth, source: source))
+            var snapshot = ProviderSnapshot.make(
+                provider: provider, plan: nil,
+                lines: [
+                    .progress(
+                        label: "Weekly", used: 40, limit: 100, format: .percent, resetsAt: reset,
+                        periodDurationMs: MetricPeriod.weekMs)
+                ], refreshedAt: now, liveQuotaObservedAt: now, liveQuotaAccountKey: binding?.verifiedAccountKey,
+                codexResetClaimBinding: binding)
+            snapshot.codexSwitchIdentity = workspace
+            return snapshot
+        }
+        let sharedDescriptors = CodexProvider(provider: shared).widgetDescriptors
+        let accountA = TestProviderRuntime(
+            provider: shared, descriptors: sharedDescriptors,
+            snapshot: snapshot(shared, oldReset, workspace: "account-a"))
+        let store = WidgetDataStore(
+            registry: WidgetRegistry.from([accountA]), providers: [accountA],
+            cache: ProviderSnapshotCache(userDefaults: defaults, persistsWrites: false),
+            defaults: defaults, providerIdentityKeys: [shared.id: "account-a"],
+            resolveDisplayName: { _ in "Shared A" })
+        let savedA = TogglingProviderRuntime(
+            provider: saved, descriptors: CodexProvider(provider: saved).widgetDescriptors,
+            first: snapshot(saved, sameResetOnFirstRefresh ? oldReset : extendedReset, workspace: "account-a"),
+            second: snapshot(saved, extendedReset, workspace: "account-a"))
+        let sharedB = TestProviderRuntime(
+            provider: shared, descriptors: sharedDescriptors,
+            snapshot: snapshot(shared, extendedReset, workspace: "account-b"))
+
+        var pending: [String: ScheduledReminder] = [:]
+        let scheduler = ScheduledReminders(
+            prefix: QuotaResetReminders.prefix, pending: { Array(pending.values) },
+            schedule: { item, isCurrent in if isCurrent() { pending[item.id] = item } },
+            remove: { ids in ids.forEach { pending[$0] = nil } })
+        let observer = QuotaResetReminders(scheduler: scheduler, defaults: defaults)
+        observer.observe(settings: settings, dataStore: store, enablement: enablement)
+        store.onFreshSnapshot = { [weak observer] snapshot, _, _ in observer?.receivedSnapshot(snapshot) }
+        store.onQuotaInvalidated = { [weak observer] ids in observer?.invalidate(ids) }
+
+        func requests(for label: String) -> [ScheduledReminder] {
+            pending.values.filter { $0.subtitle.contains(label) }
+        }
+        func waitFor(_ condition: () -> Bool, line: UInt = #line) async {
+            let deadline = ContinuousClock.now + .seconds(3)
+            while !condition() && ContinuousClock.now < deadline { await Task.yield() }
+            XCTAssertTrue(condition(), line: line)
+        }
+
+        await store.refresh(providerID: shared.id, force: true)
+        await waitFor { requests(for: "Codex").count == 1 }
+        let oldReminder = try XCTUnwrap(requests(for: "Codex").first)
+
+        store.resolveDisplayName = { $0 == saved.id ? "Saved A" : "Shared B" }
+        store.replaceProviderCatalog(
+            registry: WidgetRegistry.from([sharedB, savedA]), providers: [sharedB, savedA],
+            identityKeys: [shared.id: "account-b", saved.id: "account-a"])
+        await store.refresh(providerID: saved.id, force: true)
+        if sameResetOnFirstRefresh {
+            await waitFor { requests(for: "Saved A").count == 1 }
+            XCTAssertEqual(requests(for: "Saved A").map(\.id), [oldReminder.id])
+            await store.refresh(providerID: saved.id, force: true)
+        }
+        await store.refresh(providerID: shared.id, force: true)
+        let updatedFire = extendedReset.addingTimeInterval(-43_200)
+        await waitFor {
+            requests(for: "Saved A").contains { $0.date == updatedFire }
+                && requests(for: "Codex").count == 2
+        }
+        XCTAssertEqual(requests(for: "Saved A").map(\.date), [updatedFire])
+        XCTAssertEqual(
+            Set(requests(for: "Codex").map(\.date)), [extendedReset.addingTimeInterval(-86_400), updatedFire])
+    }
+
     func testVerifiedMonthlyWindowCanOmitDurationAndEstimatedUsageIsIgnored() {
         let provider = CodexProvider.makeProvider()
         let line = MetricLine.progress(
             label: "Credits", used: 3, limit: 5, format: .percent, resetsAt: now.addingTimeInterval(100_000))
         let snapshot = ProviderSnapshot.make(provider: provider, plan: nil, lines: [line], refreshedAt: now)
-        let verified = WidgetDescriptor.percent(id: "p.credits", provider: provider, title: "Credits")
+        let verified = WidgetDescriptor.percent(id: "codex.credits", provider: provider, title: "Credits")
             .supportingSoftLimit(.monthly, acceptsMissingDuration: true)
         let projected = QuotaResetReminders.reminders(
-            for: snapshot, descriptors: [verified.exportingLimit("credits", unit: "percent")], account: "A", now: now)
+            for: snapshot, descriptors: [verified.exportingLimit("credits", unit: "percent")], account: "A", now: now,
+            accountIdentity: "account-a")
         XCTAssertEqual(projected.count, 2)
         XCTAssertTrue(
             QuotaResetReminders.reminders(
                 for: snapshot, descriptors: [verified.exportingLimit("credits", unit: "percent", estimated: true)],
-                account: "A", now: now
+                account: "A", now: now, accountIdentity: "account-a"
             ).isEmpty)
     }
 
@@ -180,20 +401,23 @@ final class QuotaResetReminderTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: name) }
         let settings = NotificationSettingsStore(defaults: defaults)
         let clock = Date.now
-        let runtime = CodexProvider()
-        let card = runtime.provider.id
-        let cache = ProviderSnapshotCache(userDefaults: defaults)
-        let snapshot = ProviderSnapshot.make(
-            provider: runtime.provider, plan: nil,
+        let codex = CodexProvider()
+        let card = codex.provider.id
+        let cache = ProviderSnapshotCache(userDefaults: defaults, persistsWrites: false)
+        var snapshot = ProviderSnapshot.make(
+            provider: codex.provider, plan: nil,
             lines: [
                 .progress(
                     label: "Weekly", used: 0, limit: 100, format: .percent,
                     resetsAt: clock.addingTimeInterval(172_800), periodDurationMs: MetricPeriod.weekMs)
-            ], refreshedAt: clock, liveQuotaObservedAt: clock)
-        cache.store(snapshot)
+            ], refreshedAt: clock, liveQuotaObservedAt: clock, liveQuotaAccountKey: "verified-account-a")
+        snapshot.codexSwitchIdentity = "account-a"
+        let runtime = TestProviderRuntime(
+            provider: codex.provider, descriptors: codex.widgetDescriptors, snapshot: snapshot)
         let store = WidgetDataStore(
             registry: WidgetRegistry.from([runtime]), providers: [runtime], cache: cache, defaults: defaults,
-            orderedDescriptors: { [] }, resolveDisplayName: { _ in "Account A" })
+            orderedDescriptors: { [] }, providerIdentityKeys: ["codex": "account-a"],
+            resolveDisplayName: { _ in "Account A" })
         let enabled = ProviderEnablementStore(defaults: defaults)
         enabled.setEnabled(true, for: card)
         let unrelated = ScheduledReminder(
@@ -211,6 +435,7 @@ final class QuotaResetReminderTests: XCTestCase {
             XCTAssertEqual(requests.count, count, line: line)
             XCTAssertEqual(requests[unrelated.id], unrelated, line: line)
         }
+        await store.refresh(providerID: card, force: true)
         settings.weeklyMonthlyResetReminders = true
         await expectPending(3)
         enabled.setEnabled(false, for: card)

@@ -30,7 +30,8 @@ struct SettingsAlertsTab: View {
             Toggle(isOn: $notifications.weeklyMonthlyResetReminders) {
                 SettingsTitle(
                     title: L10n.settings("Weekly and Monthly Reset Reminders"),
-                    info: L10n.settings("Notify 24 and 12 hours before each weekly or monthly limit resets.")
+                    info: L10n.settings(
+                        "Notify 24 and 12 hours before weekly or monthly limits reset for Claude, Codex, and Cursor.")
                 )
             }
             Toggle(isOn: $notifications.quotaRecovered) {

@@ -111,7 +111,8 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
 - **[알림](/docs/settings.md#alerts).** 잔량 부족·빠른 소진·기간 종료 전 남은 할당량과 Codex Reset Watch 통지.
   모든 알림은 개별 선택하며 기본값은 꺼짐.
   계정이 확인된 실측 한도가 소진 후 회복되면 선택적으로 통지.
-  주간·월간 사용 한도는 초기화 24시간 전과 12시간 전에 계정별로 알림 예약 가능.
+  Claude·Codex·Cursor의 계정이 확인된 주간·월간 사용 한도는 초기화 24시간 전과 12시간 전에 알림 예약 가능.
+  Codex는 새로고침에서 확인한 사용자와 워크스페이스를 기준으로 예약.
   기간 종료 전 잔량 알림은 한도별로 한 기간에 한 번 통지.
 - **[전역 단축키](/docs/settings.md#general).** Settings → General에서 지정한 키 조합으로 패널 열기·닫기.
 - **[계정 관리](/docs/accounts.md).** Accounts에서 계정 추가·전환·재로그인, API 키와 계정별 지표 표시·순서 관리.
