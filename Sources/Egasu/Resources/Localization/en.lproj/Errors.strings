@@ -340,6 +340,14 @@
 "You signed in to a different account. Try again with the account you selected." = "You signed in to a different account. Try again with the account you selected.";
 "egasu couldn't verify the Codex user. Open the account in Accounts to sign in again." = "egasu couldn't verify the Codex user. Open the account in Accounts to sign in again.";
 "This Mac’s synced history changed again. egasu will retry on the next update." = "This Mac’s synced history changed again. egasu will retry on the next update.";
+"Add a DeepSeek API key in Accounts or set DEEPSEEK_API_KEY." = "Add a DeepSeek API key in Accounts or set DEEPSEEK_API_KEY.";
+"Couldn't save the DeepSeek API key." = "Couldn't save the DeepSeek API key.";
+"Couldn't remove the saved DeepSeek API key." = "Couldn't remove the saved DeepSeek API key.";
+"DeepSeek rejected the API key. Check your key in Accounts." = "DeepSeek rejected the API key. Check your key in Accounts.";
+"Couldn't reach DeepSeek. Check your connection." = "Couldn't reach DeepSeek. Check your connection.";
+"DeepSeek returned invalid balance data." = "DeepSeek returned invalid balance data.";
+"DeepSeek request failed (HTTP %@)." = "DeepSeek request failed (HTTP %@).";
+"The DeepSeek API key changed. Refresh again to use the current key." = "The DeepSeek API key changed. Refresh again to use the current key.";
 "Add an OpenAI organization Admin API key in Accounts." = "Add an OpenAI organization Admin API key in Accounts.";
 "OpenAI rejected the Admin API key. Replace it in Accounts." = "OpenAI rejected the Admin API key. Replace it in Accounts.";
 "The OpenAI Admin API key needs permission to read organization costs." = "The OpenAI Admin API key needs permission to read organization costs.";

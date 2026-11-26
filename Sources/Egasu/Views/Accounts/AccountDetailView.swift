@@ -291,7 +291,7 @@ struct ProviderAccountRows: View {
             try Self.remove(providerID: provider.id, keyProvider: keyProvider) {
                 container.setProviderEnabled($0, for: $1)
             }
-            if keyProvider is OpenAICostsProvider {
+            if keyProvider is DeepSeekProvider || keyProvider is OpenAICostsProvider {
                 container.dataStore.credentialsDidChange(for: provider.id)
             }
         } catch {

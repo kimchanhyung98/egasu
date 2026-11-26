@@ -36,6 +36,7 @@
 - [Codex](/docs/providers/codex.md)
 - [Copilot](/docs/providers/copilot.md)
 - [Cursor](/docs/providers/cursor.md)
+- [DeepSeek](/docs/providers/deepseek.md)
 - [Devin](/docs/providers/devin.md)
 - [Grok](/docs/providers/grok.md)
 - [Kimi](/docs/providers/kimi.md)

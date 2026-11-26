@@ -169,7 +169,7 @@ final class ProviderRefreshCoordinator {
     func credentialsDidChange(for providerID: String) -> Int {
         let generation = credentialGenerations[providerID, default: 0] + 1
         credentialGenerations[providerID] = generation
-        if providersByID[providerID] is OpenAICostsProvider,
+        if providersByID[providerID] is DeepSeekProvider || providersByID[providerID] is OpenAICostsProvider,
             snapshotStore.discardMismatchedReading(for: providerID, currentIdentityKey: nil)
         {
             rebuildRenderedSnapshots()
