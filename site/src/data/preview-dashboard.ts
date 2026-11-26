@@ -170,3 +170,16 @@ export function menuBarItems(state: PreviewState) {
   const overflow = state.preferences.menuBarExtras && count ? Math.max(0, counted.length - count) : 0;
   return { items, overflow };
 }
+
+export function menuBarUsesText(state: PreviewState): boolean {
+  return state.preferences.iconStyle === 'Text' && state.preferences.menuBarLimit !== 'App Icon Only';
+}
+
+export function menuBarResetCountdown(state: PreviewState, row: Row): string | undefined {
+  if (state.preferences.menuBarResetCountdown !== true || !menuBarUsesText(state)
+    || !reportsLimit(row) || row.unit !== undefined || row.notStarted) return;
+  // 공개 예시의 리셋까지 남은 시간은 대시보드와 동일하게 고정. elapsed는 pace 계산용.
+  if (row.resetRelative === 'Resets in <1m') return '<1m';
+  const duration = row.resetRelative?.match(/^Resets in ([1-9]\d*)([dhm])(?: |$)/);
+  if (duration) return `${duration[1]}${duration[2]}${duration[2] === 'm' ? '' : '+'}`;
+}

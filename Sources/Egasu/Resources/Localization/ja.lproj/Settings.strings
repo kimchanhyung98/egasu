@@ -214,3 +214,4 @@
 "Every applicable base quota on a candidate must be below this usage." = "候補アカウントのすべての基本利用枠の使用率が、この値未満である必要があります。";
 "Show Metric Labels" = "指標名を表示";
 "Show Account Names" = "アカウント名を表示";
+"Show Reset Countdown" = "リセットまでの時間を表示";

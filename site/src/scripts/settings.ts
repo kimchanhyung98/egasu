@@ -1,6 +1,6 @@
 import { accountFamilies } from '../data/accounts';
 import { initialPreviewState, changePreference, activateAccount, restorePreviewState, previewTime, accountName, accountEmail, renameAccount, type PreviewState } from '../data/preview-state';
-import { softLimitAccountStatuses } from '../data/preview-dashboard';
+import { menuBarUsesText, softLimitAccountStatuses } from '../data/preview-dashboard';
 import { languageTags } from '../data/settings';
 import { closeMenu } from './menus';
 import { applyPreviewLanguage, localizePreview, previewAccountDisplayName, setPreviewAccountText } from './localization';
@@ -188,8 +188,8 @@ export function applySettingsToMock(mock: HTMLElement): void {
   mock.querySelectorAll<HTMLButtonElement>('[data-setting]').forEach((button) => {
     const id = button.dataset.setting!;
     const on = preferences[id] === true;
-    if (id === 'menuBarMetricLabels' || id === 'menuBarAccountNames') {
-      button.disabled = preferences.iconStyle !== 'Text' || preferences.menuBarLimit === 'App Icon Only';
+    if (id === 'menuBarMetricLabels' || id === 'menuBarAccountNames' || id === 'menuBarResetCountdown') {
+      button.disabled = !menuBarUsesText(state);
     }
     button.classList.toggle('is-on', on);
     button.setAttribute('aria-checked', String(on));

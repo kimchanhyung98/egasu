@@ -141,7 +141,8 @@ final class StatusItemImageUpdater {
             board: board, limit: limit, selection: settings.menuBarSelection,
             multiAccountFamilies: MenuBarContentBuilder.multiAccountFamilies(accounts), style: settings.menuBarStyle,
             showMetricLabels: settings.showsMenuBarMetricLabels, showAccountNames: settings.showsMenuBarAccountNames,
-            hideAccountNames: container.privacy.hideUsageWhileScreenSharing, now: now
+            hideAccountNames: container.privacy.hideUsageWhileScreenSharing,
+            showResetCountdown: settings.showsMenuBarResetCountdown, now: now
         )
         content.updateAvailable = updateAvailable
         content = content.showingExtraIndicators(showsExtras)

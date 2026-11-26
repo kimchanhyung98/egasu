@@ -214,3 +214,4 @@
 "Every applicable base quota on a candidate must be below this usage." = "후보 계정의 모든 기본 구독 한도 사용률이 이 값 미만이어야 합니다.";
 "Show Metric Labels" = "지표명 표시";
 "Show Account Names" = "계정명 표시";
+"Show Reset Countdown" = "초기화까지 남은 시간 표시";

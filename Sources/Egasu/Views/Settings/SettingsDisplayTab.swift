@@ -17,6 +17,7 @@ struct SettingsDisplayTab: View {
             Group {
                 Toggle(L10n.settings("Show Metric Labels"), isOn: $display.showsMenuBarMetricLabels)
                 Toggle(L10n.settings("Show Account Names"), isOn: $display.showsMenuBarAccountNames)
+                Toggle(L10n.settings("Show Reset Countdown"), isOn: $display.showsMenuBarResetCountdown)
             }
             .disabled(display.menuBarStyle != .text || display.menuBarLimit == .iconOnly)
             SettingsPicker(
@@ -72,27 +73,36 @@ struct PriorityIconsPreview: View {
     private static let height: CGFloat = 30
     private static let scale: CGFloat = 0.8
     private static let samples:
-        [(provider: String, name: String?, label: String, value: String, fraction: Double, period: Int?)] = [
-            ("claude", "Personal", "Weekly", "38%", 0.38, MetricPeriod.weekMs),
-            ("claude", "Account 1", "Session", "26%", 0.26, MetricPeriod.sessionMs),
-            ("codex", nil, "Weekly", "31%", 0.31, MetricPeriod.weekMs),
-            ("cursor", nil, "Extra Usage", "$310", 0.62, nil),
-            ("antigravity", nil, AntigravityMetric.sessionLabel, "12%", 0.12, nil),
-            ("grok", nil, "Weekly", "9%", 0.09, MetricPeriod.weekMs),
-            ("copilot", nil, "Credits", "7%", 0.07, nil)
-    ]
+        [(
+            provider: String, name: String?, label: String, value: String, fraction: Double, period: Int?,
+            minutesUntilReset: Int?
+        )] = [
+            ("claude", "Personal", "Weekly", "38%", 0.38, MetricPeriod.weekMs, 3 * 1_440),
+            ("claude", "Account 1", "Session", "26%", 0.26, MetricPeriod.sessionMs, 32),
+            ("codex", nil, "Weekly", "31%", 0.31, MetricPeriod.weekMs, 6 * 1_440),
+            ("cursor", nil, "Extra Usage", "$310", 0.62, nil, nil),
+            ("antigravity", nil, AntigravityMetric.sessionLabel, "12%", 0.12, nil, 70),
+            ("grok", nil, "Weekly", "9%", 0.09, MetricPeriod.weekMs, 4 * 1_440),
+            ("copilot", nil, "Credits", "7%", 0.07, nil, nil)
+        ]
 
-    static func sample(limit: MenuBarLimit, showMetricLabels: Bool = true, showAccountNames: Bool = false)
-        -> MenuBarContent
-    {
+    static func sample(
+        limit: MenuBarLimit, showMetricLabels: Bool = true, showAccountNames: Bool = false,
+        showResetCountdown: Bool = false
+    ) -> MenuBarContent {
         guard limit != .iconOnly else { return MenuBarContent(items: []) }
+        let now = Date(timeIntervalSinceReferenceDate: 0)
         let shown = samples.prefix(limit.count).enumerated().map { index, sample in
             let label = L10n.metrics(sample.label)
             var item = MenuBarContent.Item(
                 id: "sample.\(index)", icon: .providerMark(sample.provider), providerName: sample.provider,
                 badge: sample.name.map(AccountInitials.tag), label: label,
                 shortLabel: MenuBarContentBuilder.shortLabel(label, metricLabel: sample.label),
-                value: sample.value, fraction: sample.fraction
+                value: sample.value, fraction: sample.fraction,
+                resetCountdown: showResetCountdown
+                    ? sample.minutesUntilReset.flatMap {
+                        MenuBarResetCountdown(reset: now.addingTimeInterval(Double($0) * 60), now: now)?.text
+                    } : nil
             )
             item.configureText(
                 showMetric: showMetricLabels, accountName: showAccountNames ? sample.name : nil, periodMs: sample.period
@@ -106,7 +116,9 @@ struct PriorityIconsPreview: View {
         let content = Self.sample(
             limit: dataStore.displaySettings.menuBarLimit,
             showMetricLabels: dataStore.displaySettings.showsMenuBarMetricLabels,
-            showAccountNames: dataStore.displaySettings.showsMenuBarAccountNames
+            showAccountNames: dataStore.displaySettings.showsMenuBarAccountNames,
+            showResetCountdown: dataStore.displaySettings.menuBarStyle == .text
+                && dataStore.displaySettings.showsMenuBarResetCountdown
         )
             .showingExtraIndicators(dataStore.displaySettings.showsMenuBarExtras)
         Color.primary

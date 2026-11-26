@@ -27,6 +27,14 @@ test('menu bar text options default to metric labels and preserve saved choices'
   assert.equal(legacy.preferences.menuBarAccountNames, false);
 });
 
+test('menu bar reset countdown defaults off and restores the saved choice', () => {
+  const initial = initialPreviewState();
+  assert.equal(initial.preferences.menuBarResetCountdown, false);
+  assert.equal(restorePreviewState({ preferences: {}, activeAccounts: {} }).preferences.menuBarResetCountdown, false);
+  const enabled = changePreference(initial, 'menuBarResetCountdown', true);
+  assert.equal(restorePreviewState(JSON.parse(JSON.stringify(enabled))).preferences.menuBarResetCountdown, true);
+});
+
 const source = (path: string): string => readFileSync(new URL(`../../Sources/Egasu/${path}`, import.meta.url), 'utf8');
 const englishSource = (path: string): string => source(path)
   .replace(/\bL10n\.\w+\(\s*("(?:\\.|[^"\\])*")\s*\)/g, '$1');

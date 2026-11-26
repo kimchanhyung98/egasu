@@ -168,7 +168,7 @@ struct MenuBarTextStrip: View {
                     .truncationMode(.middle)
                     .frame(maxWidth: item.accountLabel == nil ? nil : 96, alignment: .leading)
             }
-            Text(item.value)
+            Text(item.displayedValue)
                 .font(.system(size: 11, weight: .bold))
         }
         .fixedSize()
