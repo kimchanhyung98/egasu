@@ -22,6 +22,26 @@ final class ModelPricingSupplementStoreTests: XCTestCase {
                        "https://egasu.chanhyung.kim/pricing_supplement.json")
     }
 
+    func testPublishedGPT62SupplementPricesNewModelsAfterRefreshAndRestart() async throws {
+        let url = Bundle.egasuResources.url(forResource: "pricing_supplement", withExtension: "json")
+        let resource = try XCTUnwrap(url)
+        let (store, http) = makeStore(response: try Data(contentsOf: resource))
+        let model = "openai/gpt-6.2-sol-high@ultrafast-20261117"
+        let tokens = TokenBreakdown(input: 272_001, output: 1_000, isFast: true)
+        let oldPricing = await store.current()
+        XCTAssertNil(CodexUsagePricing.estimate(model: model, tokens: tokens, pricing: oldPricing))
+
+        await store.refreshNow()
+        XCTAssertEqual(http.requests.count, 1)
+        let refreshed = await store.current()
+        let (restarted, _) = makeStore()
+        let cached = await restarted.current()
+        for pricing in [refreshed, cached] {
+            let cost = try XCTUnwrap(CodexUsagePricing.estimate(model: model, tokens: tokens, pricing: pricing))
+            XCTAssertEqual(cost, 6.618024, accuracy: 1e-9)
+        }
+    }
+
     func testSourceChangeDiscardsCacheETagAndFreshTTL() async throws {
         let (old, _) = makeStore(source: Self.oldSource, response: Self.supplement(rate: 9))
         await old.refreshNow()
