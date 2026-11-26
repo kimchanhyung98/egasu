@@ -122,7 +122,8 @@ public struct UsageReader {
         if let stamped = loaded.verifiedIdentity {
             verified = await currentIdentity(for: id, context: context) == stamped
         } else {
-            verified = !isManagedFamily && id != "cursor" && loaded.didRefreshPreflight
+            verified =
+                !isManagedFamily && !ProviderSnapshotCache.requiresCredentialIdentity(id) && loaded.didRefreshPreflight
         }
         guard let current = activeSoftLimitSettings() else { return .disabled }
         let now = Date()
@@ -188,10 +189,12 @@ public struct UsageReader {
     }
 
     private func currentIdentity(for id: String, context: ReadContext) async -> String? {
-        if let identityKeysOverride { return identityKeysOverride()[id] }
-        if id == "cursor", let cursor = context.providers.first(where: { $0.provider.id == id }) as? CursorProvider {
-            return await cursor.currentIdentityKey()
+        if let key = identityKeysOverride?()[id] { return key }
+        let provider = context.providers.first { $0.provider.id == id }
+        if let runtime = provider as? any CredentialBoundSnapshotProvider {
+            return await runtime.currentIdentityKey(allowKeychainInteraction: true)
         }
+        if identityKeysOverride != nil { return nil }
         let observer = context.accountObserver
         let outcome = await loadOffMainActor { id == "claude" ? observer.observeClaude() : observer.observeCodex() }
         guard case let .resolved(key, _, _) = outcome else { return nil }
@@ -262,10 +265,9 @@ public struct UsageReader {
             matchedIDs?.contains(id) ?? enablement.isEnabled(id)
         }
         var identityKeys = context.identityKeys
-        if includesProvider("cursor"),
-            let cursor = providers.first(where: { $0.provider.id == "cursor" }) as? CursorProvider
-        {
-            identityKeys["cursor"] = await cursor.currentIdentityKey()
+        for case let runtime as any CredentialBoundSnapshotProvider in providers
+        where includesProvider(runtime.provider.id) {
+            identityKeys[runtime.provider.id] = await runtime.currentIdentityKey(allowKeychainInteraction: true)
         }
         let preflightCardID = preflight?.cardID
         // 계정 귀속 또는 유효한 실측 한도가 없는 표시용 캐시는 사전 검사에서 재조회.
@@ -296,7 +298,7 @@ public struct UsageReader {
                 (ProviderAccountID.family(of: $0) == "claude" && identityKeys[$0] == nil)
                     || cache.hasStaleAccountStamp(providerID: $0, currentIdentityKey: identityKeys[$0])
             })
-        let cachedSnapshots = cache.loadSnapshots(providerIDs: allProviderIDs)
+        let cachedSnapshots = cache.loadSnapshots(providerIDs: allProviderIDs, identityKeys: identityKeys)
             .filter { providerID, _ in !staleAccountStampIDs.contains(providerID) }
         let savedOrder = LayoutPersistence(
             defaults: defaults,
@@ -305,7 +307,8 @@ public struct UsageReader {
         let orderedIDs = registry.orderedProviderIDs(savedOrder: savedOrder)
         let enabledOrderedIDs = orderedIDs.filter(includesProvider)
         let needsRefresh = force || enabledOrderedIDs.contains {
-            cache.snapshot(providerID: $0) == nil || staleAccountStampIDs.contains($0)
+                cache.snapshot(providerID: $0, currentIdentityKey: identityKeys[$0]) == nil
+                    || staleAccountStampIDs.contains($0)
         }
         var snapshots = cachedSnapshots
         var warnings: [String] = []

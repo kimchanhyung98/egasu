@@ -126,7 +126,9 @@ enum LocalUsageAPI {
             try container.encode(snapshot.providerID, forKey: .providerId)
             try container.encode(snapshot.displayName, forKey: .displayName)
             try container.encode(snapshot.plan, forKey: .plan)
-            try container.encode(snapshot.lines.map(WireLine.init), forKey: .lines)
+            let presentations = snapshot.providerID == "deepseek" ? snapshot.metricPresentations : nil
+            let lines = snapshot.lines.map { WireLine($0, valuePresentation: presentations?[$0.label]) }
+            try container.encode(lines, forKey: .lines)
             try container.encode(EgasuISO8601.string(from: snapshot.refreshedAt), forKey: .fetchedAt)
         }
     }
@@ -146,8 +148,12 @@ enum LocalUsageAPI {
 
     private struct WireLine: Encodable {
         let line: MetricLine
+        let valuePresentation: LocalizedMessage?
 
-        init(_ line: MetricLine) { self.line = line }
+        init(_ line: MetricLine, valuePresentation: LocalizedMessage?) {
+            self.line = line
+            self.valuePresentation = valuePresentation
+        }
 
         enum CodingKeys: String, CodingKey {
             case type, label, value, used, limit, format, resetsAt, periodDurationMs, color, subtitle, text, points, note
@@ -167,7 +173,7 @@ enum LocalUsageAPI {
                 // per-model hover 상세는 UI 전용 — 공개 wire shape에서 의도적 생략.
                 try container.encode("text", forKey: .type)
                 try container.encode(label, forKey: .label)
-                try container.encode(Self.legacyValueString(values), forKey: .value)
+                try container.encode(legacyValueString(values), forKey: .value)
                 try container.encode(color, forKey: .color)
                 try container.encodeNil(forKey: .subtitle)
                 // 가장 이른 expiry(Codex reset credits)를 ISO-8601로 노출 — progress row와 동일한 `resetsAt` 필드.
@@ -198,10 +204,10 @@ enum LocalUsageAPI {
         }
 
         /// `.values` row의 legacy 결합 문자열 — dollars는 full(cents 보존), counts는 compact, " · "로 join.
-        private static func legacyValueString(_ values: [MetricValue]) -> String {
+        private func legacyValueString(_ values: [MetricValue]) -> String {
             L10n.withLanguage(.english) {
-                values
-                    .map { MetricFormatter.string(for: $0, style: $0.kind == .count ? .tray : .full) }
+                valuePresentation?.localized
+                    ?? values.map { MetricFormatter.string(for: $0, style: $0.kind == .count ? .tray : .full) }
                     .joined(separator: " · ")
             }
         }

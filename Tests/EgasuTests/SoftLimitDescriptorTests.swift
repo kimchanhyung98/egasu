@@ -39,6 +39,8 @@ final class SoftLimitDescriptorTests: XCTestCase {
             "kiro.credits": [.monthly],
             "opencode.weekly": [.weekly],
             "opencode.monthly": [.monthly],
+            "qwencloud.weekly": [.weekly],
+            "qwencloud.monthly": [.monthly],
             "zai.weekly": [.weekly],
             "zai.monthly": [.monthly],
             "zai.webSearches": [.weekly, .monthly]
@@ -49,7 +51,8 @@ final class SoftLimitDescriptorTests: XCTestCase {
             Set(descriptors.filter { $0.supportsSoftLimit(.weekly, periodDurationMs: dstWeek) }.map(\.id)),
             ["cursor.usage", "cursor.auto", "cursor.api", "cursor.requests", "grok.weekly"])
         XCTAssertEqual(
-            descriptors.filter { $0.supportsSoftLimit(.all, periodDurationMs: nil) }.map(\.id), ["kimi.total"])
+            descriptors.filter { $0.supportsSoftLimit(.all, periodDurationMs: nil) }.map(\.id),
+            ["kimi.total", "qwencloud.monthly"])
     }
 
     func testSnapshotAccountCardsDeclareTheSameQuotaWindowsAsTheirOwnProvider() {
