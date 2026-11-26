@@ -1,7 +1,8 @@
+import CryptoKit
 import Foundation
 
 @MainActor
-final class OpenAICostsProvider: APIKeyManaging {
+final class OpenAICostsProvider: APIKeyManaging, CredentialBoundSnapshotProvider {
     let provider = Provider(
         id: "openai-api", displayName: "OpenAI API", icon: .providerMark("codex"),
         links: [
@@ -13,7 +14,7 @@ final class OpenAICostsProvider: APIKeyManaging {
     private let client: OpenAICostsClient
     private let defaults: UserDefaults
     private let now: @Sendable () -> Date
-    private nonisolated static let connectionKey = "openaiAPIBillingConnection"
+    private static let connectionKey = "openaiAPIBillingConnection"
 
     init(
         defaults: UserDefaults = .standard,
@@ -27,16 +28,32 @@ final class OpenAICostsProvider: APIKeyManaging {
         self.now = now
     }
 
-    var projectIDs: [String] {
-        defaults.dictionary(forKey: Self.connectionKey)?["projects"] as? [String] ?? []
+    private struct Scope {
+        let revision: String
+        let projects: [String]
+
+        func identity(for key: String) throws -> String {
+            let material = try JSONEncoder().encode([revision, key] + projects)
+            return Data(SHA256.hash(data: material)).base64EncodedString()
+        }
     }
 
-    /// 키나 조회 범위가 바뀌면 새 식별자를 발급. 비밀 키를 캐시 식별자로 사용하지 않음.
-    nonisolated static func connectionID(in defaults: UserDefaults) -> String {
-        defaults.dictionary(forKey: connectionKey)?["id"] as? String ?? "initial-organization"
+    private var scope: Scope {
+        let connection = defaults.dictionary(forKey: Self.connectionKey)
+        return Scope(
+            revision: connection?["id"] as? String ?? "initial-organization",
+            projects: connection?["projects"] as? [String] ?? [])
     }
 
-    var connectionID: String { Self.connectionID(in: defaults) }
+    var projectIDs: [String] { scope.projects }
+
+    func currentIdentityKey(allowKeychainInteraction: Bool) async -> String? {
+        let manual = allowKeychainInteraction && ProviderRefreshContext.isManual
+        guard let key = await loadOffMainActor({ [keys] in try? keys.load(allowInteraction: manual) }) else {
+            return nil
+        }
+        return try? scope.identity(for: key)
+    }
 
     static func parseProjects(_ input: String) throws -> [String] {
         let projects = input.split { $0 == "," || $0.isWhitespace }.map(String.init)
@@ -91,22 +108,27 @@ final class OpenAICostsProvider: APIKeyManaging {
     }
 
     func refresh() async -> ProviderSnapshot {
-        let revision = connectionID
-        let projects = projectIDs
+        let requestedScope = scope
+        let projects = requestedScope.projects
+        var requestedIdentity: String?
         let requestedAt = now()
         // UTC 오늘을 포함한 30일. 같은 기간을 모든 페이지에 적용.
         let end = Int(requestedAt.timeIntervalSince1970)
         let start = (end / 86_400 - 29) * 86_400
+        let manual = ProviderRefreshContext.isManual
         do {
-            let manual = ProviderRefreshContext.isManual
             guard let key = try await loadOffMainActor({ [keys] in try keys.load(allowInteraction: manual) }) else {
                 throw OpenAICostsError.missingKey
             }
+            let identity = try requestedScope.identity(for: key)
+            requestedIdentity = identity
             let totals = try await client.totals(key: key, projects: projects, start: start, end: end) {
-                revision == self.connectionID
+                await self.currentIdentityKey(allowKeychainInteraction: manual) == identity
             }
             try Task.checkCancellation()
-            guard revision == connectionID else { throw CancellationError() }
+            guard await currentIdentityKey(allowKeychainInteraction: manual) == identity else {
+                throw OpenAICostsError.connectionChanged
+            }
             let refreshedAt = now()
             let costs = totals.sorted { $0.key < $1.key }.map { currency, value in
                 "\(currency) \(NSDecimalNumber(decimal: value).stringValue)"
@@ -128,11 +150,16 @@ final class OpenAICostsProvider: APIKeyManaging {
                     .badge(label: "Credit Balance", text: "Unavailable"),
                     .badge(label: "Last Updated", text: refreshedAt.formatted(timestamp) + " UTC")
                 ], refreshedAt: refreshedAt)
-            snapshot.producedByIdentityKey = revision
+            snapshot.producedByIdentityKey = identity
             return snapshot
         } catch {
-            if revision != connectionID { return .error(provider: provider, error: OpenAICostsError.connectionChanged) }
-            return .error(provider: provider, error: error)
+            guard let requestedIdentity else { return .error(provider: provider, error: error) }
+            let current = await currentIdentityKey(allowKeychainInteraction: manual)
+            let changed = current.map { $0 != requestedIdentity } ?? false
+            var failure = ProviderSnapshot.error(
+                provider: provider, error: changed ? OpenAICostsError.connectionChanged : error)
+            failure.producedByIdentityKey = current
+            return failure
         }
     }
 }

@@ -66,7 +66,7 @@ final class OpenAICostsTests: XCTestCase {
             state: .init(enabledOrderedIDs: [id], knownIDs: [id], snapshots: [id: snapshot]))
         let json = String(decoding: try XCTUnwrap(wire.body), as: UTF8.self)
         XCTAssertTrue(json.contains("USD 0.008000000000000004"))
-        XCTAssertFalse(json.contains(provider.connectionID))
+        XCTAssertFalse(json.contains(try XCTUnwrap(snapshot.producedByIdentityKey)))
         XCTAssertFalse(json.contains("test-admin-key"))
     }
 
@@ -140,13 +140,16 @@ final class OpenAICostsTests: XCTestCase {
             http.response = success
             _ = await store.refresh(providerID: id, force: true)
             XCTAssertNotNil(store.snapshots[id])
-            XCTAssertNotNil(cache.snapshot(providerID: id))
+            let identity = await provider.currentIdentityKey(allowKeychainInteraction: false)
+            XCTAssertNotNil(cache.snapshot(providerID: id, currentIdentityKey: identity))
             try provider.saveConnection(key: key, projects: projects)
             let generation = store.credentialsDidChange(for: id)
             XCTAssertNil(store.snapshots[id])
-            XCTAssertNil(cache.snapshot(providerID: id))
+            let changedIdentity = await provider.currentIdentityKey(allowKeychainInteraction: false)
+            XCTAssertNil(cache.snapshot(providerID: id, currentIdentityKey: changedIdentity))
             let relaunched = ProviderSnapshotCache(userDefaults: defaults, allowsPersistedFreshness: true)
-            XCTAssertNil(relaunched.loadSnapshots(providerIDs: [id])[id])
+            XCTAssertNil(
+                relaunched.loadSnapshots(providerIDs: [id], identityKeys: [id: try XCTUnwrap(changedIdentity)])[id])
             http.response = HTTPResponse(statusCode: 403, headers: [:], body: Data())
             await store.refreshAfterCredentialChange(providerID: id, credentialGeneration: generation)
             XCTAssertNil(store.snapshots[id])
@@ -212,20 +215,22 @@ final class OpenAICostsTests: XCTestCase {
                 reader.provider.id])
     }
 
-    func testSavingOnlyProjectsChecksThatThePreviouslyDisplayedKeyStillExists() throws {
+    func testSavingOnlyProjectsChecksThatThePreviouslyDisplayedKeyStillExists() async throws {
         let defaults = makeDefaults()
         let keychain = ServiceKeychain()
         let provider = makeProvider(
             http: FakeHTTPClient(response: Self.response("{}")), keychain: keychain, defaults: defaults)
         try provider.saveConnection(key: "fixture-key", projects: "proj_A")
         XCTAssertEqual(provider.apiKeyStatus, .saved)
+        let revision = await provider.currentIdentityKey(allowKeychainInteraction: false)
         try OpenAIAdminKeyStore(keychain: keychain).remove()
-        let revision = provider.connectionID
         XCTAssertThrowsError(try provider.saveConnection(key: "", projects: "proj_B")) { error in
             XCTAssertEqual((error as? OpenAICostsError)?.errorCategory, .notLoggedIn)
         }
         XCTAssertEqual(provider.projectIDs, ["proj_A"])
-        XCTAssertEqual(provider.connectionID, revision)
+        try OpenAIAdminKeyStore(keychain: keychain).save("fixture-key")
+        let restored = await provider.currentIdentityKey(allowKeychainInteraction: false)
+        XCTAssertEqual(restored, revision)
     }
 
     func testCLIReusesFreshCostsOnlyWithTheSameConnection() async throws {
@@ -240,7 +245,10 @@ final class OpenAICostsTests: XCTestCase {
         let reader = UsageReader(userDefaults: defaults, providers: [provider])
         let initial = try await reader.read(providerID: id, force: true)
         XCTAssertTrue(initial.warnings.isEmpty)
-        let stored = try XCTUnwrap(ProviderSnapshotCache(userDefaults: defaults).loadSnapshots(providerIDs: [id])[id])
+        let current = await provider.currentIdentityKey(allowKeychainInteraction: false)
+        let stored = try XCTUnwrap(
+            ProviderSnapshotCache(userDefaults: defaults).loadSnapshots(
+                providerIDs: [id], identityKeys: [id: try XCTUnwrap(current)])[id])
         guard case .badge(_, let price, _, _) = stored.line(label: "Last 30 Days") else { return XCTFail() }
         XCTAssertEqual(price, "USD 0.005")
         http.response = HTTPResponse(statusCode: 403, headers: [:], body: Data())
@@ -251,6 +259,59 @@ final class OpenAICostsTests: XCTestCase {
         let changed = try await reader.read(providerID: id)
         XCTAssertFalse(changed.warnings.isEmpty)
         XCTAssertEqual(http.requests.count, 2)
+    }
+
+    func testExternalKeyChangeHidesPreviousOrganizationInCLIAndAppAfterFailure() async throws {
+        for removed in [false, true] {
+            let defaults = makeDefaults()
+            let keys = OpenAIAdminKeyStore(keychain: ServiceKeychain())
+            let http = FakeHTTPClient(
+                response: Self.response(
+                    #"{"data":[{"results":[{"amount":{"value":82,"currency":"usd"}}]}],"has_more":false}"#))
+            let provider = OpenAICostsProvider(defaults: defaults, keys: keys, client: .init(http: http))
+            let id = provider.provider.id
+            try provider.saveConnection(key: "first-organization", projects: "proj_A")
+            let store = WidgetDataStore(
+                registry: .from([provider]), providers: [provider],
+                cache: ProviderSnapshotCache(userDefaults: defaults), defaults: defaults)
+            _ = await store.refresh(providerID: id, force: true)
+            XCTAssertNotNil(store.snapshots[id]?.line(label: "Last 30 Days"))
+
+            // 앱 밖에서 키를 바꾸거나, 앱이 Keychain 쓰기 후 설정 저장 전에 종료된 상태.
+            if removed { try keys.remove() } else { try keys.save("other-organization") }
+            let relaunched = WidgetDataStore(
+                registry: .from([provider]), providers: [provider],
+                cache: ProviderSnapshotCache(userDefaults: defaults), defaults: defaults)
+            XCTAssertNil(relaunched.snapshots[id])
+            http.response = HTTPResponse(statusCode: 403, headers: [:], body: Data())
+            let result = try await UsageReader(userDefaults: defaults, providers: [provider]).read(providerID: id)
+            let output = try XCTUnwrap(JSONSerialization.jsonObject(with: result.data) as? [String: Any])
+            XCTAssertTrue(try XCTUnwrap(output["providers"] as? [String: Any]).isEmpty)
+            XCTAssertFalse(result.warnings.isEmpty)
+            XCTAssertEqual(http.requests.count, removed ? 1 : 2)
+            _ = await store.refresh(providerID: id, force: true)
+            XCTAssertNil(store.snapshots[id])
+            XCTAssertNotNil(store.headerNotice(for: id))
+        }
+    }
+
+    func testExternalKeyReplacementDuringPaginationStopsBeforeSecondRequest() async throws {
+        let keys = OpenAIAdminKeyStore(keychain: ServiceKeychain())
+        let http = RoutingHTTPClient { request in
+            if URLComponents(url: request.url, resolvingAgainstBaseURL: false)?.queryItems?.contains(where: {
+                $0.name == "page"
+            }) == true {
+                return Self.response(#"{"data":[],"has_more":false}"#)
+            }
+            try keys.save("replacement-organization")
+            return Self.response(#"{"data":[],"has_more":true,"next_page":"first-organization-cursor"}"#)
+        }
+        let provider = OpenAICostsProvider(defaults: makeDefaults(), keys: keys, client: .init(http: http))
+        try provider.saveConnection(key: "first-organization", projects: "")
+        let snapshot = await provider.refresh()
+        XCTAssertEqual(snapshot.refreshFailure?.message, OpenAICostsError.connectionChanged.errorDescription)
+        XCTAssertNil(snapshot.line(label: "Last 30 Days"))
+        XCTAssertEqual(http.requests.count, 1)
     }
 
     nonisolated private static func response(_ body: String) -> HTTPResponse {

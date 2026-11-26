@@ -21,7 +21,7 @@ struct OpenAICostsClient: Sendable {
 
     func totals(
         key: String, projects: [String], start: Int, end: Int,
-        isCurrentConnection: @MainActor @Sendable () -> Bool
+        isCurrentConnection: @MainActor @Sendable () async -> Bool
     ) async throws -> [String: Decimal] {
         var components = URLComponents()
         components.scheme = "https"
@@ -46,7 +46,7 @@ struct OpenAICostsClient: Sendable {
             // URL 쿼리에서 +를 공백으로 해석하는 서버에도 페이지 커서를 그대로 전달.
             components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
             guard let url = components.url else { throw OpenAICostsError.invalidResponse }
-            guard await isCurrentConnection() else { throw CancellationError() }
+            guard await isCurrentConnection() else { throw OpenAICostsError.connectionChanged }
             let response: HTTPResponse
             do {
                 response = try await http.send(

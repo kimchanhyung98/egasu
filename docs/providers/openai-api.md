@@ -21,6 +21,10 @@ OpenAI API Platform 조직이 보고한 오늘 포함 최근 30일의 비용을 
 
 ## 표시 기준
 
+![OpenAI API 카드의 최근 30일 비용, 조회 범위, 크레딧 잔액 및 마지막 조회 시각](/docs/assets/openai-api-costs.png)
+
+*테스트용 계정의 프로젝트 `proj_demo` 표시 예시.*
+
 - **Last 30 Days** — 일별 비용을 통화별로 합산.
   1센트 미만 금액과 음수 조정액도 API가 반환한 정밀도로 표시.
   비용 항목을 받지 못하면 **No costs reported**, 0이 보고되면 해당 통화와 0 표시.
@@ -28,11 +32,13 @@ OpenAI API Platform 조직이 보고한 오늘 포함 최근 30일의 비용을 
 - **Credit Balance** — 비용 응답은 크레딧 잔액과 만료일을 제공하지 않아 확인 불가.
 - **Last Updated** — 마지막으로 모든 페이지를 조회한 시각.
   같은 키와 조회 범위에서 새로고침이 실패하면 마지막 정상 결과와 현재 오류 표시.
-  키나 조회 범위를 바꾸면 새 조회가 성공할 때까지 이전 비용 숨김.
+  앱 밖에서 키를 교체하거나 삭제하면 다음 프로바이더 새로고침 또는 CLI 조회에서 변경을 확인하고 이전 조직의 비용 숨김.
+  이때 Keychain 키를 확인할 수 없어도 이전 비용 숨김.
 
 `egasu openai-api --force`로 이 연결의 비용 조회와 캐시 갱신 가능.
 CLI의 한도 응답에는 잔액이나 사용 한도를 제공할 수 없어 비용 합계를 표시하지 않음.
-앱의 비용 카드와 [로컬 API](/docs/local-http-api.md)의 `/v1/usage/openai-api`에서 합계 확인.
+[로컬 HTTP API](/docs/local-http-api.md)의 `/v1/usage/openai-api`는 앱의 비용 카드와 같은 마지막 갱신 결과를 반환.
+앱 밖에서 키를 바꾼 뒤 앱이 새로고침하기 전까지는 로컬 HTTP API에서도 이전 비용이 보일 수 있음.
 
 고정된 OpenAI 주소의 `GET /v1/organization/costs`에 기간과 프로젝트 필터를 전달.
 다음 페이지가 있으면 같은 조건으로 끝까지 조회. [Costs API](https://developers.openai.com/api/reference/resources/admin/subresources/organization/subresources/usage/methods/costs)
