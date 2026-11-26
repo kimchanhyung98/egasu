@@ -25,8 +25,9 @@ final class WidgetDataStore {
     /// Soft Limit 표시 설정 — nil이면 안내선 없음.
     private let softLimitSettings: (@MainActor () -> SoftLimitSettingsStore)?
     /// 할당량 알림의 계정명 조회 — 결과가 nil이면 프로바이더 이름 사용.
-    @ObservationIgnored var resolveCreditAccountName: (@MainActor (String, String) -> String?)?
     @ObservationIgnored var resolveDisplayName: (@MainActor (String) -> String?)?
+    @ObservationIgnored var resolveCreditAccountName:
+        (@MainActor (_ profileID: String, _ workspace: String) -> String?)?
     /// 조건별 알림 전달 — false이면 전송 완료로 기록하지 않고 다음 평가에서 재시도.
     private let postNotification: QuotaNotificationEvaluator.Post
 
@@ -240,12 +241,20 @@ final class WidgetDataStore {
     }
 
     private func creditReminderAccount(_ snapshot: ProviderSnapshot) -> String? {
-        if case .account(let identity) = claimRefreshBinding(providerID: snapshot.providerID) {
-            if let reading = snapshot.codexSwitchIdentity, reading != identity { return nil }
-            return identity
+        if case .account(let workspace) = claimRefreshBinding(providerID: snapshot.providerID),
+            snapshot.codexSwitchIdentity != workspace
+        {
+            return nil
         }
-        guard let binding = snapshot.codexResetClaimBinding else { return nil }
-        return snapshot.codexSwitchIdentity ?? binding.verifiedAccountKey
+        return snapshot.liveQuotaAccountKey
+    }
+
+    private func creditReminderName(_ snapshot: ProviderSnapshot) -> String? {
+        guard case .accountSnapshot(let profileID) = snapshot.codexResetClaimBinding?.source,
+            snapshot.providerID == AccountUsageCardPlanner.cardID(family: "codex", profileID: profileID),
+            let workspace = snapshot.codexSwitchIdentity
+        else { return nil }
+        return resolveCreditAccountName?(profileID, workspace)
     }
 
     private func updateCodexCreditReminders() {
@@ -258,7 +267,7 @@ final class WidgetDataStore {
                 let account = creditReminderAccount(snapshot)
             else { return nil }
             let provider = ProviderAccountID.cardTitle(providerID: id, fallback: snapshot.displayName)
-            let name = resolveCreditAccountName?(id, account) ?? provider
+            let name = creditReminderName(snapshot) ?? provider
             return (account, name, snapshot)
         }
         creditExpiryReminders.reconcile(accounts: accounts, now: now())

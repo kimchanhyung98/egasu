@@ -9,17 +9,20 @@ extension AppContainer {
         profiles: AccountProfilesStore,
         profileID: @escaping @MainActor (String) -> String?
     ) {
-        func name(for cardID: String, identity: String?) -> String? {
-            if let id = profileID(cardID), let profile = profiles.profile(id: id) {
-                guard identity == nil || profile.identityKey == identity else { return nil }
-                return L10n.metrics("%@ — %@", profile.family.capitalized, profile.label)
-            }
-            return accounts.records.first {
-                $0.id == cardID && (identity == nil || $0.identityKey == identity)
-            }?.resolvedDisplayName
+        func name(for profile: AccountProfile) -> String {
+            L10n.metrics("%@ — %@", profile.family.capitalized, profile.label)
         }
-        dataStore.resolveDisplayName = { name(for: $0, identity: nil) }
-        dataStore.resolveCreditAccountName = { name(for: $0, identity: $1) }
+        dataStore.resolveDisplayName = { cardID in
+            guard let id = profileID(cardID), let profile = profiles.profile(id: id) else {
+                return accounts.resolvedDisplayName(cardID: cardID)
+            }
+            return name(for: profile)
+        }
+        dataStore.resolveCreditAccountName = { id, workspace in
+            guard let profile = profiles.profile(id: id), profile.family == "codex", profile.identityKey == workspace
+            else { return nil }
+            return name(for: profile)
+        }
     }
 
     func orderedAccountProfiles(for family: String) -> [AccountProfile] {

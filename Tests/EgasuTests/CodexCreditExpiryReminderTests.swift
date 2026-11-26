@@ -30,15 +30,35 @@ final class CodexCreditExpiryReminderTests: XCTestCase {
         return UserDefaults(suiteName: suite)!
     }
 
-    private func snapshot(count: Int, expiries: [Date], observed: Date? = nil) -> ProviderSnapshot {
+    private func snapshot(count: Int, expiries: [Date], observed: Date? = nil, card: String = "codex")
+        -> ProviderSnapshot
+    {
         ProviderSnapshot(
-            providerID: "codex", displayName: "Codex",
+            providerID: card, displayName: "Codex",
             lines: [
                 .values(
                     label: "Rate Limit Resets", values: [MetricValue(number: Double(count), kind: .count)],
                     expiriesAt: expiries)
             ],
             quotaObservedAt: observed)
+    }
+
+    private func auth(
+        subject: String, workspace: String = "workspace", source: CodexAuthState.Source, generation: Int = 1
+    ) throws -> CodexAuthState {
+        let payload = try JSONSerialization.data(withJSONObject: ["sub": subject, "iat": generation])
+        let tokens = CodexTokens(accessToken: "e30.\(payload.base64EncodedString()).fixture", accountID: workspace)
+        return CodexAuthState(auth: CodexAuth(tokens: tokens), source: source)
+    }
+
+    private func verified(_ snapshot: ProviderSnapshot, using state: CodexAuthState) throws -> ProviderSnapshot {
+        let binding = try XCTUnwrap(CodexResetClaimBinding(authState: state))
+        var reading = snapshot
+        reading.codexResetClaimBinding = binding
+        reading.liveQuotaAccountKey = try XCTUnwrap(binding.verifiedAccountKey)
+        reading.liveQuotaObservedAt = snapshot.quotaObservedAt ?? start
+        reading.codexSwitchIdentity = try XCTUnwrap(DefaultAccountObserver.codexIdentity(for: state.auth)?.identityKey)
+        return reading
     }
 
     func testFreshAndRelaunchedSchedulesRecognizeEqualExpiriesAndSeparateAccounts() async {
@@ -164,19 +184,20 @@ final class CodexCreditExpiryReminderTests: XCTestCase {
         XCTAssertEqual(center.attempts, 3)
     }
 
-    func testTemporaryFailurePreservesKnownDateAndAuthFailurePersistsCancellation() async {
+    func testTemporaryFailurePreservesKnownDateAndAuthFailurePersistsCancellation() async throws {
         let defaults = defaults()
         let center = Center(start)
         let settings = NotificationSettingsStore(defaults: defaults)
         settings.codexCreditExpiry = true
         let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
-        var reading = snapshot(count: 1, expiries: [start.addingTimeInterval(172800)])
-        reading.liveQuotaObservedAt = start
+        let reading = try verified(
+            snapshot(count: 1, expiries: [start.addingTimeInterval(172800)]),
+            using: auth(subject: "user-a", workspace: "a", source: .keychain))
         let cache = ProviderSnapshotCache(userDefaults: defaults, persistsWrites: false, now: { center.now })
-        cache.store(reading, producedByIdentityKey: "a")
         let transient = ProviderSnapshot.error(provider: provider, message: "unavailable", category: .http5xx)
         let auth = ProviderSnapshot.error(provider: provider, message: "sign in", category: .authExpired)
-        let runtime = TogglingProviderRuntime(provider: provider, descriptors: [], first: transient, second: auth)
+        let runtime = SequenceProviderRuntime(
+            provider: provider, descriptors: [], snapshots: [reading, transient, auth])
         func launch() -> WidgetDataStore {
             let store = WidgetDataStore(
                 registry: WidgetRegistry.from([runtime]), providers: [runtime], cache: cache,
@@ -186,6 +207,7 @@ final class CodexCreditExpiryReminderTests: XCTestCase {
             return store
         }
         let store = launch()
+        _ = await store.refresh(providerID: "codex", force: true)
         let firstFailure = await store.refresh(providerID: "codex", force: true)
         XCTAssertEqual(firstFailure, .failed)
         XCTAssertEqual(center.requests.count, 2)
@@ -198,14 +220,15 @@ final class CodexCreditExpiryReminderTests: XCTestCase {
         XCTAssertEqual(center.attempts, 2)
     }
 
-    func testAccountInvalidationCancelsUntilFreshProtectedIdentityIsReadAgain() async {
+    func testAccountInvalidationCancelsUntilFreshProtectedIdentityIsReadAgain() async throws {
         let defaults = defaults()
         let center = Center(start)
         let settings = NotificationSettingsStore(defaults: defaults)
         settings.codexCreditExpiry = true
         let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
-        var reading = snapshot(count: 1, expiries: [start.addingTimeInterval(172800)])
-        reading.liveQuotaObservedAt = start
+        let reading = try verified(
+            snapshot(count: 1, expiries: [start.addingTimeInterval(172800)]),
+            using: auth(subject: "user-a", workspace: "account-a", source: .keychain))
         var second = reading
         second.liveQuotaObservedAt = start.addingTimeInterval(60)
         let runtime = TogglingProviderRuntime(provider: provider, descriptors: [], first: reading, second: second)
@@ -246,37 +269,46 @@ final class CodexCreditExpiryReminderTests: XCTestCase {
     }
 
     func testUnknownLaunchIdentityDoesNotRestoreConsumedOrOtherCachedCredits() async throws {
+        try await checkCachedCreditsOnLaunch(catalogIdentity: nil)
+    }
+
+    func testRegisteredWorkspaceCancelsCachedCreditsUntilTheCurrentUserIsRead() async throws {
+        try await checkCachedCreditsOnLaunch(catalogIdentity: "workspace")
+    }
+
+    private func checkCachedCreditsOnLaunch(catalogIdentity: String?) async throws {
         let defaults = defaults()
         let center = Center(start)
         let expiry = start.addingTimeInterval(172_800)
         let settings = NotificationSettingsStore(defaults: defaults)
         settings.codexCreditExpiry = true
-        let cached = snapshot(count: 2, expiries: [expiry, expiry], observed: start)
+        let cached = try verified(
+            snapshot(count: 2, expiries: [expiry, expiry], observed: start),
+            using: auth(subject: "user-a", source: .keychain))
+        let firstKey = try XCTUnwrap(cached.liveQuotaAccountKey)
         let cache = ProviderSnapshotCache(userDefaults: defaults, now: { center.now })
-        cache.store(cached, producedByIdentityKey: "account-a")
+        cache.store(cached, producedByIdentityKey: "workspace")
         let reminders = CodexCreditExpiryReminders(scheduler: center.scheduler(), defaults: defaults)
-        reminders.consumed(account: "account-a", expiry: expiry, creditID: "used", remaining: 1, at: start)
-        await reminders.reconcile(accounts: [("account-a", "A", cached)], now: start).value
+        reminders.consumed(account: firstKey, expiry: expiry, creditID: "used", remaining: 1, at: start)
+        await reminders.reconcile(accounts: [(firstKey, "A", cached)], now: start).value
         XCTAssertEqual(center.requests.count, 2)
 
         let provider = CodexProvider.makeProvider()
         let transient = ProviderSnapshot.error(provider: provider, message: "unavailable", category: .http5xx)
-        var fresh = snapshot(count: 1, expiries: [expiry], observed: start.addingTimeInterval(1))
-        let state = CodexAuthState(
-            auth: CodexAuth(tokens: CodexTokens(accessToken: "fixture", accountID: "account-b")),
-            source: .keychain)
-        fresh.codexResetClaimBinding = try XCTUnwrap(CodexResetClaimBinding(authState: state))
-        fresh.codexSwitchIdentity = DefaultAccountObserver.codexIdentity(for: state.auth)?.identityKey
-        fresh.liveQuotaObservedAt = start.addingTimeInterval(1)
+        let fresh = try verified(
+            snapshot(count: 1, expiries: [expiry], observed: start.addingTimeInterval(1)),
+            using: auth(subject: "user-b", source: .keychain))
         let runtime = TogglingProviderRuntime(provider: provider, descriptors: [], first: transient, second: fresh)
         let store = WidgetDataStore(
             registry: WidgetRegistry.from([runtime]), providers: [runtime],
             cache: ProviderSnapshotCache(userDefaults: defaults, now: { center.now }),
-            defaults: defaults, now: { center.now }, notificationSettings: { settings })
+            defaults: defaults, now: { center.now }, notificationSettings: { settings },
+            providerIdentityKeys: catalogIdentity.map { ["codex": $0] } ?? [:])
         let profiles = AccountProfilesStore(defaults: defaults)
-        _ = try profiles.add(family: "codex", label: "Previous user", identityKey: "account-a")
+        _ = try profiles.add(family: "codex", label: "Previous user", identityKey: "workspace")
         let cardProfiles = AppContainer.accountProfileIDsByCardID(
-            assembly: ProviderAccountAssembly(identityKeysByCard: [:]), profiles: profiles)
+            assembly: ProviderAccountAssembly(identityKeysByCard: catalogIdentity.map { ["codex": $0] } ?? [:]),
+            profiles: profiles)
         AppContainer.configureQuotaNotificationNames(
             dataStore: store, accounts: ProviderAccountsStore(defaults: defaults), profiles: profiles
         ) { cardProfiles[$0] }
@@ -292,8 +324,65 @@ final class CodexCreditExpiryReminderTests: XCTestCase {
         XCTAssertEqual(center.requests.count, 2)
         XCTAssertEqual(Set(center.requests.values.map(\.subtitle)), ["Codex"])
         let beforeKnownAccount = Set(center.requests.keys)
-        await reminders.reconcile(accounts: [("account-b", "Codex", fresh)], now: start).value
+        await reminders.reconcile(accounts: [(try XCTUnwrap(fresh.liveQuotaAccountKey), "Codex", fresh)], now: start)
+            .value
         XCTAssertEqual(Set(center.requests.keys), beforeKnownAccount)
+    }
+
+    func testCreditReceiptsAndNamesStayWithTheUserWhenTheWorkspaceIsShared() async throws {
+        let defaults = defaults()
+        let center = Center(start)
+        let expiry = start.addingTimeInterval(172_800)
+        let settings = NotificationSettingsStore(defaults: defaults)
+        settings.codexCreditExpiry = true
+        let profiles = AccountProfilesStore(defaults: defaults)
+        let profile = try profiles.add(family: "codex", label: "Alice", identityKey: "workspace")
+        let base = snapshot(count: 2, expiries: [expiry, expiry], observed: start)
+        let first = try verified(base, using: auth(subject: "alice", source: .file(path: "/fixture/auth.json")))
+        let rotated = try verified(base, using: auth(subject: "alice", source: .keychain, generation: 2))
+        let second = try verified(base, using: auth(subject: "bob", source: .file(path: "/fixture/auth.json")))
+        let keychain = try verified(base, using: auth(subject: "bob", source: .keychain))
+        let runtime = SequenceProviderRuntime(
+            provider: CodexProvider.makeProvider(), descriptors: [], snapshots: [first, rotated, second, keychain])
+        let store = WidgetDataStore(
+            registry: WidgetRegistry.from([runtime]), providers: [runtime],
+            cache: ProviderSnapshotCache(userDefaults: defaults, persistsWrites: false),
+            defaults: defaults, now: { center.now }, notificationSettings: { settings },
+            providerIdentityKeys: ["codex": "workspace"])
+        AppContainer.configureQuotaNotificationNames(
+            dataStore: store, accounts: ProviderAccountsStore(defaults: defaults), profiles: profiles
+        ) { _ in profile.id }
+        store.configureCodexCreditReminders(scheduler: center.scheduler())
+
+        func checkCount(_ count: Int, line: UInt = #line) async {
+            let deadline = ContinuousClock.now + .seconds(2)
+            while center.requests.count != count && ContinuousClock.now < deadline { await Task.yield() }
+            XCTAssertEqual(center.requests.count, count, line: line)
+        }
+
+        _ = await store.refresh(providerID: "codex", force: true)
+        await checkCount(4)
+        let aliceIDs = Set(center.requests.keys)
+        store.codexCreditsUnavailable(
+            cardID: "codex",
+            credits: .credit(
+                .init(
+                    binding: try XCTUnwrap(first.codexResetClaimBinding), expiry: expiry, creditID: "used",
+                    remainingAtExpiry: 1)))
+        await checkCount(2)
+        let remainingAliceIDs = Set(center.requests.keys)
+        _ = await store.refresh(providerID: "codex", force: true)
+        await checkCount(2)
+        XCTAssertEqual(Set(center.requests.keys), remainingAliceIDs)
+        _ = await store.refresh(providerID: "codex", force: true)
+        await checkCount(4)
+        let bobIDs = Set(center.requests.keys)
+        XCTAssertTrue(bobIDs.isDisjoint(with: aliceIDs))
+        XCTAssertEqual(Set(center.requests.values.map(\.subtitle)), ["Codex"])
+        _ = await store.refresh(providerID: "codex", force: true)
+        await checkCount(4)
+        XCTAssertEqual(Set(center.requests.keys), bobIDs)
+        XCTAssertEqual(Set(center.requests.values.map(\.subtitle)), ["Codex"])
     }
 
     func testUnavailableCreditCancelsOnlyConfirmedReservationsWhenUsageRefreshFails() async throws {
@@ -313,9 +402,9 @@ final class CodexCreditExpiryReminderTests: XCTestCase {
             """.utf8)
         let empty = Data(#"{"available_count":0,"credits":[]}"#.utf8)
         let incomplete = Data(#"{"available_count":2,"credits":[]}"#.utf8)
-        let state = CodexAuthState(
-            auth: CodexAuth(tokens: CodexTokens(accessToken: "fixture", accountID: "account-a")),
-            source: .file(path: "/fixture/auth.json"))
+        let profileID = UUID().uuidString
+        let card = AccountUsageCardPlanner.cardID(family: "codex", profileID: profileID)
+        let state = try auth(subject: "user-a", workspace: "account-a", source: .accountSnapshot(profileID: profileID))
         let binding = try XCTUnwrap(CodexResetClaimBinding(authState: state))
         let single = Data(
             """
@@ -330,10 +419,9 @@ final class CodexCreditExpiryReminderTests: XCTestCase {
             let center = Center(start)
             let settings = NotificationSettingsStore(defaults: defaults)
             settings.codexCreditExpiry = true
-            let provider = CodexProvider.makeProvider()
-            var reading = snapshot(count: 2, expiries: [expiry, expiry], observed: start)
-            reading.codexResetClaimBinding = binding
-            reading.liveQuotaObservedAt = start
+            let provider = CodexProvider.makeProvider(id: card)
+            let reading = try verified(
+                snapshot(count: 2, expiries: [expiry, expiry], observed: start, card: card), using: state)
             let transient = ProviderSnapshot.error(provider: provider, message: "unavailable", category: .http5xx)
             let runtime = TogglingProviderRuntime(
                 provider: provider, descriptors: [], first: reading, second: transient)
@@ -341,14 +429,15 @@ final class CodexCreditExpiryReminderTests: XCTestCase {
                 registry: WidgetRegistry.from([runtime]), providers: [runtime],
                 cache: ProviderSnapshotCache(userDefaults: defaults, persistsWrites: false),
                 defaults: defaults, now: { center.now }, notificationSettings: { settings },
-                providerIdentityKeys: ["codex": "account-a"])
+                providerIdentityKeys: [card: "account-a"])
             let profiles = AccountProfilesStore(defaults: defaults)
-            let profile = try profiles.add(family: "codex", label: "Current user", identityKey: "account-a")
+            let profile = try profiles.add(
+                family: "codex", label: "Current user", identityKey: "account-a", id: profileID)
             AppContainer.configureQuotaNotificationNames(
                 dataStore: store, accounts: ProviderAccountsStore(defaults: defaults), profiles: profiles
             ) { _ in profile.id }
             store.configureCodexCreditReminders(scheduler: center.scheduler())
-            _ = await store.refresh(providerID: "codex", force: true)
+            _ = await store.refresh(providerID: card, force: true)
             let deadline = ContinuousClock.now + .seconds(2)
             while center.requests.count != 4 && ContinuousClock.now < deadline { await Task.yield() }
             XCTAssertEqual(center.requests.count, 4)
@@ -362,16 +451,17 @@ final class CodexCreditExpiryReminderTests: XCTestCase {
             let service = CodexResetClaimService(
                 usageClient: CodexUsageClient(http: http), credentialLoader: { _, _ in state },
                 refreshAfterClaim: { _ in
-                    let result = await store.refresh(providerID: "codex", force: true)
+                    let result = await store.refresh(providerID: card, force: true)
                     XCTAssertEqual(result, .failed)
                 })
-            service.onUnavailable = { store.codexCreditsUnavailable(cardID: "codex", credits: $0) }
+            service.onUnavailable = { store.codexCreditsUnavailable(cardID: card, credits: $0) }
             let result = await service.claim(creditExpiringAt: expiry, redeemRequestID: "selection", binding: binding)
             XCTAssertEqual(result, remaining == 2 ? .failed : .noCredit)
             XCTAssertEqual(center.requests.count, remaining * 2)
             let restarted = CodexCreditExpiryReminders(scheduler: center.scheduler(), defaults: defaults)
             await restarted.reconcile(
-                accounts: [("account-a", "A", reading), ("account-b", "B", reading)], now: start
+                accounts: [(try XCTUnwrap(binding.verifiedAccountKey), "A", reading), ("account-b", "B", reading)],
+                now: start
             ).value
             XCTAssertEqual(center.requests.values.filter { $0.subtitle == "A" }.count, remaining * 2)
             XCTAssertEqual(center.requests.values.filter { $0.subtitle == "B" }.count, 4)
