@@ -10,8 +10,21 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var terminationSignalSource: DispatchSourceSignal?
     private let updater = UpdaterController()
     private var desktopWidgets: DesktopWidgetPublisher?
+    private let processOwner: StreamingProcessOwner
+    private let terminationReply: @MainActor (NSApplication, Bool) -> Void
 
     public override init() {
+        processOwner = .shared
+        terminationReply = { $0.reply(toApplicationShouldTerminate: $1) }
+        super.init()
+    }
+
+    init(
+        processOwner: StreamingProcessOwner,
+        terminationReply: @escaping @MainActor (NSApplication, Bool) -> Void
+    ) {
+        self.processOwner = processOwner
+        self.terminationReply = terminationReply
         super.init()
     }
 
@@ -158,8 +171,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !isAwaitingProcessShutdown else { return .terminateLater }
         let reSignIn = container?.popover.beginReSignInShutdown()
         TokenRotationShutdownGuard.beginTermination()
+        processOwner.beginShutdown()
         let hasActiveRotation = !TokenRotationShutdownGuard.isIdle
-        guard hasActiveRotation || container?.hasRunningBackgroundProcesses == true else { return .terminateNow }
+        guard hasActiveRotation || !processOwner.isIdle || container?.hasRunningBackgroundProcesses == true else {
+            return .terminateNow
+        }
         isAwaitingProcessShutdown = true
         Task { @MainActor in
             if hasActiveRotation {
@@ -170,8 +186,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             if let container, container.hasRunningBackgroundProcesses {
                 await container.shutdownBackgroundProcesses(reSignIn: reSignIn)
             }
+            await processOwner.shutdown()
             self.isAwaitingProcessShutdown = false
-            sender.reply(toApplicationShouldTerminate: true)
+            self.terminationReply(sender, true)
         }
         return .terminateLater
     }
