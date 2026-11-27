@@ -69,7 +69,7 @@ final class CodexCredentialBindingTests: XCTestCase {
         XCTAssertEqual(files.files[boundPath], replacement)
     }
 
-    func testInFlightAccountChangeIsRejectedButSameAccountTokenRotationIsAccepted() async throws {
+    func testInFlightOpaqueTokenChangeIsRejectedEvenWhenTheWorkspaceIsUnchanged() async throws {
         for accountID in ["account-b", "account-a"] {
             let files = makeFiles(firstAccount: "account-a")
             let path = boundPath
@@ -85,16 +85,10 @@ final class CodexCredentialBindingTests: XCTestCase {
 
             let snapshot = await fixture.runtime.refresh()
 
-            if accountID == "account-a" {
-                XCTAssertNil(snapshot.errorCategory)
-                XCTAssertEqual(try sessionUsage(snapshot), 37)
-                XCTAssertNotNil(fixture.runtime.weeklyTimerObservation)
-            } else {
-                XCTAssertEqual(snapshot.errorCategory, .other)
-                XCTAssertNil(snapshot.line(label: "Session"))
-                XCTAssertNil(snapshot.liveQuotaObservedAt)
-                XCTAssertNil(fixture.runtime.weeklyTimerObservation)
-            }
+            XCTAssertEqual(snapshot.errorCategory, .other)
+            XCTAssertNil(snapshot.line(label: "Session"))
+            XCTAssertNil(snapshot.liveQuotaObservedAt)
+            XCTAssertNil(fixture.runtime.weeklyTimerObservation)
             XCTAssertEqual(http.requests.filter { $0.url == CodexUsageClient.usageURL }.count, 1)
             XCTAssertTrue(http.requests.allSatisfy { $0.headers["ChatGPT-Account-Id"] == "account-a" })
             XCTAssertEqual(files.files[path], replacement)

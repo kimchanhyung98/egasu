@@ -3,6 +3,153 @@ import XCTest
 @testable import Egasu
 
 extension CodexCredentialPreservationTests {
+    func testSuccessfulUsageRejectsAReplacedUserInTheSameWorkspace() async throws {
+        let home = "/successful-usage-revalidation"
+        let path = "\(home)/auth.json"
+        let original = try retryCredential(version: 0, subject: "alice", workspace: "team")
+        let originalKey = try XCTUnwrap(CodexResetClaimBinding.verifiedAccountKey(for: original.text))
+        for expectedIdentity in ["team", nil] as [String?] {
+            for subject in ["alice", "bob"] {
+                let replacement = try retryCredential(version: 1, subject: subject, workspace: "team")
+                let replacementKey = try XCTUnwrap(CodexResetClaimBinding.verifiedAccountKey(for: replacement.text))
+                let sameUser = subject == "alice"
+                XCTAssertEqual(originalKey == replacementKey, sameUser)
+                let files = FakeFiles([path: original.text])
+                let store = CodexAuthStore(
+                    environment: FakeEnvironment(), files: files, keychain: FakeKeychain(),
+                    scope: .home(path: home), expectedIdentityKey: expectedIdentity, now: { Self.retryInstant })
+                let http = RoutingHTTPClient { request in
+                    if request.url == CodexUsageClient.usageURL { files.files[path] = replacement.text }
+                    XCTAssertEqual(request.headers["Authorization"], "Bearer \(original.token)")
+                    return Self.retryUsageResponse(request)
+                }
+                let provider = makeProvider(store: store, http: http)
+
+                let snapshot = await provider.refresh()
+
+                XCTAssertEqual(http.requests.filter { $0.url == CodexUsageClient.usageURL }.count, 1)
+                XCTAssertEqual(files.files[path], replacement.text)
+                if sameUser {
+                    XCTAssertNil(snapshot.errorCategory)
+                    XCTAssertEqual(snapshot.liveQuotaAccountKey, originalKey)
+                    XCTAssertNotNil(snapshot.line(label: "Session"))
+                } else {
+                    XCTAssertEqual(snapshot.errorCategory, .other)
+                    XCTAssertNil(snapshot.liveQuotaAccountKey)
+                    XCTAssertNil(snapshot.liveQuotaObservedAt)
+                    XCTAssertNil(snapshot.codexResetClaimBinding)
+                    XCTAssertNil(snapshot.line(label: "Session"))
+                    XCTAssertTrue(provider.usageTimerObservations.isEmpty)
+                }
+            }
+        }
+    }
+
+    func testSuccessfulUsageRejectsLostOrConflictingVerifiedIdentity() async throws {
+        let original = try retryCredential(version: 0)
+        let otherWorkspace = try retryCredential(version: 1, workspace: "other-workspace")
+        let otherUser = try retryCredential(version: 1, subject: "other-user")
+        var conflicting = try XCTUnwrap(CodexAuthStore.parseAuth(original.text))
+        conflicting.tokens?.idToken = otherUser.token
+        let conflict = String(decoding: try JSONEncoder().encode(conflicting), as: UTF8.self)
+        let replacements: [String?] = [
+            nil, "invalid-json", #"{"OPENAI_API_KEY":"fixture-key"}"#,
+            #"{"tokens":{"access_token":"opaque","account_id":"workspace"}}"#,
+            #"{"tokens":{"access_token":"","account_id":"workspace"}}"#,
+            conflict, otherWorkspace.text
+        ]
+        let home = "/successful-usage-revalidation"
+        let path = "\(home)/auth.json"
+        for replacement in replacements {
+            let files = FakeFiles([path: original.text])
+            let store = CodexAuthStore(
+                environment: FakeEnvironment(), files: files, keychain: FakeKeychain(),
+                scope: .home(path: home), now: { Self.retryInstant })
+            let http = RoutingHTTPClient { request in
+                if request.url == CodexUsageClient.usageURL { files.files[path] = replacement }
+                return Self.retryUsageResponse(request)
+            }
+
+            let snapshot = await makeProvider(store: store, http: http).refresh()
+
+            XCTAssertEqual(snapshot.errorCategory, .other)
+            XCTAssertNil(snapshot.liveQuotaAccountKey)
+            XCTAssertNil(snapshot.line(label: "Session"))
+            XCTAssertEqual(http.requests.filter { $0.url == CodexUsageClient.usageURL }.count, 1)
+            XCTAssertEqual(files.files[path], replacement)
+        }
+    }
+
+    func testSuccessfulUsageRejectsRemovalOfAnUnverifiedCredential() async {
+        let home = "/successful-usage-revalidation"
+        let path = "\(home)/auth.json"
+        let files = FakeFiles([path: #"{"tokens":{"access_token":"opaque"}}"#])
+        let store = CodexAuthStore(
+            environment: FakeEnvironment(), files: files, keychain: FakeKeychain(), scope: .home(path: home))
+        let http = RoutingHTTPClient { request in
+            if request.url == CodexUsageClient.usageURL { files.files[path] = nil }
+            return Self.retryUsageResponse(request)
+        }
+
+        let snapshot = await makeProvider(store: store, http: http).refresh()
+
+        XCTAssertEqual(snapshot.errorCategory, .other)
+        XCTAssertNil(snapshot.line(label: "Session"))
+        XCTAssertEqual(http.requests.filter { $0.url == CodexUsageClient.usageURL }.count, 1)
+        XCTAssertNil(files.files[path])
+    }
+
+    func testSuccessfulUsagePreservesTheOriginalSourceReadFailure() async throws {
+        let original = try retryCredential(version: 0)
+        let home = "/successful-usage-revalidation"
+        let path = "\(home)/auth.json"
+        let files = FakeFiles([path: original.text])
+        let store = CodexAuthStore(
+            environment: FakeEnvironment(), files: files, keychain: FakeKeychain(),
+            scope: .home(path: home), now: { Self.retryInstant })
+        let http = RoutingHTTPClient { request in
+            if request.url == CodexUsageClient.usageURL { files.unreadablePaths.insert(path) }
+            return Self.retryUsageResponse(request)
+        }
+
+        let snapshot = await makeProvider(store: store, http: http).refresh()
+
+        XCTAssertEqual(snapshot.errorCategory, .permission)
+        XCTAssertEqual(snapshot.errorPresentation, UserFacingErrors.presentation(CocoaError(.fileReadNoPermission)))
+        XCTAssertNil(snapshot.liveQuotaObservedAt)
+        XCTAssertEqual(files.files[path], original.text)
+    }
+
+    func testSuccessfulUsagePreservesAnInMemoryRotationAfterAWriteFailure() async throws {
+        let verified = try retryCredential(version: 0, expiresIn: 60)
+        let rotated = try retryCredential(version: 1)
+        let opaque =
+            #"{"tokens":{"access_token":"old","refresh_token":"refresh-0"},"last_refresh":"2020-01-01T00:00:00Z"}"#
+        for (original, token) in [(verified.text, rotated.token), (opaque, "rotated-opaque")] {
+            let keychain = SwitchRecoveryKeychain()
+            let service = CodexAuthStore.keychainService
+            keychain.values[service] = original
+            keychain.beforeWrite = { _, _ in throw SwitchRecoveryKeychain.Failure.injected }
+            let store = CodexAuthStore(
+                environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain, now: { Self.retryInstant })
+            let response = try JSONEncoder().encode(["access_token": token, "refresh_token": "refresh-1"])
+            let http = RoutingHTTPClient { request in
+                if request.url == CodexUsageClient.refreshURL {
+                    return HTTPResponse(statusCode: 200, headers: [:], body: response)
+                }
+                XCTAssertEqual(request.headers["Authorization"], "Bearer \(token)")
+                return Self.retryUsageResponse(request)
+            }
+
+            let snapshot = await makeProvider(store: store, http: http).refresh()
+
+            XCTAssertNil(snapshot.errorCategory)
+            XCTAssertEqual(snapshot.isDegraded, true)
+            XCTAssertNotNil(snapshot.line(label: "Session"))
+            XCTAssertEqual(keychain.values[service], original)
+        }
+    }
+
     func testProactiveRefreshUsesAnExternalRotationFromTheOriginalSource() async throws {
         let original = try retryCredential(version: 0, expiresIn: 60)
         let rotated = try retryCredential(version: 1)
