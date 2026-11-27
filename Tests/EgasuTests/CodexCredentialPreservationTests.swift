@@ -90,6 +90,42 @@ final class CodexCredentialPreservationTests: XCTestCase {
         XCTAssertEqual(http.requests.map(\.url), [CodexUsageClient.usageURL, CodexUsageClient.refreshURL])
     }
 
+    func testProactiveRefreshStopsBeforeNetworkWhenTheOriginalOAuthLoginIsGone() async throws {
+        let original = try retryCredential(version: 0, expiresIn: 60)
+        let home = "/proactive-auth-revalidation"
+        let path = "\(home)/auth.json"
+        let scenarios: [(name: String, replacement: String?)] = [
+            ("OAuth login removed", nil),
+            ("OAuth login replaced by API key", #"{"OPENAI_API_KEY":"fixture-key"}"#),
+            ("OAuth access token emptied", #"{"tokens":{"access_token":"","refresh_token":"refresh-0"}}"#)
+        ]
+        for (name, replacement) in scenarios {
+            let files = FakeFiles([path: original.text])
+            let store = CodexAuthStore(
+                environment: FakeEnvironment(), files: files, keychain: FakeKeychain(), scope: .home(path: home),
+                now: {
+                    // 첫 만료 확인은 초기 인증 읽기와 출처 재확인 사이에 실행.
+                    files.files[path] = replacement
+                    return Self.retryInstant
+                }
+            )
+            let http = RoutingHTTPClient { _ in
+                HTTPResponse(
+                    statusCode: 200, headers: [:],
+                    body: Data(
+                        #"{"access_token":"rotated-access","refresh_token":"rotated-refresh"}"#.utf8))
+            }
+
+            let snapshot = await makeProvider(store: store, http: http).refresh()
+
+            XCTAssertEqual(http.requests.map { "\($0.method) \($0.url)" }, [], name)
+            XCTAssertEqual(
+                snapshot.errorPresentation, UserFacingErrors.presentation(CodexAuthError.credentialsChanged), name)
+            XCTAssertNil(snapshot.liveQuotaObservedAt, name)
+            XCTAssertEqual(files.files[path], replacement, name)
+        }
+    }
+
     func testUnauthorizedUsageRetryReusesAnExternalRotation() async throws {
         let original = try retryCredential(version: 1)
         let rotated = try retryCredential(version: 2)
