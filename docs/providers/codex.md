@@ -446,7 +446,10 @@ Codex가 활성화돼 있으면 실행 시, 활성화 시, 5분마다, 대시보
 ## 내부 동작
 
 Codex OAuth 토큰으로 `GET https://chatgpt.com/backend-api/wham/usage` 호출, `auth.openai.com`에서 갱신.
-401/403 응답 시 토큰을 한 번 갱신한 뒤 재시도.
+401·403 응답 시 최초 조회에 쓴 인증 출처를 다시 확인.
+같은 사용자·워크스페이스의 새 access token이 있으면 해당 토큰으로 한 번 재시도.
+기존 인증이 그대로면 토큰을 갱신한 뒤 한 번 재시도.
+원래 인증이 사라지거나 교체된 인증이 같은 계정인지 확인할 수 없으면 조회 중단.
 Session·Weekly·Monthly는 `primary`·`secondary` 슬롯에 담긴 기간 길이로 분류.
 Codex가 한도 하나를 일시적으로 제거하고 남은 주간 기간을 primary 슬롯으로 옮기는 경우에 필요한 처리.
 기간 정보가 없거나 인식할 수 없는 응답은 호환성을 위해 primary를 Session, secondary를 Weekly로 표시하고 응답 헤더로 누락된 백분율 보완.
