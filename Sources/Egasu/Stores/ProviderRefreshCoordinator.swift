@@ -410,6 +410,7 @@ final class ProviderRefreshCoordinator {
         case .failed(let failure, let render, let historyChanged):
             refreshResults[providerID] = .failed(failure)
             refreshSchedule.failed(providerID)
+            if snapshot.invalidatesQuotaIdentity { onQuotaInvalidated?([providerID]) }
             if render { rebuildRenderedSnapshots() }
             if historyChanged, notifyHistoryChange { onLocalHistoryChanged?() }
             var diagnostic = "result=failure \(context) category=\(failure.category.rawValue)"
