@@ -333,13 +333,26 @@ final class CodexProvider: ProviderRuntime {
         }
 
         MetricLine.appendNoDataIfNeeded(&mapped.lines)
-        if authStore.expectedIdentityKey != nil {
-            guard let live = try await reloadLiveAuth(source: authState.source) else {
+        let binding = CodexResetClaimBinding(authState: authState)
+        guard let live = try await reloadLiveAuth(source: authState.source) else {
+            throw CodexAuthError.credentialsChanged
+        }
+        try authStore.validateAccountIdentity(live.auth)
+        if let accountKey = binding?.verifiedAccountKey {
+            let liveBinding = CodexResetClaimBinding(authState: live)
+            // 자체 갱신으로 신원을 처음 확인하고 저장만 실패하면 바뀌지 않은 원본만 허용.
+            guard let liveBinding,
+                liveBinding.verifiedAccountKey == accountKey
+                    || (liveBinding.verifiedAccountKey == nil
+                        && live.auth == authState.sourceText.flatMap(CodexAuthStore.parseAuth))
+            else {
                 throw CodexAuthError.credentialsChanged
             }
-            try authStore.validateAccountIdentity(live.auth)
+        } else if live.auth != authState.auth {
+            guard binding != nil, live.auth == authState.sourceText.flatMap(CodexAuthStore.parseAuth) else {
+                throw CodexAuthError.credentialsChanged
+            }
         }
-        let binding = CodexResetClaimBinding(authState: authState)
         var snapshot = ProviderSnapshot.make(
             provider: provider,
             plan: mapped.plan,
