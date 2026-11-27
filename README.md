@@ -46,6 +46,7 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
 - **[DeepSeek](/docs/providers/deepseek.md)** — API 계정의 통화별 잔액(원래 소수 자릿수 유지), 충전액·지급액과 API 사용 가능 여부.
 - **[Devin](/docs/providers/devin.md)** — 일간·주간 할당량, 추가 사용 잔액.
 - **[Grok](/docs/providers/grok.md)** — 결제 기간별 주간·월간 공유 한도, 종량제 지출 상한, 로컬 기록의 일별 지출·토큰.
+  정상 앱 종료는 진행 중인 OAuth 갱신의 저장 처리가 끝날 때까지 대기.
 - **[Kimi](/docs/providers/kimi.md)** — 5시간·주간·월간 총한도, 추가 지출·잔액.
   앱은 종료 요청을 받으면 진행 중인 OAuth 갱신의 저장 처리가 끝날 때까지 대기.
   세션 사용량이 0%여도 서버가 보고한 초기화 시각 표시.
