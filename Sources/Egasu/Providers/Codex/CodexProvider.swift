@@ -339,7 +339,13 @@ final class CodexProvider: ProviderRuntime {
         }
         try authStore.validateAccountIdentity(live.auth)
         if let accountKey = binding?.verifiedAccountKey {
-            guard CodexResetClaimBinding(authState: live)?.verifiedAccountKey == accountKey else {
+            let liveBinding = CodexResetClaimBinding(authState: live)
+            // 자체 갱신으로 신원을 처음 확인하고 저장만 실패하면 바뀌지 않은 원본만 허용.
+            guard let liveBinding,
+                liveBinding.verifiedAccountKey == accountKey
+                    || (liveBinding.verifiedAccountKey == nil
+                        && live.auth == authState.sourceText.flatMap(CodexAuthStore.parseAuth))
+            else {
                 throw CodexAuthError.credentialsChanged
             }
         } else if live.auth != authState.auth, live.auth != authState.sourceText.flatMap(CodexAuthStore.parseAuth) {
