@@ -8,8 +8,6 @@
 설정 이름 옆 ⓘ에 포인터를 올리면 설명 표시.
 왼쪽 위 뒤로 가기 버튼, ⌘, 단축키, Esc로 대시보드에 복귀(Esc는 대시보드로 먼저 돌아가며, 한 번 더 누르면 패널 닫기).
 
-[General 화면](/docs/assets/settings-general-light.png) · [Display 화면](/docs/assets/settings-display-light.png) · [Alerts 화면](/docs/assets/notifications-conditions-light.png) · [Advanced 화면](/docs/assets/settings-advanced-light.png) · [실험실 화면](/docs/assets/settings-labs-ko-light.png)
-
 ## General
 
 | 설정 | 옵션 | 동작 |

@@ -66,8 +66,6 @@ DNS·HTTPS·기존 피드 제공은 별도 인프라 단계이며, 앱 코드 �
   **설정 → 일반 → 업데이트**에서 **자동으로 확인**(Check Automatically)을 끄면 백그라운드 확인 중단.
   수동 확인은 계속 가능.
 
-![업데이트 배너](/docs/assets/update-banner-light.png)
-
 ## 베타 업데이트
 
 **설정 → 일반 → 업데이트 → 베타 업데이트**(Settings → General → Updates → Beta Updates)를 켜면 정식 버전과 베타 버전 모두 수신.
