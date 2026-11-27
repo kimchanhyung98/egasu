@@ -2,8 +2,6 @@
 
 QwenCloud CLI에 로그인한 개인 구독의 기본 크레딧 사용률과 다음 초기화 시각 표시.
 
-![예시 응답으로 렌더링한 QwenCloud 개인 구독 카드](/docs/assets/qwencloud-token-plan.png)
-
 ## 연결
 
 CLI 로그인 파일의 기본 위치는 `~/.qwencloud/credentials`이며 `QWENCLOUD_CONFIG_DIR`로 변경 가능.
