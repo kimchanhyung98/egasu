@@ -108,6 +108,58 @@ extension CodexCredentialPreservationTests {
         XCTAssertEqual(saved.tokens?.refreshToken, "refresh-2")
     }
 
+    func testUnauthorizedUsageRetryReportsCredentialFileReadFailure() async throws {
+        let original = try retryCredential(version: 0)
+        let home = "/credential-revalidation"
+        let path = "\(home)/auth.json"
+        let files = FakeFiles([path: original.text])
+        let store = CodexAuthStore(
+            environment: FakeEnvironment(), files: files, keychain: FakeKeychain(),
+            scope: .home(path: home), now: { Self.retryInstant }
+        )
+
+        await assertUnauthorizedUsageReadFailure(store: store, error: CocoaError(.fileReadNoPermission)) {
+            files.unreadablePaths.insert(path)
+        }
+
+        XCTAssertEqual(files.files[path], original.text)
+    }
+
+    func testUnauthorizedUsageRetryReportsSharedKeychainReadFailure() async throws {
+        let original = try retryCredential(version: 0)
+        let service = CodexAuthStore.keychainService
+        let keychain = SwitchRecoveryKeychain()
+        keychain.values[service] = original.text
+        let store = CodexAuthStore(
+            environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain, now: { Self.retryInstant }
+        )
+        let readError = KeychainError.readFailed("Fixture Keychain read was denied.")
+
+        await assertUnauthorizedUsageReadFailure(store: store, error: readError) {
+            keychain.beforeRead = { _ in throw readError }
+        }
+
+        XCTAssertEqual(keychain.values[service], original.text)
+        XCTAssertEqual(keychain.writeCount, 0)
+    }
+
+    private func assertUnauthorizedUsageReadFailure(
+        store: CodexAuthStore, error: any Error, denyRead: @escaping @Sendable () -> Void
+    ) async {
+        let http = RoutingHTTPClient { request in
+            guard request.url == CodexUsageClient.usageURL else { return Self.reusedTokenResponse }
+            denyRead()
+            return HTTPResponse(statusCode: 401, headers: [:], body: Data())
+        }
+
+        let snapshot = await makeProvider(store: store, http: http).refresh()
+
+        XCTAssertEqual(http.requests.map(\.url), [CodexUsageClient.usageURL])
+        XCTAssertEqual(snapshot.errorCategory, ErrorCategory.classify(error))
+        XCTAssertEqual(snapshot.errorPresentation, UserFacingErrors.presentation(error))
+        XCTAssertNil(snapshot.liveQuotaObservedAt)
+    }
+
     func testUnauthorizedUsageRetryReportsManagedKeychainReadFailure() async throws {
         let original = try retryCredential(version: 0)
         let profileID = "credential-revalidation"
