@@ -13,7 +13,7 @@ Keychain에 저장하지 못하면 같은 경로에 쓴 암호화 파일까지 �
 1. [공식 CLI 안내](https://docs.qwencloud.com/api-reference/preparation/cli)에 따라 QwenCloud CLI 설치.
 2. 기존 평문 `credentials` 파일이 있으면 CLI 설정 폴더 밖의 본인만 읽을 수 있는 새로운 위치로 옮겨 보관.
 3. `QWENCLOUD_KEYRING=plaintext` 설정이 남아 있으면 해당 평문 저장 설정 해제.
-4. 저장된 Keychain 로그인이나 암호화 파일이 없으면 터미널에서 `qwencloud auth login`으로 로그인.
+4. 암호화 파일과 사용 가능한 Keychain 로그인 모두 없으면 터미널에서 `qwencloud auth login`으로 로그인.
 5. egasu의 Accounts → Add New Account에서 QwenCloud를 선택한 뒤 **Turn On** 클릭.
 
 새 로그인과 egasu 조회가 정상임을 확인하기 전에는 보관본 유지.
@@ -22,8 +22,9 @@ Keychain에 저장하지 못하면 같은 경로에 쓴 암호화 파일까지 �
 Keychain 로그인 성공 후 `credentials` 파일이 없는 것은 정상일 수 있으므로 파일 부재만으로 평문 보관본을 복구하지 않음.
 `QWENCLOUD_KEYRING=plaintext`이면 기존 암호화 파일이 있어도 개인 Token Plan 조회와 자동 감지 중단. [공식 CLI의 인증 조건](https://github.com/QwenCloud/qwencloud-cli/blob/v1.7.0/src/auth/cs-data-session.ts#L84-L90)
 이 설정을 해제한 뒤 egasu를 재실행하면 기존 암호화 파일로 조회 가능.
+`QWENCLOUD_KEYRING`이 `off`·`no`·`0`·`false`이면 저장된 Keychain 로그인 미사용.
 
-자동 감지는 실행 가능한 CLI와 CLI 로그인 파일 또는 Keychain 항목의 존재를 로컬에서 확인.
+자동 감지는 실행 가능한 CLI와 현재 설정에서 사용할 수 있는 암호화 파일·Keychain 항목을 로컬에서 확인.
 키와 토큰은 CLI가 관리.
 암호화 파일로만 로그인한 경우 같은 파일에서 조회한 사용률을 재사용.
 CLI 실행 중 암호화 파일이 바뀌면 해당 조회 결과를 폐기.
