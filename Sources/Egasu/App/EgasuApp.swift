@@ -166,10 +166,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         updater.start()
     }
 
-    /// 재로그인 시도 정리와 토큰 회전 저장, Runner 소유 프로세스 종료까지 대기.
+    /// 계정 추가·재로그인 정리와 토큰 회전 저장, Runner 소유 프로세스 종료까지 대기.
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !isAwaitingProcessShutdown else { return .terminateLater }
-        let reSignIn = container?.popover.beginReSignInShutdown()
+        let signIns = container?.popover.beginSignInShutdown() ?? []
         TokenRotationShutdownGuard.beginTermination()
         processOwner.beginShutdown()
         let hasActiveRotation = !TokenRotationShutdownGuard.isIdle
@@ -184,7 +184,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             if let container, container.hasRunningBackgroundProcesses {
-                await container.shutdownBackgroundProcesses(reSignIn: reSignIn)
+                await container.shutdownBackgroundProcesses(signIns: signIns)
             }
             await processOwner.shutdown()
             self.isAwaitingProcessShutdown = false
