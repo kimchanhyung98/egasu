@@ -65,6 +65,7 @@ final class OpenAICostsTests: XCTestCase {
             method: "GET", path: "/v1/usage/openai-api",
             state: .init(enabledOrderedIDs: [id], knownIDs: [id], snapshots: [id: snapshot]))
         let json = String(decoding: try XCTUnwrap(wire.body), as: UTF8.self)
+        XCTAssertTrue(json.contains("proj_A, proj_B"))
         XCTAssertTrue(json.contains("USD 0.008000000000000004"))
         XCTAssertFalse(json.contains(try XCTUnwrap(snapshot.producedByIdentityKey)))
         XCTAssertFalse(json.contains("test-admin-key"))
