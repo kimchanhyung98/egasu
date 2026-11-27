@@ -358,5 +358,6 @@
 "No active QwenCloud personal Token Plan." = "No active QwenCloud personal Token Plan.";
 "QwenCloud did not report credit usage for this period." = "QwenCloud did not report credit usage for this period.";
 "The QwenCloud CLI could not retrieve the subscription. Check the CLI and refresh." = "The QwenCloud CLI could not retrieve the subscription. Check the CLI and refresh.";
-"Sign in to the QwenCloud CLI using Keychain or encrypted file storage and refresh." = "Sign in to the QwenCloud CLI using Keychain or encrypted file storage and refresh.";
+"Move the credentials file to a new, private location outside the QwenCloud CLI configuration folder. If you need to sign in again, use Keychain or encrypted file storage." = "Move the credentials file to a new, private location outside the QwenCloud CLI configuration folder. If you need to sign in again, use Keychain or encrypted file storage.";
+"Unset QWENCLOUD_KEYRING=plaintext and restart egasu." = "Unset QWENCLOUD_KEYRING=plaintext and restart egasu.";
 "QwenCloud sign-in changed while refreshing. Refresh again to use the current account." = "QwenCloud sign-in changed while refreshing. Refresh again to use the current account.";
