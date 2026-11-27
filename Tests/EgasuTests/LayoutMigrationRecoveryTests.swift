@@ -63,13 +63,21 @@ final class LayoutMigrationRecoveryTests: XCTestCase {
     }
 
     func testProviderRecordedInLegacyLayoutKeepsItsHiddenMetricsWithoutSavedCardList() {
-        let registry = WidgetRegistry.from([ClaudeProvider(), DeepSeekProvider()])
-        for hasSavedProviderOrder in [false, true] {
+        let registry = registryWithNewProviders()
+        for (hasSavedProviderOrder, repairsSeed) in [(true, false), (false, false), (false, true)] {
             let defaults = makeDefaults()
             let persistence = LayoutPersistence(defaults: defaults, storageKey: "layout")
             persistence.savePlaced([PlacedWidget(descriptorID: "claude.session")])
             if hasSavedProviderOrder {
                 persistence.saveProviderOrder(["claude", "deepseek"])
+            } else if repairsSeed {
+                let badSeed = Data("unreadable-seed".utf8)
+                defaults.set(badSeed, forKey: "layout.seededDefaults")
+                let pending = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
+                XCTAssertTrue(pending.isMetricEnabled("deepseek.balanceUSD"))
+                XCTAssertTrue(pending.reorderProvider(dragged: "codex", target: "claude"))
+                XCTAssertEqual(defaults.data(forKey: "layout.seededDefaults"), badSeed)
+                persistence.saveSeededDefaults(["deepseek.balanceUSD"])
             } else {
                 persistence.saveSeededDefaults(["deepseek.balanceUSD"])
             }
@@ -77,6 +85,7 @@ final class LayoutMigrationRecoveryTests: XCTestCase {
             let store = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
 
             XCTAssertFalse(store.isMetricEnabled("deepseek.balanceUSD"))
+            XCTAssertTrue(store.isMetricEnabled("openai-api.costs"))
         }
     }
 
@@ -151,6 +160,78 @@ final class LayoutMigrationRecoveryTests: XCTestCase {
         }
     }
 
+    func testReorderingDuringPendingLegacyMigrationPreservesNewProviderVisibility() {
+        let registry = registryWithNewProviders()
+        let newMetrics = ["deepseek", "openai-api", "qwencloud"].flatMap { registry.descriptors(for: $0).map(\.id) }
+        let editedMetric = "deepseek.balanceUSD"
+        let pinnedMetric = "deepseek.balanceCNY"
+
+        for reorderProviders in [true, false] {
+            let defaults = makeDefaults()
+            let persistence = LayoutPersistence(defaults: defaults, storageKey: "layout")
+            let placed = ["claude.session", "codex.session"].map { PlacedWidget(descriptorID: $0) }
+            persistence.savePlaced(placed)
+            persistence.saveProviderOrder(["claude", "codex"])
+            let badOrder = Data("unreadable-order".utf8)
+            defaults.set(badOrder, forKey: "layout.metricOrderByProvider")
+            let initial = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
+            XCTAssertFalse(persistence.hasStoredDisabledMetrics)
+            XCTAssertEqual(newMetrics.filter { initial.isMetricEnabled($0) }, newMetrics)
+
+            initial.setMetricEnabled(editedMetric, false)
+            initial.setMetric(pinnedMetric, pinned: true)
+            if reorderProviders {
+                XCTAssertTrue(initial.reorderProvider(dragged: "codex", target: "claude"))
+                XCTAssertEqual(defaults.data(forKey: "layout.metricOrderByProvider"), badOrder)
+            } else {
+                XCTAssertTrue(initial.reorderMetric(dragged: "claude.session", target: "claude.weekly", in: "claude"))
+            }
+
+            let restarted = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
+            XCTAssertEqual(
+                newMetrics.filter { restarted.isMetricEnabled($0) }, newMetrics.filter { $0 != editedMetric })
+            XCTAssertFalse(restarted.isMetricEnabled("claude.weekly"))
+            XCTAssertTrue(restarted.isMetricEnabled("claude.session"))
+            XCTAssertTrue(restarted.isMetricPinned(pinnedMetric))
+            XCTAssertEqual(persistence.loadPlaced(), placed)
+            if reorderProviders {
+                XCTAssertEqual(Array(restarted.orderedProviderIDs().prefix(2)), ["codex", "claude"])
+                persistence.saveMetricOrder(["claude": ["claude.weekly", "claude.session"]])
+                let repaired = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
+                XCTAssertEqual(
+                    newMetrics.filter { repaired.isMetricEnabled($0) }, newMetrics.filter { $0 != editedMetric })
+                XCTAssertTrue(repaired.isMetricPinned(pinnedMetric))
+            } else {
+                XCTAssertEqual(restarted.metricOrder(for: "claude"), initial.metricOrder(for: "claude"))
+            }
+        }
+    }
+
+    func testRestartBetweenLegacyMigrationWritesPreservesNewProviderVisibility() throws {
+        let suite = "EgasuTests.NewProviderRecovery." + UUID().uuidString
+        let defaults = try XCTUnwrap(RecordingLayoutMigrationDefaults(suiteName: suite))
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        let persistence = LayoutPersistence(defaults: defaults, storageKey: "layout")
+        let legacyOrder = ["claude.weekly", "claude.session"]
+        persistence.savePlaced([PlacedWidget(descriptorID: "claude.session")])
+        persistence.saveMetricOrder(["claude": legacyOrder])
+        let registry = registryWithNewProviders()
+        let newMetrics = ["deepseek", "openai-api", "qwencloud"].flatMap { registry.descriptors(for: $0).map(\.id) }
+        defaults.migrationSnapshotDomain = suite
+        _ = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
+
+        for key in ["layout.metricOrderByProvider", "layout.disabledMetrics"] {
+            let restored = makeDefaults()
+            for (key, value) in try XCTUnwrap(defaults.migrationSnapshots[key]) {
+                restored.set(value, forKey: key)
+            }
+            let restarted = LayoutStore(registry: registry, defaults: restored, storageKey: "layout")
+            XCTAssertEqual(newMetrics.filter { restarted.isMetricEnabled($0) }, newMetrics, key)
+            XCTAssertFalse(restarted.isMetricEnabled("claude.weekly"), key)
+            XCTAssertEqual(Array(restarted.metricOrder(for: "claude").prefix(2)), legacyOrder, key)
+        }
+    }
+
     func testExplicitEmptyLegacyLayoutDoesNotEnableNewDefaults() {
         for seeded in [false, true] {
             let defaults = makeDefaults()
@@ -190,8 +271,11 @@ final class LayoutMigrationRecoveryTests: XCTestCase {
         defaults.set(badOrder, forKey: "layout.metricOrderByProvider")
         defaults.set(["claude.weekly"], forKey: "layout.expandedMetrics")
         defaults.set(["claude.session"], forKey: "layout.menuBarPins")
+        let registry = registry(cards: ["claude", "codex"])
         let broken = LayoutStore(
-            registry: registry(), defaults: defaults, storageKey: "layout", defaultPinnedMetricIDs: [])
+            registry: registry, defaults: defaults, storageKey: "layout", defaultPinnedMetricIDs: [])
+        XCTAssertTrue(broken.isMetricEnabled("claude.fable"))
+        XCTAssertTrue(broken.reorderProvider(dragged: "codex", target: "claude"))
         _ = broken.migrateMenuBarStars()
 
         XCTAssertEqual(defaults.data(forKey: "layout.metricOrderByProvider"), badOrder)
@@ -201,9 +285,10 @@ final class LayoutMigrationRecoveryTests: XCTestCase {
 
         persistence.saveMetricOrder(["claude": ["claude.fable", "claude.weekly", "claude.session"]])
         let repaired = LayoutStore(
-            registry: registry(), defaults: defaults, storageKey: "layout", defaultPinnedMetricIDs: [])
+            registry: registry, defaults: defaults, storageKey: "layout", defaultPinnedMetricIDs: [])
 
         XCTAssertFalse(repaired.isMetricEnabled("claude.fable"))
+        XCTAssertEqual(Array(repaired.orderedProviderIDs().prefix(2)), ["codex", "claude"])
         XCTAssertTrue(repaired.metricOrder(for: "claude").first == "claude.fable")
         XCTAssertNil(defaults.object(forKey: "layout.expandedMetrics"))
         XCTAssertEqual(repaired.migrateMenuBarStars(), 1)
@@ -391,6 +476,12 @@ final class LayoutMigrationRecoveryTests: XCTestCase {
         XCTAssertFalse(store.isMetricPinned("claude.session"))
         XCTAssertFalse(store.isMetricEnabled("codex.weekly"))
         XCTAssertTrue(store.isMetricPinned("codex.session"))
+    }
+
+    private func registryWithNewProviders() -> WidgetRegistry {
+        WidgetRegistry.from([
+            ClaudeProvider(), CodexProvider(), DeepSeekProvider(), OpenAICostsProvider(), QwenCloudProvider()
+        ])
     }
 
     private func registry(cards: [String] = ["claude"]) -> WidgetRegistry {

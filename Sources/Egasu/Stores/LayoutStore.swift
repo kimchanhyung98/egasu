@@ -390,26 +390,18 @@ final class LayoutStore {
 
     func persistProviderOrder() {
         persistPendingImportChoice()
-        persistence.saveProviderOrder(providerOrder)
+        persistence.saveProviderOrder(providerOrder, preservingLegacyEvidence: true)
     }
 
     private func persistMigration(_ state: LayoutInitialState) {
-        if state.shouldPersistMetricOrder {
-            if state.shouldPersistVisibility && !state.newlyVisibleMetricIDs.isEmpty {
-                // 순서 저장 직후 종료해도 새 지표가 구형 순서에 있던 숨김으로 바뀌지 않도록 보존.
-                var choices = persistence.deferredVisibility
-                for id in state.newlyVisibleMetricIDs { choices[id] = true }
-                persistence.deferredVisibility = choices
-            }
-            persistMetricOrder()
-        }
+        if state.shouldPersistMetricOrder { persistMetricOrder() }
         if state.shouldPersistVisibility { persistence.finishVisibilityMigration(state.disabledMetricIDs) }
         if state.shouldClearOnDemandState { persistence.clearOnDemandState() }
     }
 
     func persistMetricOrder() {
         persistPendingImportChoice()
-        persistence.saveMetricOrder(metricOrderByProvider)
+        persistence.saveMetricOrder(metricOrderByProvider, preservingLegacyEvidence: true)
     }
 
     /// 원본 가져오기 대기 중 직접 편집한 설정은 로컬 선택으로 확정.

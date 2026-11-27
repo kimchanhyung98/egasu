@@ -1,8 +1,19 @@
+import CryptoKit
 import Foundation
 
 /// `LayoutStore`의 저장 담당 절반 — key 이름·encoding·UserDefaults 접근 소유
 @MainActor
 final class LayoutPersistence {
+    struct LegacyOrderEvidence: Codable {
+        let cards: Set<String>
+        let metrics: Set<String>
+    }
+
+    private struct MigrationOrderWrite: Codable {
+        let digest: Data
+        let evidence: LegacyOrderEvidence
+    }
+
     private let defaults: UserDefaults
     private let keys: Keys
     private let importsUpstreamLayout: Bool
@@ -73,6 +84,9 @@ final class LayoutPersistence {
     func finishVisibilityMigration(_ ids: Set<String>) {
         saveDisabledMetrics(ids)
         deferredVisibility = [:]
+        if defaults.object(forKey: keys.migrationOrderWrites) != nil {
+            defaults.removeObject(forKey: keys.migrationOrderWrites)
+        }
     }
 
     func loadPlaced() -> [PlacedWidget]? { decode([PlacedWidget].self, forKey: keys.placed) }
@@ -80,6 +94,20 @@ final class LayoutPersistence {
     func loadMetricOrder() -> [String: [String]]? {
         decode([String: [String]].self, forKey: keys.metricOrder)
     }
+
+    func legacyProviderOrderCards(_ order: [String]) -> Set<String> {
+        legacyOrderEvidence(forKey: keys.providerOrder)?.cards ?? Set(order)
+    }
+
+    func legacyMetricOrderEvidence(_ order: [String: [String]]) -> LegacyOrderEvidence {
+        legacyOrderEvidence(forKey: keys.metricOrder)
+            ?? LegacyOrderEvidence(cards: Set(order.keys), metrics: Set(order.values.joined()))
+    }
+
+    private var usesLegacyOrderEvidence: Bool {
+        hasStoredLayout && !hasStoredDisabledMetrics && !isUpstreamImportPending
+    }
+
     func loadSeededDefaults() -> [String]? { decode([String].self, forKey: keys.seededDefaults) }
 
     /// 첫 레이아웃을 받은 카드 — 키가 없으면 패밀리 공용 레이아웃 시절의 저장값.
@@ -139,8 +167,22 @@ final class LayoutPersistence {
     }
 
     func savePlaced(_ value: [PlacedWidget]) { encode(value, forKey: keys.placed) }
-    func saveProviderOrder(_ value: [String]) { encode(value, forKey: keys.providerOrder) }
-    func saveMetricOrder(_ value: [String: [String]]) {
+
+    func saveProviderOrder(_ value: [String], preservingLegacyEvidence: Bool = false) {
+        let evidence =
+            preservingLegacyEvidence && usesLegacyOrderEvidence
+            ? LegacyOrderEvidence(cards: legacyProviderOrderCards(loadProviderOrder() ?? []), metrics: []) : nil
+        saveOrder(value, forKey: keys.providerOrder, legacyEvidence: evidence)
+    }
+
+    func saveMetricOrder(_ value: [String: [String]], preservingLegacyEvidence: Bool = false) {
+        let evidence =
+            preservingLegacyEvidence && usesLegacyOrderEvidence
+            ? legacyMetricOrderEvidence(loadMetricOrder() ?? [:]) : nil
+        saveMetricOrder(value, legacyEvidence: evidence)
+    }
+
+    private func saveMetricOrder(_ value: [String: [String]], legacyEvidence: LegacyOrderEvidence?) {
         var next = value
         if !unresolvedProfileCards.isEmpty {
             let original = loadMetricOrder() ?? [:]
@@ -153,7 +195,7 @@ final class LayoutPersistence {
                     } + Array(shared)
             }
         }
-        encode(next, forKey: keys.metricOrder)
+        saveOrder(next, forKey: keys.metricOrder, legacyEvidence: legacyEvidence)
     }
     func saveSeededDefaults(_ value: Set<String>) {
         encode(Array(value).sorted(), forKey: keys.seededDefaults)
@@ -264,7 +306,14 @@ final class LayoutPersistence {
                     ProviderAccountID.isSharedMetric(id) ? id : personalIDs.next()
                 } + Array(personalIDs)
             }
-            saveMetricOrder(nextOrder)
+            var evidence: LegacyOrderEvidence?
+            if usesLegacyOrderEvidence {
+                let legacy = legacyMetricOrderEvidence(order)
+                evidence = LegacyOrderEvidence(
+                    cards: Set(legacy.cards.subtracting(replacedCards).map { moves[$0] ?? $0 }),
+                    metrics: Set(legacy.metrics.compactMap(metricID)))
+            }
+            saveMetricOrder(nextOrder, legacyEvidence: evidence)
         }
         if let pins = loadPriorityPins() { savePriorityPins(Set(pins.compactMap(metricID))) }
         let declined = loadDeclinedMenuBarStars()
@@ -301,7 +350,12 @@ final class LayoutPersistence {
         if let order = loadMetricOrder() {
             let normalized = order.mapValues { $0.filter { !isAlias($0) } }
             if normalized != order {
-                saveMetricOrder(normalized)
+                let legacy = usesLegacyOrderEvidence ? legacyMetricOrderEvidence(order) : nil
+                saveMetricOrder(
+                    normalized,
+                    legacyEvidence: legacy.map {
+                        LegacyOrderEvidence(cards: $0.cards, metrics: $0.metrics.filter { !isAlias($0) })
+                    })
                 changed = true
             }
         }
@@ -313,6 +367,44 @@ final class LayoutPersistence {
             }
         }
         return changed
+    }
+
+    private var migrationOrderWrites: [String: [MigrationOrderWrite]] {
+        decode([String: [MigrationOrderWrite]].self, forKey: keys.migrationOrderWrites) ?? [:]
+    }
+
+    private func legacyOrderEvidence(forKey key: String) -> LegacyOrderEvidence? {
+        guard let writes = migrationOrderWrites[key], let data = defaults.data(forKey: key) else { return nil }
+        let digest = Data(SHA256.hash(data: data))
+        return writes.first { $0.digest == digest }?.evidence
+    }
+
+    private func saveOrder<T: Encodable>(_ order: T, forKey key: String, legacyEvidence: LegacyOrderEvidence?) {
+        guard usesLegacyOrderEvidence else { encode(order, forKey: key); return }
+        do {
+            let encoder = JSONEncoder()
+            let data = try encoder.encode(order)
+            var writes = migrationOrderWrites
+            if let legacyEvidence {
+                let digest = Data(SHA256.hash(data: data))
+                let previous = defaults.data(forKey: key).map { Data(SHA256.hash(data: $0)) }
+                // 기록과 순서 쓰기 사이에 중단돼도 두 저장본 중 실제로 남은 순서의 근거 사용.
+                writes[key] =
+                    (writes[key] ?? []).filter { $0.digest == previous && $0.digest != digest }
+                    + [MigrationOrderWrite(digest: digest, evidence: legacyEvidence)]
+                defaults.set(try encoder.encode(writes), forKey: keys.migrationOrderWrites)
+            }
+            defaults.set(data, forKey: key)
+            if legacyEvidence == nil, writes.removeValue(forKey: key) != nil {
+                if writes.isEmpty {
+                    defaults.removeObject(forKey: keys.migrationOrderWrites)
+                } else {
+                    defaults.set(try encoder.encode(writes), forKey: keys.migrationOrderWrites)
+                }
+            }
+        } catch {
+            AppLog.warn(.config, "failed to persist layout '\(key)': \(error.localizedDescription)")
+        }
     }
 
     /// encode 실패는 loud하게 기록 — 조용히 삼키면 layout 변경 유실이 무신호로 발생
@@ -342,6 +434,7 @@ final class LayoutPersistence {
     private struct Keys {
         let placed: String
         let deferredVisibility: String
+        let migrationOrderWrites: String
         let disabledMetrics: String
         let providerOrder: String
         let metricOrder: String
@@ -359,6 +452,7 @@ final class LayoutPersistence {
         init(storageKey: String) {
             placed = storageKey
             deferredVisibility = "\(storageKey).deferredVisibility"
+            migrationOrderWrites = "\(storageKey).migrationOrderWrites"
             disabledMetrics = "\(storageKey).disabledMetrics"
             providerOrder = "\(storageKey).providerOrder"
             metricOrder = "\(storageKey).metricOrderByProvider"
