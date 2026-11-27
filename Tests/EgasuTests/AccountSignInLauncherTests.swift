@@ -89,10 +89,10 @@ final class AccountSignInLauncherTests: XCTestCase {
         }
         XCTAssertTrue(FileManager.default.fileExists(atPath: ready.path))
 
-        let first = state.beginReSignInShutdown()
-        let repeated = state.beginReSignInShutdown()
-        await first?.value
-        await repeated?.value
+        let first = state.beginSignInShutdown()
+        let repeated = state.beginSignInShutdown()
+        for task in first { await task.value }
+        for task in repeated { await task.value }
 
         XCTAssertEqual(exitCode, 128 + (ignoresTermination ? SIGKILL : SIGTERM))
         XCTAssertFalse(FileManager.default.fileExists(atPath: attempt.directory.path))
