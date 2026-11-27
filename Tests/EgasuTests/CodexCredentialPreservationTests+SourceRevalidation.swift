@@ -125,7 +125,8 @@ extension CodexCredentialPreservationTests {
         let rotated = try retryCredential(version: 1)
         let opaque =
             #"{"tokens":{"access_token":"old","refresh_token":"refresh-0"},"last_refresh":"2020-01-01T00:00:00Z"}"#
-        for (original, token) in [(verified.text, rotated.token), (opaque, "rotated-opaque")] {
+        let scenarios = [(verified.text, rotated.token), (opaque, "rotated-opaque"), (opaque, rotated.token)]
+        for (original, token) in scenarios {
             let keychain = SwitchRecoveryKeychain()
             let service = CodexAuthStore.keychainService
             keychain.values[service] = original
@@ -147,6 +148,53 @@ extension CodexCredentialPreservationTests {
             XCTAssertEqual(snapshot.isDegraded, true)
             XCTAssertNotNil(snapshot.line(label: "Session"))
             XCTAssertEqual(keychain.values[service], original)
+        }
+    }
+
+    func testSuccessfulUsageRejectsChangedIdentityAfterAnInMemoryRotation() async throws {
+        let verified = try retryCredential(version: 0, expiresIn: 60)
+        let rotated = try retryCredential(version: 1)
+        let otherUser = try retryCredential(version: 1, subject: "other-user")
+        let opaque =
+            #"{"tokens":{"access_token":"old","refresh_token":"refresh-0"},"last_refresh":"2020-01-01T00:00:00Z"}"#
+        var conflicting = try XCTUnwrap(CodexAuthStore.parseAuth(verified.text))
+        conflicting.tokens?.idToken = otherUser.token
+        let conflict = String(decoding: try JSONEncoder().encode(conflicting), as: UTF8.self)
+        let scenarios: [(original: String, token: String, replacement: String?)] = [
+            (verified.text, otherUser.token, nil),
+            (opaque, rotated.token, opaque.replacingOccurrences(of: "old", with: "other-login")),
+            (conflict, rotated.token, nil)
+        ]
+        for (original, token, replacement) in scenarios {
+            let keychain = SwitchRecoveryKeychain()
+            let service = CodexAuthStore.keychainService
+            keychain.values[service] = original
+            keychain.beforeWrite = { _, _ in throw SwitchRecoveryKeychain.Failure.injected }
+            let store = CodexAuthStore(
+                environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain, now: { Self.retryInstant })
+            let response = try JSONEncoder().encode([
+                "access_token": token, "refresh_token": "refresh-1", "id_token": token
+            ])
+            let http = RoutingHTTPClient { request in
+                if request.url == CodexUsageClient.refreshURL {
+                    return HTTPResponse(statusCode: 200, headers: [:], body: response)
+                }
+                if request.url == CodexUsageClient.usageURL, let replacement {
+                    keychain.values[service] = replacement
+                }
+                return Self.retryUsageResponse(request)
+            }
+
+            let snapshot = await makeProvider(store: store, http: http).refresh()
+
+            XCTAssertEqual(snapshot.errorCategory, .other)
+            XCTAssertNil(snapshot.liveQuotaAccountKey)
+            XCTAssertNil(snapshot.line(label: "Session"))
+            XCTAssertEqual(keychain.values[service], replacement ?? original)
+            XCTAssertEqual(
+                http.requests.map(\.url),
+                [CodexUsageClient.refreshURL, CodexUsageClient.usageURL, CodexUsageClient.resetCreditsURL]
+            )
         }
     }
 
