@@ -411,6 +411,8 @@ final class CodexProvider: ProviderRuntime {
                     throw error
                 } catch let error as CodexAuthError {
                     throw error
+                } catch let error as CodexCredentialSourceReadError {
+                    throw error
                 } catch {
                     try ProviderAuthRetry.rethrowCancellation(error)
                     throw CodexUsageError.connectionFailed
@@ -429,10 +431,10 @@ final class CodexProvider: ProviderRuntime {
         return try await loadOffMainActor { [authStore] in
             switch source {
             case .file(let path):
-                return authStore.loadAuth(at: path)
+                return try authStore.readAuth(at: path)
             case .keychain:
                 if isResetClaim { return try authStore.loadKeychainAuth(allowInteraction: false) }
-                return authStore.loadKeychainAuth()
+                return try authStore.readKeychainAuth()
             case .accountSnapshot(let profileID):
                 return try authStore.loadAccountSnapshot(profileID: profileID, allowInteraction: allowInteraction)
             }
@@ -493,6 +495,11 @@ final class CodexProvider: ProviderRuntime {
             AppDiagnostics.failure(.credentialSave, error: CodexAuthError.credentialsChanged, providerID: provider.id,
                                    localContext: "sign-in changed during token refresh; stopping shared-source writeback")
             throw CodexAuthError.credentialsChanged
+        } catch let error as CodexCredentialSourceReadError {
+            AppDiagnostics.failure(
+                .credentialSave, error: error.underlyingError, providerID: provider.id,
+                localContext: "could not verify sign-in before saving rotated credentials")
+            throw error
         } catch {
             refreshIsDegraded = true
             AppDiagnostics.record(.credentialSave, result: .degraded, providerID: provider.id, error: error,
