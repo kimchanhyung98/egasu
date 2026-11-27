@@ -66,6 +66,7 @@ Settings는 General·Display·Alerts·Advanced 탭으로 구성.
 General에서 Beta Updates를 켜면 Labs 탭 표시.
 계정 추가 시연은 Options → Accounts → Add Account 순서.
 초기화 예측·한도 안내선 시연은 All Usage에 표시.
+Minimal에서 긴 막대 지표명은 최대 두 줄로 표시.
 실측 예시 한도에만 기준 도달 상태 표시. OpenCode Go의 추정치는 안내선과 추정 사용량으로 표시.
 Total Spend의 안쪽 원과 범례 값을 클릭하면 Cost → Cost/MTok → Tokens 순환.
 패널 폭은 앱의 340pt에 대응하는 340px 기준.
