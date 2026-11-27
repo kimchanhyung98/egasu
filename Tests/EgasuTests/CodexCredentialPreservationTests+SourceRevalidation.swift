@@ -198,6 +198,44 @@ extension CodexCredentialPreservationTests {
         }
     }
 
+    func testSuccessfulUsageRejectsConflictingTokensAfterAnInMemoryRotation() async throws {
+        let original = try retryCredential(version: 0, expiresIn: 60)
+        var originalAuth = try XCTUnwrap(CodexAuthStore.parseAuth(original.text))
+        originalAuth.tokens?.idToken = original.token
+        let credential = String(decoding: try JSONEncoder().encode(originalAuth), as: UTF8.self)
+        let rotated = try retryCredential(version: 1, subject: "other-user")
+        let keychain = SwitchRecoveryKeychain()
+        let service = CodexAuthStore.keychainService
+        keychain.values[service] = credential
+        keychain.beforeWrite = { _, _ in throw SwitchRecoveryKeychain.Failure.injected }
+        let store = CodexAuthStore(
+            environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
+            expectedIdentityKey: "workspace", now: { Self.retryInstant })
+        let response = try JSONEncoder().encode(["access_token": rotated.token, "refresh_token": "refresh-1"])
+        let http = RoutingHTTPClient { request in
+            if request.url == CodexUsageClient.refreshURL {
+                return HTTPResponse(statusCode: 200, headers: [:], body: response)
+            }
+            XCTAssertEqual(request.headers["Authorization"], "Bearer \(rotated.token)")
+            return Self.retryUsageResponse(request)
+        }
+        let provider = makeProvider(store: store, http: http)
+
+        let snapshot = await provider.refresh()
+
+        XCTAssertEqual(snapshot.errorCategory, .other)
+        XCTAssertNil(snapshot.liveQuotaAccountKey)
+        XCTAssertNil(snapshot.liveQuotaObservedAt)
+        XCTAssertNil(snapshot.codexResetClaimBinding)
+        XCTAssertNil(snapshot.line(label: "Session"))
+        XCTAssertTrue(provider.usageTimerObservations.isEmpty)
+        XCTAssertEqual(keychain.values[service], credential)
+        XCTAssertEqual(
+            http.requests.map(\.url),
+            [CodexUsageClient.refreshURL, CodexUsageClient.usageURL, CodexUsageClient.resetCreditsURL]
+        )
+    }
+
     func testProactiveRefreshUsesAnExternalRotationFromTheOriginalSource() async throws {
         let original = try retryCredential(version: 0, expiresIn: 60)
         let rotated = try retryCredential(version: 1)
