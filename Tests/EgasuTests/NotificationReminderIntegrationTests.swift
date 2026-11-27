@@ -67,6 +67,101 @@ final class NotificationReminderIntegrationTests: XCTestCase {
         XCTAssertTrue(settings.codexCreditExpiry)
     }
 
+    func testChangedCodexCredentialsCancelBothReminderKindsForTheAffectedCard() async throws {
+        let center = Center()
+        let suite = "NotificationReminderIntegrationTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let first = try reading(at: center.now)
+        let other = try reading(at: center.now, profileID: UUID().uuidString, subject: "second-user")
+        let transient: [(any Error, ErrorCategory)] = [
+            (CodexUsageError.connectionFailed, .network),
+            (CodexUsageError.requestFailed(429), .rateLimited),
+            (KeychainError.accessBusy, .credentialAccess)
+        ]
+        let changed = CodexAuthError.credentialsChanged
+        let provider = CodexProvider.makeProvider()
+        let errors = transient.map { ProviderSnapshot.error(provider: provider, error: $0.0) }
+        let (store, settings) = launch(
+            reading: first, defaults: defaults, suite: suite, center: center,
+            following: errors + [.error(provider: provider, error: changed), first], others: [other])
+        XCTAssertNotEqual(first.liveQuotaAccountKey, other.liveQuotaAccountKey)
+        settings.weeklyMonthlyResetReminders = true
+        settings.codexCreditExpiry = true
+
+        let otherOutcome = await store.refresh(providerID: other.providerID, force: true)
+        XCTAssertEqual(otherOutcome, .refreshed)
+        await waitFor { center.requests.count == 4 }
+        let otherRequests = center.requests
+        let firstOutcome = await store.refresh(providerID: first.providerID, force: true)
+        XCTAssertEqual(firstOutcome, .refreshed)
+        await waitFor { center.requests.count == 8 }
+        XCTAssertEqual(center.pending(prefix: quotaPrefix).count, 4)
+        XCTAssertEqual(center.pending(prefix: creditPrefix).count, 4)
+        let initial = center.requests
+
+        for (_, category) in transient {
+            let reads = center.reads
+            let outcome = await store.refresh(providerID: first.providerID, force: true)
+            XCTAssertEqual(outcome, .failed)
+            XCTAssertEqual(store.refreshResults[first.providerID]?.failure?.category, category)
+            let witnessOutcome = await store.refresh(providerID: other.providerID, force: true)
+            XCTAssertEqual(witnessOutcome, .refreshed)
+            await waitForBothSchedulers(in: center, after: reads)
+            XCTAssertEqual(center.requests, initial)
+        }
+
+        let changedOutcome = await store.refresh(providerID: first.providerID, force: true)
+        XCTAssertEqual(changedOutcome, .failed)
+        let failure = try XCTUnwrap(store.refreshResults[first.providerID]?.failure)
+        XCTAssertEqual(failure.category, .other)
+        XCTAssertNil(failure.authenticationIssue)
+        XCTAssertEqual(failure.presentation, UserFacingErrors.presentation(changed))
+        await waitFor { center.requests == otherRequests }
+
+        let retryOutcome = await store.refresh(providerID: first.providerID, force: true)
+        XCTAssertEqual(retryOutcome, .refreshed)
+        await waitFor { center.requests == initial }
+    }
+
+    func testChangedCodexCredentialsPreserveReservationsSupportedByAnActiveAlias() async throws {
+        let center = Center()
+        let suite = "NotificationReminderIntegrationTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let first = try reading(at: center.now)
+        let aliasReading = try reading(at: center.now.addingTimeInterval(-60), profileID: UUID().uuidString)
+        XCTAssertEqual(first.liveQuotaAccountKey, aliasReading.liveQuotaAccountKey)
+        let provider = CodexProvider.makeProvider()
+        let (store, settings) = launch(
+            reading: first, defaults: defaults, suite: suite, center: center,
+            following: [.error(provider: provider, error: CodexAuthError.credentialsChanged)], others: [aliasReading])
+        settings.weeklyMonthlyResetReminders = true
+        settings.codexCreditExpiry = true
+        for card in [first.providerID, aliasReading.providerID] {
+            let outcome = await store.refresh(providerID: card, force: true)
+            XCTAssertEqual(outcome, .refreshed)
+        }
+        await waitFor { center.requests.count == 4 }
+        let initial = center.requests
+        let writes = center.writes
+
+        let reads = center.reads
+        let changedOutcome = await store.refresh(providerID: first.providerID, force: true)
+        XCTAssertEqual(changedOutcome, .failed)
+        let aliasOutcome = await store.refresh(providerID: aliasReading.providerID, force: true)
+        XCTAssertEqual(aliasOutcome, .refreshed)
+        await waitForBothSchedulers(in: center, after: reads)
+        XCTAssertEqual(center.requests, initial)
+        XCTAssertEqual(center.writes, writes)
+
+        let remaining = runtime(for: first)
+        store.replaceProviderCatalog(
+            registry: WidgetRegistry.from([remaining]), providers: [remaining],
+            identityKeys: [first.providerID: "workspace"])
+        await waitFor { center.requests.isEmpty }
+    }
+
     private func checkRestart(quota: Bool, credit: Bool) async throws {
         let center = Center()
         let suite = "NotificationReminderIntegrationTests.\(UUID())"
@@ -131,18 +226,19 @@ final class NotificationReminderIntegrationTests: XCTestCase {
     }
 
     private func launch(
-        reading: ProviderSnapshot, defaults: UserDefaults, suite: String, center: Center
+        reading: ProviderSnapshot, defaults: UserDefaults, suite: String, center: Center,
+        following: [ProviderSnapshot] = [], others: [ProviderSnapshot] = []
     ) -> (WidgetDataStore, NotificationSettingsStore) {
         let settings = NotificationSettingsStore(defaults: defaults)
         let enablement = ProviderEnablementStore(defaults: defaults)
-        let runtime = TestProviderRuntime(
-            provider: CodexProvider.makeProvider(), descriptors: CodexProvider().widgetDescriptors, snapshot: reading)
+        let providers = [runtime(for: reading, following: following)] + others.map { runtime(for: $0) }
+        let identities = Dictionary(uniqueKeysWithValues: providers.map { ($0.provider.id, "workspace") })
         let store = WidgetDataStore(
-            registry: WidgetRegistry.from([runtime]), providers: [runtime],
+            registry: WidgetRegistry.from(providers), providers: providers,
             cache: ProviderSnapshotCache(userDefaults: defaults, storageDomainName: suite, now: { center.now }),
             defaults: defaults, isProviderEnabled: { enablement.isEnabled($0) },
             now: { center.now }, notificationSettings: { settings },
-            providerIdentityKeys: ["codex": "workspace"])
+            providerIdentityKeys: identities)
         let quota = QuotaResetReminders(scheduler: center.scheduler(prefix: quotaPrefix), defaults: defaults)
         store.onQuotaInvalidated = { quota.invalidate($0) }
         store.onFreshSnapshot = { snapshot, _, _ in quota.receivedSnapshot(snapshot) }
@@ -154,12 +250,23 @@ final class NotificationReminderIntegrationTests: XCTestCase {
         return (store, settings)
     }
 
-    private func reading(at now: Date) throws -> ProviderSnapshot {
-        let payload = Data(#"{"sub":"fixture-user"}"#.utf8).base64EncodedString()
+    private func runtime(for reading: ProviderSnapshot, following: [ProviderSnapshot] = []) -> SequenceProviderRuntime {
+        let provider = CodexProvider.makeProvider(id: reading.providerID)
+        return SequenceProviderRuntime(
+            provider: provider, descriptors: CodexProvider(provider: provider).widgetDescriptors,
+            snapshots: [reading] + following)
+    }
+
+    private func reading(
+        at now: Date, profileID: String? = nil, subject: String = "fixture-user"
+    ) throws -> ProviderSnapshot {
+        let payload = try JSONSerialization.data(withJSONObject: ["sub": subject]).base64EncodedString()
         let auth = CodexAuth(tokens: CodexTokens(accessToken: "e30.\(payload).signature", accountID: "workspace"))
-        let binding = try XCTUnwrap(CodexResetClaimBinding(authState: CodexAuthState(auth: auth, source: .keychain)))
+        let source: CodexAuthState.Source = profileID.map { .accountSnapshot(profileID: $0) } ?? .keychain
+        let binding = try XCTUnwrap(CodexResetClaimBinding(authState: CodexAuthState(auth: auth, source: source)))
+        let card = profileID.map { AccountUsageCardPlanner.cardID(family: "codex", profileID: $0) } ?? "codex"
         var reading = ProviderSnapshot.make(
-            provider: CodexProvider.makeProvider(), plan: nil,
+            provider: CodexProvider.makeProvider(id: card), plan: nil,
             lines: [
                 .progress(
                     label: "Weekly", used: 20, limit: 100, format: .percent,
@@ -172,6 +279,13 @@ final class NotificationReminderIntegrationTests: XCTestCase {
             codexResetClaimBinding: binding)
         reading.codexSwitchIdentity = try XCTUnwrap(DefaultAccountObserver.codexIdentity(for: auth)?.identityKey)
         return reading
+    }
+
+    private func waitForBothSchedulers(in center: Center, after reads: [String: Int]) async {
+        await waitFor {
+            center.reads[self.quotaPrefix, default: 0] > reads[self.quotaPrefix, default: 0]
+                && center.reads[self.creditPrefix, default: 0] > reads[self.creditPrefix, default: 0]
+        }
     }
 
     private func waitFor(_ condition: () -> Bool, line: UInt = #line) async {
