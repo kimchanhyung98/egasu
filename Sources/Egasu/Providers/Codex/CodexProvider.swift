@@ -333,13 +333,18 @@ final class CodexProvider: ProviderRuntime {
         }
 
         MetricLine.appendNoDataIfNeeded(&mapped.lines)
-        if authStore.expectedIdentityKey != nil {
-            guard let live = try await reloadLiveAuth(source: authState.source) else {
+        let binding = CodexResetClaimBinding(authState: authState)
+        guard let live = try await reloadLiveAuth(source: authState.source) else {
+            throw CodexAuthError.credentialsChanged
+        }
+        try authStore.validateAccountIdentity(live.auth)
+        if let accountKey = binding?.verifiedAccountKey {
+            guard CodexResetClaimBinding(authState: live)?.verifiedAccountKey == accountKey else {
                 throw CodexAuthError.credentialsChanged
             }
-            try authStore.validateAccountIdentity(live.auth)
+        } else if live.auth != authState.auth, live.auth != authState.sourceText.flatMap(CodexAuthStore.parseAuth) {
+            throw CodexAuthError.credentialsChanged
         }
-        let binding = CodexResetClaimBinding(authState: authState)
         var snapshot = ProviderSnapshot.make(
             provider: provider,
             plan: mapped.plan,
