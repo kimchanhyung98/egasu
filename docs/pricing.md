@@ -53,7 +53,7 @@
 | [Devin](https://devin.ai/pricing) | Free | $0 | - | 제한된 에이전트 사용량 |
 | - | Pro | $20 | - | 개인 |
 | - | Max | $200 | - | 개인, 더 높은 사용량 한도 |
-| - | Teams | 기본 $80 + 개발 좌석당 $40 | - | 최대 200명 |
+| - | Teams | $80 | - | 최대 100명 |
 | - | Enterprise | 문의 | 문의 | 맞춤 계약 |
 | [Kimi: 글로벌](https://www.kimi.ai/help/membership/membership-overview) | Plus | $19 | $180 | 연간 결제 월 환산 $15, Kimi Code 포함 |
 | - | Pro | $39 | $372 | 연간 결제 월 환산 $31 |
@@ -73,12 +73,16 @@
 | - | Teams / Enterprise 크레딧 풀 | $20/좌석 | - | 최소 2석, 좌석당 월 500크레딧 |
 | [OpenCode](https://opencode.ai/docs/go/) | Go | $10 | - | 개인 워크스페이스, 모델별 사용량 한도 |
 | - | Go Plus | $40 | - | 개인 워크스페이스, 더 높은 모델별 한도 |
-| - | Go Teams | $20/멤버 | - | 멤버별 한도, 서비스 계정 제외 |
+| - | Go Teams | $20/멤버 | - | 최소 2명, 멤버별 한도, 서비스 계정 제외 |
 | - | Console, 종전 Zen | 모델별 종량제 | - | [공식 모델 요금](https://opencode.ai/v2/docs/console/models/), 구독 선택 사항 |
 | [OpenRouter](https://openrouter.ai/pricing) | Free | $0 | - | 무료 모델·요청 한도 적용 |
 | - | Standard | 모델별 종량제 | - | 크레딧 구매 시 수수료 5.5% |
 | - | Business | 모델별 종량제 | - | 크레딧 구매 시 수수료 8% |
 | - | Enterprise | 문의 | 계약별 | 추론 요율·플랫폼 수수료 구분 |
+| [QwenCloud 개인](https://docs.qwencloud.com/token-plan/personal/token-plan-personal-overview) | Lite | $6 | - | 싱가포르 웹 판매가, 월 20,000크레딧 |
+| - | Essential | $10 | - | 싱가포르 웹 판매가, 월 45,000크레딧 |
+| - | Standard | $18 | - | 싱가포르 웹 판매가, 월 80,000크레딧 |
+| - | Pro | $43 | - | 싱가포르 웹 판매가, 월 200,000크레딧 |
 | [Z.ai GLM Coding](https://zcode.z.ai/pricing.html) | Lite | $18 | 결제 화면 확인 | 5시간 2,000·주간 10,000크레딧 |
 | - | Pro | $80 | 결제 화면 확인 | 5시간 12,000·주간 60,000크레딧 |
 | - | Max | $168 | 결제 화면 확인 | 5시간 28,000·주간 140,000크레딧 |
@@ -87,12 +91,25 @@
   인증된 Ultra 계정은 5시간 한도 없이 주간 Pro 사용량의 10배 사용 가능.
   앱은 예전 `max`·`20x` 응답도 Ultra로 표시하되, 사용량·리셋 시각은 서버 응답 유지.
   [Ultra 안내](https://support.claude.com/en/articles/17728952-what-is-the-ultra-plan) 참조.
+- Claude Max·Ultra의 별도 API 크레딧은 매 결제 주기 $100·$200.
+  Team은 지급 시점의 Standard 좌석당 $20·Premium 좌석당 $100을 합산하며, 팀 전체 월 $500 상한.
+  정상 활성 구독 7일 경과 후 구독자나 Team 오너가 권한 있는 Console 조직 하나를 연결·신청해야 지급.
+  연간 Team도 매월 지급하며 미사용분은 해당 주기 말 소멸·이월 없음.
+  연결한 Console 조직의 Claude API·Playground·Managed Agents에 적용하며, Agent SDK는 해당 조직의 API 키를 쓸 때 적용.
+  대화형 Claude Code·Claude 앱 초과 사용·타사 클라우드에는 미적용.
+  앱의 토큰 정가 추정에서 차감하지 않음. [월 API 크레딧 조건](https://support.claude.com/en/articles/17154008-monthly-api-credits-for-max-ultra-and-team-plans)
 - Cursor·Grok 신규 요금제의 포함 사용량은 주간 공유 풀.
   기존 Cursor·SuperGrok·X Premium 구독은 유지 가능하며, 새 요금제로 자동 치환하지 않음.
   Cursor의 [기존 요금제](https://cursor.com/docs/account/pricing/legacy-cursor-plans)는 기존 월간 풀과 추가 사용량 계약 유지.
 - Copilot의 기존 연간 Pro·Pro+ 계약은 만료까지 이전 요청 기반 청구 유지 가능.
   새 월간 AI 크레딧 계약과 구분하며, 1 AI 크레딧은 $0.01.
   [기존 청구 안내](https://docs.github.com/en/copilot/reference/copilot-billing/request-based-billing-legacy/what-changed-with-billing) 참조.
+- Antigravity 기업용 Gemini Enterprise Standard·Plus의 Gemini 모델용 포함 크레딧은 좌석당 월 $10·$15로 표기.
+  실제로는 에디션·프로젝트·위치별로 월 표시액의 1/4에 해당 라이선스 좌석 수를 곱한 주간 한도 공유.
+  첫 AI 개발 도구 요청부터 7일마다 초기화하며, Antigravity·IDE·Android Studio에서 공유하고 미사용분 이월 없음.
+  적격 Cloud Billing 계정이 필요하며 개인 Google AI Pro·Ultra나 좌석 없는 종량제와 구분.
+  제3자 모델은 관리자 허용 후 별도 토큰 과금이며 체험·구계약 조건은 공식 자료 확인.
+  [Antigravity 모델별 조건](https://antigravity.google/pricing) · [기업 주간 한도](https://docs.cloud.google.com/gemini/enterprise/docs/quotas-and-pay-as-you-go-usage)
 - Kimi 기존 Moderato·Allegretto·Allegro·Vivace와 중국 Andante 구독은 이름·갱신·한도 유지 가능.
   새 요금제는 Kimi Code의 5시간 한도만 유지하고 주간 한도 제거.
   월간 공통 크레딧 풀은 별도 적용하며, API 응답에 없는 요금제·주간 한도는 추정하지 않음.
@@ -104,6 +121,11 @@
   실측값이 없으면 로컬 원장의 지출로 추정하며, 모델별 잔여량은 산출하지 않음. [OpenCode 지원 범위](/docs/providers/opencode.md)
 - OpenRouter는 모델 추론 요금에 플랫폼 수수료를 중복 가산하지 않음.
   `is_free_tier`만으로 Standard·Business·Enterprise 판별 불가.
+- QwenCloud 개인 요금은 공식 웹 판매가이며 신규 고객의 한시 할인과 구분.
+  Pro 인하 가격은 기존 구독의 다음 결제 주기부터 적용. [가격 조정 조건](https://docs.qwencloud.com/changelog/token-plan-credits-1109)
+  활성 구독에서 월 기본 크레딧을 먼저 쓰고, 이후 $15·20,000크레딧의 추가 팩 차감.
+  팩은 동시 5개까지 보유 가능하며 1개월 뒤 미사용분 소멸.
+  기본분과 팩을 모두 소진하면 종량제로 자동 전환하지 않고 사용 중지. [개인 크레딧 조건](https://docs.qwencloud.com/token-plan/personal/token-plan-personal-overview)
 - Z.ai 판매 페이지에는 Lite $12.60·Pro $56·Max $117.60의 할인 금액도 표시.
   할인 적용 기간·결제 주기는 페이지에서 확정하지 않아 월 정가와 분리하며, 최종 조건은 결제 화면 확인.
   사용량 기준은 [GLM Coding Plan 안내](https://docs.z.ai/devpack/overview) 참조.
@@ -128,6 +150,8 @@ Kiro도 모델 가격 엔진 대신 로컬 턴별 크레딧에 공식 추가 크
 |---|---:|---:|---:|---:|---|
 | Claude Fable 5.2 | 8 | 10(5분) | 0.20 | 40 | [Anthropic 가격](https://platform.claude.com/docs/en/about-claude/pricing) |
 | Claude Mythos 5.2 | 8 | 10(5분) | 0.20 | 40 | 같은 공식 표 |
+| GPT-6.2 Astra | 8 | 10(30분) | 0.40 | 40 | [OpenAI 가격표](https://developers.openai.com/api/docs/pricing) |
+| GPT-6.2 Sol | 2 | 2.50(30분) | 0.10 | 10 | 같은 공식 표 |
 | GPT-5.6 Sol | 5 | 6.25(30분) | 0.50 | 30 | [OpenAI 공개 정가](https://openai.com/index/previewing-gpt-5-6-sol/) |
 | Gemini 4 Carbon | 4 | 별도 요율 없음 | 0.20 | 20 | [Google 가격](https://aistudio.google.com/docs/pricing#gemini-4-carbon) |
 | Gemini 4 Argon | 4 | 별도 요율 없음 | 0.20 | 20 | [Google 가격](https://aistudio.google.com/docs/pricing#gemini-4-argon) |
@@ -245,13 +269,16 @@ Claude 로그는 기본 모델명을 유지하면서 응답 사용량의 `usage.
 기본 모델명으로 요율을 먼저 조회한 뒤 해당 항목의 Fast 배율 적용.
 `usage.speed`만으로 `-fast` 모델명을 다시 조회하지 않음.
 이 경로는 배율 누락을 가격 미확정으로 구분하지 않아, 기본 모델 요율이 있으면 표준 요율로 추정하는 한계 있음.
-대부분의 카탈로그 구간은 프롬프트 토큰 200k 초과부터 시작하고, GPT-5.4·GPT-5.5와 해당 Pro 모델, GPT-5.6 Sol·Terra·Luna, GPT-6 Astra·Sol·Luna·Rosalind, GPT-6.1 Sol·Terra의 Codex 요청은 입력 토큰 272k 초과에서 전환.
+가격표에 명시한 프롬프트 토큰 기준을 우선 적용.
+명시값이 없으면 일반 계산은 200k 초과부터 장문 요율 적용.
+GPT-5.4·GPT-5.5와 해당 Pro 모델, GPT-5.6 Sol·Terra·Luna, GPT-6 Astra·Sol·Luna·Rosalind, GPT-6.1 Sol·Terra, GPT-6.2 Astra·Sol의 Codex 요청은 기본 기준 272k 초과에서 전환.
 Codex 로그와 Pi·OMP의 Codex 추정에는 같은 요청별 규칙을 사용하며, 일반 입력과 캐시 읽기·쓰기를 합친 수로 구간 판정.
 Codex 로그는 한 번의 집계 안에서 같은 가격 산정용 모델 이름·Ultrafast 구분의 요율 해석 결과를 재사용하며, 가격 미확정 결과도 포함.
 토큰 수·Fast 요청 여부·장문 요금 구간은 이벤트마다 계산.
 집계가 끝나면 해석 결과를 폐기하므로, 다음 집계는 그때 확보한 가격표로 다시 결정.
 해당 Codex 장문 구간은 현재 기본 단가의 입력·캐시 2배, 출력 1.5배로 계산하므로 기본 단가 갱신도 함께 반영.
-GPT-6 Astra와 GPT-6.1 Sol의 Ultrafast는 별도 공개 단가 사용 — 일반 요금의 6배이며 Fast 배율 중복 적용 없음.
+GPT-6 Astra, GPT-6.1 Sol, GPT-6.2 Astra·Sol의 Ultrafast 비용 추정에는 일반 요금의 6배인 공개 정가 적용.
+GPT-6.2 Ultrafast의 한시 가격은 미국 태평양 시각 2027년 2월 28일까지 일반 요금의 3배. [OpenAI 모델별 요금](https://developers.openai.com/api/docs/models/gpt-6.2-astra)
 Codex의 `ultrafast-fast`처럼 두 속도를 결합한 모델 이름은 가격 미확정 처리.
 Codex 로그의 `thread_settings_applied.service_tier` 또는 그 안의 `thread_settings.service_tier`가 `ultrafast`이면 해당 요금 적용.
 같은 시각·모델·토큰 수라도 Standard·Fast·Ultrafast 이벤트는 구분하여 집계하고, 같은 티어의 동일 사본만 중복 제거.
@@ -316,15 +343,16 @@ Auto·Composer 1/1.5/2·Bugbot의 기존 값도 보존하며, 현행 공식 단�
   기본 캐시 쓰기·읽기 단가는 누락·`null`을 허용하되, 값이 있으면 같은 조건으로 검증.
   장문 요율은 선택적 `long_context` 객체의 `threshold_tokens`와 입력·출력·캐시 쓰기·읽기 네 단가로 등록.
   경계는 양의 정수, 단가는 유한한 비음수 필수이며 잘못된 장문 객체는 로딩·게시 단계에서 거부.
+  명시한 장문 임계값은 Codex 계산에서도 우선 적용하며 `200000`도 생략과 구분.
+  장문 객체를 생략하면 일반 계산은 200,000토큰, 장문 보정 대상 Codex 모델은 272,000토큰 기본 기준 사용.
   Cursor 전용 단가는 `cursor/` 키와 전용 별칭으로 등록하고, 공급자의 API 단가와 별도로 검증.
   새 게시 파일의 `updated_at`은 실제로 유효한 UTC 날짜·시각 `YYYY-MM-DDTHH:MM:SSZ` 형식 필수.
   `main` 병합만으로 가격표를 게시하지 않음.
   버전 태그 푸시 또는 대상 태그를 지정한 수동 게시와 [Pages 배포](/docs/updates.md#유지-관리자-게시-버전-보호)가 완료되면 포크 피드를 읽는 앱의 다음 갱신에서 반영.
   같은 태그의 앱 릴리스에는 첫 실행용 번들 사본 포함.
-  **pricing-update skill**(`.agents/skills/pricing-update/`)은 에이전트가 동기화 전 과정(Cursor 페이지 가져오기, diff, 편집, 검증, PR 열기)을 따라가도록 안내.
+  매 릴리스 후보에서 기존·추가 예정 프로바이더의 공식 가격과 단위를 확인. [가격 점검 절차](/.skills/pricing-update/SKILL.md#매-릴리스의-확인-범위)
 - **번들 스냅샷**(`pricing_litellm_snapshot.json`, `pricing_models_dev_snapshot.json`): 릴리스 전 `script/update_pricing_snapshots.sh`로 재생성.
   공개 가격표에서 사라진 기존 모델 단가는 과거 사용 기록 계산을 위해 보존.
   같은 모델이 현재 가격표에도 있으면 현재 값으로 갱신.
   온라인 갱신에 성공하면 받은 가격을 다음 조회부터 사용.
   갱신 전이나 갱신 실패 시에는 번들·캐시의 기존 가격 사용.
-  오래된 번들 가격이 추정값에 영향을 줄 수 있으므로 릴리스 전 갱신 여부 확인.

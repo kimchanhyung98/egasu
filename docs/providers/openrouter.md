@@ -16,7 +16,7 @@ API 키의 무료 여부만으로 유료 계약 등급을 구분하지 않음.
 | This Month | 이번 달 현재까지의 사용액 |
 | Key Limit | 현재 키 한도 기간의 사용액 — 키에 상한과 유효한 잔여액이 있는 경우 표시 |
 
-반환된 등급(예: "Pay as you go" 또는 "Free tier")을 프로바이더 이름 옆에 표시.
+반환된 등급(예: "Pay as you go" 또는 "Free tier")을 대시보드 계정 줄의 배지에 표시.
 
 일반 API 키의 Today·This Week·This Month는 해당 키의 OpenRouter 크레딧 사용액.
 일반 키의 기간은 UTC 기준이며, 주간은 월요일 시작.

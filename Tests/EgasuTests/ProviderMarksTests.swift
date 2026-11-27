@@ -1,8 +1,39 @@
+import SwiftUI
 import XCTest
 @testable import Egasu
 
 @MainActor
 final class ProviderMarksTests: XCTestCase {
+    func testFallbackSymbolIsDecorativeBesideTextAndKeepsButtonLabel() throws {
+        let icon = IconSource.providerMark("qwencloud")
+        let header = VStack {
+            SheetHeader(icon: icon, title: "QwenCloud", message: "Status")
+            Button(action: {}) { ProviderIcon(source: icon) }
+                .accessibilityLabel("Open QwenCloud")
+        }
+        let host = NSHostingView(rootView: header.environment(\.accessibilityEnabled, true))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 300, height: 160),
+            styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView = host
+        window.setContentSize(host.fittingSize)
+        host.layoutSubtreeIfNeeded()
+
+        func descendants(of element: AnyObject) -> [AnyObject] {
+            (element.accessibilityChildren?() ?? []).map { $0 as AnyObject }.flatMap { [$0] + descendants(of: $0) }
+        }
+        let children = descendants(of: host)
+        let texts: [String] = children.filter { $0.accessibilityRole?() == .staticText }.compactMap {
+            $0.accessibilityValue?()
+        }
+        XCTAssertFalse(children.contains { $0.accessibilityRole?() == .image })
+        XCTAssertTrue(texts.contains("QwenCloud"))
+        let button = try XCTUnwrap(children.first { $0.accessibilityRole?() == .button })
+        XCTAssertEqual(button.accessibilityLabel?(), "Open QwenCloud")
+    }
+
     func testGrokResolvesToVectorMarkNotBoltFallback() {
         let mark = ProviderMarks.mark(for: "grok")
         XCTAssertNotNil(mark, "Grok must load a real vector mark instead of the bolt.fill fallback")

@@ -53,15 +53,28 @@ final class KeychainAccessorTests: XCTestCase {
         XCTAssertNil(try accessor.readGenericPassword(service: "Test"))
     }
 
-    func testNonItemNotFoundFailureThrowsReadFailed() {
-        // 44 외 non-zero exit(locked keychain 등)는 throw — nil로 축약되면 "not signed in"으로 오표시
-        let accessor = SecurityKeychainAccessor(processRunner: StubRunner(
-            result: ProcessResult(exitCode: 51, stdout: "", stderr: "User interaction is not allowed.")
-        ))
-        XCTAssertThrowsError(try accessor.readGenericPassword(service: "Test")) { error in
-            guard case KeychainError.readFailed = error else {
-                return XCTFail("expected KeychainError.readFailed, got \(error)")
-            }
+    func testDeniedReadLogsExitCodeWithoutServiceOrToolOutput() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let sink = LogFile(directory: directory, fileName: "keychain.log")
+        let previousSink = AppLog.sink
+        AppLog.sink = sink
+        AppLog.reloadLevel(.info)
+        defer {
+            AppLog.sink = previousSink
+            AppLog.reloadLevel()
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let failure = ProcessResult(exitCode: 51, stdout: "fixture-stdout", stderr: "fixture-stderr")
+        let accessor = SecurityKeychainAccessor(processRunner: StubRunner(result: failure))
+
+        XCTAssertThrowsError(try accessor.readGenericPassword(service: "Claude Code-credentials-a1b2c3d4")) {
+            guard case KeychainError.readFailed(let message) = $0 else { return XCTFail("Expected readFailed") }
+            XCTAssertEqual(message, failure.stderr)
+        }
+        let log = try String(contentsOf: sink.fileURL, encoding: .utf8)
+        XCTAssertTrue(log.contains("[keychain] keychain read failed (exit 51)"))
+        for sensitive in ["Claude Code-credentials", "a1b2c3d4", failure.stdout, failure.stderr] {
+            XCTAssertFalse(log.contains(sensitive))
         }
     }
 
@@ -341,6 +354,7 @@ final class KeychainAccessorTests: XCTestCase {
     private final class SequenceRunner: ProcessRunning, @unchecked Sendable {
         private var results: [ProcessResult]
         private(set) var callCount = 0
+        private(set) var lastArguments: [String] = []
 
         init(results: [ProcessResult]) {
             self.results = results
@@ -348,6 +362,7 @@ final class KeychainAccessorTests: XCTestCase {
 
         func run(executable: String, arguments: [String], environment: [String: String], timeout: TimeInterval) throws -> ProcessResult {
             callCount += 1
+            lastArguments = arguments
             return results.isEmpty ? ProcessResult(exitCode: 44, stdout: "", stderr: "") : results.removeFirst()
         }
     }
@@ -371,6 +386,20 @@ final class KeychainAccessorTests: XCTestCase {
 
         XCTAssertNoThrow(try accessor.deleteGenericPassword(service: "Test"))
         XCTAssertEqual(runner.callCount, 3, "deletion keeps going until not-found proves the service is empty")
+    }
+
+    func testOpenAIAdminKeyRemovalMatchesOnlyTheSignedInMacUser() throws {
+        let runner = SequenceRunner(results: [])
+        let keys = OpenAIAdminKeyStore(keychain: SecurityKeychainAccessor(processRunner: runner))
+        try keys.remove()
+        let account = ProcessInfo.processInfo.environment["USER"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        XCTAssertEqual(
+            runner.lastArguments,
+            [
+                "delete-generic-password", "-s", "\(StorageNamespace.current.name) OpenAI Organization Admin API Key",
+                "-a",
+                account?.nilIfEmpty ?? NSUserName()
+            ])
     }
 
     func testDeleteFailureIsReported() {

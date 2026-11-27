@@ -9,6 +9,7 @@ struct WidgetDescriptor: Identifiable, Hashable {
     let sample: WidgetData
     /// menu-bar strip pin 가능 여부 — tray가 값으로 못 그리는 tile(Usage Trend chart)은 false, "0"으로 읽힐 pin 차단.
     var pinnable: Bool = true
+    var detailLabels: [String] = []
     /// `SpendTileMapper` 기반 spend-history tile 전용 true (`WidgetDescriptor.spendTiles`).
     /// Total Spend 카드의 ring 공급 판정 key — title 매칭은 유사 row 오인 위험.
     var isSpendTile: Bool = false

@@ -30,6 +30,127 @@ final class LayoutMigrationRecoveryTests: XCTestCase {
         XCTAssertFalse(store.isMetricEnabled("claude.sonnet"), "옛 선택 지표는 기본 ON 기준 목록에 없어도 새 지표가 아님")
     }
 
+    func testNewProviderUsesMetricDefaultsWhenLegacyLayoutHasNoSavedCardList() {
+        let registry = WidgetRegistry.from([ClaudeProvider(), CursorProvider(), DevinProvider(), DeepSeekProvider()])
+        let deepSeekIDs = registry.descriptors(for: "deepseek").map(\.id)
+        XCTAssertEqual(deepSeekIDs, ["deepseek.balanceUSD", "deepseek.balanceCNY", "deepseek.api"])
+
+        for hasSavedOrder in [false, true] {
+            let defaults = makeDefaults()
+            let persistence = LayoutPersistence(defaults: defaults, storageKey: "layout")
+            persistence.savePlaced([PlacedWidget(descriptorID: "claude.session")])
+            let savedClaudeOrder = ["claude.weekly", "claude.session"]
+            persistence.saveMetricOrder(["claude": savedClaudeOrder])
+            if hasSavedOrder { persistence.saveProviderOrder(["cursor", "claude"]) }
+            XCTAssertNil(persistence.loadSeededCards())
+
+            let store = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
+
+            XCTAssertEqual(deepSeekIDs.filter { store.isMetricEnabled($0) }, deepSeekIDs)
+            XCTAssertTrue(store.isMetricEnabled("claude.session"))
+            XCTAssertFalse(store.isMetricEnabled("claude.weekly"))
+            XCTAssertFalse(store.isMetricEnabled("devin.daily"))
+            XCTAssertEqual(Array(store.metricOrder(for: "claude").prefix(2)), savedClaudeOrder)
+            XCTAssertEqual(
+                store.orderedProviderIDs(),
+                (hasSavedOrder ? ["cursor", "claude"] : ["claude", "cursor"]) + ["devin", "deepseek"])
+
+            store.setMetricEnabled("deepseek.balanceUSD", false)
+            let reloaded = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
+            XCTAssertFalse(reloaded.isMetricEnabled("deepseek.balanceUSD"))
+            XCTAssertTrue(reloaded.isMetricEnabled("deepseek.balanceCNY"))
+        }
+    }
+
+    func testProviderRecordedInLegacyLayoutKeepsItsHiddenMetricsWithoutSavedCardList() {
+        let registry = WidgetRegistry.from([ClaudeProvider(), DeepSeekProvider()])
+        for hasSavedProviderOrder in [false, true] {
+            let defaults = makeDefaults()
+            let persistence = LayoutPersistence(defaults: defaults, storageKey: "layout")
+            persistence.savePlaced([PlacedWidget(descriptorID: "claude.session")])
+            if hasSavedProviderOrder {
+                persistence.saveProviderOrder(["claude", "deepseek"])
+            } else {
+                persistence.saveSeededDefaults(["deepseek.balanceUSD"])
+            }
+
+            let store = LayoutStore(registry: registry, defaults: defaults, storageKey: "layout")
+
+            XCTAssertFalse(store.isMetricEnabled("deepseek.balanceUSD"))
+        }
+    }
+
+    func testNewProviderDetectionDoesNotChangePendingLegacyVisibilityOnRelaunch() async throws {
+        let providers: [any ProviderRuntime] = [
+            ClaudeProvider(),
+            DeepSeekProvider(files: FakeFiles(), environment: FakeEnvironment(["DEEPSEEK_API_KEY": "fixture-key"]))
+        ]
+        let registry = WidgetRegistry.from(providers)
+        let deepSeekIDs = registry.descriptors(for: "deepseek").map(\.id)
+        let storageKey = "openusage.layout.v1"
+
+        for hideBalance in [false, true] {
+            let defaults = makeDefaults()
+            let persistence = LayoutPersistence(defaults: defaults, storageKey: storageKey)
+            persistence.savePlaced([PlacedWidget(descriptorID: "claude.session")])
+            let placed = try XCTUnwrap(persistence.loadPlaced())
+            let badOrder = Data("unreadable-order".utf8)
+            defaults.set(badOrder, forKey: "\(storageKey).metricOrderByProvider")
+            XCTAssertNil(persistence.loadSeededCards())
+
+            func launch() -> (LayoutStore, ProviderEnablementStore) {
+                let enablement = ProviderEnablementStore(defaults: defaults)
+                let layout = LayoutStore(
+                    registry: registry, defaults: defaults, storageKey: storageKey,
+                    knownCardIDs: enablement.knownIDs.union(enablement.enabledIDs ?? []),
+                    isProviderEnabled: { enablement.isEnabled($0) }
+                )
+                return (layout, enablement)
+            }
+
+            let initialEnablement = ProviderEnablementStore(defaults: defaults)
+            initialEnablement.seedEnabledProviders(["claude"])
+            initialEnablement.registerKnownProviders(["claude"])
+            let (firstLayout, firstEnablement) = launch()
+            XCTAssertEqual(deepSeekIDs.filter { firstLayout.isMetricEnabled($0) }, deepSeekIDs)
+            XCTAssertFalse(persistence.hasStoredDisabledMetrics)
+
+            let detection = try XCTUnwrap(
+                NewProviderSeeder.reconcileIfNeeded(providers: providers, enablement: firstEnablement))
+            await detection.value
+            firstLayout.setMetric("deepseek.balanceCNY", pinned: true)
+            XCTAssertTrue(firstLayout.isMetricPinned("deepseek.balanceCNY"))
+
+            let (pendingLayout, pendingEnablement) = launch()
+            XCTAssertEqual(pendingEnablement.knownIDs, ["claude", "deepseek"])
+            XCTAssertTrue(pendingEnablement.isEnabled("deepseek"))
+            XCTAssertNil(NewProviderSeeder.reconcileIfNeeded(providers: providers, enablement: pendingEnablement))
+            XCTAssertEqual(deepSeekIDs.filter { pendingLayout.isMetricEnabled($0) }, deepSeekIDs)
+            XCTAssertTrue(pendingLayout.isMetricPinned("deepseek.balanceCNY"))
+            XCTAssertFalse(pendingLayout.isMetricEnabled("claude.weekly"))
+            XCTAssertFalse(persistence.hasStoredDisabledMetrics)
+            XCTAssertEqual(persistence.loadPlaced(), placed)
+            XCTAssertEqual(defaults.data(forKey: "\(storageKey).metricOrderByProvider"), badOrder)
+
+            if hideBalance { pendingLayout.setMetricEnabled("deepseek.balanceUSD", false) }
+            let repairedOrder = ["claude.weekly", "claude.session"]
+            persistence.saveMetricOrder(["claude": repairedOrder])
+            let (repairedLayout, repairedEnablement) = launch()
+
+            let expected = hideBalance ? Array(deepSeekIDs.dropFirst()) : deepSeekIDs
+            XCTAssertEqual(deepSeekIDs.filter { repairedLayout.isMetricEnabled($0) }, expected)
+            XCTAssertTrue(repairedLayout.isMetricPinned("deepseek.balanceCNY"))
+            XCTAssertTrue(repairedEnablement.knownIDs.contains("deepseek"))
+            XCTAssertTrue(repairedLayout.isMetricEnabled("claude.session"))
+            XCTAssertFalse(repairedLayout.isMetricEnabled("claude.weekly"))
+            XCTAssertEqual(Array(repairedLayout.metricOrder(for: "claude").prefix(2)), repairedOrder)
+            let persistedHidden = try XCTUnwrap(persistence.loadDisabledMetrics())
+            XCTAssertEqual(Set(persistedHidden).intersection(deepSeekIDs), Set(deepSeekIDs).subtracting(expected))
+            XCTAssertEqual(persistence.loadPlaced(), placed)
+            XCTAssertTrue(persistence.deferredVisibility.isEmpty)
+        }
+    }
+
     func testExplicitEmptyLegacyLayoutDoesNotEnableNewDefaults() {
         for seeded in [false, true] {
             let defaults = makeDefaults()

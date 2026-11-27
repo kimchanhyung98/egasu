@@ -5,8 +5,8 @@
 
 ## 앱의 형태
 
-egasu는 공유 모듈 하나와 실행 파일 두 개로 구성된 SwiftPM 패키지.
-Xcode 프로젝트는 없음.
+SwiftPM 패키지는 공용 모듈 `Egasu`와 `DesktopWidgetSupport`, 실행 타깃 `EgasuApp`과 `EgasuCLI`로 구성.
+[데스크톱 위젯](/docs/desktop-widgets.md)은 `EgasuWidgets.xcodeproj`에서 확장으로 빌드해 팀 인증서로 서명하는 앱에 포함.
 메뉴 막대 앱은 AppKit 상태 항목과 패널 안에 SwiftUI 화면 표시.
 다른 실행 파일은 사용량·계정을 조회하는 `egasu` CLI.
 코드는 역할별로 구분:

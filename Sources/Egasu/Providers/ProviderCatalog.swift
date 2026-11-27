@@ -62,10 +62,12 @@ enum ProviderCatalog {
             CursorProvider(),
             AntigravityProvider(),
             CopilotProvider(defaults: defaults),
+            DeepSeekProvider(),
             DevinProvider(),
             GrokProvider(),
             KimiProvider(terminalEnvironment: kimiTerminalEnvironment),
             KiroProvider(),
+            OpenAICostsProvider(defaults: defaults),
             OpenCodeProvider(
                 authStore: OpenCodeAuthStore(environment: openCodeEnvironment),
                 usageScanner: OpenCodeUsageScanner(databasePaths: {
@@ -74,6 +76,7 @@ enum ProviderCatalog {
                 })
             ),
             OpenRouterProvider(),
+            QwenCloudProvider(),
             ZAIProvider()
         ]
         return runtimes

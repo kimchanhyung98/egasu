@@ -12,7 +12,7 @@ Grok CLI 로그인 정보를 사용해 Grok Build 크레딧 사용량 추적.
 | Today / Yesterday / Last 30 Days | Grok CLI 완료 턴 원장·로그의 로컬 비용과 토큰 |
 | Usage Trend | 오늘과 이전 30일의 일별 토큰 막대 차트 |
 
-Grok이 구독 등급을 반환하면 프로바이더 이름 옆에 표시.
+Grok이 구독 등급을 반환하면 대시보드 계정 줄의 배지에 표시.
 신규 판매 요금제는 The X Subscription의 Free·Plus·Premium·Super·Ultra와 팀·기업 계약.
 SuperGrok 등을 포함한 요금제 표시 이름은 서버 응답 사용.
 가격과 제공 범위는 [구독 요금제](/docs/pricing.md#구독-요금제) 참조.

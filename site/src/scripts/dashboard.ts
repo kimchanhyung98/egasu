@@ -1,9 +1,10 @@
-import { dashboardLines, priorityBoard, menuBarItems, priorityGauge } from '../data/preview-dashboard';
+import { dashboardLines, priorityBoard, menuBarItems, menuBarResetCountdown, menuBarText, priorityGauge } from '../data/preview-dashboard';
+import { accountFamilies } from '../data/accounts';
 import { metricKey, providerMetrics } from '../data/metrics';
 import { orderedMetrics, accountName, accountEmail, type PreviewState } from '../data/preview-state';
 import { providers } from '../data/providers';
 import { alertConditions } from '../data/settings';
-import { previewAccountDisplayName, setPreviewAccountText } from './localization';
+import { previewAccountDisplayName, previewMetricLabel, setPreviewAccountText } from './localization';
 
 export function renderDashboard(mock: HTMLElement, state: PreviewState): void {
   if (!mock.querySelector('[data-dashboard-panel]')) return;
@@ -192,6 +193,13 @@ function renderMenuBar(mock: HTMLElement, state: PreviewState): void {
     const label = document.createElement('span');
     label.className = 'am-menu-preview-item';
     const provider = providers.find((provider) => provider.id === item.provider)!;
+    const hasAccount = accountFamilies.some((family) => family.id === item.provider
+      && family.profiles.some((profile) => profile.id === item.accountID));
+    const text = menuBarText(state, item, {
+      accountName: hasAccount ? previewAccountDisplayName(state, item.provider, item.accountID).displayed : undefined,
+      metricLabel: (label) => previewMetricLabel(state, label),
+    });
+    let value = '';
     if (item.row.kind === 'bounded') {
       const fraction = state.preferences.showUsageAs === 'Left' ? 1 - item.row.used / item.row.limit : item.row.used / item.row.limit;
       if (state.preferences.iconStyle === 'Bars') {
@@ -200,8 +208,36 @@ function renderMenuBar(mock: HTMLElement, state: PreviewState): void {
         bar.style.setProperty('--bar-fill', `${Math.round(fraction * 100)}%`);
         bar.setAttribute('aria-label', `${provider.name} ${item.row.label} ${Math.round(fraction * 100)}%`);
         label.append(bar);
-      } else label.textContent = `${provider.name} ${Math.round(fraction * 100)}%`;
-    } else label.textContent = `${provider.name} ${item.row.kind === 'text' ? item.row.values[0] : item.row.kind === 'forecast' ? `${item.row.probability}%` : ''}`;
+      } else value = `${Math.round(fraction * 100)}%`;
+    } else value = item.row.kind === 'text' ? item.row.values[0] : item.row.kind === 'forecast' ? `${item.row.probability}%` : '';
+    if (state.preferences.iconStyle !== 'Bars') {
+      const countdown = menuBarResetCountdown(state, item.row);
+      const reading = `${text.accessibilityLabel} ${value}`;
+      label.setAttribute('role', 'img');
+      label.setAttribute('aria-label', countdown ? `${reading}, Resets in ${countdown}` : reading);
+      const mark = document.createElement('span');
+      mark.textContent = [provider.name, text.badge].filter(Boolean).join(' ');
+      mark.setAttribute('aria-hidden', 'true');
+      const detail = document.createElement('span');
+      detail.className = 'am-menu-preview-detail';
+      detail.setAttribute('aria-hidden', 'true');
+      const name = document.createElement('span');
+      name.className = 'am-menu-preview-label';
+      name.textContent = text.label;
+      if (text.accountLabel) {
+        name.setAttribute('data-preview-literal', '');
+      }
+      const amount = document.createElement('span');
+      amount.textContent = value;
+      if (countdown) {
+        amount.className = 'am-menu-preview-countdown';
+        const duration = document.createElement('span');
+        duration.textContent = countdown;
+        amount.append(' ', duration);
+      }
+      detail.append(name, amount);
+      label.append(mark, detail);
+    }
     container.append(label);
   }
   if (selection.overflow) container.append(document.createTextNode(` +${selection.overflow}`));

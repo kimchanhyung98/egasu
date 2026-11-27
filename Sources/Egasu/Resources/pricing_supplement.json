@@ -1,6 +1,6 @@
 {
   "$comment": "egasu 가격 보충 파일. 단위 USD/100만 토큰. pricing·alias_rules는 기존 앱과 호환되는 항목. pricing_v2·alias_rules_v2는 장문·공급 경로별 계산을 지원하는 앱 전용 확장. cursor/ 항목은 Cursor CSV 전용 요율.",
-  "updated_at": "2026-11-25T12:43:10Z",
+  "updated_at": "2026-11-25T16:51:41Z",
   "pricing": {
     "gpt-6.1-sol": {
       "input_per_million": 2,
@@ -237,6 +237,58 @@
     }
   },
   "pricing_v2": {
+    "gpt-6.2-astra": {
+      "input_per_million": 8,
+      "cache_write_per_million": 10.0,
+      "cache_read_per_million": 0.4,
+      "output_per_million": 40,
+      "long_context": {
+        "threshold_tokens": 272000,
+        "input_per_million": 16,
+        "cache_write_per_million": 20.0,
+        "cache_read_per_million": 0.8,
+        "output_per_million": 60.0
+      }
+    },
+    "gpt-6.2-astra-ultrafast": {
+      "input_per_million": 48,
+      "cache_write_per_million": 60.0,
+      "cache_read_per_million": 2.4,
+      "output_per_million": 240,
+      "long_context": {
+        "threshold_tokens": 272000,
+        "input_per_million": 96,
+        "cache_write_per_million": 120.0,
+        "cache_read_per_million": 4.8,
+        "output_per_million": 360.0
+      }
+    },
+    "gpt-6.2-sol": {
+      "input_per_million": 2,
+      "cache_write_per_million": 2.5,
+      "cache_read_per_million": 0.1,
+      "output_per_million": 10,
+      "long_context": {
+        "threshold_tokens": 272000,
+        "input_per_million": 4,
+        "cache_write_per_million": 5.0,
+        "cache_read_per_million": 0.2,
+        "output_per_million": 15.0
+      }
+    },
+    "gpt-6.2-sol-ultrafast": {
+      "input_per_million": 12,
+      "cache_write_per_million": 15.0,
+      "cache_read_per_million": 0.6,
+      "output_per_million": 60,
+      "long_context": {
+        "threshold_tokens": 272000,
+        "input_per_million": 24,
+        "cache_write_per_million": 30.0,
+        "cache_read_per_million": 1.2,
+        "output_per_million": 90.0
+      }
+    },
     "openai/gpt-5.6-sol": {
       "input_per_million": 5,
       "cache_write_per_million": 6.25,
@@ -757,6 +809,8 @@
     }
   },
   "fast_multipliers_exact": {
+    "gpt-6.2-astra": 2,
+    "gpt-6.2-sol": 2,
     "openai/gpt-5.5": 2.5,
     "openai/gpt-5.1-codex-max": 2.0,
     "openai/gpt-5.3-codex": 2.0,
@@ -795,6 +849,12 @@
     "gpt-5.6-luna": 2.0
   },
   "alias_rules_v2": [
+    {"pattern": "(?i)^(?:openai/)?gpt-6\\.2-astra(?:-(?:low|medium|high|xhigh|max))?[-.@]ultrafast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6.2-astra-ultrafast"},
+    {"pattern": "(?i)^(?:openai/)?gpt-6\\.2-astra(?:-(?:low|medium|high|xhigh|max))?[-.@]fast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6.2-astra-fast"},
+    {"pattern": "(?i)^(?:openai/)?gpt-6\\.2-astra(?:-(?:low|medium|high|xhigh|max))?(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6.2-astra"},
+    {"pattern": "(?i)^(?:openai/)?gpt-6\\.2-sol(?:-(?:low|medium|high|xhigh|max))?[-.@]ultrafast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6.2-sol-ultrafast"},
+    {"pattern": "(?i)^(?:openai/)?gpt-6\\.2-sol(?:-(?:low|medium|high|xhigh|max))?[-.@]fast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6.2-sol-fast"},
+    {"pattern": "(?i)^(?:openai/)?gpt-6\\.2-sol(?:-(?:low|medium|high|xhigh|max))?(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6.2-sol"},
     {"pattern": "(?i)^(?:openai/)?gpt-5-3-codex-fast$", "canonical": "gpt-5.3-codex-fast"},
     {"pattern": "(?i)^(?:openai/)?gpt-5-3-codex$", "canonical": "openai/gpt-5.3-codex"},
     {"pattern": "(?i)^(?:openai/)?gpt-5\\.6(?:-sol)?(?:-(?:none|low|medium|high|xhigh|max|ultra))?[-.@]fast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-5.6-sol-fast"},
