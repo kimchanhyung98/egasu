@@ -9,6 +9,8 @@ macOS 메뉴 막대에서 AI 코딩 구독 사용량을 확인하는 Swift 앱.
 |---|---|
 | ![All Usage Minimal](/docs/assets/all-usage-light.png) | ![All Usage Cards](/docs/assets/all-usage-cards-light.png) |
 
+이미지의 계정·수치·버전 표시는 설명용.
+
 ## 설치
 
 macOS 15(Sequoia) 이상 필요.
