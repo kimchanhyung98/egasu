@@ -30,9 +30,8 @@ enum NewProviderSeeder {
             let newProviders = providers.filter { newIDs.contains($0.provider.id) }
             let detected = await FirstRunSeeder.detectLocalProviders(newProviders, workQueue: workQueue)
             guard !Task.isCancelled else { return }
-            enablement.registerKnownProviders(newIDs)
-            for id in detected.sorted() {
-                // 탐지 중 사용자가 이미 활성화한 항목은 유지.
+            let newlyRegistered = enablement.registerKnownProviders(newIDs)
+            for id in detected.intersection(newlyRegistered).sorted() {
                 guard !enablement.isEnabled(id) else { continue }
                 AppLog.info(.config, "new provider \(id): credentials detected, enabling")
                 enablement.setEnabled(true, for: id)

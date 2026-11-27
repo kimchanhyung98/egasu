@@ -56,8 +56,9 @@ final class ProviderEnablementStore {
 
     func setEnabled(_ enabled: Bool, for id: String) {
         if var ids = enabledIDs {
+            // 알려진 목록을 초기화한 설치에서는 같은 상태를 선택해도 신규 탐지보다 우선.
+            if !knownIDs.isEmpty { registerKnownProviders([id]) }
             if enabled { ids.insert(id) } else { ids.remove(id) }
-            // 상태가 그대로이면 저장·갱신 알림 없이 반환.
             guard ids != enabledIDs else { return }
             enabledIDs = ids
             defaults.set(Array(ids), forKey: Self.enabledStorageKey)
