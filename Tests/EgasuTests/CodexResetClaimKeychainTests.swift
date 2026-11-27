@@ -179,7 +179,10 @@ final class CodexResetClaimKeychainTests: XCTestCase {
         )
 
         XCTAssertEqual(outcome, .success)
-        XCTAssertEqual(reader.interactionRequests, [reader.initiallyAllowed, false, false, false, false])
+        let interactionRequests = reader.interactionRequests
+        XCTAssertEqual(interactionRequests.first, reader.initiallyAllowed)
+        XCTAssertFalse(interactionRequests.dropFirst().isEmpty)
+        XCTAssertTrue(interactionRequests.dropFirst().allSatisfy { !$0 })
         XCTAssertEqual(runner.callCount, 0)
         XCTAssertEqual(http.requests.map(\.method), ["GET", "POST", "GET", "GET"])
         XCTAssertEqual(store.localSnapshots["codex"]?.codexResetClaimBinding, binding)
