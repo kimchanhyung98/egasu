@@ -22,8 +22,6 @@ Go와 Console의 지출·토큰은 이 Mac의 사용 기록에서 집계.
 이전 고정·숨김 설정과 지표 순서 유지.
 Soft Limit 사전 검사는 서버에서 확인한 주간·월간 값만 사용.
 
-![OpenCode Go 세션·주간·월간 사용률 표시 예시](/docs/assets/opencode-go-quota.png)
-
 ## 인증 정보 출처
 
 평소처럼 OpenCode 사용.

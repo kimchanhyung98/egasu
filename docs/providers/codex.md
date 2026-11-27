@@ -10,8 +10,6 @@ CLI와 로컬 HTTP API의 `individualCredits`에 사용량·상한·잔여량 �
 소수 크레딧 유지.
 Flex 잔액과 별도이며, 서버가 기간 길이를 보내지 않으면 초기화 시각만 제공.
 
-![Codex Business 계정의 주간, 월간, 개인 크레딧 한도](/docs/assets/codex-business-individual-credits.png)
-
 ## 추적 항목
 
 | 지표 | 의미 |
@@ -476,10 +474,6 @@ egasu는 크레딧별 만료를 나열하는 전용 엔드포인트 `GET https:/
 전용 호출 실패 시 사용량 본문의 개수(`rate_limit_reset_credits.available_count`)로 대체; 본문에는 크레딧별 만료 정보가 없으므로, 팝오버에 개수(`N available`)와 만료 시각을 알 수 없다는 안내를 표시해 크레딧이 없는 것으로 오해하지 않도록 처리.
 정수로 표시할 수 없는 재설정 크레딧 개수는 잘못된 응답으로 처리하며, 전용 응답 대신 정상 본문 개수 사용.
 본문 개수도 잘못된 값이면 해당 지표 생략하며 다른 한도는 유지.
-
-![만료 시각별 수량과 만료 미확인 수량을 표시하는 상세](/docs/assets/codex-reset-credits-detail.png)
-
-합성 초기화권으로 렌더링한 상세 예시.
 
 ### 팝오버에서 재설정 사용
 

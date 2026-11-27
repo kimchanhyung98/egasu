@@ -5,6 +5,8 @@ egasu의 Priority 또는 선택한 계정의 사용량을 데스크톱에 표시
 
 ![왼쪽 Priority 위젯은 Codex Personal의 주간·세션 사용량, 오른쪽 All Usage 위젯은 Codex Work의 주간 사용량 표시](/docs/assets/desktop-widgets.png)
 
+이미지의 계정·수치 표시는 설명용.
+
 ## 위젯 추가
 
 1. Mac 바탕화면을 우클릭하고 **위젯 편집** 선택.

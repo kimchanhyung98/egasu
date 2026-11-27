@@ -2,8 +2,6 @@
 
 DeepSeek API 계정의 잔액과 API 호출 가능 여부 표시.
 
-![예시 응답으로 렌더링한 DeepSeek 잔액 카드](/docs/assets/deepseek-balance.png)
-
 ## 계정 등록
 
 1. Accounts → Add New Account에서 DeepSeek 선택.

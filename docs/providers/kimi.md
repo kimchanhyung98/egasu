@@ -39,8 +39,6 @@ Extra Usage를 활성화하고 사용 가능한 잔액이 있으면 추가 사�
 레거시 응답의 `usage`가 있으면 Weekly 행 표시.
 알 수 없는 등급도 읽기 쉬운 형태로 유지.
 
-![세션 사용량이 0%일 때 초기화 시각의 수신 여부에 따른 카드 표시](/docs/assets/kimi-session-reset-ko.png)
-
 ## 추가 사용량
 
 추가 사용량 응답의 `boosterWallet`·`booster_wallet` 지원.

@@ -21,10 +21,6 @@ OpenAI API Platform 조직이 보고한 오늘 포함 최근 30일의 비용을 
 
 ## 표시 기준
 
-![OpenAI API 카드의 최근 30일 비용, 조회 범위, 크레딧 잔액 및 마지막 조회 시각](/docs/assets/openai-api-costs.png)
-
-*테스트용 계정의 프로젝트 `proj_demo` 표시 예시.*
-
 - **Last 30 Days** — 일별 비용을 통화별로 합산.
   1센트 미만 금액과 음수 조정액도 API가 반환한 정밀도로 표시.
   비용 항목을 받지 못하면 **No costs reported**, 0이 보고되면 해당 통화와 0 표시.
