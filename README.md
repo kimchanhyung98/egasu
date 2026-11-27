@@ -59,6 +59,7 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
   과거 Zen 기록도 Console 집계에 포함.
 - **[OpenRouter](/docs/providers/openrouter.md)** — 크레딧 잔액과 일간·주간·월간 지출.
 - **[QwenCloud](/docs/providers/qwencloud.md)** — Keychain 또는 암호화 파일로 로그인한 개인 Token Plan의 주간·월간 크레딧 사용률과 초기화 시각.
+  정상 앱 종료는 조회 중인 CLI의 정리가 끝날 때까지 대기.
 - **[Z.ai](/docs/providers/zai.md)** — GLM Coding Plan의 세션·주간·월간 할당량과 웹 검색 한도.
 
 대부분의 프로바이더는 Mac의 Keychain, 인증 파일 또는 앱에 저장된 로그인 정보 재사용.
