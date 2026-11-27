@@ -35,8 +35,9 @@ final class QwenCloudProvider: CredentialBoundSnapshotProvider {
             let login = try await loadOffMainActor { [cli] in try cli.login() }
             requestedIdentity = login.identityKey
             let usage = try await cli.fetch(login)
+            let currentLogin = try await loadOffMainActor { [cli] in try cli.login() }
             try Task.checkCancellation()
-            guard await currentIdentityKey(allowKeychainInteraction: false) == requestedIdentity else {
+            guard currentLogin.credentialPresent != false, currentLogin.identityKey == requestedIdentity else {
                 throw QwenCloudError.loginChanged
             }
             let observedAt = Date()
@@ -124,7 +125,9 @@ struct QwenCloudUsage {
 enum QwenCloudError: String, LocalizedError, UserPresentableError, CategorizedError {
     case loginChanged = "QwenCloud sign-in changed while refreshing. Refresh again to use the current account."
     case cliMissing = "Install the QwenCloud CLI and refresh."
-    case unsafeCredentialFile = "Sign in to the QwenCloud CLI using Keychain or encrypted file storage and refresh."
+    case unsafeCredentialFile =
+        "Move the credentials file to a new, private location outside the QwenCloud CLI configuration folder. If you need to sign in again, use Keychain or encrypted file storage."
+    case plaintextMode = "Unset QWENCLOUD_KEYRING=plaintext and restart egasu."
     case notLoggedIn = "Sign in with `qwencloud auth login` and refresh."
     case noSubscription = "No active QwenCloud personal Token Plan."
     case noUsage = "QwenCloud did not report credit usage for this period."
@@ -139,6 +142,7 @@ enum QwenCloudError: String, LocalizedError, UserPresentableError, CategorizedEr
         switch self {
         case .cliMissing, .commandFailed: .subprocess
         case .loginChanged: .other
+        case .plaintextMode: .credentialAccess
         case .notLoggedIn, .unsafeCredentialFile: .notLoggedIn
         case .noSubscription, .noUsage: .notAvailable
         case .invalidResponse: .decoding
