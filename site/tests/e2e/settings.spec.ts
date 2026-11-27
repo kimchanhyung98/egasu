@@ -163,7 +163,7 @@ test('preview parity shows both ends of long menu bar account names', async ({ p
   await app.getByRole('tab', { name: 'Display', exact: true }).click();
   const preview = app.getByRole('region', { name: 'Menu Bar Preview', exact: true });
   for (const suffix of ['(North)', '(South)']) {
-    const item = preview.getByRole('img', { name: new RegExp(suffix.replace(/[()]/g, '\\$&')) });
+    const item = preview.getByRole('img', { name: `${prefix} ${suffix}`, exact: false });
     const label = item.locator('.am-menu-preview-label');
     await expect(label).toBeVisible();
     const ends = await label.evaluate((element, suffix) => {
