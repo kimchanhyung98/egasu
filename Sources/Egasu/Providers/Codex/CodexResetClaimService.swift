@@ -21,12 +21,15 @@ final class CodexResetClaimService {
     enum CreditSelection: Equatable {
         case available(id: String, remaining: Int?)
         case unavailable
+        case emptyInventory
         case unknown
     }
 
     enum UnavailableCredits {
         case credit(MatchedCredit)
+        case replayed(MatchedCredit, confirmedExpiries: [Date]?)
         case expiry(binding: CodexResetClaimBinding, date: Date)
+        case emptyInventory(binding: CodexResetClaimBinding, selectedExpiry: Date)
     }
 
     /// 카드 서비스 교체 후에도 같은 확인 요청의 크레딧·진행 상태 유지.
@@ -127,11 +130,15 @@ final class CodexResetClaimService {
                   let body = (try? JSONSerialization.jsonObject(with: list.body)) as? [String: Any] else {
                 return responseFailure(list, context: "credit list")
             }
-            switch Self.creditSelection(in: body, expiringAt: expiry) {
+            let selection = Self.creditSelection(in: body, expiringAt: expiry)
+            switch selection {
             case .unknown:
                 return responseFailure(list, context: "credit list")
-            case .unavailable:
-                onUnavailable?(.expiry(binding: binding, date: expiry))
+            case .unavailable, .emptyInventory:
+                onUnavailable?(
+                    selection == .emptyInventory
+                        ? .emptyInventory(binding: binding, selectedExpiry: expiry)
+                        : .expiry(binding: binding, date: expiry))
                 AppDiagnostics.record(.resetClaim, result: .success, category: .notAvailable, providerID: "codex")
                 await refreshIfBound(to: binding, ticket: ticket)
                 return .noCredit
@@ -155,15 +162,61 @@ final class CodexResetClaimService {
                                    localContext: "Reset claim consume request failed")
             return .failed
         }
-        let outcome = Self.outcome(fromConsume: response)
+        let result = Self.consumeResult(response)
+        let outcome = result.outcome
         guard outcome != .failed else { return responseFailure(response, context: "consume") }
         AppDiagnostics.record(.resetClaim, result: .success, category: outcome == .success ? nil : .notAvailable,
                               providerID: "codex")
-        if outcome == .success || outcome == .noCredit, let matched = requestState.matchedCredits[redeemRequestID] {
-            onUnavailable?(.credit(matched))
+        if outcome == .success || outcome == .noCredit, let matched = requestState.matchedCredits[redeemRequestID],
+            let onUnavailable
+        {
+            if result.alreadyRedeemed, matched.binding.verifiedAccountKey != nil {
+                let expiries = await remainingExpiries(afterReplay: matched)
+                onUnavailable(.replayed(matched, confirmedExpiries: expiries))
+            } else {
+                onUnavailable(.credit(matched))
+            }
         }
         await refreshIfBound(to: binding, ticket: ticket)
         return outcome
+    }
+
+    /// 재전송한 소비가 확인되면 원래 인증으로 남은 권의 만료 목록만 다시 조회.
+    private func remainingExpiries(afterReplay credit: MatchedCredit) async -> [Date]? {
+        do {
+            guard !Task.isCancelled, isCurrent(), let login = try await credentialLoader(credit.binding.source, false),
+                credit.binding.matches(login), !Task.isCancelled, isCurrent(),
+                let token = login.auth.tokens?.accessToken
+            else {
+                AppDiagnostics.record(.resetCreditFetch, result: .degraded, category: .authInvalid, providerID: "codex")
+                return nil
+            }
+            let response = try await usageClient.fetchResetCredits(
+                accessToken: token, accountID: login.auth.tokens?.accountID)
+            guard (200..<300).contains(response.statusCode) else {
+                AppDiagnostics.record(
+                    .resetCreditFetch, result: .degraded, category: .http(response.statusCode), providerID: "codex")
+                return nil
+            }
+            guard let body = ProviderParse.jsonObject(response.body), let available = Self.availableCredits(in: body),
+                ProviderParse.number(body["available_count"]) == Double(available.count),
+                !available.contains(where: { $0.id == credit.creditID })
+            else {
+                AppDiagnostics.record(.resetCreditFetch, result: .degraded, category: .decoding, providerID: "codex")
+                return nil
+            }
+            let dates = available.compactMap(\.expiry)
+            guard dates.count == available.count else {
+                AppDiagnostics.record(.resetCreditFetch, result: .degraded, category: .decoding, providerID: "codex")
+                return nil
+            }
+            return dates
+        } catch {
+            AppDiagnostics.record(
+                .resetCreditFetch, result: .degraded, providerID: "codex", error: error,
+                localContext: "Post-replay credit inventory unavailable")
+            return nil
+        }
     }
 
     private func refreshIfBound(to binding: CodexResetClaimBinding, ticket: BackgroundWorkQueue.Ticket) async {
@@ -221,15 +274,9 @@ final class CodexResetClaimService {
 
     /// 같은 초의 권 중 원래 만료 시각 우선. 목록이 불완전하면 부재를 확정하지 않음.
     static func creditSelection(in body: [String: Any], expiringAt expiry: Date) -> CreditSelection {
-        guard let credits = body["credits"] as? [[String: Any]] else {
-            let confirmedEmpty = body["credits"] == nil && ProviderParse.number(body["available_count"]) == 0
-            return confirmedEmpty ? .unavailable : .unknown
-        }
-        let available = credits.filter { ($0["status"] as? String ?? "available") == "available" }
-        let dated = available.compactMap { credit -> (expiry: Date, id: String?)? in
-            guard let date = parseExpiry(credit["expires_at"]) else { return nil }
-            return (date, credit["id"] as? String)
-        }
+        guard let available = availableCredits(in: body) else { return .unknown }
+        if available.isEmpty, ProviderParse.number(body["available_count"]) == 0 { return .emptyInventory }
+        let dated = available.compactMap { credit in credit.expiry.map { (expiry: $0, id: credit.id) } }
         let countMatches = body["available_count"].map { ProviderParse.number($0) == Double(available.count) } ?? true
         let complete = dated.count == available.count && countMatches
         let second = floor(expiry.timeIntervalSince1970)
@@ -241,23 +288,32 @@ final class CodexResetClaimService {
         return matching.isEmpty && complete ? .unavailable : .unknown
     }
 
+    private static func availableCredits(in body: [String: Any]) -> [(expiry: Date?, id: String?)]? {
+        guard let credits = body["credits"] as? [[String: Any]] else {
+            return body["credits"] == nil && ProviderParse.number(body["available_count"]) == 0 ? [] : nil
+        }
+        return credits.filter { ($0["status"] as? String ?? "available") == "available" }
+            .map { (parseExpiry($0["expires_at"]), $0["id"] as? String) }
+    }
+
     /// Consume 응답 → popover outcome. protocol code 4종 모두 HTTP 200으로 도착(outcome은 body의 `code`) — non-2xx·미인식 code는 `.failed`.
     static func outcome(fromConsume response: HTTPResponse) -> ResetClaimOutcome {
+        consumeResult(response).outcome
+    }
+
+    private static func consumeResult(_ response: HTTPResponse) -> (outcome: ResetClaimOutcome, alreadyRedeemed: Bool) {
         guard (200..<300).contains(response.statusCode),
               let body = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any],
               let code = body["code"] as? String
         else {
-            return .failed
+            return (.failed, false)
         }
         switch code {
-        case "reset", "already_redeemed":
-            return .success
-        case "nothing_to_reset":
-            return .nothingToReset
-        case "no_credit":
-            return .noCredit
-        default:
-            return .failed
+        case "reset": return (.success, false)
+        case "already_redeemed": return (.success, true)
+        case "nothing_to_reset": return (.nothingToReset, false)
+        case "no_credit": return (.noCredit, false)
+        default: return (.failed, false)
         }
     }
 
