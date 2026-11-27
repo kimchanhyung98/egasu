@@ -42,6 +42,9 @@ egasu는 새로고침할 때 다음 명령을 실행.
 qwencloud subscription tokenplan status --edition individual --format json
 ```
 
+정상 앱 종료는 조회 중인 CLI의 프로세스 그룹을 정리하고 출력 처리가 끝날 때까지 대기.
+종료 요청 뒤에는 새 CLI 조회를 시작하지 않음.
+
 CLI가 보고한 기간에 따라 주간 또는 월간 기본 크레딧 사용률 표시.
 초기화 시각이 빠진 응답은 사용률만 표시.
 구독 종료일은 갱신 카운트다운에 사용하지 않음.
