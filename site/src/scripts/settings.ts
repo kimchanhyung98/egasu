@@ -145,14 +145,8 @@ export function applySettingsToMock(mock: HTMLElement): void {
   mock.dataset.privacy = String(preferences.privacyMode);
   mock.dataset.softLimit = preferences.softLimitEnabled ? String(preferences.softLimitWindow) : 'off';
   const threshold = Number(preferences.softLimitThreshold);
-  const leftMode = mock.dataset.mode === 'left';
   mock.style.setProperty('--soft-limit-used', `${threshold}%`);
   mock.style.setProperty('--soft-limit-left', `${100 - threshold}%`);
-  mock.querySelectorAll<HTMLElement>('[data-soft-fill]').forEach((guide) => {
-    const used = Number(guide.dataset.softFill);
-    const fill = leftMode ? 100 - used : used;
-    guide.toggleAttribute('data-on-fill', fill > 0 && fill >= (leftMode ? 100 - threshold : threshold));
-  });
   mock.querySelectorAll<HTMLElement>('[data-requires]').forEach((element) => { element.hidden = !preferences[element.dataset.requires!]; });
   const statusList = mock.querySelector<HTMLElement>('[data-soft-statuses]');
   if (statusList && preferences.softLimitEnabled) {

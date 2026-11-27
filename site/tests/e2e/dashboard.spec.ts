@@ -366,3 +366,19 @@ for (const period of ['yesterday', 'last30']) {
     await expect(card.locator(`[data-state="${period}:tokens"] .am-ring-center`)).toBeFocused();
   });
 }
+
+
+test('preview parity wraps a long Minimal meter label to two lines', async ({ page }) => {
+  await openHome(page);
+  await allUsage(page);
+  const label = page.locator('[data-mock] [data-metric="antigravity.claudeWeekly"] .am-metric-label');
+  await expect(label).toBeVisible();
+  const lineCount = await label.evaluate((element) => {
+    // 현재 공개 예시 이름은 기본 열에 들어감. 같은 조건을 좁은 라벨 열에서 재현.
+    element.style.setProperty('width', '60px');
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    return new Set(Array.from(range.getClientRects(), (rect) => rect.top)).size;
+  });
+  expect(lineCount).toBe(2);
+});

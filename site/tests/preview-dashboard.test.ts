@@ -291,20 +291,20 @@ test('menu bar text separates account names, period badges, metric labels and pr
   const line = dashboardLines(state).find((line) => line.key === 'claude.weekly@account-1');
   assert.ok(line);
   assert.deepEqual(menuBarText(state, line), {
-    label: 'Weekly', accountLabel: false, badge: 'A1', accessibilityLabel: 'Claude Account 1 Weekly',
+    label: 'Weekly', accountLabel: false, badge: 'A1', accountName: 'Account 1', metricLabel: 'Weekly',
   });
   state = renameAccount(state, 'claude', 'account-1', 'Personal');
   state = changePreference(state, 'menuBarAccountNames', true);
   assert.deepEqual(menuBarText(state, line), {
-    label: 'Personal', accountLabel: true, badge: '7d', accessibilityLabel: 'Claude Personal Weekly',
+    label: 'Personal', accountLabel: true, badge: '7d', accountName: 'Personal', metricLabel: 'Weekly',
   });
   state = changePreference(state, 'menuBarMetricLabels', false);
   assert.deepEqual(menuBarText(state, line), {
-    label: 'Personal', accountLabel: true, badge: '', accessibilityLabel: 'Claude Personal Weekly',
+    label: 'Personal', accountLabel: true, badge: '', accountName: 'Personal', metricLabel: 'Weekly',
   });
   state = changePreference(state, 'privacyMode', true);
   assert.deepEqual(menuBarText(state, line), {
-    label: '', accountLabel: false, badge: '', accessibilityLabel: 'Claude Weekly',
+    label: '', accountLabel: false, badge: '', accountName: '', metricLabel: 'Weekly',
   });
   state = changePreference(state, 'menuBarMetricLabels', true);
   assert.equal(menuBarText(state, line).label, 'Weekly');
@@ -325,8 +325,11 @@ test('menu bar accessibility and visible labels share the localized metric title
     const localized = { accountName: name, metricLabel: (label: string) => label === 'Weekly' ? title : label };
     const text = menuBarText(initial, line, localized);
     assert.equal(text.label, title);
-    assert.equal(text.accessibilityLabel, `Claude ${name} ${title}`);
+    assert.equal(text.accountName, name);
+    assert.equal(text.metricLabel, title);
     const privateState = changePreference(initial, 'privacyMode', true);
-    assert.equal(menuBarText(privateState, line, localized).accessibilityLabel, `Claude ${title}`);
+    const hidden = menuBarText(privateState, line, localized);
+    assert.equal(hidden.accountName, '');
+    assert.equal(hidden.metricLabel, title);
   }
 });

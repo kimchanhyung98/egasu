@@ -28,6 +28,10 @@ button.am-account-label { cursor: pointer; }
 .am[data-reset='relative'] { --reset-width: 56px; }
 .am[lang='ko'][data-reset='relative'], .am[lang='ja'][data-reset='relative'] { --reset-width: 64px; }
 .am-metric-label { font-size: 11px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.am:not([data-layout='cards']) .am-row:not(.am-forecast) .am-metric-label {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  white-space: normal; overflow-wrap: anywhere;
+}
 .am-row:not(.am-forecast) .am-meter { height: 9px; }
 .am-row:not(.am-forecast) .am-headline { font-size: 11px; text-align: right; white-space: nowrap; }
 .am-row:not(.am-forecast) .am-reset { font-size: 10px; text-align: right; white-space: normal; line-height: 1.1; padding: 0; }
@@ -131,6 +135,9 @@ button.am-account-label { cursor: pointer; }
 .am-menu-preview-item { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; min-width: 0; }
 .am-menu-preview-detail { display: grid; min-width: 0; }
 .am-menu-preview-label { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.am-menu-preview-label[data-preview-literal] { display: flex; white-space: pre; }
+.am-menu-preview-label > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.am-menu-preview-label > :last-child { display: flex; justify-content: flex-end; min-width: 0; overflow: hidden; }
 .am-menu-preview-bar { display: block; width: 26px; height: 5px; background: linear-gradient(to right, var(--am-primary) var(--bar-fill), var(--am-track) var(--bar-fill)); border-radius: 2px; }
 .am details { padding: 8px 12px; }
 .am details summary { cursor: pointer; }

@@ -159,30 +159,31 @@ test('Soft Limit selects weekly and monthly subscription meters and mirrors thei
   expect(await markerFraction(monthly)).toBeCloseTo(0.9, 2);
 });
 
-for (const [layout, threshold] of [['Minimal', '100'], ['Cards', '1']] as const) {
-  test(`Soft Limit stays inside the ${layout} track at ${threshold}% in Used and Left modes`, async ({ page }) => {
-    await page.addInitScript(({ layout, threshold }) => {
+for (const [layout, threshold, theme, color] of [
+  ['Minimal', '100', 'Light', 'rgb(0, 0, 0)'], ['Cards', '1', 'Dark', 'rgb(255, 255, 255)'],
+] as const) {
+  test(`preview parity keeps Soft Limit inside the ${layout} track at ${threshold}% in Used and Left modes`, async ({ page }) => {
+    await page.addInitScript(({ layout, threshold, theme }) => {
       localStorage.setItem('openusage.site.preview.v1', JSON.stringify({
-        preferences: { defaultTab: 'All Usage', allUsageLayout: layout, betaUpdates: true,
+        preferences: { defaultTab: 'All Usage', allUsageLayout: layout, theme, betaUpdates: true,
           softLimitEnabled: true, softLimitWindow: 'Weekly', softLimitThreshold: threshold },
         activeAccounts: {},
       }));
-    }, { layout, threshold });
+    }, { layout, threshold, theme });
     await openHome(page);
     const row = page.locator('[data-mock] [data-card="codex-account-1"] [data-metric="codex.weekly"]');
-    const colors: string[] = [];
     for (const mode of ['Used', 'Left']) {
       const marker = row.locator('.am-soft-marker');
       await expect(marker).toBeVisible();
-      const { guide, track, color } = await marker.evaluate((el) => ({
+      const { guide, track, fillColor } = await marker.evaluate((el) => ({
         guide: el.getBoundingClientRect().toJSON(),
         track: el.closest('.am-meter')!.getBoundingClientRect().toJSON(),
-        color: getComputedStyle(el).backgroundColor,
+        fillColor: getComputedStyle(el).backgroundColor,
       }));
-      colors.push(color);
+      expect.soft(fillColor).toBe(color);
       expect(guide.width).toBeGreaterThan(0);
       expect(guide.height).toBeGreaterThan(0);
-      expect(guide.height).toBeLessThanOrEqual(4);
+      expect.soft(guide.height).toBeCloseTo(track.height, 2);
       expect(guide.width).toBeLessThanOrEqual(2);
       expect(guide.left).toBeGreaterThanOrEqual(track.left - 0.01);
       expect(guide.right).toBeLessThanOrEqual(track.right + 0.01);
@@ -193,10 +194,9 @@ for (const [layout, threshold] of [['Minimal', '100'], ['Cards', '1']] as const)
       expect(Math.abs(center - track.width * fraction)).toBeLessThanOrEqual(track.height / 2);
       if (mode === 'Used') await row.locator('[data-toggle-meter]').click();
     }
-    expect(colors[0]).not.toBe(colors[1]);
     if (threshold === '100') {
       const emptyTrackMarker = page.locator('[data-mock] [data-card="claude-account-1"] [data-metric="claude.fable"] .am-soft-marker');
-      await expect(emptyTrackMarker).toHaveCSS('background-color', colors[0]);
+      await expect.soft(emptyTrackMarker).toHaveCSS('background-color', color, { timeout: 1000 });
     }
   });
 }

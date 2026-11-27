@@ -1,10 +1,13 @@
 import { dashboardLines, priorityBoard, menuBarItems, menuBarResetCountdown, menuBarText, priorityGauge } from '../data/preview-dashboard';
 import { accountFamilies } from '../data/accounts';
+import { boundedView } from '../data/demo';
 import { metricKey, providerMetrics } from '../data/metrics';
 import { orderedMetrics, accountName, accountEmail, type PreviewState } from '../data/preview-state';
 import { providers } from '../data/providers';
 import { alertConditions } from '../data/settings';
-import { previewAccountDisplayName, previewMetricLabel, setPreviewAccountText } from './localization';
+import { previewAccountDisplayName, previewMetricLabel, setPreviewAccountAccessibilityLabel, setPreviewAccountText } from './localization';
+
+const accountNameSegmenter = new Intl.Segmenter();
 
 export function renderDashboard(mock: HTMLElement, state: PreviewState): void {
   if (!mock.querySelector('[data-dashboard-panel]')) return;
@@ -201,20 +204,24 @@ function renderMenuBar(mock: HTMLElement, state: PreviewState): void {
     });
     let value = '';
     if (item.row.kind === 'bounded') {
-      const fraction = state.preferences.showUsageAs === 'Left' ? 1 - item.row.used / item.row.limit : item.row.used / item.row.limit;
+      const mode = state.preferences.showUsageAs === 'Left' ? 'left' : 'used';
+      const quota = boundedView(item.row, mode, 'tray');
       if (state.preferences.iconStyle === 'Bars') {
         const bar = document.createElement('span');
         bar.className = 'am-menu-preview-bar';
-        bar.style.setProperty('--bar-fill', `${Math.round(fraction * 100)}%`);
-        bar.setAttribute('aria-label', `${provider.name} ${item.row.label} ${Math.round(fraction * 100)}%`);
+        bar.setAttribute('role', 'img');
+        bar.style.setProperty('--bar-fill', `${quota.fill}%`);
+        bar.setAttribute('aria-label', `${provider.name} ${text.metricLabel} ${quota.amount}`);
         label.append(bar);
-      } else value = `${Math.round(fraction * 100)}%`;
+      } else value = quota.amount;
     } else value = item.row.kind === 'text' ? item.row.values[0] : item.row.kind === 'forecast' ? `${item.row.probability}%` : '';
     if (state.preferences.iconStyle !== 'Bars') {
       const countdown = menuBarResetCountdown(state, item.row);
-      const reading = `${text.accessibilityLabel} ${value}`;
       label.setAttribute('role', 'img');
-      label.setAttribute('aria-label', countdown ? `${reading}, Resets in ${countdown}` : reading);
+      setPreviewAccountAccessibilityLabel(label, (account) => {
+        const reading = [provider.name, account, text.metricLabel, value].filter(Boolean).join(' ');
+        return countdown ? `${reading}, Resets in ${countdown}` : reading;
+      }, text.accountName);
       const mark = document.createElement('span');
       mark.textContent = [provider.name, text.badge].filter(Boolean).join(' ');
       mark.setAttribute('aria-hidden', 'true');
@@ -223,10 +230,16 @@ function renderMenuBar(mock: HTMLElement, state: PreviewState): void {
       detail.setAttribute('aria-hidden', 'true');
       const name = document.createElement('span');
       name.className = 'am-menu-preview-label';
-      name.textContent = text.label;
       if (text.accountLabel) {
         name.setAttribute('data-preview-literal', '');
-      }
+        const letters = Array.from(accountNameSegmenter.segment(text.label), ({ segment }) => segment);
+        const middle = Math.ceil(letters.length / 2);
+        const beginning = document.createElement('span');
+        beginning.textContent = letters.slice(0, middle).join('');
+        const ending = document.createElement('span');
+        ending.textContent = letters.slice(middle).join('');
+        name.append(beginning, ending);
+      } else name.textContent = text.label;
       const amount = document.createElement('span');
       amount.textContent = value;
       if (countdown) {

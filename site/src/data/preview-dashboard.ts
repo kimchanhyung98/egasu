@@ -5,6 +5,8 @@ import { metricID, metricKey, isSharedMetric, providerMetrics, softLimitWindows,
 import { orderedMetrics, accountName, type PreviewState } from './preview-state.ts';
 import { accountFamilies } from './accounts.ts';
 
+const accountInitialSegmenter = new Intl.Segmenter();
+
 export type PriorityGroup = 'runningOut' | 'usedUp' | 'useItOrLoseIt';
 export interface DashboardLine {
   id: string;
@@ -128,7 +130,6 @@ export function priorityBoard(state: PreviewState) {
 export function menuBarText(state: PreviewState, line: DashboardLine, localized: {
   accountName?: string; metricLabel?: (label: string) => string;
 } = {}) {
-  const provider = providers.find((provider) => provider.id === line.provider);
   const family = accountFamilies.find((family) => family.id === line.provider);
   const hasAccount = family?.profiles.some((profile) => profile.id === line.accountID);
   const name = hasAccount && !state.preferences.privacyMode
@@ -143,13 +144,14 @@ export function menuBarText(state: PreviewState, line: DashboardLine, localized:
   const period = line.row.kind === 'bounded' ? line.row.periodHours : 0;
   const periodBadge = period <= 0 ? '' : period % 24 === 0 ? `${period / 24}d`
     : Number.isInteger(period) ? `${period}h` : Number.isInteger(period * 60) ? `${period * 60}m` : '';
-  const initials = name.trim().split(/\s+/).map((word) => Array.from(word)[0]);
+  const initials = name.trim().split(/\s+/).map((word) => accountInitialSegmenter.segment(word)[Symbol.iterator]().next().value?.segment);
   const accountBadge = initials.length > 1 ? `${initials[0]}${initials.at(-1)}` : initials[0] ?? '';
   return {
     label: showName ? name : showMetric ? shortLabel : '',
     accountLabel: showName,
     badge: showName ? showMetric ? periodBadge : '' : family && family.profiles.length > 1 ? accountBadge.toUpperCase() : '',
-    accessibilityLabel: [provider?.name, name, metricLabel].filter(Boolean).join(' '),
+    accountName: name,
+    metricLabel,
   };
 }
 

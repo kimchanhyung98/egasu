@@ -97,6 +97,99 @@ test('menu bar preview applies pinned selection and filters text values in Bars 
   await expect(app.locator('[data-menu-bar-preview]')).toHaveText('◉');
 });
 
+test('preview parity keeps count and dollar amounts in All Usage and menu bar Text', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('openusage.site.preview.v1', JSON.stringify({
+    preferences: { defaultTab: 'All Usage', menuBarItems: 'Pinned Only' },
+    activeAccounts: {}, enabledProviders: ['kiro', 'opencode'], pinnedMetrics: ['kiro.credits', 'opencode.monthly'],
+  })));
+  await openHome(page);
+  const app = page.locator('[data-mock]');
+  const kiro = app.locator('[data-metric="kiro.credits"] [data-toggle-meter]');
+  const openCode = app.locator('[data-metric="opencode.monthly"] [data-toggle-meter]');
+  await expect.soft(kiro.locator(':scope > :visible')).toHaveText('23', { timeout: 1000 });
+  await expect.soft(openCode.locator(':scope > :visible')).toHaveText('$24.00', { timeout: 1000 });
+  await kiro.click();
+  await expect.soft(kiro.locator(':scope > :visible')).toHaveText('27', { timeout: 1000 });
+  await expect.soft(openCode.locator(':scope > :visible')).toHaveText('$36.00', { timeout: 1000 });
+  await openSettings(page);
+  await app.getByRole('tab', { name: 'Display', exact: true }).click();
+  const preview = app.getByRole('region', { name: 'Menu Bar Preview', exact: true });
+  const kiroReading = preview.getByRole('img').filter({ hasText: 'Kiro' });
+  const openCodeReading = preview.getByRole('img').filter({ hasText: 'OpenCode' });
+  await expect.soft(kiroReading).toHaveAccessibleName('Kiro Credits 27', { timeout: 1000 });
+  await expect.soft(openCodeReading).toHaveAccessibleName('OpenCode Monthly $36', { timeout: 1000 });
+  await chooseSetting(page, 'Show Usage As', 'Used');
+  await expect.soft(kiroReading).toHaveAccessibleName('Kiro Credits 23', { timeout: 1000 });
+  await expect.soft(openCodeReading).toHaveAccessibleName('OpenCode Monthly $24', { timeout: 1000 });
+});
+
+test('preview parity preserves a literal account name in localized menu bar accessibility', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('openusage.site.preview.v1', JSON.stringify({
+    preferences: { menuBarItems: 'Pinned Only', menuBarAccountNames: true, menuBarResetCountdown: true },
+    activeAccounts: {}, enabledProviders: ['codex'], pinnedMetrics: ['codex.session@account-1'],
+  })));
+  await openHome(page);
+  const app = page.locator('[data-mock]');
+  await accountDetail(page, 'codex');
+  const name = 'Alpha · Settings · Beta';
+  const input = app.locator('[data-rename-input]:visible');
+  await input.fill(name);
+  await input.press('Enter');
+  await app.getByRole('button', { name: 'Back', exact: true }).click();
+  await app.getByRole('button', { name: 'Back', exact: true }).click();
+  await openSettings(page);
+  for (const [language, reading] of [
+    ['한국어', 'Codex Alpha · Settings · Beta 세션 28%, 3시간+ 후 초기화'],
+    ['日本語', 'Codex Alpha · Settings · Beta セッション 28%、3時間+後にリセット'],
+  ]) {
+    await chooseSetting(page, 'Language', language);
+    await app.locator('[data-settings-tab="Display"]').click();
+    const item = app.locator('[data-menu-bar-preview] [role="img"]');
+    await expect(item.locator('.am-menu-preview-label')).toHaveText(name);
+    await expect.soft(item).toHaveAccessibleName(reading, { timeout: 1000 });
+  }
+});
+
+test('preview parity shows both ends of long menu bar account names', async ({ page }) => {
+  const prefix = 'shared-long-account-email@example.com';
+  await page.addInitScript((prefix) => localStorage.setItem('openusage.site.preview.v1', JSON.stringify({
+    preferences: { menuBarItems: 'Pinned Only', menuBarAccountNames: true, menuBarResetCountdown: true },
+    activeAccounts: {}, enabledProviders: ['codex'], pinnedMetrics: ['codex.session@account-1', 'codex.session@account-2'],
+    accountNames: { 'codex:account-1': `${prefix} (North)`, 'codex:account-2': `${prefix} (South)` },
+  })), prefix);
+  await openHome(page);
+  const app = page.locator('[data-mock]');
+  await openSettings(page);
+  await app.getByRole('tab', { name: 'Display', exact: true }).click();
+  const preview = app.getByRole('region', { name: 'Menu Bar Preview', exact: true });
+  for (const suffix of ['(North)', '(South)']) {
+    const item = preview.getByRole('img', { name: `${prefix} ${suffix}`, exact: false });
+    const label = item.locator('.am-menu-preview-label');
+    await expect(label).toBeVisible();
+    const ends = await label.evaluate((element, suffix) => {
+      const bounds = element.getBoundingClientRect();
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+      const visible = (value: string) => {
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const offset = node.textContent?.indexOf(value) ?? -1;
+          if (offset < 0) continue;
+          const range = document.createRange();
+          range.setStart(node, offset);
+          range.setEnd(node, offset + value.length);
+          const rect = range.getBoundingClientRect();
+          return rect.width > 0 && rect.left >= bounds.left - 1 && rect.right <= bounds.right + 1;
+        }
+        return false;
+      };
+      walker.currentNode = element;
+      const start = visible('shared');
+      walker.currentNode = element;
+      return { start, end: visible(suffix) };
+    }, suffix);
+    expect.soft(ends).toEqual({ start: true, end: true });
+  }
+});
+
 test('menu bar reset countdown applies only to eligible Text items and keeps its saved choice', async ({ page }) => {
   await page.addInitScript(() => {
     if (localStorage.getItem('openusage.site.preview.v1')) return;
@@ -354,4 +447,122 @@ test('menu bar names and initials use the selected language', async ({ page }) =
   await expect(preview.getByRole('img')).toHaveAccessibleName(/Claude アカウント1 週間/);
   await app.locator('[data-setting="menuBarAccountNames"]').click();
   await expect(preview.locator('.am-menu-preview-item > span:first-child')).toHaveText('Claude ア');
+});
+
+
+test('preview account names keep a joined emoji intact when split in the middle', async ({ page }) => {
+  const name = 'A👩‍💻';
+  await page.addInitScript((name) => localStorage.setItem('openusage.site.preview.v1', JSON.stringify({
+    preferences: { menuBarItems: 'Pinned Only', menuBarAccountNames: true },
+    activeAccounts: {}, enabledProviders: ['codex'], pinnedMetrics: ['codex.session@account-1'],
+    accountNames: { 'codex:account-1': name },
+  })), name);
+  await openHome(page);
+  await openSettings(page);
+  const app = page.locator('[data-mock]');
+  await app.getByRole('tab', { name: 'Display', exact: true }).click();
+  const item = app.getByRole('img', { name: `Codex ${name} Session 28%`, exact: true });
+  const label = item.locator('.am-menu-preview-label');
+  await expect(label).toHaveText(name);
+  const visibleParts = await label.evaluate((element) => {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    const parts: string[] = [];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) parts.push(node.textContent ?? '');
+    return parts;
+  });
+  expect(visibleParts).toEqual(expect.arrayContaining([expect.stringContaining('👩‍💻')]));
+});
+
+
+test('preview follow-up preserves Priority and Bars units while keeping percentage fills', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('openusage.site.preview.v1', JSON.stringify({
+    preferences: { defaultTab: 'Priority', menuBarItems: 'Pinned Only', iconStyle: 'Bars' },
+    activeAccounts: {}, enabledProviders: ['kiro', 'opencode'], pinnedMetrics: ['kiro.credits', 'opencode.monthly'],
+  })));
+  await openHome(page);
+  const app = page.locator('[data-mock]');
+  const kiro = app.locator('[data-priority-key="kiro.credits@default"]');
+  const openCode = app.locator('[data-priority-key="opencode.monthly@default"]');
+  const amount = (row: typeof kiro) => row.locator('[data-toggle-meter] > :visible');
+  const ring = (row: typeof kiro) => row.locator('.am-ring-progress');
+  await expect.soft(amount(kiro)).toHaveText('23 used', { timeout: 1000 });
+  await expect.soft(amount(openCode)).toHaveText('$24.00 used', { timeout: 1000 });
+  await expect(ring(kiro)).toHaveAttribute('stroke-dasharray', '46 100');
+  await expect(ring(openCode)).toHaveAttribute('stroke-dasharray', '40 100');
+  await kiro.locator('[data-toggle-meter]').click();
+  await expect.soft(amount(kiro)).toHaveText('27 left', { timeout: 1000 });
+  await expect.soft(amount(openCode)).toHaveText('$36.00 left', { timeout: 1000 });
+  await expect(ring(kiro)).toHaveAttribute('stroke-dasharray', '54 100');
+  await expect(ring(openCode)).toHaveAttribute('stroke-dasharray', '60 100');
+  await openSettings(page);
+  await app.getByRole('tab', { name: 'Display', exact: true }).click();
+  const bars = app.getByRole('region', { name: 'Menu Bar Preview', exact: true }).locator('.am-menu-preview-bar');
+  const kiroBar = bars.and(app.locator('[aria-label^="Kiro "]'));
+  const openCodeBar = bars.and(app.locator('[aria-label^="OpenCode "]'));
+  await expect.soft(kiroBar).toHaveAccessibleName('Kiro Credits 27', { timeout: 1000 });
+  await expect.soft(openCodeBar).toHaveAccessibleName('OpenCode Monthly $36', { timeout: 1000 });
+  expect(await kiroBar.evaluate((element) => getComputedStyle(element).getPropertyValue('--bar-fill'))).toBe('54%');
+  expect(await openCodeBar.evaluate((element) => getComputedStyle(element).getPropertyValue('--bar-fill'))).toBe('60%');
+  await chooseSetting(page, 'Show Usage As', 'Used');
+  await expect.soft(kiroBar).toHaveAccessibleName('Kiro Credits 23', { timeout: 1000 });
+  await expect.soft(openCodeBar).toHaveAccessibleName('OpenCode Monthly $24', { timeout: 1000 });
+  expect(await kiroBar.evaluate((element) => getComputedStyle(element).getPropertyValue('--bar-fill'))).toBe('46%');
+  expect(await openCodeBar.evaluate((element) => getComputedStyle(element).getPropertyValue('--bar-fill'))).toBe('40%');
+});
+
+test('preview follow-up preserves the visible space between short account name words', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('openusage.site.preview.v1', JSON.stringify({
+    preferences: { menuBarItems: 'Pinned Only', menuBarAccountNames: true },
+    activeAccounts: {}, enabledProviders: ['codex'], pinnedMetrics: ['codex.session@account-1'],
+    accountNames: { 'codex:account-1': 'Work Team' },
+  })));
+  await openHome(page);
+  await openSettings(page);
+  const app = page.locator('[data-mock]');
+  await app.getByRole('tab', { name: 'Display', exact: true }).click();
+  const label = app.getByRole('img', { name: 'Codex Work Team Session 28%', exact: true }).locator('.am-menu-preview-label');
+  await expect(label).toHaveText('Work Team');
+  const { actual, reference } = await label.evaluate((element) => {
+    function gap(scope: Element) {
+      const positions = new Map<string, DOMRect>();
+      const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        for (const letter of ['k', 'T']) {
+          const offset = node.textContent?.indexOf(letter) ?? -1;
+          if (offset < 0) continue;
+          const range = document.createRange();
+          range.setStart(node, offset);
+          range.setEnd(node, offset + 1);
+          positions.set(letter, range.getBoundingClientRect());
+        }
+      }
+      return positions.get('T')!.left - positions.get('k')!.right;
+    }
+    const sample = element.cloneNode(false);
+    if (!(sample instanceof Element)) throw new Error('Expected a reference label');
+    sample.textContent = 'Work Team';
+    element.after(sample);
+    try {
+      return { actual: gap(element), reference: gap(sample) };
+    } finally {
+      sample.remove();
+    }
+  });
+  expect(reference).toBeGreaterThan(0);
+  expect(actual).toBeGreaterThan(0);
+  expect(Math.abs(actual - reference)).toBeLessThanOrEqual(1);
+});
+
+test('preview follow-up keeps a joined emoji in a multi-account initial badge', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('openusage.site.preview.v1', JSON.stringify({
+    preferences: { menuBarItems: 'Pinned Only', menuBarAccountNames: false },
+    activeAccounts: {}, enabledProviders: ['codex'], pinnedMetrics: ['codex.session@account-1'],
+    accountNames: { 'codex:account-1': '👩‍💻 Team' },
+  })));
+  await openHome(page);
+  await openSettings(page);
+  const app = page.locator('[data-mock]');
+  await app.getByRole('tab', { name: 'Display', exact: true }).click();
+  const item = app.getByRole('img', { name: 'Codex 👩‍💻 Team Session 28%', exact: true });
+  await expect(item).toContainText('Codex 👩‍💻T');
 });
