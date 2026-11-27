@@ -75,8 +75,10 @@ Claude·Codex 계정의 추가·전환·재로그인 동작은 [Claude와 Codex 
 - DeepSeek·OpenRouter·Z.ai: API 키 상태(Not Set, Can't Read Saved Key, From Your Environment, Saved in App, Custom Key)와 **Add API Key…**·**Replace API Key…**.
   저장한 키는 환경 변수보다 우선하며 저장 직후 새로 고침.
   저장 파일을 읽지 못하고 대체 키도 없으면 오류 표시.
-  계정 추가 시에는 새 키 입력 필요.
+  사용 가능한 저장 키나 환경 변수 키가 있으면 키 입력 없이 계정 추가 가능.
+  사용 가능한 키가 없을 때 새 키 입력 필요.
 - 그 밖의 계정의 **Remove Account…**: 감지형 프로바이더는 추적만 끄고 로그인은 그대로.
+  DeepSeek는 앱 설정 파일의 키를 제거하고 추적 해제.
   OpenRouter·Z.ai는 앱 설정 파일과 대체 설정 파일에서 확인한 키를 제거하고 추적 해제.
   환경 변수 키는 유지하며 계정을 다시 추가할 때 사용 가능.
   JSON의 다른 설정은 유지하고 키만 담긴 파일은 삭제.
