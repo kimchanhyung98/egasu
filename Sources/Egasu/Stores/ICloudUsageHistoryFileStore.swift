@@ -96,13 +96,21 @@ actor ICloudUsageHistoryFileStore: UsageHistoryFileStoring {
     }
 
     func delete(deviceID: String) async throws {
-        guard UUID(uuidString: deviceID) != nil else {
+        guard let deviceID = UUID(uuidString: deviceID) else {
             throw ICloudUsageSyncError.invalidDeviceID
         }
         let directories = try historyDirectories()
-        for directory in [directories.current, directories.legacy] {
-            try coordinatedDelete(directory.appendingPathComponent(deviceID).appendingPathExtension("json"))
+        var coordinationError: NSError?
+        var result: Result<Void, Error>?
+        NSFileCoordinator().coordinate(
+            writingItemAt: directories.current, options: .forMoving,
+            writingItemAt: directories.legacy, options: .forMoving, error: &coordinationError
+        ) { current, legacy in
+            result = Result { try deleteDocuments(deviceID: deviceID, in: [current, legacy]) }
         }
+        if let coordinationError { throw coordinationError }
+        guard let result else { throw CocoaError(.fileWriteUnknown) }
+        try result.get()
     }
 
     private func historyDirectories() throws -> (current: URL, legacy: URL) {
@@ -126,15 +134,40 @@ actor ICloudUsageHistoryFileStore: UsageHistoryFileStoring {
         return try result?.get() ?? { throw CocoaError(.fileReadUnknown) }()
     }
 
-    private func coordinatedDelete(_ url: URL) throws {
-        var coordinationError: NSError?
-        var operationError: Error?
-        NSFileCoordinator().coordinate(writingItemAt: url, options: .forDeleting, error: &coordinationError) { coordinatedURL in
-            do { try FileManager.default.removeItem(at: coordinatedURL) }
-            catch { operationError = error }
+    /// 조정 구간에서 최신 기기 ID 확인 — 실패한 파일을 보존하고 나머지 정상 사본은 계속 삭제.
+    private func deleteDocuments(deviceID: UUID, in directories: [URL]) throws {
+        var firstError: Error?
+        func recordFailure(_ error: Error, at url: URL) {
+            guard !isMissingFile(error) else { return }
+            if firstError == nil { firstError = error }
+            AppLog.warn(
+                .config, "iCloud history couldn't delete \(url.lastPathComponent): \(error.localizedDescription)")
         }
-        if let coordinationError, !isMissingFile(coordinationError) { throw coordinationError }
-        if let operationError, !isMissingFile(operationError) { throw operationError }
+        for directory in directories {
+            let urls: [URL]
+            do {
+                urls = try FileManager.default.contentsOfDirectory(
+                    at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+                ).filter { $0.pathExtension == "json" }
+            } catch {
+                recordFailure(error, at: directory)
+                continue
+            }
+            for url in urls {
+                do {
+                    let document = try decoder.decode(UsageHistoryDocument.self, from: Data(contentsOf: url))
+                    try document.validate()
+                    guard let storedDeviceID = UUID(uuidString: document.deviceID) else {
+                        throw UsageHistoryDocumentError.invalidDevice
+                    }
+                    guard storedDeviceID == deviceID else { continue }
+                    try FileManager.default.removeItem(at: url)
+                } catch {
+                    recordFailure(error, at: url)
+                }
+            }
+        }
+        if let firstError { throw firstError }
     }
 
     private func isMissingFile(_ error: Error) -> Bool {

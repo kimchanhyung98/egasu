@@ -218,8 +218,24 @@ final class ICloudUsageSyncStore {
                 }
             } catch {
                 guard isCurrent(expectedEnabled: expectedEnabled, generation: generation),
-                      pendingDeletionDeviceID == persistedDeviceID else { return }
+                    pendingDeletionDeviceID == persistedDeviceID
+                else {
+                    if enabled { await writeNow(generation: enablementGeneration) }
+                    return
+                }
                 reportDeletion(error)
+                guard !expectedEnabled, pendingDeviceID != deviceID else { return }
+                do {
+                    _ = try await workQueue.run("icloud:delete") {
+                        guard isCurrent(expectedEnabled: false, generation: generation),
+                            pendingDeletionDeviceID == persistedDeviceID
+                        else { return }
+                        try await fileStore.delete(deviceID: deviceID)
+                    }
+                } catch {
+                    AppDiagnostics.failure(.iCloudDelete, error: error)
+                }
+                if enabled { await writeNow(generation: enablementGeneration) }
             }
         }
     }
