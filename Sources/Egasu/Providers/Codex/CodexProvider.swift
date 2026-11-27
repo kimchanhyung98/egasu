@@ -258,12 +258,12 @@ final class CodexProvider: ProviderRuntime {
 
         if authStore.needsRefresh(authState.auth) {
             // `codex` CLI가 디스크의 token을 이미 회전시켰을 수 있음 — live credential을 먼저 재판독해 최신 access token 채택 (stale 사본 refresh 시 `refresh_token_reused`, issue #516).
-            if let live = try await reloadLiveAuth(source: authState.source),
-               let liveToken = live.auth.tokens?.accessToken, !liveToken.isEmpty {
-                try validateTimerIdentity(live.auth, expectedAccountKey: expectedAccountKey)
-                authState = live
-                accessToken = liveToken
-            }
+            guard let live = try await reloadLiveAuth(source: authState.source),
+                let liveToken = live.auth.tokens?.accessToken, !liveToken.isEmpty
+            else { throw CodexAuthError.credentialsChanged }
+            try validateTimerIdentity(live.auth, expectedAccountKey: expectedAccountKey)
+            authState = live
+            accessToken = liveToken
         }
 
         if authStore.needsRefresh(authState.auth),

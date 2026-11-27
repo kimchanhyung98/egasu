@@ -3,6 +3,55 @@ import XCTest
 @testable import Egasu
 
 extension CodexCredentialPreservationTests {
+    func testProactiveRefreshUsesAnExternalRotationFromTheOriginalSource() async throws {
+        let original = try retryCredential(version: 0, expiresIn: 60)
+        let rotated = try retryCredential(version: 1)
+        let home = "/proactive-auth-revalidation"
+        let path = "\(home)/auth.json"
+        let files = FakeFiles([path: original.text])
+        let store = CodexAuthStore(
+            environment: FakeEnvironment(), files: files, keychain: FakeKeychain(), scope: .home(path: home),
+            now: {
+                files.files[path] = rotated.text
+                return Self.retryInstant
+            }
+        )
+        let http = RoutingHTTPClient { request in
+            if request.url == CodexUsageClient.refreshURL { return Self.reusedTokenResponse }
+            return Self.retryUsageResponse(request)
+        }
+
+        let snapshot = await makeProvider(store: store, http: http).refresh()
+
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertNotNil(snapshot.liveQuotaObservedAt)
+        XCTAssertEqual(http.requests.map(\.url), [CodexUsageClient.usageURL, CodexUsageClient.resetCreditsURL])
+        XCTAssertEqual(http.requests.first?.headers["Authorization"], "Bearer \(rotated.token)")
+        XCTAssertEqual(files.files[path], rotated.text)
+    }
+
+    func testProactiveRefreshPreservesTheOriginalSourceReadFailure() async throws {
+        let original = try retryCredential(version: 0, expiresIn: 60)
+        let home = "/proactive-auth-revalidation"
+        let path = "\(home)/auth.json"
+        let files = FakeFiles([path: original.text])
+        let store = CodexAuthStore(
+            environment: FakeEnvironment(), files: files, keychain: FakeKeychain(), scope: .home(path: home),
+            now: {
+                files.unreadablePaths.insert(path)
+                return Self.retryInstant
+            }
+        )
+        let http = RoutingHTTPClient { _ in Self.reusedTokenResponse }
+
+        let snapshot = await makeProvider(store: store, http: http).refresh()
+
+        XCTAssertEqual(snapshot.errorCategory, .permission)
+        XCTAssertEqual(snapshot.errorPresentation, UserFacingErrors.presentation(CocoaError(.fileReadNoPermission)))
+        XCTAssertTrue(http.requests.isEmpty)
+        XCTAssertEqual(files.files[path], original.text)
+    }
+
     func testUnauthorizedUsageRetryPreservesUpdatedFieldsInTheOriginalCredential() async throws {
         let original = try retryCredential(version: 0)
         let rotated = try retryCredential(version: 1)
