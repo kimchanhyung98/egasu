@@ -101,7 +101,7 @@ OpenRouter처럼 API 키 관리를 지원하는 프로바이더는 egasu에서 �
   앱이 정의한 오류는 `UserPresentableError`와 `LocalizedMessage`로 원문과 표시 정보 분리.
   상세 규칙은 [표시 언어](/docs/architecture.md#표시-언어) 참조.
 - 프로바이더의 **빠른 링크**는 `Provider` 값(`links:`)에 선언.
-  각 링크는 카드 확장 영역에 버튼으로 렌더링되는 `ProviderLink(label:url:)`이며, 기본 브라우저에서 URL을 여는 방식.
+  링크는 `ProviderLink(label:url:)`로 정의하며, [대시보드 우클릭 메뉴](/docs/dashboard.md#우클릭-메뉴)에서 선택하면 기본 브라우저로 열림.
   프로바이더 자체 Status / Console / Dashboard 페이지가 있으면 포함하고, 없는 프로바이더는 `links` 생략(기본값은 비어 있음).
   프로바이더당 링크는 최대 **두 개**(레이블 예: Status, Dashboard, API Keys, Usage).
   레이블이 비어 있지 않은 `http(s)` URL만 렌더링.
