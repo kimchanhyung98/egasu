@@ -124,6 +124,182 @@ final class NotificationReminderIntegrationTests: XCTestCase {
         await waitFor { center.requests == initial }
     }
 
+    func testCodexCredentialReadFailureDuringTokenSavePreservesBothReminderKinds() async throws {
+        let scenarios: [(source: CredentialSource, proactive: Bool)] = [
+            (.file, true), (.keychain, true), (.keychain, false), (.savedAccount, false)
+        ]
+        for (source, proactive) in scenarios {
+            let center = Center()
+            let suite = "NotificationReminderIntegrationTests.\(UUID())"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let failure = try await codexSaveVerificationFailure(at: center.now, source: source, proactive: proactive)
+            let first = try reading(at: center.now)
+            let other = try reading(at: center.now, profileID: UUID().uuidString, subject: "second-user")
+            let (store, settings) = launch(
+                reading: first, defaults: defaults, suite: suite, center: center, following: [failure], others: [other])
+            settings.weeklyMonthlyResetReminders = true
+            settings.codexCreditExpiry = true
+
+            let firstOutcome = await store.refresh(providerID: first.providerID, force: true)
+            XCTAssertEqual(firstOutcome, .refreshed)
+            let otherOutcome = await store.refresh(providerID: other.providerID, force: true)
+            XCTAssertEqual(otherOutcome, .refreshed)
+            await waitFor { center.requests.count == 8 }
+            let initialQuota = center.pending(prefix: quotaPrefix)
+            let initialCredits = center.pending(prefix: creditPrefix)
+            XCTAssertEqual(initialQuota.count, 4)
+            XCTAssertEqual(initialCredits.count, 4)
+
+            let reads = center.reads
+            let failedOutcome = await store.refresh(providerID: first.providerID, force: true)
+            XCTAssertEqual(failedOutcome, .failed)
+            XCTAssertEqual(
+                store.refreshResults[first.providerID]?.failure?.category,
+                source == .file ? .permission : .credentialAccess
+            )
+            let witnessOutcome = await store.refresh(providerID: other.providerID, force: true)
+            XCTAssertEqual(witnessOutcome, .refreshed)
+            await waitForBothSchedulers(in: center, after: reads)
+            XCTAssertEqual(center.pending(prefix: quotaPrefix), initialQuota)
+            XCTAssertEqual(center.pending(prefix: creditPrefix), initialCredits)
+        }
+    }
+
+    func testBoundCodexQuotaReadFailureAfterUsageResponsePreservesBothReminderKinds() async throws {
+        let center = Center()
+        let now = center.now
+        let suite = "NotificationReminderIntegrationTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let home = "/bound-reminder-credential-verification"
+        let path = "\(home)/auth.json"
+        let original = #"{"tokens":{"access_token":"fixture-access","account_id":"workspace"}}"#
+        let files = FakeFiles([path: original])
+        let http = RoutingHTTPClient { request in
+            if request.url == CodexUsageClient.usageURL {
+                files.unreadablePaths.insert(path)
+                return HTTPResponse(
+                    statusCode: 200, headers: [:],
+                    body: Data(
+                        #"{"rate_limit":{"primary_window":{"used_percent":20,"limit_window_seconds":604800}}}"#.utf8))
+            }
+            return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"available_count":0}"#.utf8))
+        }
+        let provider = CodexProvider(
+            authStore: CodexAuthStore(
+                environment: FakeEnvironment(), files: files, keychain: FakeKeychain(),
+                scope: .home(path: home), expectedIdentityKey: "workspace", now: { now }),
+            usageClient: CodexUsageClient(http: http),
+            logUsageScanner: CodexLogUsageScanner(cacheIdentityOverride: UUID().uuidString, rootsOverride: []),
+            includeSharedUsage: false, now: { now }, pricing: { .empty }
+        )
+
+        let failure = await provider.refresh()
+
+        XCTAssertEqual(http.requests.map(\.url), [CodexUsageClient.usageURL, CodexUsageClient.resetCreditsURL])
+        XCTAssertEqual(files.files[path], original)
+        XCTAssertEqual(failure.errorCategory, .permission)
+        XCTAssertEqual(failure.errorPresentation, UserFacingErrors.presentation(CocoaError(.fileReadNoPermission)))
+        XCTAssertFalse(failure.invalidatesQuotaIdentity)
+        XCTAssertNil(failure.liveQuotaObservedAt)
+
+        let first = try reading(at: now)
+        let other = try reading(at: now, profileID: UUID().uuidString, subject: "second-user")
+        let (store, settings) = launch(
+            reading: first, defaults: defaults, suite: suite, center: center, following: [failure], others: [other])
+        settings.weeklyMonthlyResetReminders = true
+        settings.codexCreditExpiry = true
+        let firstOutcome = await store.refresh(providerID: first.providerID, force: true)
+        XCTAssertEqual(firstOutcome, .refreshed)
+        let otherOutcome = await store.refresh(providerID: other.providerID, force: true)
+        XCTAssertEqual(otherOutcome, .refreshed)
+        await waitFor { center.requests.count == 8 }
+        let requests = center.requests
+        let reads = center.reads
+
+        let failedOutcome = await store.refresh(providerID: first.providerID, force: true)
+        XCTAssertEqual(failedOutcome, .failed)
+        let witnessOutcome = await store.refresh(providerID: other.providerID, force: true)
+        XCTAssertEqual(witnessOutcome, .refreshed)
+        await waitForBothSchedulers(in: center, after: reads)
+        XCTAssertEqual(center.requests, requests)
+    }
+
+    private enum CredentialSource: Sendable, Equatable { case file, keychain, savedAccount }
+
+    private func codexSaveVerificationFailure(
+        at now: Date, source: CredentialSource, proactive: Bool
+    ) async throws -> ProviderSnapshot {
+        let expiry = Int(now.addingTimeInterval(proactive ? 60 : 3_600).timeIntervalSince1970)
+        let payload = Data(#"{"sub":"fixture-user","exp":\#(expiry)}"#.utf8).base64EncodedString()
+        let original =
+            #"{"tokens":{"access_token":"e30.\#(payload).signature","refresh_token":"fixture-refresh","account_id":"workspace"}}"#
+
+        let files = FakeFiles()
+        let keychain = SwitchRecoveryKeychain()
+        let home = "/reminder-credential-verification"
+        let path = "\(home)/auth.json"
+        let service = CodexAuthStore.keychainService
+        let profileID = "fixture"
+        let snapshotService = AccountCredentialVault.service(family: "codex", profileID: profileID)
+        let savedEntry = String(
+            decoding: try JSONEncoder().encode(AccountCredentialVault.Entry(credential: original)), as: UTF8.self)
+        let scope: CodexCredentialScope
+        switch source {
+        case .file:
+            scope = .home(path: home)
+            files.files[path] = original
+        case .keychain:
+            scope = .standard
+            keychain.values[service] = original
+        case .savedAccount:
+            scope = .accountSnapshot(profileID: profileID)
+            keychain.currentUserValues[snapshotService] = savedEntry
+        }
+        let readError: any Error =
+            source == .file
+            ? CocoaError(.fileReadNoPermission)
+            : KeychainError.readFailed("Fixture Keychain verification read was denied.")
+        let http = RoutingHTTPClient { request in
+            guard request.url == CodexUsageClient.refreshURL else {
+                return HTTPResponse(statusCode: 401, headers: [:], body: Data())
+            }
+            if source == .file {
+                files.unreadablePaths.insert(path)
+            } else {
+                keychain.beforeRead = { _ in throw readError }
+            }
+            return HTTPResponse(
+                statusCode: 200, headers: [:],
+                body: Data(
+                    #"{"access_token":"fixture-rotated","refresh_token":"fixture-refresh-rotated"}"#.utf8))
+        }
+        let provider = CodexProvider(
+            authStore: CodexAuthStore(
+                environment: FakeEnvironment(), files: files, keychain: keychain, scope: scope, now: { now }),
+            usageClient: CodexUsageClient(http: http),
+            logUsageScanner: CodexLogUsageScanner(cacheIdentityOverride: UUID().uuidString, rootsOverride: []),
+            includeSharedUsage: false, now: { now }, pricing: { .empty }
+        )
+
+        let snapshot = await provider.refresh()
+
+        let requested =
+            proactive ? [CodexUsageClient.refreshURL] : [CodexUsageClient.usageURL, CodexUsageClient.refreshURL]
+        XCTAssertEqual(http.requests.map(\.url), requested)
+        switch source {
+        case .file: XCTAssertEqual(files.files[path], original)
+        case .keychain: XCTAssertEqual(keychain.values[service], original)
+        case .savedAccount: XCTAssertEqual(keychain.currentUserValues[snapshotService], savedEntry)
+        }
+        XCTAssertEqual(keychain.writeCount, 0)
+        XCTAssertEqual(snapshot.errorPresentation, UserFacingErrors.presentation(readError))
+        XCTAssertFalse(snapshot.invalidatesQuotaIdentity)
+        return snapshot
+    }
+
     func testChangedCodexCredentialsPreserveReservationsSupportedByAnActiveAlias() async throws {
         let center = Center()
         let suite = "NotificationReminderIntegrationTests.\(UUID())"
