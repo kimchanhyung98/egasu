@@ -84,6 +84,7 @@ struct DashboardMetricRow: View {
             case .value(let text, let detail, let severity):
                 HStack(alignment: .firstTextBaseline, spacing: DashboardGrid.columnGap) {
                     label
+                        .layoutPriority(model.truncatesValue ? 1 : 0)
                     Spacer(minLength: 0)
                     figure(
                         AnyView(
@@ -97,8 +98,9 @@ struct DashboardMetricRow: View {
                             }
                             .monospacedDigit()
                             .lineLimit(1)
+                            .truncationMode(model.truncatesValue ? .middle : .tail)
                             .contentTransition(.numericText())
-                            .fixedSize()
+                            .fixedSize(horizontal: !model.truncatesValue, vertical: true)
                             .hoverTooltip(valueTooltip)
                             .accessibilityValue(Self.expiryAccessibilityValue(severity) ?? "")
                         ))

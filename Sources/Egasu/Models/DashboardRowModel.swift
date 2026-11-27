@@ -12,6 +12,8 @@ struct DashboardRowModel: Equatable {
 
     let label: String
     let mark: Mark
+    /// 긴 식별자 값만 한 줄 말줄임 — 원문 문자열은 유지.
+    var truncatesValue = false
     /// 시각 표기는 카운트다운보다 넓어 넓은 초기화 열 사용.
     var showsClockTimes = false
     /// 고른 속도라면 지금 도달했을 막대 위치 — 없으면 nil.
@@ -33,7 +35,9 @@ struct DashboardRowModel: Equatable {
 extension DashboardLine {
     func dashboardRow(now: Date = Date()) -> DashboardRowModel {
         var row = data.dashboardRow(now: now)
-        guard ProviderAccountID.canonicalMetricID(id) == "codex.individualCredits",
+        let metricID = ProviderAccountID.canonicalMetricID(id)
+        row.truncatesValue = metricID == "openai-api.scope"
+        guard metricID == "codex.individualCredits",
             case .bar = row.mark, let limit = data.limit, limit > 0
         else { return row }
 
