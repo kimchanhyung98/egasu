@@ -400,6 +400,24 @@ final class CodexProvider: ProviderRuntime {
                     accessToken: token, accountID: working.auth.tokens?.accountID)
             },
             refreshAccessToken: {
+                try UsageTimerReadContext.check()
+                guard let live = try await self.reloadLiveAuth(source: working.source),
+                    let liveToken = live.auth.tokens?.accessToken, !liveToken.isEmpty
+                else { throw CodexAuthError.credentialsChanged }
+
+                // 저장이 실패하면 메모리 인증만 갱신되므로 마지막 저장 원문의 인증도 비교.
+                let storedAuth = working.sourceText.flatMap(CodexAuthStore.parseAuth)
+                if live != working, live.auth != storedAuth {
+                    try self.validateTimerIdentity(live.auth, expectedAccountKey: expectedAccountKey)
+                    guard liveToken != accessToken,
+                        let accountKey = CodexResetClaimBinding(authState: working)?.verifiedAccountKey,
+                        CodexResetClaimBinding(authState: live)?.verifiedAccountKey == accountKey
+                    else { throw CodexAuthError.credentialsChanged }
+                    working = live
+                    return liveToken
+                }
+
+                working.sourceText = live.sourceText
                 guard let refreshToken = working.auth.tokens?.refreshToken, !refreshToken.isEmpty else {
                     throw CodexAuthError.tokenExpired
                 }
