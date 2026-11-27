@@ -4,7 +4,7 @@ import XCTest
 @testable import Egasu
 
 extension CodexCreditExpiryReminderTests {
-    private func claimStore(
+    func claimStore(
         _ providers: [SequenceProviderRuntime], defaults: UserDefaults, center: Center
     ) -> WidgetDataStore {
         let settings = NotificationSettingsStore(defaults: defaults)
@@ -18,7 +18,7 @@ extension CodexCreditExpiryReminderTests {
         return store
     }
 
-    private func checkPending(
+    func checkPending(
         _ expected: [Date], store: WidgetDataStore, center: Center, line: UInt = #line
     ) async {
         let read = expectation(description: "만료 예약 대조")
@@ -28,7 +28,7 @@ extension CodexCreditExpiryReminderTests {
         XCTAssertEqual(center.requests.values.map(\.date).sorted(), expected.sorted(), line: line)
     }
 
-    private func fireDates(_ expiry: Date) -> [Date] {
+    func fireDates(_ expiry: Date) -> [Date] {
         [expiry.addingTimeInterval(-86_400), expiry.addingTimeInterval(-43_200)]
     }
 

@@ -227,11 +227,12 @@ final class WidgetDataStore {
     func codexCreditsUnavailable(cardID _: String, credits: CodexResetClaimService.UnavailableCredits) {
         guard let creditExpiryReminders else { return }
         switch credits {
-        case .credit(let credit):
+        case .credit(let credit, let expiries):
             guard let account = credit.binding.verifiedAccountKey else { return }
             creditExpiryReminders.consumed(
                 account: account, expiry: credit.expiry, creditID: credit.creditID,
-                remaining: credit.remainingAtExpiry, at: now())
+                remaining: credit.remainingAtExpiry, confirmedExpiries: expiries,
+                snapshots: codexSnapshots(for: account), at: now())
         case .replayed(let credit, let expiries):
             guard let account = credit.binding.verifiedAccountKey else { return }
             if let expiries {

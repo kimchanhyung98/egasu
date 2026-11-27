@@ -166,7 +166,7 @@ final class CodexResetClaimTests: XCTestCase {
         let (service, _) = makeService(listBody: body)
         var claimed: CodexResetClaimService.MatchedCredit?
         service.onUnavailable = { change in
-            if case .credit(let credit) = change { claimed = credit }
+            if case .credit(let credit, _) = change { claimed = credit }
         }
         let result = await service.claim(
             creditExpiringAt: requested, redeemRequestID: "selection", binding: Self.binding)
@@ -196,7 +196,7 @@ final class CodexResetClaimTests: XCTestCase {
         let (service, http) = makeService(refreshes: refreshes)
         var consumed = false
         service.onUnavailable = { change in
-            guard case .credit(let credit) = change else { return XCTFail("Expected a single credit") }
+            guard case .credit(let credit, _) = change else { return XCTFail("Expected a single credit") }
             XCTAssertEqual(credit.creditID, "RateLimitResetCredit_target")
             XCTAssertEqual(credit.binding, Self.binding)
             XCTAssertEqual(credit.expiry, Self.expiry)
