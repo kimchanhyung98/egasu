@@ -26,7 +26,7 @@ final class CodexResetClaimService {
     }
 
     enum UnavailableCredits {
-        case credit(MatchedCredit)
+        case credit(MatchedCredit, confirmedExpiries: [Date]? = nil)
         case replayed(MatchedCredit, confirmedExpiries: [Date]?)
         case expiry(binding: CodexResetClaimBinding, date: Date)
         case emptyInventory(binding: CodexResetClaimBinding, selectedExpiry: Date)
@@ -112,6 +112,7 @@ final class CodexResetClaimService {
         guard let initial = await loadCredential(for: binding, allowInteraction: true) else { return .failed }
 
         let creditID: String
+        var confirmedExpiries: [Date]?
         if let previous = requestState.matchedCredits[redeemRequestID] {
             creditID = previous.creditID
         } else {
@@ -144,6 +145,13 @@ final class CodexResetClaimService {
                 return .noCredit
             case .available(let id, let remaining):
                 creditID = id
+                if remaining != nil, var available = Self.availableCredits(in: body),
+                    ProviderParse.number(body["available_count"]) == Double(available.count),
+                    let index = available.firstIndex(where: { $0.id == id })
+                {
+                    available.remove(at: index)
+                    confirmedExpiries = available.compactMap(\.expiry)
+                }
                 requestState.matchedCredits[redeemRequestID] = MatchedCredit(
                     binding: binding, expiry: expiry, creditID: id, remainingAtExpiry: remaining)
             }
@@ -174,7 +182,10 @@ final class CodexResetClaimService {
                 let expiries = await remainingExpiries(afterReplay: matched)
                 onUnavailable(.replayed(matched, confirmedExpiries: expiries))
             } else {
-                onUnavailable(.credit(matched))
+                onUnavailable(
+                    .credit(
+                        matched,
+                        confirmedExpiries: outcome == .success && !result.alreadyRedeemed ? confirmedExpiries : nil))
             }
         }
         await refreshIfBound(to: binding, ticket: ticket)

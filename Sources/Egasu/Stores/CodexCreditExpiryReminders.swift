@@ -88,11 +88,20 @@ final class CodexCreditExpiryReminders {
     }
 
     /// 소비 직후의 조회가 실패하거나 재시작해도 이전 캐시로 사용한 권을 다시 예약하지 않음.
-    func consumed(account: String, expiry: Date, creditID: String, remaining: Int?, at date: Date) {
+    func consumed(
+        account: String, expiry: Date, creditID: String, remaining: Int?, confirmedExpiries: [Date]? = nil,
+        snapshots: [ProviderSnapshot] = [], at date: Date
+    ) {
         let bucket = Self.bucket(account: account, expiry: expiry)
         let credit = Self.digest(creditID)
         var consumed = claims[bucket]?.creditIDs ?? []
         guard consumed.insert(credit).inserted else { return }
+        if let confirmedExpiries {
+            confirmedInventory(
+                account: account, expiries: confirmedExpiries, selectedExpiry: expiry, consumedID: creditID,
+                snapshots: snapshots, at: date)
+            return
+        }
         let previousBound = claims[bucket]?.remaining.map { max(0, $0 - 1) }
         let upperBound = [remaining, previousBound].compactMap { $0 }.min()
         claims[bucket] = Claim(at: date, expiry: expiry, remaining: upperBound, creditIDs: consumed)
