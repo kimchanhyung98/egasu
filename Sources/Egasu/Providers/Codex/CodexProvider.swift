@@ -348,8 +348,10 @@ final class CodexProvider: ProviderRuntime {
             else {
                 throw CodexAuthError.credentialsChanged
             }
-        } else if live.auth != authState.auth, live.auth != authState.sourceText.flatMap(CodexAuthStore.parseAuth) {
-            throw CodexAuthError.credentialsChanged
+        } else if live.auth != authState.auth {
+            guard binding != nil, live.auth == authState.sourceText.flatMap(CodexAuthStore.parseAuth) else {
+                throw CodexAuthError.credentialsChanged
+            }
         }
         var snapshot = ProviderSnapshot.make(
             provider: provider,
