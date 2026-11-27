@@ -179,13 +179,16 @@ final class GrokProvider: ProviderRuntime {
     /// 갱신 거절과 일시적 실패는 후보 선택에 전달하고, 로그인 변경과 취소는 즉시 전파.
     private func refreshAccessToken(state: inout GrokAuthState) async throws -> Result<String, GrokAuthError> {
         guard let refreshToken = authStore.refreshToken(for: state.entry) else { return .failure(.expired) }
+        try Task.checkCancellation()
+        try TokenRotationShutdownGuard.begin()
+        defer { TokenRotationShutdownGuard.end() }
+        let clientID = authStore.clientID(entryKey: state.entryKey, entry: state.entry)
 
         let response: HTTPResponse
         do {
-            response = try await usageClient.refreshToken(
-                refreshToken,
-                clientID: authStore.clientID(entryKey: state.entryKey, entry: state.entry)
-            )
+            response = try await Task { [usageClient] in
+                try await usageClient.refreshToken(refreshToken, clientID: clientID)
+            }.value
         } catch {
             try ProviderAuthRetry.rethrowCancellation(error)
             AppDiagnostics.record(
