@@ -107,11 +107,13 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
             || accountByProvider[providerID]?.accountKey == active.observation.accountKey
     }
 
+    /// 관측 처리 중 상태 저장소 오류가 발생하면 false 반환.
+    @discardableResult
     func receive(
         providerID: String, bindingID: UUID, observation: UsageTimerObservation,
         checkUnconfirmedReset: Bool = false
-    ) {
-        guard !stopped, isCurrent(providerID, bindingID, observation.accountKey) else { return }
+    ) -> Bool {
+        guard !stopped, isCurrent(providerID, bindingID, observation.accountKey) else { return true }
         defer { resumePendingWorkWaiters() }
         accountByProvider[providerID] = (observation.accountKey, bindingID)
         let candidate = Candidate(providerID: providerID, bindingID: bindingID, observation: observation,
@@ -122,7 +124,7 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
                 observedAt: observation.observedAt, usedPercent: observation.usedPercent,
                 confirmsReset: observation.startRule == .missingReset
             )
-            guard change != .stale else { return }
+            guard change != .stale else { return true }
             if change != .incomparable || observation.rawResetAt == nil || observation.usedPercent != 0 {
                 pending.removeAll { $0.observation.storageKey == observation.storageKey }
             }
@@ -136,14 +138,19 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
                     || preparationRetries.contains(observation.storageKey),
                   observation.canStart(at: now()),
                   try canPrepare(candidate, reportLimit: change == .changed)
-            else { return }
+            else { return true }
         } catch {
-            fail(candidate, "Usage timer automation could not read its saved state. No message was sent.")
-            return
+            let message =
+                executing?.observation.storageKey == observation.storageKey
+                ? "Usage timer automation could not update its saved state."
+                : "Usage timer automation could not read its saved state. No message was sent."
+            fail(candidate, message)
+            return false
         }
         pending.append(candidate)
-        guard task == nil else { return }
+        guard task == nil else { return true }
         task = Task { [weak self] in await self?.drain() }
+        return true
     }
 
     func invalidate(providerID: String) {

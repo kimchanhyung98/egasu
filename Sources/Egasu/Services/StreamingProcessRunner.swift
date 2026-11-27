@@ -11,6 +11,21 @@ struct StreamingProcessLaunchPermission: Sendable {
 
     func revoke() { revoked.withLock { $0 = true } }
 
+    /// 동기 관측 반영과 자식 생성을 직렬화. 반영 실패 시 권한 회수, 같은 권한에 재진입 금지.
+    @discardableResult
+    func revokeIf(_ shouldRevoke: () throws -> Bool) rethrows -> Bool {
+        try revoked.withLockUnchecked { revoked in
+            do {
+                let invalidated = try shouldRevoke()
+                if invalidated { revoked = true }
+                return invalidated
+            } catch {
+                revoked = true
+                throw error
+            }
+        }
+    }
+
     static func withPermission(_ spawn: () -> Int32) throws -> Int32 {
         guard let current else { return spawn() }
         return try current.revoked.withLockUnchecked { revoked in

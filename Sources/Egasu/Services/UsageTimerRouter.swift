@@ -17,7 +17,9 @@ final class UsageTimerRouter {
     private var scheduledCheckRequests: Set<String> = []
     private var followUpRefreshes: [UUID: (providerID: String, task: Task<Void, Never>)] = [:]
     let usageTimerSetting: UsageTimerSetting
-    private var launchPermission = StreamingProcessLaunchPermission()
+    private var scheduledCheckGeneration = UUID()
+    private var activeLaunch:
+        (providerID: String, observation: UsageTimerObservation, permission: StreamingProcessLaunchPermission)?
     private let isProviderEnabled: (String) -> Bool
     private let executors: UsageTimerExecutors
     private let store: UsageTimerAttemptStore
@@ -40,7 +42,7 @@ final class UsageTimerRouter {
                 try await provider.prepareUsageTimer(observation, executors: self.executors)
             }
         },
-        execute: { [weak self] _, _, session, canLaunch in
+        execute: { [weak self] providerID, _, session, canLaunch in
             guard let self, let ticket = await self.workQueue.acquire("weekly-timer:execute") else {
                 return UsageTimerExecutionResult(launched: false, completed: false)
             }
@@ -49,9 +51,13 @@ final class UsageTimerRouter {
                 return UsageTimerExecutionResult(launched: false, completed: false)
             }
             let hadStartupFailure = self.executors.codex.startupFailureDescription != nil
-            let result = await StreamingProcessLaunchPermission.$current.withValue(self.launchPermission) {
+            let permission = StreamingProcessLaunchPermission()
+            self.activeLaunch = (providerID, session.observation, permission)
+            defer { self.activeLaunch = nil }
+            var result = await StreamingProcessLaunchPermission.$current.withValue(permission) {
                 await session.send { canLaunch() }
             }
+            if !result.launched, permission.isRevoked { result.launchObservationInvalidated = true }
             if !self.isShuttingDown, hadStartupFailure, self.executors.codex.startupFailureDescription == nil {
                 for (id, binding) in self.bindings where binding.provider is CodexProvider && self.isProviderEnabled(id) {
                     self.report(id, binding.accountKey.flatMap { self.warning(for: $0) })
@@ -127,8 +133,8 @@ final class UsageTimerRouter {
         }
         usageTimerSetting.onDisable = { [weak self] in
             guard let self else { return }
-            self.launchPermission.revoke()
-            self.launchPermission = StreamingProcessLaunchPermission()
+            self.activeLaunch?.permission.revoke()
+            self.scheduledCheckGeneration = UUID()
             let accountKeys = self.bindings.compactMapValues(\.accountKey)
             // 즉시 다시 켜도 대기 중이던 이전 전송이 살아나지 않도록 바인딩 교체.
             self.invalidate(providerIDs: Set(self.bindings.keys))
@@ -163,6 +169,7 @@ final class UsageTimerRouter {
         guard observation.observedAt == observedAt else { return }
         let accountChanged = binding.accountKey != observation.accountKey
         if let accountKey = binding.accountKey, accountKey != observation.accountKey {
+            if let launch = activeLaunch, launch.providerID == snapshot.providerID { launch.permission.revoke() }
             coordinator.invalidate(providerID: snapshot.providerID)
             binding = Binding(provider: binding.provider)
             report(snapshot.providerID, nil)
@@ -174,42 +181,50 @@ final class UsageTimerRouter {
             report(snapshot.providerID, warning)
         }
         do {
-            if try store.discardFutureObservations(now: now()) {
-                coordinator.invalidateObservations()
-                scheduledCheckRequests.formUnion(bindings.keys.filter { isProviderEnabled($0) })
-            }
-            if warningsByAccount[observation.accountKey]?["state"] == Self.stateReadWarning {
+            let discard = { try self.store.discardFutureObservations(now: self.now()) }
+            if try activeLaunch?.permission.revokeIf(discard) ?? discard() { invalidateObservations() }
+            if warningsByAccount[observation.accountKey]?["state"] != nil {
                 warningsByAccount[observation.accountKey]?["state"] = nil
                 for (id, current) in bindings where current.accountKey == observation.accountKey && isProviderEnabled(id) {
                     report(id, warning(for: observation.accountKey))
                 }
             }
         } catch {
-            AppDiagnostics.record(.weeklyTimer, result: .failure, providerID: snapshot.providerID, error: error,
-                                  localContext: "Could not check timer observation state")
-            coordinator.clearReportedSendLimit(for: observation.accountKey)
-            let message = Self.stateReadWarning
-            warningsByAccount[observation.accountKey, default: [:]]["state"] = message
-            for (id, current) in bindings where current.accountKey == observation.accountKey && isProviderEnabled(id) {
-                report(id, warning(for: observation.accountKey))
-            }
+            reportStateReadFailure(error, providerID: snapshot.providerID, accountKey: observation.accountKey)
             return
         }
         let scheduledRequested = scheduledCheckRequests.remove(snapshot.providerID) != nil
         let checkTimer = scheduledRequested || trigger == .weeklyTimerCheck
         for observation in observations {
-            coordinator.receive(
-                providerID: snapshot.providerID, bindingID: binding.id, observation: observation,
-                checkUnconfirmedReset: checkTimer
-            )
+            let receiveObservation = {
+                self.coordinator.receive(
+                    providerID: snapshot.providerID, bindingID: binding.id, observation: observation,
+                    checkUnconfirmedReset: checkTimer
+                )
+            }
+            if let launch = activeLaunch, launch.observation.storageKey == observation.storageKey,
+                !launch.permission.isRevoked
+            {
+                do {
+                    try launch.permission.revokeIf {
+                        guard receiveObservation() else { return true }
+                        return try !store.isLatest(launch.observation)
+                    }
+                } catch {
+                    reportStateReadFailure(error, providerID: launch.providerID, accountKey: observation.accountKey)
+                }
+            } else {
+                _ = receiveObservation()
+            }
         }
     }
 
     func scheduledCheckValidity() -> @MainActor () -> Bool {
-        let permission = launchPermission
+        let generation = scheduledCheckGeneration
         return { [weak self] in
             guard let self else { return false }
-            return !self.isShuttingDown && self.usageTimerSetting.isEnabled && !permission.isRevoked
+            return !self.isShuttingDown && self.usageTimerSetting.isEnabled
+                && self.scheduledCheckGeneration == generation
         }
     }
 
@@ -252,11 +267,13 @@ final class UsageTimerRouter {
 
     func shutdown() async {
         isShuttingDown = true
+        activeLaunch?.permission.revoke()
         await coordinator.shutdown()
     }
 
     func invalidate(providerIDs: Set<String>? = nil) {
         let affected = providerIDs ?? Set(bindings.keys.filter { !isProviderEnabled($0) })
+        if let launch = activeLaunch, affected.contains(launch.providerID) { launch.permission.revoke() }
         for providerID in affected {
             scheduledCheckRequests.remove(providerID)
             guard let binding = bindings[providerID] else { continue }
@@ -305,8 +322,28 @@ final class UsageTimerRouter {
     /// 새 응답을 기다리지 않고 이전 시각 기준의 검증·실행 준비를 무효화.
     private func clockDidChange() {
         guard !isShuttingDown, usageTimerSetting.isEnabled else { return }
+        activeLaunch?.permission.revoke()
+        invalidateObservations()
+    }
+
+    private func invalidateObservations() {
         coordinator.invalidateObservations()
         scheduledCheckRequests.formUnion(bindings.keys.filter { isProviderEnabled($0) })
+    }
+
+    private func reportStateReadFailure(_ error: Error, providerID: String, accountKey: String) {
+        AppDiagnostics.record(
+            .weeklyTimer, result: .failure, providerID: providerID, error: error,
+            localContext: "Could not check timer observation state")
+        coordinator.clearReportedSendLimit(for: accountKey)
+        let message =
+            activeLaunch == nil
+            ? Self.stateReadWarning
+            : "Usage timer automation could not update its saved state."
+        warningsByAccount[accountKey, default: [:]]["state"] = message
+        for (id, binding) in bindings where binding.accountKey == accountKey && isProviderEnabled(id) {
+            report(id, warning(for: accountKey))
+        }
     }
 
     private func warning(for accountKey: String) -> [String]? {
