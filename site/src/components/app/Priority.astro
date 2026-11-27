@@ -1,4 +1,5 @@
 ---
+import { boundedView } from '../../data/demo';
 import { initialPreviewState } from '../../data/preview-state';
 import { priorityBoard, dashboardLines, priorityGauge } from '../../data/preview-dashboard';
 import { providers } from '../../data/providers';
@@ -24,7 +25,6 @@ const groups = [
       {group.items.map((line) => {
         const row = line.row;
         const bounded = row.kind === 'bounded';
-        const usedFraction = bounded ? row.used / row.limit : 0;
         const gauge = priorityGauge(row, 'used');
         const family = accountFamilies.find((family) => family.id === line.provider);
         const name = family?.profiles.find((profile) => profile.id === line.accountID)?.name;
@@ -41,7 +41,7 @@ const groups = [
             <span class="am-priority-account"><span>{providers.find((provider) => provider.id === line.provider)?.name}</span>{name && <button type="button" class="am-account-label" data-toggle-account-name data-account-name={line.provider} data-account-id={line.accountID}>{name}</button>}</span>
           </span>
           <span class="am-priority-detail">
-            {bounded ? <><span class="am-priority-status">Used Up</span><button type="button" class="am-priority-value am-headline" data-toggle-meter><span class="u">{Math.round(usedFraction * 100)}% used</span><span class="l">{Math.round((1 - usedFraction) * 100)}% left</span></button></>
+            {bounded ? <><span class="am-priority-status">Used Up</span><button type="button" class="am-priority-value am-headline" data-toggle-meter><span class="u">{boundedView(row, 'used').amount} used</span><span class="l">{boundedView(row, 'left').amount} left</span></button></>
               : <span class="am-priority-plain">{row.kind === 'text' ? row.values[0] : row.kind === 'forecast' ? `${row.probability}% chance` : ''}</span>}
             {(bounded || row.kind === 'forecast') && (row.resetRelative || row.resetAbsolute) && <button type="button" class="am-priority-note am-reset" data-toggle-reset><span class="abs" data-preview-time={row.resetAbsolute?.replace(/^Resets /, '')}>{row.resetAbsolute?.replace(/^Resets /, '')}</span><span class="rel">{row.resetRelative?.replace(/^(Resets in |Within )/, '')}</span></button>}
           </span>
