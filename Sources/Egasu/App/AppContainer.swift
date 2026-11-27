@@ -350,16 +350,17 @@ final class AppContainer {
     }
 
     var hasRunningBackgroundProcesses: Bool {
-        popover.signingInAgainAccountID != nil || tokscaleSync.isRunning || usageTimer.hasPendingWork
+        popover.hasRunningAccountSignIn || tokscaleSync.isRunning || usageTimer.hasPendingWork
     }
 
-    func shutdownBackgroundProcesses(reSignIn: Task<Void, Never>?) async {
+    func shutdownBackgroundProcesses(signIns: [Task<Void, Never>]) async {
         refreshTask.task?.cancel()
         usageTimerCheckTask.task?.cancel()
         softLimitCoordinator.stop()
         async let timer: Void = usageTimer.shutdown()
         async let tokscale: Void = tokscaleSync.shutdown()
-        _ = await (timer, tokscale, reSignIn?.value)
+        for task in signIns { await task.value }
+        _ = await (timer, tokscale)
     }
 
     /// 메뉴 바·프로바이더 동작의 이름 — 계정 카드 표시 모드와 독립.
