@@ -1,6 +1,6 @@
 {
   "$comment": "egasu 가격 보충 파일. 단위 USD/100만 토큰. pricing·alias_rules는 기존 앱과 호환되는 항목. pricing_v2·alias_rules_v2는 장문·공급 경로별 계산을 지원하는 앱 전용 확장. cursor/ 항목은 Cursor CSV 전용 요율.",
-  "updated_at": "2026-11-25T16:51:41Z",
+  "updated_at": "2026-11-28T04:01:01Z",
   "pricing": {
     "gpt-6.1-sol": {
       "input_per_million": 2,
@@ -865,6 +865,7 @@
     {"pattern": "(?i)^(?:anthropic/)?(?:claude-mythos-5[.-]2|claude-5[.-]2-mythos)(?:\\[1m\\])?(?:-thinking)?(?:-(?:low|medium|high|xhigh|max))?[-.@]fast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "claude-mythos-5-2-fast"},
     {"pattern": "(?i)^(?:anthropic/)?(?:claude-mythos-5[.-]2|claude-5[.-]2-mythos)(?:\\[1m\\])?(?:-thinking)?(?:-(?:low|medium|high|xhigh|max))?(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "claude-mythos-5-2"},
     {"pattern": "(?i)^(?:(?:google|gemini)/)?gemini-4-carbon(?:-(?:low|medium|high))?$", "canonical": "gemini/gemini-4-carbon"},
+    {"pattern": "(?i)^(?:(?:google|gemini)/)?gemini-4-neon(?:-(?:low|medium|high|xhigh))?$", "canonical": "gemini/gemini-4-neon"},
     {"pattern": "(?i)^(?:(?:google|gemini)/)?gemini-4-hydrogen(?:-(?:low|medium|high|xhigh))?$", "canonical": "gemini/gemini-4-hydrogen"},
     {"pattern": "(?i)^(?:anthropic/)?claude-opus-4[-.]6(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "claude-opus-4-6"},
     {"pattern": "(?i)^(?:anthropic/)?claude-opus-4[-.]7(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "claude-opus-4-7"},

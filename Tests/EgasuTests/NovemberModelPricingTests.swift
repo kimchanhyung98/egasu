@@ -10,6 +10,7 @@ final class NovemberModelPricingTests: XCTestCase {
             ("claude-fable-5-2", 8, 10, 0.2, 40),
             ("claude-mythos-5-2", 8, 10, 0.2, 40),
             ("gemini-4-carbon", 4, 4, 0.2, 20),
+            ("gemini-4-neon", 3, 3, 0.15, 15),
             ("gemini-4-hydrogen", 1.5, 1.5, 0.075, 7.5)
         ]
         for (model, input, write, read, output) in cases {
@@ -241,16 +242,18 @@ final class NovemberModelPricingTests: XCTestCase {
         defer { db.remove() }
         try db.model(index: 0, name: "gemini-4-carbon-high")
         try db.model(index: 1, name: "gemini-4-hydrogen-xhigh")
+        try db.model(index: 2, name: "gemini-4-neon-xhigh")
         try db.step(index: 1, date: now, input: 100_000, output: 10_000, cacheRead: 900_000)
         try db.step(index: 2, date: now, input: 100_000, output: 10_000, cacheRead: 900_000, metadataIndex: 1)
+        try db.step(index: 3, date: now, input: 100_000, output: 10_000, cacheRead: 900_000, metadataIndex: 2)
         let scanner = AntigravityUsageScanner(databasePaths: { [db.path] })
 
         let unpriced = try await scanner.scan(now: now, pricing: .empty)
         XCTAssertNil(unpriced?.series.daily.first?.costUSD)
         let priced = try await scanner.scan(now: now, pricing: pricing)
 
-        XCTAssertEqual(priced?.series.daily.first?.totalTokens, 2_020_000)
-        XCTAssertEqual(try XCTUnwrap(priced?.series.daily.first?.costUSD), 1.0725, accuracy: 1e-9)
+        XCTAssertEqual(priced?.series.daily.first?.totalTokens, 3_030_000)
+        XCTAssertEqual(try XCTUnwrap(priced?.series.daily.first?.costUSD), 1.6575, accuracy: 1e-9)
         XCTAssertEqual(priced?.unknownModelsByDay, [:])
     }
 }

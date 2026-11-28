@@ -98,6 +98,16 @@
   연결한 Console 조직의 Claude API·Playground·Managed Agents에 적용하며, Agent SDK는 해당 조직의 API 키를 쓸 때 적용.
   대화형 Claude Code·Claude 앱 초과 사용·타사 클라우드에는 미적용.
   앱의 토큰 정가 추정에서 차감하지 않음. [월 API 크레딧 조건](https://support.claude.com/en/articles/17154008-monthly-api-credits-for-max-ultra-and-team-plans)
+- OpenAI Pro $100·$200·$500 요금제의 별도 API 크레딧은 매월 $100·$200·$500.
+  Business는 Standard 유료 좌석당 $20·Premium 좌석당 $100을 합산하며, 워크스페이스 월 $500 상한.
+  연간 선납 Business는 연간분 일괄 지급·연간 $6,000 상한·연간 주기 말 만료.
+  활성 유료 구독 7일 경과 후 구독자 또는 Business 워크스페이스 오너의 신청 필요.
+  신청자는 API 조직 오너여야 하며, 동일 이메일의 ChatGPT·API 계정 연결 필요.
+  첫 지급은 남은 결제 주기에 비례.
+  미사용분 이월 없음.
+  연결 조직의 API Platform 사용에 적용하며, Codex API 키 사용에는 미적용.
+  ChatGPT·로그인 Codex의 포함 사용량을 늘리지 않음.
+  Costs API는 이 혜택의 잔액·만료를 제공하지 않음. [API 크레딧 조건](https://developers.openai.com/api/docs/guides/chatgpt-api-credits)
 - Cursor·Grok 신규 요금제의 포함 사용량은 주간 공유 풀.
   기존 Cursor·SuperGrok·X Premium 구독은 유지 가능하며, 새 요금제로 자동 치환하지 않음.
   Cursor의 [기존 요금제](https://cursor.com/docs/account/pricing/legacy-cursor-plans)는 기존 월간 풀과 추가 사용량 계약 유지.
@@ -162,9 +172,10 @@ Fable·Mythos 5.2의 Fast는 일반 요율의 2배, 1시간 캐시 쓰기는 일
 GPT-5.6 Sol의 Fast는 일반 정가의 2배이며, 272k 초과 요청에는 장문 단가 적용.
 GPT-5.6 Sol과 Carbon·Argon·Flash 3.6·3.8의 정가는 보충 파일에서 관리.
 Fable·Mythos·Hydrogen은 공식 표와 일치하는 LiteLLM 직영 항목에 별칭으로 연결.
-Carbon·Hydrogen은 `gemini/gemini-4-carbon`·`gemini/gemini-4-hydrogen` 정확 항목 사용.
+Carbon·Neon·Hydrogen은 `gemini/gemini-4-carbon`·`gemini/gemini-4-neon`·`gemini/gemini-4-hydrogen` 정확 항목 사용.
 직접 지정한 Databricks 모델명은 해당 공급 경로의 가격 사용.
 CLI의 Carbon Low·Medium·High와 Hydrogen Low·Medium·High·XHigh는 각각 같은 모델 가격 사용.
+CLI의 Neon 기본 이름과 `low`·`medium`·`high`·`xhigh` 접미사는 `gemini/gemini-4-neon` 가격으로 연결.
 번들 스냅샷은 오프라인 계산을 지원하며, 공개 가격표에서 사라진 모델도 사용 기록 계산용으로 보존.
 정가 변경은 가격표 갱신으로 반영.
 
