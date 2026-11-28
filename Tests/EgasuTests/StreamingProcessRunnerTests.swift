@@ -362,6 +362,7 @@ final class StreamingProcessRunnerTests: XCTestCase {
 
         XCTAssertTrue(log.contains("[subprocess] launch echo (1 args)"), log)
         XCTAssertTrue(log.contains("[subprocess] exit 0"), log)
+        XCTAssertFalse(log.contains("Failed to terminate command process group"), log)
         XCTAssertFalse(log.contains(argumentCanary), log)
         XCTAssertFalse(log.contains(environmentCanary), log)
     }
