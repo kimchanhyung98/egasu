@@ -13,6 +13,7 @@ enum DashboardCommand: Equatable {
     case rename(String)
     /// 새 터미널 세션이 사용할 Claude·Codex 계정 전환 — 프로필 ID 기준.
     case switchAccount(String)
+    case signInAgain(String)
 }
 
 struct DashboardMenuItem: Equatable {
@@ -55,18 +56,27 @@ enum DashboardMenus {
         return pinnable ? [pin, hide] : [hide]
     }
 
-    /// 현재 사용 중이 아닌 등록 계정에만 `switchTitle` 제공.
-    /// `canRename`은 이름이 있는 Claude·Codex 등록 계정만.
+    static func profileAction(
+        for profile: AccountProfile, status: AccountStatus, isSelected: Bool,
+        displayName: String, isBusy: Bool, hasPendingRecovery: Bool = false
+    ) -> DashboardMenuItem? {
+        if profile.family == "codex", !status.canSwitch, !hasPendingRecovery {
+            return DashboardMenuItem(
+                title: L10n.accounts("Sign In Again…"), command: .signInAgain(profile.id), isDisabled: isBusy)
+        }
+        guard !isSelected || hasPendingRecovery else { return nil }
+        return DashboardMenuItem(
+            title: L10n.dashboard("Use %@: %@", profile.family.capitalized, displayName),
+            command: .switchAccount(profile.id), isDisabled: isBusy)
+    }
+
     static func account(
-        _ account: DashboardAccount, status: String?,
-        switchTitle: (title: String, profileID: String, isDisabled: Bool)? = nil,
+        _ account: DashboardAccount, staleness: StalenessHint? = nil, profileAction: DashboardMenuItem? = nil,
         canRename: Bool = false, renameDisabled: Bool = false, refreshDisabled: Bool = false
     ) -> Sections {
         [
-            status.map { [DashboardMenuItem(title: $0)] } ?? [],
-            switchTitle.map {
-                [DashboardMenuItem(title: $0.title, command: .switchAccount($0.profileID), isDisabled: $0.isDisabled)]
-            } ?? [],
+            staleness.map { [DashboardMenuItem(title: $0.tooltip)] } ?? [],
+            profileAction.map { [$0] } ?? [],
             [
                 DashboardMenuItem(
                     title: L10n.dashboard("Refresh"), command: .refresh([account.id]), isDisabled: refreshDisabled)

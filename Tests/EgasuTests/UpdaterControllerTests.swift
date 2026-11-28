@@ -11,9 +11,12 @@ final class UpdaterLabsTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let updater = UpdaterController(defaults: defaults)
         let settings = SoftLimitSettingsStore(defaults: defaults, labsAvailable: updater.betaChannelEnabled)
+        let recommendations = AccountRecommendationSettingsStore(
+            defaults: defaults, labsAvailable: updater.betaChannelEnabled)
         let revoked = expectation(description: "External beta change revokes consent")
         updater.onBetaChannelChange = { available in
             settings.setLabsAvailable(available)
+            recommendations.setLabsAvailable(available)
             if !available { revoked.fulfill() }
         }
 
@@ -21,18 +24,25 @@ final class UpdaterLabsTests: XCTestCase {
         XCTAssertTrue(defaults.bool(forKey: UpdaterController.betaChannelDefaultsKey))
         settings.enabled = true
         XCTAssertTrue(settings.isActive)
+        recommendations.enabled = true
+        XCTAssertTrue(recommendations.isActive)
         defaults.set(false, forKey: UpdaterController.betaChannelDefaultsKey)
         await fulfillment(of: [revoked], timeout: 2)
         XCTAssertFalse(updater.betaChannelEnabled)
         XCTAssertFalse(settings.enabled)
+        XCTAssertFalse(recommendations.enabled)
         updater.betaChannelEnabled = true
         XCTAssertFalse(settings.isActive)
         settings.enabled = true
-        updater.onBetaChannelChange = settings.setLabsAvailable
+        updater.onBetaChannelChange = { available in
+            settings.setLabsAvailable(available)
+            recommendations.setLabsAvailable(available)
+        }
         defaults.set(false, forKey: UpdaterController.betaChannelDefaultsKey)
         defaults.set(true, forKey: UpdaterController.betaChannelDefaultsKey)
         XCTAssertTrue(updater.betaChannelEnabled)
         XCTAssertFalse(settings.isActive)
+        XCTAssertFalse(recommendations.isActive)
     }
 }
 
@@ -112,6 +122,8 @@ final class UpdaterChannelDelegateTests: XCTestCase {
             XCTAssertEqual((error as NSError).code, Int(SUError.installationCanceledError.rawValue))
         }
         XCTAssertNoThrow(try delegate.updater(current, mayPerform: .updatesInBackground))
+        XCTAssertNoThrow(try delegate.updater(current, mayPerform: .updates))
+        XCTAssertNoThrow(try delegate.updater(current, mayPerform: .updateInformation))
         delegate.updater(old, didFinishUpdateCycleFor: .updatesInBackground, error: nil)
         XCTAssertEqual(finishedCount, 0)
         delegate.updater(current, didFinishUpdateCycleFor: .updatesInBackground, error: nil)

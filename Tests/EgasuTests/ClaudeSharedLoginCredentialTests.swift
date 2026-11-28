@@ -61,7 +61,7 @@ final class ClaudeSharedLoginCredentialTests: XCTestCase {
 
     @MainActor
     func testWrapperUsesItsProjectHistoryWhenAnotherConfigDirectoryIsExported() async throws {
-        let now = Date()
+        let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
         let stamp = EgasuISO8601.string(from: now)
         let userHome = try ClaudeLogFixture.makeUserHome(claudeFiles: [
             "wrapper.jsonl": ClaudeLogFixture.usageLine(timestamp: stamp, input: 15, costUSD: 0.25)
@@ -162,6 +162,45 @@ final class ClaudeSharedLoginCredentialTests: XCTestCase {
         XCTAssertTrue(denied.credentialError is KeychainError)
         XCTAssertTrue(denied.candidates.isEmpty)
     }
+
+    func testSharedLoginStaysReadableAfterClaudeCodeRewritesTheKeychainItem() {
+        let files = FakeFiles([home.appendingPathComponent(".claude.json").path: claudeUsageTestIdentity("active")])
+        let service = ClaudeAuthStore.baseKeychainServiceName(environment: environment)
+        let keychain = AppAccessRevokedKeychain(currentUserValues: [service: latest])
+        let auth = ClaudeAuthStore(environment: environment, files: files, keychain: keychain, pinsSharedHome: true)
+
+        for allowInteraction in [false, true] {
+            let load = auth.loadCredentialSet(allowAccountInteraction: allowInteraction)
+            XCTAssertNil(load.credentialError)
+            XCTAssertEqual(load.candidates.map(\.source), [.keychainCurrentUser(service: service)])
+            XCTAssertEqual(load.candidates.first?.oauth.accessToken, "current-cli")
+        }
+        XCTAssertEqual(keychain.appReads, 0, "CLI가 쓴 공유 항목은 앱 프로세스 승인 없이 조회")
+    }
+}
+
+/// `security add-generic-password -U` 이후처럼 앱 프로세스의 Keychain 접근만 거부되는 상태.
+private final class AppAccessRevokedKeychain: KeychainAccessing, @unchecked Sendable {
+    private let currentUserValues: [String: String]
+    private(set) var appReads = 0
+
+    init(currentUserValues: [String: String]) {
+        self.currentUserValues = currentUserValues
+    }
+
+    func readAppOwnedPassword(service: String, forCurrentUser: Bool, allowInteraction: Bool) throws -> String? {
+        appReads += 1
+        throw KeychainError.readFailed("Couldn't read the saved account from Keychain (status -25293).")
+    }
+
+    func readGenericPassword(service: String, allowInteraction: Bool) throws -> String? {
+        try readAppOwnedPassword(service: service, forCurrentUser: false, allowInteraction: allowInteraction)
+    }
+
+    func readGenericPasswordForCurrentUser(service: String) throws -> String? { currentUserValues[service] }
+    func readGenericPassword(service: String) throws -> String? { nil }
+    func writeGenericPassword(service: String, value: String) throws { XCTFail("unexpected write") }
+    func deleteGenericPassword(service: String) throws { XCTFail("unexpected delete") }
 }
 
 private struct DeniedClaudeSharedKeychain: KeychainAccessing {

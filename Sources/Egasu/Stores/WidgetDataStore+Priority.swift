@@ -8,7 +8,10 @@ extension WidgetDataStore {
 
     /// Priority 보드 — 대시보드와 메뉴 막대가 같은 입력·규칙을 공유.
     /// `hidingEmails`는 공유 이미지용: 계정 공지에 계정 정보가 섞일 수 있어 상태 문구로 대체.
-    func priorityBoard(accounts: [DashboardAccount], pinned: Set<String>, now: Date, hidingEmails: Bool = false)
+    func priorityBoard(
+        accounts: [DashboardAccount], pinned: Set<String>, now: Date, hidingEmails: Bool = false,
+        awaitingIdentity: Set<String> = []
+    )
         -> PriorityBoard
     {
         PriorityBoard.make(
@@ -22,6 +25,7 @@ extension WidgetDataStore {
             if let message = self.headerNotice(for: account.id) {
                 return .unavailable(hidingEmails ? L10n.dashboard("Current usage unavailable.") : message)
             }
+            if awaitingIdentity.contains(account.id) { return .waiting }
             return self.snapshots[account.id] == nil ? .waiting : .current
         }
     }

@@ -56,6 +56,7 @@ final class PopoverState {
             guard screen != oldValue else { return }
             // onChange는 한 프레임 늦으므로 전환 이전 화면을 동기 기록하여 다음 렌더링부터 이동 효과 적용.
             screenSlideFrom = oldValue
+            departingAccountDetailID = oldValue == .accounts ? accountDetailID : nil
             screenSlideID += 1
             if screen != .accounts {
                 accountDetailID = nil
@@ -65,11 +66,25 @@ final class PopoverState {
     }
     private(set) var screenSlideFrom = PopoverScreen.dashboard
     private(set) var screenSlideID = 0
+    private var departingAccountDetailID: String?
+
+    /// 화면을 떠나는 동안에도 헤더·본문·푸터가 같은 계정 페이지를 그리도록 유지.
+    func displayedAccountDetail(on page: PopoverScreen) -> String? {
+        guard page == .accounts else { return nil }
+        return screen == .accounts ? accountDetailID : departingAccountDetailID
+    }
+
     /// Accounts 화면에서 상세를 연 계정(카드 ID) — nil이면 목록.
     var accountDetailID: String?
     var isAddingAccount = false
     /// 브라우저 재로그인이 진행 중인 등록 계정 — 취소 처리가 끝날 때까지 외부 클릭으로 닫지 않음.
-    var signingInAgainAccountID: String?
+    private(set) var signingInAgainAccountID: String?
+    /// 취소된 계정 추가의 정리가 끝날 때까지 새 추가 로그인 차단.
+    private(set) var isSigningInForNewAccount = false
+    private var isTerminating = false
+    @ObservationIgnored private var reSignInTask: Task<Void, Never>?
+    @ObservationIgnored private var addAccountTask: Task<Void, Never>?
+    var hasRunningAccountSignIn: Bool { reSignInTask != nil || addAccountTask != nil }
     private let displaySettings: DisplaySettingsStore
     private var selectedDashboardTab: DashboardTab
     var showsDashboardTabs: Bool { displaySettings.hasVisiblePriorityConditions }
@@ -82,7 +97,52 @@ final class PopoverState {
     var settingsTab = SettingsTab.general
     /// 패널 표시 여부 — makeKeyAndOrderFront·orderOut과 동기 변경.
     /// 창 가림·키 창 상태로 추정하지 않음 — Space 전환 중 잠깐 가려지는 상태와 닫힘 구분.
-    var popoverShown = false
+    var popoverShown = false {
+        didSet {
+            if !popoverShown {
+                reSignInTask?.cancel()
+                if let addAccountTask {
+                    isAddingAccount = false
+                    addAccountTask.cancel()
+                }
+            }
+        }
+    }
+
+    func startReSignIn(for profileID: String, operation: @escaping @MainActor () async -> Void) -> Task<Void, Never>? {
+        guard !isTerminating, popoverShown, reSignInTask == nil else { return nil }
+        signingInAgainAccountID = profileID
+        let task = Task {
+            defer {
+                signingInAgainAccountID = nil
+                reSignInTask = nil
+            }
+            if !Task.isCancelled { await operation() }
+        }
+        reSignInTask = task
+        return task
+    }
+
+    func startAddingAccount(operation: @escaping @MainActor () async -> Void) -> Task<Void, Never>? {
+        guard !isTerminating, popoverShown, addAccountTask == nil else { return nil }
+        isSigningInForNewAccount = true
+        let task = Task {
+            defer {
+                isSigningInForNewAccount = false
+                addAccountTask = nil
+            }
+            if !Task.isCancelled { await operation() }
+        }
+        addAccountTask = task
+        return task
+    }
+
+    func beginSignInShutdown() -> [Task<Void, Never>] {
+        isTerminating = true
+        let tasks = [reSignInTask, addAccountTask].compactMap { $0 }
+        for task in tasks { task.cancel() }
+        return tasks
+    }
 
     let shareNotice = TransientNotice<Bool>(clearedValue: false, timeout: .seconds(2.5))
 
@@ -102,7 +162,7 @@ final class PopoverState {
     @discardableResult
     func back() -> Bool {
         if accountDetailID != nil {
-            withAnimation(Motion.navigation) { accountDetailID = nil }
+            accountDetailID = nil
             return true
         }
         guard screen != .dashboard else { return false }
@@ -114,10 +174,14 @@ final class PopoverState {
         withAnimation(Motion.modeSwitch) { screen = screen == target ? .dashboard : target }
     }
 
+    func isShowingSlide(_ slide: Int) -> Bool {
+        popoverShown && screenSlideID == slide
+    }
+
     func openAccounts(_ accountID: String?) {
-        withAnimation(Motion.modeSwitch) {
-            accountDetailID = accountID
-            screen = .accounts
+        accountDetailID = accountID
+        if screen != .accounts {
+            withAnimation(Motion.modeSwitch) { screen = .accounts }
         }
     }
 

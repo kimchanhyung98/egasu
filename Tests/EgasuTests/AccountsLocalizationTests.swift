@@ -2,6 +2,20 @@ import XCTest
 @testable import Egasu
 
 final class AccountsLocalizationTests: XCTestCase {
+    func testNumberedAccountNamesUseConsistentSpacingInEveryLanguage() {
+        let expected: [LanguageSetting: [String]] = [
+            .english: ["Account 2", "Work · Account 2"],
+            .korean: ["계정 2", "Work · 계정 2"],
+            .japanese: ["アカウント2", "Work · アカウント2"]
+        ]
+        for language in LanguageSetting.allCases {
+            let labels = L10n.withLanguage(language) {
+                [L10n.accounts("Account %lld", 2), L10n.accounts("%@ · Account %lld", "Work", 2)]
+            }
+            XCTAssertEqual(labels, expected[language])
+        }
+    }
+
     func testMetricReorderAnnouncementNamesTheMetricAndPreservesPositionInEveryLanguage() {
         let expected: [LanguageSetting: String] = [
             .english: "Moved metric Session to position 2 of 3.",

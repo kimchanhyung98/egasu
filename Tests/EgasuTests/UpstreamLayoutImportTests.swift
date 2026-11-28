@@ -231,6 +231,81 @@ final class UpstreamLayoutImportTests: XCTestCase {
         XCTAssertNil(fixture.defaults.object(forKey: "\(layoutKey).disabledMetrics"))
     }
 
+    func testRecoveredSourceImportsAfterTemporaryDefaultsWithoutAutomaticTargetWrites() throws {
+        let fixture = makeDefaults()
+        fixture.defaults.setPersistentDomain(["openusage.layout.v2": Data("bad".utf8)], forName: fixture.source)
+        XCTAssertFalse(importLayout(fixture))
+
+        let temporary = LayoutStore(registry: .mock, defaults: fixture.defaults)
+        _ = temporary.migrateMenuBarStars()
+        temporary.setMetricEnabled("claude.session", true)
+        XCTAssertTrue(temporary.isMetricEnabled("claude.session"))
+        XCTAssertFalse(
+            (fixture.defaults.persistentDomain(forName: fixture.target) ?? [:]).keys.contains {
+                $0.hasPrefix("openusage.layout.")
+            })
+
+        fixture.defaults.setPersistentDomain(
+            ["openusage.layout.v2": try v2Data(hidden: ["claude.weekly"])], forName: fixture.source)
+        XCTAssertTrue(importLayout(fixture))
+        let recovered = LayoutStore(registry: .mock, defaults: fixture.defaults)
+        XCTAssertFalse(recovered.isMetricEnabled("claude.weekly"))
+        XCTAssertFalse(importLayout(fixture))
+    }
+
+    func testUserVisibilityEditBeforeImportRecoveryKeepsLocalChoice() throws {
+        let fixture = makeDefaults()
+        fixture.defaults.setPersistentDomain(["openusage.layout.v2": Data("bad".utf8)], forName: fixture.source)
+        XCTAssertFalse(importLayout(fixture))
+        let temporary = LayoutStore(registry: .mock, defaults: fixture.defaults)
+        temporary.setMetricEnabled("claude.extra", false)
+        fixture.defaults.setPersistentDomain(
+            ["openusage.layout.v2": try v2Data(hidden: ["claude.weekly"])], forName: fixture.source)
+
+        XCTAssertFalse(importLayout(fixture))
+        let reloaded = LayoutStore(registry: .mock, defaults: fixture.defaults)
+        XCTAssertTrue(reloaded.isMetricEnabled("claude.weekly"))
+        XCTAssertFalse(reloaded.isMetricEnabled("claude.extra"))
+    }
+
+    func testUserPriorityEditOrResetBeforeRecoveryKeepsLocalChoice() throws {
+        for reset in [false, true] {
+            let fixture = makeDefaults()
+            fixture.defaults.setPersistentDomain(["openusage.layout.v2": Data("bad".utf8)], forName: fixture.source)
+            XCTAssertFalse(importLayout(fixture))
+            let temporary = LayoutStore(registry: .mock, defaults: fixture.defaults)
+            if reset {
+                temporary.resetToDefault()
+            } else {
+                temporary.setMetric("claude.session", pinned: true)
+            }
+            fixture.defaults.setPersistentDomain(
+                [
+                    "openusage.layout.v2": try v2Data(hidden: ["claude.weekly"], pins: ["claude.weekly"])
+                ], forName: fixture.source)
+
+            XCTAssertFalse(importLayout(fixture))
+            let reloaded = LayoutStore(registry: .mock, defaults: fixture.defaults)
+            XCTAssertTrue(reloaded.isMetricEnabled("claude.weekly"))
+            XCTAssertEqual(reloaded.isMetricPinned("claude.session"), !reset)
+            XCTAssertFalse(reloaded.isMetricPinned("claude.weekly"))
+        }
+    }
+
+    func testExistingLocalLayoutClearsPendingImportWithoutOverwritingLocalChoice() throws {
+        let fixture = makeDefaults()
+        fixture.defaults.set(true, forKey: SettingsMigrator.upstreamLayoutImportPendingKey)
+        fixture.defaults.set(["claude.extra"], forKey: "\(layoutKey).disabledMetrics")
+        fixture.defaults.setPersistentDomain(
+            ["openusage.layout.v2": try v2Data(hidden: ["claude.weekly"])], forName: fixture.source)
+
+        XCTAssertFalse(importLayout(fixture))
+        XCTAssertNil(fixture.defaults.object(forKey: SettingsMigrator.upstreamLayoutImportPendingKey))
+        let store = LayoutStore(registry: .mock, defaults: fixture.defaults)
+        XCTAssertFalse(store.isMetricEnabled("claude.extra"))
+        XCTAssertTrue(store.isMetricEnabled("claude.weekly"))
+    }
+
     private func storedPriorityPins(_ fixture: Fixture) -> Set<String> {
         Set(fixture.defaults.stringArray(forKey: "\(layoutKey).priorityPins") ?? [])
     }

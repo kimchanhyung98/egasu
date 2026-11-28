@@ -337,7 +337,7 @@ final class ClaudeProvider: ProviderRuntime {
         }
 
         MetricLine.appendNoDataIfNeeded(&mapped.lines)
-        return ProviderSnapshot.make(
+        var snapshot = ProviderSnapshot.make(
             provider: provider,
             plan: mapped.plan,
             lines: mapped.lines,
@@ -353,6 +353,8 @@ final class ClaudeProvider: ProviderRuntime {
             quotaObservedAt: mapped.quotaObservedAt,
             usageRetryAfter: mapped.retryAfter
         )
+        snapshot.legacyClaudeSwitchIdentity = mapped.legacySwitchIdentity
+        return snapshot
     }
 
 }

@@ -187,16 +187,22 @@ final class SettingsTabsTests: XCTestCase {
             dataStore: dataStore, defaults: defaults, fileStore: ICloudUsageHistoryFileStore(containerURL: { nil }),
             deviceIDStore: SettingsTestDeviceID(), observesMetadataChanges: false
         )
-        var systemEnabled = false
+        var systemEnabled = true
         var requestedValues: [Bool] = []
+        var statusReads = 0
         let operations = SettingsOperations()
         operations.launchAtLogin = LaunchAtLoginSetting(
-            currentStatus: { systemEnabled },
+            currentStatus: {
+                statusReads += 1
+                return systemEnabled
+            },
             setEnabled: { enabled in
                 requestedValues.append(enabled)
                 throw CocoaError(.userCancelled)
             }
         )
+
+        XCTAssertEqual(statusReads, 0)
 
         var appearances = 0
         var departures = 0
@@ -213,6 +219,8 @@ final class SettingsTabsTests: XCTestCase {
             .background(Color.white)
             .environment(popover)
             .environment(iCloudSync)
+            .environment(dataStore)
+            .environment(UsageTimerSetting(defaults: defaults))
             .environment(UpdaterController())
             .environment(\.colorScheme, .light)
             .defaultAppStorage(defaults)
@@ -231,29 +239,50 @@ final class SettingsTabsTests: XCTestCase {
         defer { window.close() }
 
         try await waitForSettingsLayout(in: host) { appearances == 1 }
-        operations.launchAtLogin.update(to: true)
+        XCTAssertEqual(statusReads, 1)
+        XCTAssertTrue(operations.launchAtLogin.isEnabled)
+        operations.launchAtLogin.update(to: false)
+        XCTAssertEqual(statusReads, 2)
         let failed = try await renderedSettingsText(in: host)
         XCTAssertTrue(failed.contains("wouldntupdatelaunchatlogin"), failed)
-        XCTAssertEqual(requestedValues, [true])
-        XCTAssertFalse(operations.launchAtLogin.isEnabled)
+        XCTAssertEqual(requestedValues, [false])
+        XCTAssertTrue(operations.launchAtLogin.isEnabled)
 
         XCTAssertTrue(popover.back())
         try await waitForSettingsLayout(in: host) { departures == 1 }
+        popover.dashboardTab = .allUsage
+        host.layoutSubtreeIfNeeded()
+        popover.dashboardTab = .priority
+        host.layoutSubtreeIfNeeded()
+        XCTAssertEqual(statusReads, 2)
         popover.toggle(.settings)
         try await waitForSettingsLayout(in: host) { appearances == 2 }
+        XCTAssertEqual(statusReads, 3)
         let returned = try await renderedSettingsText(in: host)
         XCTAssertTrue(returned.contains("wouldntupdatelaunchatlogin"), "Settings lost the login warning: \(returned)")
-        XCTAssertFalse(operations.launchAtLogin.isEnabled)
+        XCTAssertTrue(operations.launchAtLogin.isEnabled)
 
         XCTAssertTrue(popover.back())
         try await waitForSettingsLayout(in: host) { departures == 2 }
-        systemEnabled = true
+        systemEnabled = false
         popover.toggle(.settings)
-        try await waitForSettingsLayout(in: host) { appearances == 3 && operations.launchAtLogin.isEnabled }
+        try await waitForSettingsLayout(in: host) { appearances == 3 && !operations.launchAtLogin.isEnabled }
+        XCTAssertEqual(statusReads, 4)
         let resolved = try await renderedSettingsText(in: host)
         XCTAssertTrue(resolved.contains("launchatlogin"), resolved)
+        XCTAssertTrue(resolved.contains("autostartsubscriptiontimers"), resolved)
         XCTAssertFalse(resolved.contains("wouldntupdatelaunchatlogin"), resolved)
-        XCTAssertEqual(requestedValues, [true])
+        XCTAssertEqual(requestedValues, [false])
+
+        popover.settingsTab = .display
+        let display = try await renderedSettingsText(in: host)
+        XCTAssertTrue(display.contains("iconstyle"), display)
+        XCTAssertEqual(statusReads, 4)
+        systemEnabled = true
+        popover.settingsTab = .general
+        try await waitForSettingsLayout(in: host) { operations.launchAtLogin.isEnabled }
+        XCTAssertEqual(statusReads, 5)
+        XCTAssertEqual(requestedValues, [false])
     }
 
     private func waitForSettingsLayout(in host: NSView, condition: () -> Bool) async throws {

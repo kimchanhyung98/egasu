@@ -72,13 +72,10 @@ final class ProviderLinksTests: XCTestCase {
     @MainActor
     func testInstalledProvidersRespectQuickLinkCap() {
         let allowed = Set(["Status", "Dashboard", "API Keys", "Usage", "Activity", "Credits"])
-        let providers: [ProviderRuntime] = [
-            ClaudeProvider(), CodexProvider(), CursorProvider(),
-            AntigravityProvider(), CopilotProvider(), DevinProvider(),
-            GrokProvider(), KimiProvider(), KiroProvider(), OpenCodeProvider(),
-            OpenRouterProvider(), ZAIProvider()
-        ]
-        for runtime in providers {
+        let suite = "ProviderLinksTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        for runtime in ProviderCatalog.make(defaults: defaults) {
             let links = runtime.provider.visibleLinks
             XCTAssertLessThanOrEqual(
                 links.count, 2,

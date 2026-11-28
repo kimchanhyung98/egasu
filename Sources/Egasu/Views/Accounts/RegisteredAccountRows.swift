@@ -43,7 +43,9 @@ struct RegisteredAccountRows: View {
                     .cardSurface()
                     // 확인창은 뷰마다 하나 — 복구 전환은 이 행에 붙임.
                     .accountSwitchConfirmation(
-                        selection: $recoverySelection, error: $actionError, allowsRecoveryRetry: true)
+                        selection: $recoverySelection,
+                        onError: { actionError = $0?.text(concealsAccountNames: false).message },
+                        allowsRecoveryRetry: true)
             }
             VStack(spacing: 0) {
                 HStack(spacing: 8) {
@@ -85,7 +87,9 @@ struct RegisteredAccountRows: View {
                     }
             }
             .cardSurface()
-            .accountSwitchConfirmation(selection: $pendingSelection, error: $actionError, localStates: localStates)
+            .accountSwitchConfirmation(
+                selection: $pendingSelection, onError: { actionError = $0?.text(concealsAccountNames: false).message },
+                localStates: localStates)
             if let message = actionError ?? status.message {
                 Text(message)
                     .font(.caption)
@@ -99,6 +103,7 @@ struct RegisteredAccountRows: View {
         .onChange(of: container.accountSwitch.isSwitching) { _, isSwitching in
             if !isSwitching { refreshSwitchRecovery() }
         }
+        .onChange(of: container.dataStore.refreshResults) { _, _ in refreshSwitchRecovery() }
         .onChange(of: container.dataStore.refreshingProviderIDs) { previous, current in
             if Self.needsSignInRecheck(
                 state: signInState, finishedCardIDs: previous.subtracting(current), profileID: profile.id,
@@ -181,95 +186,21 @@ struct RegisteredAccountRows: View {
     }
 
     private func refreshSwitchRecovery() {
-        guard profile.family == "claude" else { return }
         do {
-            hasPendingSwitch = try AccountSelectionSwitcher().hasPendingSwitch()
+            hasPendingSwitch = try AccountSelectionSwitcher().hasPendingSwitch(for: profile, in: store)
         } catch {
             AppDiagnostics.failure(.accountSwitch, error: error, providerID: profile.family)
             actionError = UserFacingErrors.message(error)
         }
     }
 
-    private func catalogDidChange() {
-        container.refreshAccountCatalog()
-        probeRefreshID &+= 1
-    }
-
-    /// 공식 재로그인 결과로 이 계정의 인증 교체 — Codex는 시도별 독립 작업 공간, 선택된 계정이면 공유 홈도 갱신.
     private func signInAgain() {
         guard !isBusy else { return }
-        popover.signingInAgainAccountID = profile.id
         actionError = nil
-        signInTask = Task {
-            defer {
-                popover.signingInAgainAccountID = nil
-                refreshSwitchRecovery()
-            }
-            do {
-                if profile.family == "claude",
-                    try await AccountSelectionSwitcher().recoverInterruptedSwitchAfterStartup(in: store)
-                {
-                    catalogDidChange()
-                }
-                try Task.checkCancellation()
-                let workspace = AccountSignInWorkspace()
-                let signIn = try workspace.prepareReauthentication(family: profile.family, profileID: profile.id)
-                var saved = false
-                defer {
-                    let cleanupError = Self.finishSignInAttempt(family: profile.family, saved: saved) {
-                        if let attemptID = signIn.attemptID {
-                            try workspace.remove(family: profile.family, profileID: profile.id, attemptID: attemptID)
-                        }
-                    }
-                    if let cleanupError {
-                        actionError = [actionError, cleanupError].compactMap { $0 }.joined(separator: "\n")
-                    }
-                }
-                AppLog.info(.auth, "account re-sign-in started \(profile.family)")
-                let code = try await AccountSignInLauncher().runLogin(
-                    family: profile.family, home: signIn.directory.path)
-                try Task.checkCancellation()
-                guard code == 0 else {
-                    actionError = L10n.accounts(
-                        "The %@ sign-in did not complete. The saved account is unchanged.", familyTitle)
-                    AppDiagnostics.record(
-                        .accountSignIn, result: .failure, category: .subprocess, providerID: profile.family,
-                        localContext: "Sign-in process exited with status \(code); saved account unchanged")
-                    return
-                }
-                try AccountCredentialImporter().completeReSignIn(
-                    profileID: profile.id,
-                    in: store,
-                    isActive: isSelected,
-                    signInAttemptID: signIn.attemptID
-                )
-                saved = true
-                catalogDidChange()
-            } catch is CancellationError {
-                AppDiagnostics.record(.accountSignIn, result: .cancelled, providerID: profile.family)
-            } catch {
-                AppDiagnostics.failure(.accountSignIn, error: error, providerID: profile.family)
-                actionError = [UserFacingErrors.message(error), actionError].compactMap { $0 }.joined(separator: "\n")
-            }
-        }
-    }
-
-    /// 재로그인 결과는 시도 폴더 정리 후 확정. 이미 실패한 로그인의 정리 오류는 복구 작업으로 기록.
-    static func finishSignInAttempt(family: String, saved: Bool, cleanup: () throws -> Void) -> String? {
-        do {
-            try cleanup()
-            if saved { AppDiagnostics.record(.accountSignIn, result: .success, providerID: family) }
-            return nil
-        } catch {
-            if saved {
-                AppDiagnostics.record(
-                    .accountSignIn, result: .degraded, providerID: family, error: error,
-                    localContext: "remove saved sign-in attempt workspace")
-                return L10n.accounts("Sign-in saved. egasu couldn't remove the temporary sign-in folder.")
-            }
-            AppDiagnostics.failure(
-                .accountRollback, error: error, providerID: family, localContext: "remove sign-in attempt workspace")
-            return UserFacingErrors.message(error)
+        signInTask = container.startReSignIn(for: profile) { issues in
+            actionError = issues.map { $0.message() }.joined(separator: "\n").nilIfEmpty
+            probeRefreshID &+= 1
+            refreshSwitchRecovery()
         }
     }
 

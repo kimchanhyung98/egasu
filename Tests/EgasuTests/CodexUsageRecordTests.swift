@@ -419,6 +419,22 @@ final class CodexUsageRecordTests: XCTestCase {
         }
     }
 
+    func testFutureRecordStillSuppressesItsEarlierDatedLegacyCopy() async throws {
+        let now = try XCTUnwrap(EgasuISO8601.date(from: timestamp))
+        let context = context()
+        let legacy = count(input: 500, totalInput: 500)
+        let full = [context, record(response: "future", input: 500, at: "2026-11-02T01:00:01Z"), legacy]
+            .joined(separator: "\n")
+        for files in [["sessions/full.jsonl": full],
+                      ["sessions/full.jsonl": full, "sessions/short.jsonl": [context, legacy].joined(separator: "\n")]] {
+            let home = try CodexLogFixture.makeHome(files: files)
+            defer { try? FileManager.default.removeItem(at: home) }
+            let result = await CodexLogFixture.scanner(home: home).scan(now: now, pricing: TestPricing.bundled)
+            let scan = try XCTUnwrap(result)
+            XCTAssertEqual(scan.series.daily.reduce(0) { $0 + $1.totalTokens }, 0)
+        }
+    }
+
     func testRejectedRecordCannotHideAValidLegacyCopy() throws {
         let legacy = try XCTUnwrap(parse([context(), count(input: 500, totalInput: 500)]).first)
         for invalidMetadata in [false, true] {

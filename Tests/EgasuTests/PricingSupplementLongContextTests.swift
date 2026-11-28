@@ -42,12 +42,76 @@ final class PricingSupplementLongContextTests: XCTestCase {
         let pricing = try makePricing(longContextJSON: nil)
         let rates = try XCTUnwrap(pricing.resolve(model: "tiered-model"))
 
-        XCTAssertEqual(rates.longContextThresholdTokens, 200_000)
+        XCTAssertNil(rates.longContextThresholdTokens)
         XCTAssertNil(rates.inputAbove200kPerMillion)
         XCTAssertNil(rates.outputAbove200kPerMillion)
         XCTAssertNil(rates.cacheWriteAbove200kPerMillion)
         XCTAssertNil(rates.cacheReadAbove200kPerMillion)
         XCTAssertEqual(rates.costDollars(for: .init(input: 300_000, output: 1_000)), 0.0305, accuracy: 1e-12)
+    }
+
+    func testCodexUsesExplicitLongContextThresholdOrItsDefault() throws {
+        let cases: [(explicitThreshold: Int?, threshold: Int, at: Double, above: Double)] = [
+            (200_000, 200_000, 0.375, 0.745004),
+            (500_000, 500_000, 0.975, 1.945004),
+            (nil, 272_000, 0.519, 1.033004)
+        ]
+
+        for testCase in cases {
+            let pricing = try makeCodexPricing(standardThreshold: testCase.explicitThreshold)
+            let model = "gpt-6.2-sol"
+            let message = "long_context threshold: \(String(describing: testCase.explicitThreshold))"
+            let rates = try XCTUnwrap(pricing.resolve(model: model), message)
+            XCTAssertEqual(rates.longContextThresholdTokens, testCase.explicitThreshold, message)
+
+            var tokens = TokenBreakdown(
+                input: testCase.threshold - 50_000, cacheWrite5m: 25_000, cacheRead: 25_000, output: 1_000)
+            let at = try XCTUnwrap(CodexUsagePricing.estimate(model: model, tokens: tokens, pricing: pricing))
+            XCTAssertEqual(at, testCase.at, accuracy: 1e-12, message)
+
+            tokens.input += 1
+            let above = try XCTUnwrap(CodexUsagePricing.estimate(model: model, tokens: tokens, pricing: pricing))
+            XCTAssertEqual(above, testCase.above, accuracy: 1e-12, message)
+        }
+    }
+
+    func testCodexFastAndUltrafastHonorTheirLongContextThresholds() throws {
+        let pricing = try makeCodexPricing(standardThreshold: 200_000)
+        let cases: [(model: String, isUltrafast: Bool, threshold: Int, at: Double, above: Double)] = [
+            ("gpt-6.2-sol", false, 200_000, 0.75, 1.490008),
+            ("gpt-6.2-sol-fast", false, 200_000, 0.75, 1.490008),
+            ("gpt-6.2-sol", true, 500_000, 5.85, 11.670024),
+            ("gpt-6.2-sol-ultrafast", false, 500_000, 5.85, 11.670024)
+        ]
+
+        for testCase in cases {
+            var tokens = TokenBreakdown(
+                input: testCase.threshold - 50_000, cacheWrite5m: 25_000, cacheRead: 25_000,
+                output: 1_000, isFast: true)
+            let at = try XCTUnwrap(
+                CodexUsagePricing.estimate(
+                    model: testCase.model, tokens: tokens, pricing: pricing, isUltrafast: testCase.isUltrafast))
+            XCTAssertEqual(at, testCase.at, accuracy: 1e-12, testCase.model)
+
+            tokens.input += 1
+            let above = try XCTUnwrap(
+                CodexUsagePricing.estimate(
+                    model: testCase.model, tokens: tokens, pricing: pricing, isUltrafast: testCase.isUltrafast))
+            XCTAssertEqual(above, testCase.above, accuracy: 1e-12, testCase.model)
+        }
+    }
+
+    func testCodexAggregateUsesBaseRatesAboveExplicitLongContextThreshold() throws {
+        let pricing = try makeCodexPricing(standardThreshold: 200_000)
+        let tokens = TokenBreakdown(input: 300_000, cacheWrite5m: 25_000, cacheRead: 25_000, output: 1_000)
+        let record = UsageRecord(
+            sourceID: "pi", formatID: "pi-session", granularity: .aggregate, kind: "message",
+            providerID: "codex", model: "gpt-6.2-sol", tokens: tokens, totalTokens: tokens.totalTokens)
+
+        guard case .priced(let cost) = CodexUsagePricing.estimateRecord(record, pricing: pricing) else {
+            return XCTFail("Expected a cost estimate")
+        }
+        XCTAssertEqual(cost, 0.675, accuracy: 1e-12)
     }
 
     func testMalformedLongContextObjectsAreRejected() throws {
@@ -106,6 +170,42 @@ final class PricingSupplementLongContextTests: XCTestCase {
 
     private func jsonObject(_ object: [String: Any]) throws -> String {
         String(decoding: try JSONSerialization.data(withJSONObject: object, options: .sortedKeys), as: UTF8.self)
+    }
+
+    private func makeCodexPricing(standardThreshold: Int?) throws -> ModelPricing {
+        let longContext =
+            standardThreshold.map { threshold in
+                """
+                , "long_context": {
+                  "threshold_tokens": \(threshold), "input_per_million": 4, "output_per_million": 15,
+                  "cache_write_per_million": 5, "cache_read_per_million": 0.2
+                }
+                """
+            } ?? ""
+        let json = """
+            {
+              "pricing": {},
+              "pricing_v2": {
+                "gpt-6.2-sol": {
+                  "input_per_million": 2, "output_per_million": 10,
+                  "cache_write_per_million": 2.5, "cache_read_per_million": 0.1\(longContext)
+                },
+                "gpt-6.2-sol-ultrafast": {
+                  "input_per_million": 12, "output_per_million": 60,
+                  "cache_write_per_million": 15, "cache_read_per_million": 0.6,
+                  "long_context": {
+                    "threshold_tokens": 500000, "input_per_million": 24, "output_per_million": 90,
+                    "cache_write_per_million": 30, "cache_read_per_million": 1.2
+                  }
+                }
+              },
+              "fast_multipliers_exact": {"gpt-6.2-sol": 2},
+              "alias_rules": []
+            }
+            """
+        return ModelPricing(
+            supplement: try PricingSupplement.decode(from: Data(json.utf8)),
+            primary: PricingCatalog(), secondary: PricingCatalog())
     }
 
     private func makePricing(

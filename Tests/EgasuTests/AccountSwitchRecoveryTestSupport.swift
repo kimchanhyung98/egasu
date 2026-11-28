@@ -150,7 +150,8 @@ final class SwitchRecoveryKeychain: KeychainAccessing, @unchecked Sendable {
         var currentUserValues: [String: String] = [:]
         var currentUserModificationDates: [String: Date] = [:]
         var writeCount = 0
-        var noninteractiveReadServices: [String] = []
+        var cliSharedReadServices: [String] = []
+        var nativeReads: [(service: String, allowInteraction: Bool)] = []
         var readFailureService: String?
         var beforeRead: (@Sendable (String) throws -> Void)?
         var beforeWrite: ((String, String) throws -> Void)?
@@ -176,7 +177,11 @@ final class SwitchRecoveryKeychain: KeychainAccessing, @unchecked Sendable {
 
     var writeCount: Int { lock.withLock { state.writeCount } }
 
-    var noninteractiveReadServices: [String] { lock.withLock { state.noninteractiveReadServices } }
+    var cliSharedReadServices: [String] { lock.withLock { state.cliSharedReadServices } }
+
+    var nativeReads: [(service: String, allowInteraction: Bool)] { lock.withLock { state.nativeReads } }
+
+    var noninteractiveReadServices: [String] { nativeReads.filter { !$0.allowInteraction }.map { $0.service } }
 
     var readFailureService: String? {
         get { lock.withLock { state.readFailureService } }
@@ -194,9 +199,14 @@ final class SwitchRecoveryKeychain: KeychainAccessing, @unchecked Sendable {
     }
 
     func readAppOwnedPassword(service: String, forCurrentUser: Bool, allowInteraction: Bool) throws -> String? {
-        if !allowInteraction {
-            lock.withLock { state.noninteractiveReadServices.append(service) }
-        }
+        lock.withLock { state.nativeReads.append((service, allowInteraction)) }
+        return try forCurrentUser
+            ? readGenericPasswordForCurrentUser(service: service)
+            : readGenericPassword(service: service)
+    }
+
+    func readCLISharedPassword(service: String, forCurrentUser: Bool) throws -> String? {
+        lock.withLock { state.cliSharedReadServices.append(service) }
         return try forCurrentUser
             ? readGenericPasswordForCurrentUser(service: service)
             : readGenericPassword(service: service)

@@ -339,10 +339,12 @@ final class ResetDisplayTests: XCTestCase {
         )
 
         let expiries = [now.addingTimeInterval(4 * 24 * 3600)]
-        guard case .timeline(let entries) = RateLimitResetsDetail.content(count: 1, expiries: expiries, now: now) else {
+        let content = RateLimitResetsDetail.content(count: 1, expiries: expiries, now: now)
+        guard case .timeline(let entries, let unknownCount) = content else {
             return XCTFail("expected timeline")
         }
         XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(unknownCount, 0)
     }
 
     func testDeadlineLabelSharesFormatAcrossPrefixesAndModes() {

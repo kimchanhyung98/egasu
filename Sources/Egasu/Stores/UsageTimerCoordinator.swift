@@ -20,11 +20,14 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
         let continuation: CheckedContinuation<Void, Never>
     }
 
+    typealias CandidateValidity = @MainActor @Sendable () -> Bool
+
     private let store: UsageTimerAttemptStore
     private let isCurrent: @MainActor (String, UUID, String) -> Bool
-    private let prepare: @MainActor (String, UsageTimerObservation) async throws -> Session?
+    private let prepare:
+        @MainActor (String, UsageTimerObservation, @escaping CandidateValidity) async throws -> Session?
     private let execute: @MainActor (String, UUID, Session, @escaping @MainActor () -> Bool) async -> UsageTimerExecutionResult
-    private let verify: @MainActor (String, Session) async throws -> UsageTimerObservation?
+    private let verify: @MainActor (String, Session, @escaping CandidateValidity) async throws -> UsageTimerObservation?
     private let report: @MainActor (String, UUID, String, String?) -> Void
     private let finished: @MainActor (String, UUID) -> Void
     private let now: @MainActor () -> Date
@@ -44,9 +47,11 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
     init(
         store: UsageTimerAttemptStore = UsageTimerAttemptStore(),
         isCurrent: @escaping @MainActor (String, UUID, String) -> Bool,
-        prepare: @escaping @MainActor (String, UsageTimerObservation) async throws -> Session?,
+        prepare:
+            @escaping @MainActor (String, UsageTimerObservation, @escaping CandidateValidity) async throws -> Session?,
         execute: @escaping @MainActor (String, UUID, Session, @escaping @MainActor () -> Bool) async -> UsageTimerExecutionResult,
-        verify: @escaping @MainActor (String, Session) async throws -> UsageTimerObservation?,
+        verify:
+            @escaping @MainActor (String, Session, @escaping CandidateValidity) async throws -> UsageTimerObservation?,
         report: @escaping @MainActor (String, UUID, String, String?) -> Void,
         finished: @escaping @MainActor (String, UUID) -> Void = { _, _ in },
         now: @escaping @MainActor () -> Date = Date.init,
@@ -102,11 +107,13 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
             || accountByProvider[providerID]?.accountKey == active.observation.accountKey
     }
 
+    /// 관측 처리 중 상태 저장소 오류가 발생하면 false 반환.
+    @discardableResult
     func receive(
         providerID: String, bindingID: UUID, observation: UsageTimerObservation,
         checkUnconfirmedReset: Bool = false
-    ) {
-        guard !stopped, isCurrent(providerID, bindingID, observation.accountKey) else { return }
+    ) -> Bool {
+        guard !stopped, isCurrent(providerID, bindingID, observation.accountKey) else { return true }
         defer { resumePendingWorkWaiters() }
         accountByProvider[providerID] = (observation.accountKey, bindingID)
         let candidate = Candidate(providerID: providerID, bindingID: bindingID, observation: observation,
@@ -117,7 +124,7 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
                 observedAt: observation.observedAt, usedPercent: observation.usedPercent,
                 confirmsReset: observation.startRule == .missingReset
             )
-            guard change != .stale else { return }
+            guard change != .stale else { return true }
             if change != .incomparable || observation.rawResetAt == nil || observation.usedPercent != 0 {
                 pending.removeAll { $0.observation.storageKey == observation.storageKey }
             }
@@ -131,14 +138,19 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
                     || preparationRetries.contains(observation.storageKey),
                   observation.canStart(at: now()),
                   try canPrepare(candidate, reportLimit: change == .changed)
-            else { return }
+            else { return true }
         } catch {
-            fail(candidate, "Usage timer automation could not read its saved state. No message was sent.")
-            return
+            let message =
+                executing?.observation.storageKey == observation.storageKey
+                ? "Usage timer automation could not update its saved state."
+                : "Usage timer automation could not read its saved state. No message was sent."
+            fail(candidate, message)
+            return false
         }
         pending.append(candidate)
-        guard task == nil else { return }
+        guard task == nil else { return true }
         task = Task { [weak self] in await self?.drain() }
+        return true
     }
 
     func invalidate(providerID: String) {
@@ -199,9 +211,11 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
             return
         }
 
+        let isCurrent = validity(for: candidate)
         var session: Session
         do {
-            guard let prepared = try await prepare(candidate.providerID, candidate.observation), current(candidate),
+            guard let prepared = try await prepare(candidate.providerID, candidate.observation, isCurrent),
+                current(candidate),
                   prepared.observation.storageKey == accountKey
             else { return }
             session = prepared
@@ -266,7 +280,8 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
                 try await wait(.seconds(UsageTimerObservation.verificationInterval))
                 guard current(candidate),
                       try store.latestObservationAt(accountKey: accountKey) == preparationObservedAt,
-                      let prepared = try await prepare(candidate.providerID, candidate.observation), current(candidate),
+                    let prepared = try await prepare(candidate.providerID, candidate.observation, isCurrent),
+                    current(candidate),
                       prepared.observation.storageKey == accountKey else { return }
                 session = prepared
             } catch is CancellationError {
@@ -330,7 +345,7 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
             fail(candidate, "Usage timer automation could not update its saved state.")
         }
         guard current(candidate), launchObservationIsCurrent != nil else { return }
-        if observationChanged && result.verificationCanClearFailure { return }
+        if (observationChanged || result.loginNoLongerEligible) && result.verificationCanClearFailure { return }
         guard result.launched else {
             fail(candidate, result.failureDescription ?? "Usage timer message could not be started. Refresh after five minutes to try again.")
             return
@@ -371,7 +386,8 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
                 guard current(candidate) else { return false }
             }
             do {
-                guard let observation = try await verify(candidate.providerID, session), current(candidate),
+                guard let observation = try await verify(candidate.providerID, session, validity(for: candidate)),
+                    current(candidate),
                       observation.storageKey == candidate.observation.storageKey,
                       observation.observedAt >= endedAt
                 else { previousReset = nil; continue }
@@ -431,6 +447,10 @@ final class UsageTimerCoordinator<Session: UsageTimerPreparedSession> {
             waiting.lastObservation = observation
             awaitingReset[observation.storageKey] = waiting
         }
+    }
+
+    private func validity(for candidate: Candidate) -> CandidateValidity {
+        { [weak self] in self?.current(candidate) == true }
     }
 
     private func current(_ candidate: Candidate) -> Bool {

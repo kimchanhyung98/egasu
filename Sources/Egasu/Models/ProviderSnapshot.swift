@@ -27,6 +27,8 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
     /// 성공 시 항상 nil, 오류 snapshot은 cache되지 않아 미영속.
     var errorCategory: ErrorCategory?
     var authenticationIssue: ProviderAuthenticationIssue?
+    /// 조회 중 확인된 인증 변경. 현재 요청의 한도 무효화에만 사용.
+    private(set) var invalidatesQuotaIdentity = false
     var errorPresentation: LocalizedMessage? = nil
     var warningPresentation: [LocalizedMessage]?
     var metricPresentations: [String: LocalizedMessage]?
@@ -44,6 +46,10 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
     var quotaRecoveryScopes: [String: QuotaRecoveryScope] = [:]
     /// 마지막 정상 한도 조회 시각 — 캐시 재사용 중에도 보존하며 자동 전환용 관측과 구분.
     var quotaObservedAt: Date?
+    /// 검증한 Codex 기본 한도와 등록 신원. 표시용 대체값·디스크 캐시와 분리.
+    var codexSwitchQuota: AccountSwitchQuota?
+    var codexSwitchIdentity: String?
+    var legacyClaudeSwitchIdentity: LegacyClaudeRecommendationIdentity?
     var usageRetryAfter: Date?
 
     var freshnessDate: Date { quotaObservedAt ?? refreshedAt }
@@ -184,13 +190,15 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
 
     /// 사용자 표시 문구와 진단용 오류 분류를 분리해 실패 응답 생성.
     static func error(provider: Provider, error: Error) -> ProviderSnapshot {
-        Self.error(
+        var snapshot = Self.error(
             provider: provider,
             message: error.localizedDescription,
             category: ErrorCategory.classify(error),
             authenticationIssue: ProviderAuthenticationIssue(error: error),
             presentation: UserFacingErrors.presentation(error)
         )
+        snapshot.invalidatesQuotaIdentity = (error as? CodexAuthError) == .credentialsChanged
+        return snapshot
     }
 
     static func error(

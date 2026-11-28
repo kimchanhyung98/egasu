@@ -47,7 +47,7 @@ final class ProviderSnapshotStore {
         ProviderAccountID.family(of: providerID) == "claude" && identityKeys[providerID] == nil
     }
 
-    func discardMismatchedCursorReading(for providerID: String, currentIdentityKey: String?) -> Bool {
+    func discardMismatchedReading(for providerID: String, currentIdentityKey: String?) -> Bool {
         guard let local = localSnapshots[providerID] else { return false }
         let previousIdentity = local.producedByIdentityKey ?? cache.producedByIdentityKey(providerID: providerID)
         guard currentIdentityKey == nil || currentIdentityKey != previousIdentity else { return false }
@@ -59,7 +59,7 @@ final class ProviderSnapshotStore {
         guard !unresolvedIdentityCacheRejections.contains(providerID),
             !cache.hasStaleAccountStamp(providerID: providerID, currentIdentityKey: currentIdentityKey)
         else { return nil }
-        return cache.snapshot(providerID: providerID)
+        return cache.snapshot(providerID: providerID, currentIdentityKey: currentIdentityKey)
     }
 
     func invalidateLiveQuota(for providerID: String, responseIdentity: String? = nil) {
@@ -109,7 +109,7 @@ final class ProviderSnapshotStore {
     }
 
     private func loadMatchingCache(providerIDs: [String]) -> [String: ProviderSnapshot] {
-        cache.loadSnapshots(providerIDs: providerIDs).filter { cardID, _ in
+        cache.loadSnapshots(providerIDs: providerIDs, identityKeys: identityKeys).filter { cardID, _ in
             guard !unresolvedIdentityCacheRejections.contains(cardID) else { return false }
             guard !cache.hasStaleAccountStamp(providerID: cardID, currentIdentityKey: identityKeys[cardID]) else {
                 AppLog.info(.cache, "stale account cache discarded for \(AppLog.providerFamily(cardID))")
@@ -122,11 +122,11 @@ final class ProviderSnapshotStore {
     private func previousSnapshot(for incoming: ProviderSnapshot) -> ProviderSnapshot? {
         let id = incoming.providerID
         let local = localSnapshots[id]
-        guard ProviderAccountID.family(of: id) == "cursor" else { return local }
+        guard ProviderSnapshotCache.requiresCredentialIdentity(id) else { return local }
         guard let identity = incoming.producedByIdentityKey else { return nil }
         if local?.producedByIdentityKey == identity { return local }
         guard cache.producedByIdentityKey(providerID: id) == identity else { return nil }
-        var stored = cache.loadSnapshots(providerIDs: [id])[id]
+        var stored = cache.loadSnapshots(providerIDs: [id], identityKeys: [id: identity])[id]
         stored?.producedByIdentityKey = identity
         return stored
     }
@@ -160,7 +160,7 @@ final class ProviderSnapshotStore {
                 render = true
                 let removedHistory = localSnapshots.removeValue(forKey: providerID)?.usageHistory != nil
                 notifyHistoryChange = removedHistory
-            } else if ProviderAccountID.family(of: providerID) == "cursor" {
+            } else if ProviderSnapshotCache.requiresCredentialIdentity(providerID) {
                 let local = localSnapshots[providerID]
                 var retained = previousSnapshot(for: snapshot)
                 retained?.liveQuotaObservedAt = nil
@@ -241,7 +241,8 @@ final class ProviderSnapshotStore {
         }
         localSnapshots[providerID] = snapshot
         // 현재 계정 식별 정보로 저장 결과 귀속 — 비계정 프로바이더·계정 미확인 카드는 식별 키 생략.
-        let catalogIdentity = ProviderAccountID.family(of: providerID) == "cursor" ? nil : identityKeys[providerID]
+        let catalogIdentity =
+            ProviderSnapshotCache.requiresCredentialIdentity(providerID) ? nil : identityKeys[providerID]
         cache.store(snapshot, producedByIdentityKey: snapshot.producedByIdentityKey ?? catalogIdentity)
         if !unresolvedClaudeIdentity { unresolvedIdentityCacheRejections.remove(providerID) }
         return .succeeded(snapshot, degraded: degraded)
@@ -259,19 +260,28 @@ final class ProviderSnapshotStore {
         return true
     }
 
-    func localHistoryDocument(deviceID: String, deviceName: String, updatedAt: Date = Date()) -> UsageHistoryDocument {
+    func localHistoryDocument(
+        deviceID: String, deviceName: String, updatedAt: Date = Date(),
+        preserving previous: UsageHistoryDocument? = nil
+    ) -> UsageHistoryDocument {
         var providers: [String: ProviderUsageHistory] = [:]
         var identities: [String: String] = [:]
         // 로컬 범위 이력은 계정 카드도 동기화 — 계정에서 파생한 ID로 동일 계정 연결.
         // 기본 카드의 이력은 별도 계정 식별 키로 다른 Mac의 카드에 연결.
         for (providerID, descriptor) in registry.historyDescriptorsByProvider
         where descriptor.scope == .machineLocal && isProviderEnabled(providerID) {
-            if let history = localSnapshots[providerID]?.usageHistory {
+            let identity = familyTotalHistoryCardIDs.contains(providerID) ? nil : identityKeys[providerID]
+            var history = localSnapshots[providerID]?.usageHistory
+            if history == nil, !isUnresolvedClaude(providerID), let previous,
+                previous.deviceID == deviceID, previous.identities?[providerID] == identity
+            {
+                history = previous.providers[providerID]
+            }
+            if let history {
                 providers[providerID] = history
                 // 공유 홈 이력은 전환한 모든 계정의 세션을 합한 프로바이더 합계.
                 // 전체 합계가 현재 선택 계정에 귀속되지 않도록 계정 식별 키 없이 동기화.
-                if let identity = identityKeys[providerID],
-                   !familyTotalHistoryCardIDs.contains(providerID) {
+                if let identity {
                     identities[providerID] = identity
                 }
             }
@@ -338,6 +348,16 @@ final class ProviderSnapshotStore {
                 now: renderDate
             )
         }
+        for entry in remoteOnlySpend where entry.snapshot.reportedPartialFailure == .decoding {
+            let family = ProviderAccountID.family(of: entry.provider.id)
+            guard let provider = registry.provider(id: family) else { continue }
+            var snapshot =
+                rendered[family]
+                ?? ProviderSnapshot(
+                    providerID: family, displayName: provider.displayName, lines: [], refreshedAt: renderDate)
+            UsageHistorySnapshotRenderer.addInvalidHistoryWarning(to: &snapshot)
+            rendered[family] = snapshot
+        }
         return Rendered(snapshots: rendered, remoteOnlySpend: remoteOnlySpend)
     }
 
@@ -353,7 +373,7 @@ final class ProviderSnapshotStore {
                   let descriptor = registry.historyDescriptorsByProvider[entry.family]
             else { return nil }
             let history = UsageHistoryAggregator.mergeHistories(entry.histories, now: now)
-            guard !history.series.daily.isEmpty else { return nil }
+            guard !history.series.daily.isEmpty || history.hasRejectedNumericContributions else { return nil }
 
             // 합계 항목 이름은 계정 식별 키에서 파생한 카드 ID 사용.
             // 가상 프로바이더 ID는 실제 카드 ID와 충돌하지 않는 별도 형식 사용.

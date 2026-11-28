@@ -1,20 +1,47 @@
+import CryptoKit
 import Foundation
 
 /// `LayoutStore`의 저장 담당 절반 — key 이름·encoding·UserDefaults 접근 소유
 @MainActor
 final class LayoutPersistence {
+    struct LegacyOrderEvidence: Codable {
+        let cards: Set<String>
+        let metrics: Set<String>
+    }
+
+    private struct MigrationOrderWrite: Codable {
+        let digest: Data
+        let evidence: LegacyOrderEvidence
+    }
+
     private let defaults: UserDefaults
     private let keys: Keys
+    private let importsUpstreamLayout: Bool
+    private var unresolvedProfileCards: Set<String> = []
+    private var pendingProfileIDsByCard: [String: String]?
+    private(set) var hasUnresolvedProfileMapping = false
 
     init(defaults: UserDefaults, storageKey: String) {
         self.defaults = defaults
         self.keys = Keys(storageKey: storageKey)
+        self.importsUpstreamLayout = storageKey == "openusage.layout.v1"
     }
 
     /// 존재 여부는 decode 성공과 별개 — 손상된 데이터도 기존 layout이므로
     /// startup이 corruption을 신규 설치로 오인해 신규 전용 default를 적용하지 않도록 하는 규칙
     var hasStoredLayout: Bool { defaults.object(forKey: keys.placed) != nil }
-    var hasStoredSeededDefaults: Bool { defaults.data(forKey: keys.seededDefaults) != nil }
+    var hasStoredSeededDefaults: Bool { defaults.object(forKey: keys.seededDefaults) != nil }
+    var hasStoredMetricOrder: Bool { defaults.object(forKey: keys.metricOrder) != nil }
+    var isUpstreamImportPending: Bool {
+        importsUpstreamLayout && defaults.bool(forKey: SettingsMigrator.upstreamLayoutImportPendingKey)
+    }
+
+    func finishPendingUpstreamImport() {
+        guard importsUpstreamLayout else { return }
+        if let pendingProfileIDsByCard { encode(pendingProfileIDsByCard, forKey: keys.accountProfilesByCard) }
+        defaults.removeObject(forKey: SettingsMigrator.upstreamLayoutImportPendingKey)
+        pendingProfileIDsByCard = nil
+    }
 
     var hasStoredDisabledMetrics: Bool { defaults.object(forKey: keys.disabledMetrics) != nil }
 
@@ -28,7 +55,38 @@ final class LayoutPersistence {
     }
 
     func saveDisabledMetrics(_ ids: Set<String>) {
-        defaults.set(ids.sorted(), forKey: keys.disabledMetrics)
+        let retained = (defaults.stringArray(forKey: keys.disabledMetrics) ?? []).filter(isUnresolvedMetric)
+        let changed = hasStoredDisabledMetrics ? ids.filter { !isUnresolvedMetric($0) } : ids
+        defaults.set(changed.union(retained).sorted(), forKey: keys.disabledMetrics)
+    }
+
+    var deferredVisibility: [String: Bool] {
+        get { defaults.dictionary(forKey: keys.deferredVisibility) as? [String: Bool] ?? [:] }
+        set {
+            if newValue.isEmpty {
+                if defaults.object(forKey: keys.deferredVisibility) != nil {
+                    defaults.removeObject(forKey: keys.deferredVisibility)
+                }
+            } else {
+                defaults.set(newValue, forKey: keys.deferredVisibility)
+            }
+        }
+    }
+
+    /// 구형 가시성 이전을 끝내기 전에는 명시적으로 편집한 항목만 보관.
+    func recordDeferredVisibility(_ choices: [String: Bool]) {
+        guard !hasStoredDisabledMetrics, !isUpstreamImportPending else { return }
+        let resolved = choices.filter { !isUnresolvedMetric($0.key) }
+        guard !resolved.isEmpty else { return }
+        deferredVisibility.merge(resolved) { _, edited in edited }
+    }
+
+    func finishVisibilityMigration(_ ids: Set<String>) {
+        saveDisabledMetrics(ids)
+        deferredVisibility = [:]
+        if defaults.object(forKey: keys.migrationOrderWrites) != nil {
+            defaults.removeObject(forKey: keys.migrationOrderWrites)
+        }
     }
 
     func loadPlaced() -> [PlacedWidget]? { decode([PlacedWidget].self, forKey: keys.placed) }
@@ -36,6 +94,20 @@ final class LayoutPersistence {
     func loadMetricOrder() -> [String: [String]]? {
         decode([String: [String]].self, forKey: keys.metricOrder)
     }
+
+    func legacyProviderOrderCards(_ order: [String]) -> Set<String> {
+        legacyOrderEvidence(forKey: keys.providerOrder)?.cards ?? Set(order)
+    }
+
+    func legacyMetricOrderEvidence(_ order: [String: [String]]) -> LegacyOrderEvidence {
+        legacyOrderEvidence(forKey: keys.metricOrder)
+            ?? LegacyOrderEvidence(cards: Set(order.keys), metrics: Set(order.values.joined()))
+    }
+
+    private var usesLegacyOrderEvidence: Bool {
+        hasStoredLayout && !hasStoredDisabledMetrics && !isUpstreamImportPending
+    }
+
     func loadSeededDefaults() -> [String]? { decode([String].self, forKey: keys.seededDefaults) }
 
     /// 첫 레이아웃을 받은 카드 — 키가 없으면 패밀리 공용 레이아웃 시절의 저장값.
@@ -47,6 +119,46 @@ final class LayoutPersistence {
     func loadPins() -> [String]? { defaults.stringArray(forKey: keys.pins) }
     func loadExpandedMetrics() -> [String]? { defaults.stringArray(forKey: keys.expandedMetrics) }
     func loadExpandOnEnable() -> [String]? { defaults.stringArray(forKey: keys.expandOnEnable) }
+    func loadDeferredMenuBarStars() -> [String]? { defaults.stringArray(forKey: keys.deferredMenuBarStars) }
+
+    func saveDeferredMenuBarStars(_ ids: Set<String>) {
+        if ids.isEmpty {
+            defaults.removeObject(forKey: keys.deferredMenuBarStars)
+        } else {
+            defaults.set(ids.sorted(), forKey: keys.deferredMenuBarStars)
+        }
+        saveDeclinedMenuBarStars(
+            loadDeclinedMenuBarStars().filter { ids.contains(ProviderAccountID.canonicalMetricID($0)) })
+    }
+
+    func loadDeclinedMenuBarStars() -> Set<String> {
+        Set(defaults.stringArray(forKey: keys.declinedMenuBarStars) ?? [])
+    }
+
+    func saveDeclinedMenuBarStars(_ ids: Set<String>) {
+        if ids.isEmpty {
+            defaults.removeObject(forKey: keys.declinedMenuBarStars)
+        } else {
+            defaults.set(ids.sorted(), forKey: keys.declinedMenuBarStars)
+        }
+    }
+
+    func recordExplicitPinChoice(_ id: String, pinned: Bool) {
+        guard !isUnresolvedMetric(id),
+            loadDeferredMenuBarStars()?.contains(ProviderAccountID.canonicalMetricID(id)) == true
+        else { return }
+        var declined = loadDeclinedMenuBarStars()
+        if pinned { declined.remove(id) } else { declined.insert(id) }
+        saveDeclinedMenuBarStars(declined)
+    }
+
+    func clearDeferredMenuBarStars(family: String? = nil) {
+        saveDeferredMenuBarStars(
+            Set(
+                (loadDeferredMenuBarStars() ?? []).filter {
+                    family != nil && LayoutOrdering.family(ofMetric: $0) != family
+                }))
+    }
 
     var hasOnDemandState: Bool {
         [keys.expandedMetrics, keys.expandOnEnable, keys.expandedProviders].contains {
@@ -55,13 +167,50 @@ final class LayoutPersistence {
     }
 
     func savePlaced(_ value: [PlacedWidget]) { encode(value, forKey: keys.placed) }
-    func saveProviderOrder(_ value: [String]) { encode(value, forKey: keys.providerOrder) }
-    func saveMetricOrder(_ value: [String: [String]]) { encode(value, forKey: keys.metricOrder) }
+
+    func saveProviderOrder(_ value: [String], preservingLegacyEvidence: Bool = false) {
+        let evidence =
+            preservingLegacyEvidence && usesLegacyOrderEvidence
+            ? LegacyOrderEvidence(cards: legacyProviderOrderCards(loadProviderOrder() ?? []), metrics: []) : nil
+        saveOrder(value, forKey: keys.providerOrder, legacyEvidence: evidence)
+    }
+
+    func saveMetricOrder(_ value: [String: [String]], preservingLegacyEvidence: Bool = false) {
+        let evidence =
+            preservingLegacyEvidence && usesLegacyOrderEvidence
+            ? legacyMetricOrderEvidence(loadMetricOrder() ?? [:]) : nil
+        saveMetricOrder(value, legacyEvidence: evidence)
+    }
+
+    private func saveMetricOrder(_ value: [String: [String]], legacyEvidence: LegacyOrderEvidence?) {
+        var next = value
+        if !unresolvedProfileCards.isEmpty {
+            let original = loadMetricOrder() ?? [:]
+            for card in unresolvedProfileCards {
+                guard let requested = next[card] else { next[card] = original[card]; continue }
+                var shared = requested.filter(ProviderAccountID.isSharedMetric).makeIterator()
+                next[card] =
+                    (original[card] ?? []).compactMap {
+                        ProviderAccountID.isSharedMetric($0) ? shared.next() : $0
+                    } + Array(shared)
+            }
+        }
+        saveOrder(next, forKey: keys.metricOrder, legacyEvidence: legacyEvidence)
+    }
     func saveSeededDefaults(_ value: Set<String>) {
         encode(Array(value).sorted(), forKey: keys.seededDefaults)
     }
 
-    func savePriorityPins(_ value: Set<String>) { defaults.set(Array(value).sorted(), forKey: keys.priorityPins) }
+    func savePriorityPins(_ value: Set<String>) {
+        let retained = (loadPriorityPins() ?? []).filter(isUnresolvedMetric)
+        defaults.set(value.filter { !isUnresolvedMetric($0) }.union(retained).sorted(), forKey: keys.priorityPins)
+    }
+
+    /// 매핑을 복구하기 전에는 소유자가 불명인 개인 설정을 다른 프로필에 적용하지 않음.
+    func isUnresolvedMetric(_ id: String) -> Bool {
+        !ProviderAccountID.isSharedMetric(id)
+            && unresolvedProfileCards.contains(ProviderAccountID.providerID(ofMetric: id))
+    }
 
     /// 레거시 On Demand 키 제거. 호출 전에 변환한 지표 순서 저장.
     func clearOnDemandState() {
@@ -74,10 +223,23 @@ final class LayoutPersistence {
     /// 공통 설정은 기본 프로바이더 ID에 유지하고, 부재 중 프로필은 스냅샷 카드 ID로 보관.
     @discardableResult
     func reconcileAccountProfiles(_ profileIDsByCard: [String: String], registry: WidgetRegistry) -> Bool {
+        if isUpstreamImportPending {
+            let changed = pendingProfileIDsByCard != profileIDsByCard
+            pendingProfileIDsByCard = profileIDsByCard
+            return changed
+        }
         let previous = decode([String: String].self, forKey: keys.accountProfilesByCard)
+        if previous == nil, defaults.object(forKey: keys.accountProfilesByCard) != nil {
+            hasUnresolvedProfileMapping = true
+            unresolvedProfileCards = Set(profileIDsByCard.keys)
+            return false
+        }
+        let resolvedMapping = hasUnresolvedProfileMapping
+        hasUnresolvedProfileMapping = false
+        unresolvedProfileCards = []
         let knownCards = Set(profileIDsByCard.keys).union(previous?.keys.map { $0 } ?? []).union(loadSeededCards() ?? [])
         let sharedMetricsChanged = removeSharedMetricAliases(knownCards: knownCards)
-        guard previous != profileIDsByCard else { return sharedMetricsChanged }
+        guard previous != profileIDsByCard else { return sharedMetricsChanged || resolvedMapping }
         defer { encode(profileIDsByCard, forKey: keys.accountProfilesByCard) }
         guard let previous else { return sharedMetricsChanged }
 
@@ -111,6 +273,14 @@ final class LayoutPersistence {
         if let disabled = loadDisabledMetrics() {
             saveDisabledMetrics(Set(disabled.compactMap(metricID)))
         }
+        let choices = deferredVisibility
+        if !choices.isEmpty {
+            var remapped: [String: Bool] = [:]
+            for (id, enabled) in choices {
+                if let target = metricID(id) { remapped[target] = enabled }
+            }
+            deferredVisibility = remapped
+        }
         if !hasStoredDisabledMetrics, let placed = loadPlaced() {
             savePlaced(placed.compactMap { widget in
                 metricID(widget.descriptorID).map { PlacedWidget(id: widget.id, descriptorID: $0) }
@@ -136,9 +306,18 @@ final class LayoutPersistence {
                     ProviderAccountID.isSharedMetric(id) ? id : personalIDs.next()
                 } + Array(personalIDs)
             }
-            saveMetricOrder(nextOrder)
+            var evidence: LegacyOrderEvidence?
+            if usesLegacyOrderEvidence {
+                let legacy = legacyMetricOrderEvidence(order)
+                evidence = LegacyOrderEvidence(
+                    cards: Set(legacy.cards.subtracting(replacedCards).map { moves[$0] ?? $0 }),
+                    metrics: Set(legacy.metrics.compactMap(metricID)))
+            }
+            saveMetricOrder(nextOrder, legacyEvidence: evidence)
         }
         if let pins = loadPriorityPins() { savePriorityPins(Set(pins.compactMap(metricID))) }
+        let declined = loadDeclinedMenuBarStars()
+        if !declined.isEmpty { saveDeclinedMenuBarStars(Set(declined.compactMap(metricID))) }
         if let seededCards = loadSeededCards() {
             saveSeededCards(Set(seededCards.compactMap { cardID in
                 replacedCards.contains(cardID) ? nil : moves[cardID] ?? cardID
@@ -171,7 +350,12 @@ final class LayoutPersistence {
         if let order = loadMetricOrder() {
             let normalized = order.mapValues { $0.filter { !isAlias($0) } }
             if normalized != order {
-                saveMetricOrder(normalized)
+                let legacy = usesLegacyOrderEvidence ? legacyMetricOrderEvidence(order) : nil
+                saveMetricOrder(
+                    normalized,
+                    legacyEvidence: legacy.map {
+                        LegacyOrderEvidence(cards: $0.cards, metrics: $0.metrics.filter { !isAlias($0) })
+                    })
                 changed = true
             }
         }
@@ -183,6 +367,44 @@ final class LayoutPersistence {
             }
         }
         return changed
+    }
+
+    private var migrationOrderWrites: [String: [MigrationOrderWrite]] {
+        decode([String: [MigrationOrderWrite]].self, forKey: keys.migrationOrderWrites) ?? [:]
+    }
+
+    private func legacyOrderEvidence(forKey key: String) -> LegacyOrderEvidence? {
+        guard let writes = migrationOrderWrites[key], let data = defaults.data(forKey: key) else { return nil }
+        let digest = Data(SHA256.hash(data: data))
+        return writes.first { $0.digest == digest }?.evidence
+    }
+
+    private func saveOrder<T: Encodable>(_ order: T, forKey key: String, legacyEvidence: LegacyOrderEvidence?) {
+        guard usesLegacyOrderEvidence else { encode(order, forKey: key); return }
+        do {
+            let encoder = JSONEncoder()
+            let data = try encoder.encode(order)
+            var writes = migrationOrderWrites
+            if let legacyEvidence {
+                let digest = Data(SHA256.hash(data: data))
+                let previous = defaults.data(forKey: key).map { Data(SHA256.hash(data: $0)) }
+                // 기록과 순서 쓰기 사이에 중단돼도 두 저장본 중 실제로 남은 순서의 근거 사용.
+                writes[key] =
+                    (writes[key] ?? []).filter { $0.digest == previous && $0.digest != digest }
+                    + [MigrationOrderWrite(digest: digest, evidence: legacyEvidence)]
+                defaults.set(try encoder.encode(writes), forKey: keys.migrationOrderWrites)
+            }
+            defaults.set(data, forKey: key)
+            if legacyEvidence == nil, writes.removeValue(forKey: key) != nil {
+                if writes.isEmpty {
+                    defaults.removeObject(forKey: keys.migrationOrderWrites)
+                } else {
+                    defaults.set(try encoder.encode(writes), forKey: keys.migrationOrderWrites)
+                }
+            }
+        } catch {
+            AppLog.warn(.config, "failed to persist layout '\(key)': \(error.localizedDescription)")
+        }
     }
 
     /// encode 실패는 loud하게 기록 — 조용히 삼키면 layout 변경 유실이 무신호로 발생
@@ -211,6 +433,8 @@ final class LayoutPersistence {
 
     private struct Keys {
         let placed: String
+        let deferredVisibility: String
+        let migrationOrderWrites: String
         let disabledMetrics: String
         let providerOrder: String
         let metricOrder: String
@@ -219,12 +443,16 @@ final class LayoutPersistence {
         let accountProfilesByCard: String
         let pins: String
         let priorityPins: String
+        let deferredMenuBarStars: String
+        let declinedMenuBarStars: String
         let expandedMetrics: String
         let expandOnEnable: String
         let expandedProviders: String
 
         init(storageKey: String) {
             placed = storageKey
+            deferredVisibility = "\(storageKey).deferredVisibility"
+            migrationOrderWrites = "\(storageKey).migrationOrderWrites"
             disabledMetrics = "\(storageKey).disabledMetrics"
             providerOrder = "\(storageKey).providerOrder"
             metricOrder = "\(storageKey).metricOrderByProvider"
@@ -233,6 +461,8 @@ final class LayoutPersistence {
             accountProfilesByCard = "\(storageKey).accountProfilesByCard"
             pins = "\(storageKey).menuBarPins"
             priorityPins = "\(storageKey).priorityPins"
+            deferredMenuBarStars = "\(storageKey).deferredMenuBarStars"
+            declinedMenuBarStars = "\(storageKey).declinedMenuBarStars"
             expandedMetrics = "\(storageKey).expandedMetrics"
             expandOnEnable = "\(storageKey).expandOnEnable"
             expandedProviders = "\(storageKey).expandedProviders"

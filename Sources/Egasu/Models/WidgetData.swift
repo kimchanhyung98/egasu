@@ -247,13 +247,13 @@ struct WidgetData: Hashable {
             }
             return MetricFormatter.number(displayedValue, kind: kind, style: .tray)
         }
+        if let valueTextOverride { return L10n.metrics(valueTextOverride) }
         if let first = selectedValues.first {
             if let traySuffix, first.kind == .count {
                 return MetricFormatter.labelledValue(MetricFormatter.number(first.number, kind: .count, style: .tray), label: traySuffix)
             }
             return MetricFormatter.string(for: first, style: .tray)
         }
-        if let valueTextOverride { return L10n.metrics(valueTextOverride) }
         let number = MetricFormatter.number(displayedValue, kind: kind, style: .tray)
         if kind == .count, let countSuffix { return MetricFormatter.labelledValue(number, label: countSuffix) }
         return number
@@ -392,6 +392,7 @@ struct WidgetData: Hashable {
         // reset-credit row는 expiry breakdown 우선 — 작은 count라 figures tooltip 없음.
         if let expiry = expiryTooltip { return expiry }
         if isEmptyUsagePeriod { return nil }
+        if hasData, valueTextOverride != nil, let valueTooltipNote { return valueTooltipNote }
         if let figures = unboundedTooltip {
             return ([figures] + [unboundedTooltipNote].compactMap { $0 }).joined(separator: "\n")
         }

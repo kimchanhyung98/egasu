@@ -11,11 +11,17 @@ struct AccountCredentialImporter {
 
     enum ImportError: LocalizedError, Equatable {
         case noSignIn(family: String)
+        case differentAccount
+        case reSignInIdentityUnavailable
         case identityUnreadable(family: String)
         case verificationFailed(family: String)
 
         var errorDescription: String? {
             switch self {
+            case .differentAccount:
+                "You signed in to a different account. Try again with the account you selected."
+            case .reSignInIdentityUnavailable:
+                "egasu couldn't verify the Codex user. Open the account in Accounts to sign in again."
             case .noSignIn(let family):
                 "No \(family) sign-in was found to import."
             case .identityUnreadable(let family):
@@ -271,6 +277,7 @@ struct AccountCredentialImporter {
         in store: AccountProfilesStore
     ) async throws -> ExternalReauthenticationResult {
         let allowInteraction = ProviderRefreshContext.isManual
+        var recoveredCodexProfileID: String?
         if try await AccountSelectionSwitcher(switcher: switcher).recoverInterruptedSwitchAfterStartup(
             in: store, allowInteraction: allowInteraction), let profileID = store.preferredProfileID(family: "claude")
         {
@@ -283,11 +290,14 @@ struct AccountCredentialImporter {
                         transaction, for: profile, in: store, allowInteraction: allowInteraction
                     )
                 else { return .unchanged }
+                if profile.family == "codex" { recoveredCodexProfileID = profile.id }
             } else {
                 try store.cancelIdentityReplacement(transaction)
             }
         }
-        guard let profile = store.preferredProfile(family: "claude") else { return .unchanged }
+        let recoveredResult: ExternalReauthenticationResult =
+            recoveredCodexProfileID.map { .updated(profileID: $0) } ?? .unchanged
+        guard let profile = store.preferredProfile(family: "claude") else { return recoveredResult }
         let authenticationRevision = store.authenticationRevision
         let profiles = store.profiles(family: "claude")
         let familyRevision = AccountCredentialMutationLock.revision(for: "claude")
@@ -300,17 +310,17 @@ struct AccountCredentialImporter {
             try await observeExternalClaudeAuthentication(
                 for: profile, profiles: profiles, allowInteraction: allowInteraction)
         }.value
-        guard let observation else { return .noUsableAuthentication }
+        guard let observation else { return recoveredCodexProfileID == nil ? .noUsableAuthentication : recoveredResult }
         guard !Task.isCancelled, registryMatches(),
             try store.pendingIdentityReplacement() == nil, try switcher.switchJournal.load() == nil
-        else { return .unchanged }
+        else { return recoveredResult }
         guard AccountCredentialMutationLock.revision(for: "claude") == familyRevision else {
             throw ClaudeAuthError.credentialsChanged
         }
         let target = observation.profile
         let replacesCredential =
             observation.previousSnapshot != observation.snapshot || target.identityKey != observation.identityKey
-        if !replacesCredential, target.id == profile.id { return .unchanged }
+        if !replacesCredential, target.id == profile.id { return recoveredResult }
 
         let loginLock = try ClaudeLegacyShellMigration.acquireSharedLoginLock(home: switcher.homeDirectory)
         defer { withExtendedLifetime(loginLock) {} }
@@ -334,6 +344,9 @@ struct AccountCredentialImporter {
             }
             appliedRevision = applied.revision
             if let failure = applied.failure { throw failure }
+            let current = try await loadOffMainActor { [switcher] in
+                try switcher.readClaudeSwitchState(allowInteraction: false)
+            }
             guard !Task.isCancelled, registryMatches(), try store.pendingIdentityReplacement() == transaction,
                 try switcher.switchJournal.load() == nil
             else { throw ClaudeAuthError.credentialsChanged }
@@ -342,7 +355,6 @@ struct AccountCredentialImporter {
                     applied.revision, family: "claude",
                     {
                         appliedRevision = AccountCredentialMutationLock.revision(for: "claude")
-                        let current = try switcher.readClaudeSwitchState(allowInteraction: false)
                         if let generation = transaction?.externalClaudeGeneration {
                             guard try current.fingerprint() == generation.sharedFingerprint else {
                                 throw ClaudeAuthError.credentialsChanged

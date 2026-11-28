@@ -36,6 +36,9 @@ export const alertConditions = [
 export const settingGroups: SettingGroup[] = [
   { id: 'general', title: 'General', tab: 'General', rows: [
     { id: 'launchAtLogin', label: 'Launch at Login', control: { kind: 'toggle', on: false } },
+    { id: 'autoStartSubscriptionTimers', label: 'Auto-Start Subscription Timers',
+      info: 'Sends a short request to start an unused subscription window for all supported accounts. The request can use some of your quota. Turning this off keeps usage updates on.',
+      control: { kind: 'toggle', on: true } },
     { id: 'defaultTab', label: 'Default Tab', control: { kind: 'picker', value: 'Priority', options: ['Priority', 'All Usage'] } },
     { id: 'globalShortcut', label: 'Global Shortcut', info: 'Open egasu from anywhere',
       control: { kind: 'action', label: 'Record Shortcut', message: 'Record a global shortcut in the Mac app.' } },
@@ -58,6 +61,9 @@ export const settingGroups: SettingGroup[] = [
   ] },
   { id: 'menuBar', title: 'Menu Bar Icons', tab: 'Display', rows: [
     { id: 'iconStyle', label: 'Icon Style', control: { kind: 'picker', value: 'Text', options: ['Text', 'Bars'] } },
+    { id: 'menuBarMetricLabels', label: 'Show Metric Labels', control: { kind: 'toggle', on: true } },
+    { id: 'menuBarAccountNames', label: 'Show Account Names', control: { kind: 'toggle', on: false } },
+    { id: 'menuBarResetCountdown', label: 'Show Reset Countdown', control: { kind: 'toggle', on: false } },
     { id: 'menuBarLimit', label: 'Max Items In Menu Bar', control: { kind: 'picker', value: 'Up to 3', options: ['App Icon Only', 'Up to 1', 'Up to 2', 'Up to 3', 'Up to 4', 'Up to 5'] } },
     { id: 'menuBarItems', label: 'Menu Bar Items',
       info: 'Choose Priority or Pinned Only, then pin metrics in All Usage to show them in the menu bar.',
@@ -82,7 +88,11 @@ export const settingGroups: SettingGroup[] = [
     { id: condition.notify, label: `${condition.label}, Receive Alerts`, control: { kind: 'toggle', on: false } },
   ]) },
   { id: 'notifications', title: 'Other Notifications', tab: 'Alerts', rows: [
+    { id: 'weeklyMonthlyResetReminders', label: 'Weekly and Monthly Reset Reminders', control: { kind: 'toggle', on: false },
+      info: 'Notify 24 and 12 hours before weekly or monthly limits reset for Claude, Codex, and Cursor.' },
     { id: 'quotaRecovered', label: 'Quota Available Again', control: { kind: 'toggle', on: false }, info: 'Notify when fresh Claude, Codex, or Cursor usage confirms the same account has quota again' },
+    { id: 'codexCreditExpiry', label: 'Codex Reset Credit Expiry', control: { kind: 'toggle', on: false },
+      info: 'Notify 24 and 12 hours before an unused Codex reset credit expires.' },
     { id: 'codexResetWatch', label: 'Codex Reset Watch', control: { kind: 'toggle', on: false }, info: 'Alert when Reset Watch expects Codex limits to reset soon' },
   ] },
   { id: 'privacy', title: 'Privacy', tab: 'Advanced', rows: [

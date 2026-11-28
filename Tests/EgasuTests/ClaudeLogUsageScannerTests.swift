@@ -403,7 +403,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
     // MARK: - End-to-end scan
 
     func testScanReadsFixtureHomeAndRescanPicksUpNewLines() async throws {
-        let now = Date()
+        let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
         let timestamp = EgasuISO8601.string(from: now)
         let home = try ClaudeLogFixture.makeHome(files: [
             "project-a/session-1.jsonl": ClaudeLogFixture.usageLine(
@@ -433,7 +433,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
     }
 
     func testScanDeduplicatesReplaysAcrossFiles() async throws {
-        let now = Date()
+        let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
         let timestamp = EgasuISO8601.string(from: now)
         // 같은 message가 sidechain 세션 파일에서 새 request id로 replay — parent token만 집계
         let home = try ClaudeLogFixture.makeHome(files: [
@@ -456,7 +456,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
     }
 
     func testScanSkipsFilesLastTouchedBeforeTheWindow() async throws {
-        let now = Date()
+        let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
         let home = try ClaudeLogFixture.makeHome(files: [
             "project-a/old.jsonl": ClaudeLogFixture.usageLine(
                 timestamp: EgasuISO8601.string(from: now.addingTimeInterval(-90 * 86_400)),
@@ -496,7 +496,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
     // MARK: - Cowork session roots
 
     func testScanSumsTerminalAndCoworkLogs() async throws {
-        let now = Date()
+        let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
         let timestamp = EgasuISO8601.string(from: now)
         let home = try ClaudeLogFixture.makeUserHome(
             claudeFiles: [
@@ -530,7 +530,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
     }
 
     func testScanFindsCoworkLogsWithoutTerminalClaudeHome() async throws {
-        let now = Date()
+        let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
         let home = try ClaudeLogFixture.makeUserHome(coworkSessions: [
             "group-1/sub-1/local_a": [
                 "workspace/session.jsonl": ClaudeLogFixture.usageLine(
@@ -547,7 +547,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
     }
 
     func testScanDeduplicatesReplaysAcrossTerminalAndCoworkLogs() async throws {
-        let now = Date()
+        let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
         let timestamp = EgasuISO8601.string(from: now)
         let home = try ClaudeLogFixture.makeUserHome(
             claudeFiles: [
@@ -575,7 +575,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
     }
 
     func testScanAcceptsProjectsDirItselfInConfigDir() async throws {
-        let now = Date()
+        let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
         let home = try ClaudeLogFixture.makeHome(files: [
             "project-a/session.jsonl": ClaudeLogFixture.usageLine(
                 timestamp: EgasuISO8601.string(from: now), input: 10, output: 5, costUSD: 0.01
@@ -595,7 +595,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
     }
 
     func testScanFollowsSymlinkedProjectsDir() async throws {
-        let now = Date()
+        let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
         let timestamp = EgasuISO8601.string(from: now)
         // `~/.claude/projects`가 외부 폴더로의 symlink인 레이아웃 — enumeration이 비어 spend 타일이 과소 집계되던 회귀
         let real = try ClaudeLogFixture.makeHome(files: [

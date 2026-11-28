@@ -157,7 +157,8 @@ struct PriorityBoardList: View {
             ?? pin.item?.resetsInText(now: now).map { ($0, Theme.severityTextColor(.normal)) }
         return limitRow(
             pin.account, pin.data, severity: pin.item?.severity ?? pin.data.fillSeverity,
-            callout: callout, status: spent ? L10n.dashboard("Used Up") : nil
+            callout: callout, status: spent ? L10n.dashboard("Used Up") : nil,
+            truncatesValue: pin.line.dashboardRow(now: now).truncatesValue
         )
     }
 
@@ -249,7 +250,7 @@ struct PriorityBoardList: View {
     /// `callout`은 초기화 자리를 대신 — 빠른 소진으로만 오른 한도의 소진 시각, 초기화 전 사용 한도의 초기화.
     private func limitRow(
         _ account: DashboardAccount, _ data: WidgetData, severity: WidgetData.MeterSeverity,
-        callout: (text: String, color: Color)? = nil, status: String? = nil
+        callout: (text: String, color: Color)? = nil, status: String? = nil, truncatesValue: Bool = false
     ) -> some View {
         HStack(spacing: 10) {
             PriorityGauge(
@@ -268,6 +269,7 @@ struct PriorityBoardList: View {
                 }
             }
             .lineLimit(1)
+            .layoutPriority(truncatesValue ? 1 : 0)
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 1) {
                 toggling(status == nil && data.hasMeterStyleToggle ? onToggleMeterStyle : nil) {
@@ -290,7 +292,8 @@ struct PriorityBoardList: View {
                 }
             }
             .lineLimit(1)
-            .fixedSize()
+            .truncationMode(truncatesValue ? .middle : .tail)
+            .fixedSize(horizontal: !truncatesValue, vertical: true)
         }
         .frame(height: 46)
     }

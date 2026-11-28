@@ -80,20 +80,6 @@ INFO_PLIST="$APP_CONTENTS/Info.plist"
 ENTITLEMENTS="$ROOT_DIR/script/Egasu.dev.entitlements.plist"
 SIGN_ENTITLEMENTS="$ROOT_DIR/script/Egasu.local.entitlements.plist"
 
-# 이름 변경 전후의 이 checkout 개발 앱만 종료. 설치된 운영 앱은 별도 경로에서 계속 실행.
-python3 - "$APP_BINARY" "$DIST_DIR/Egasu.app/Contents/MacOS/Egasu" "$DIST_DIR/OpenUsage.app/Contents/MacOS/OpenUsage" <<'PY'
-import os, signal, subprocess, sys
-executables = {os.path.realpath(path) for path in sys.argv[1:]}
-names = {os.path.basename(path) for path in sys.argv[1:]}
-for line in subprocess.check_output(["/bin/ps", "-axo", "pid=,comm="], text=True).splitlines():
-    pid, executable = line.strip().split(None, 1)
-    if os.path.basename(executable) in names and os.path.realpath(executable) in executables:
-        try:
-            os.kill(int(pid), signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-PY
-
 echo "==> swift build ($CONFIG)"
 swift build -c "$CONFIG"
 BUILD_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
@@ -108,6 +94,51 @@ if [ ! -x "$BUILD_CLI_BINARY" ]; then
   echo "missing built CLI: $BUILD_CLI_BINARY" >&2
   exit 1
 fi
+
+# 고정 설정이 없을 때만 Apple Development ID 자동 선택, 없으면 ad-hoc.
+if [ -z "$CODESIGN_IDENTITY" ]; then
+  CODESIGN_IDENTITY=$(/usr/bin/security find-identity -p codesigning -v 2>/dev/null \
+    | /usr/bin/awk -F\" '/Apple Development:/ { print $2; exit }')
+fi
+
+WIDGET_PRODUCT=""
+if [ -n "$CODESIGN_IDENTITY" ] && [ "$CODESIGN_IDENTITY" != "-" ]; then
+  WIDGET_PRODUCT="$("$ROOT_DIR/script/build_widget_extension.sh" "$BUNDLE_ID" "$APP_VERSION" "$APP_BUILD" \
+    "$CONFIG" "$(lipo -archs "$BUILD_BINARY")")"
+else
+  echo "WARNING: ad-hoc development builds omit desktop widgets, which require a team-signed App Group." >&2
+fi
+
+# 빌드 성공 뒤 이름 변경 전후의 이 checkout 개발 앱만 종료. 설치된 운영 앱은 별도 경로에서 계속 실행.
+# 종료 대기 시간 초과 시 기존 앱 번들을 유지하고 빌드 스크립트 중단.
+python3 - "$APP_BINARY" "$DIST_DIR/Egasu.app/Contents/MacOS/Egasu" "$DIST_DIR/OpenUsage.app/Contents/MacOS/OpenUsage" <<'PY'
+import os, signal, subprocess, sys, time
+executables = {os.path.realpath(path) for path in sys.argv[1:]}
+names = {os.path.basename(path) for path in sys.argv[1:]}
+pids = []
+for line in subprocess.check_output(["/bin/ps", "-axo", "pid=,comm="], text=True).splitlines():
+    pid, executable = line.strip().split(None, 1)
+    if os.path.basename(executable) in names and os.path.realpath(executable) in executables:
+        try:
+            os.kill(int(pid), signal.SIGTERM)
+            pids.append(int(pid))
+        except ProcessLookupError:
+            pass
+
+def running(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+
+deadline = time.monotonic() + 25
+while pids and time.monotonic() < deadline:
+    time.sleep(0.25)
+    pids = [pid for pid in pids if running(pid)]
+if pids:
+    sys.exit("Development app did not quit within 25 seconds; keeping the existing bundle.")
+PY
 
 echo "==> staging $APP_BUNDLE"
 rm -rf "$APP_BUNDLE"
@@ -234,12 +265,6 @@ else
   echo "WARNING: no matching installed iCloud provisioning profile was found; iCloud Sync will be unavailable in this build." >&2
 fi
 
-# 고정 설정이 없을 때만 Apple Development ID 자동 선택, 없으면 ad-hoc.
-if [ -z "$CODESIGN_IDENTITY" ]; then
-  CODESIGN_IDENTITY=$(/usr/bin/security find-identity -p codesigning -v 2>/dev/null \
-    | /usr/bin/awk -F\" '/Apple Development:/ { print $2; exit }')
-fi
-
 # 앱 봉인 전에 Sparkle.framework embed 및 서명.
 # updater는 위 Info.plist에 SUFeedURL이 없어 비활성(UpdaterController 참고)이지만 실행 파일이 Sparkle과
 # link되므로 framework를 embed하지 않으면 빌드 실행 실패.
@@ -247,11 +272,20 @@ fi
 
 if [ -n "$CODESIGN_IDENTITY" ]; then
   /usr/bin/codesign --force --options runtime --sign "$CODESIGN_IDENTITY" "$CLI_BINARY" >/dev/null
+  if [ -n "$WIDGET_PRODUCT" ]; then
+    if [ "$SIGN_ENTITLEMENTS" = "$ROOT_DIR/script/Egasu.local.entitlements.plist" ]; then
+      SIGN_ENTITLEMENTS="$DIST_DIR/egasu.dev.resolved.entitlements.plist"
+      cp "$ROOT_DIR/script/Egasu.local.entitlements.plist" "$SIGN_ENTITLEMENTS"
+    fi
+    "$ROOT_DIR/script/embed_widget_extension.sh" "$APP_BUNDLE" "$WIDGET_PRODUCT" \
+      "$CODESIGN_IDENTITY" "$SIGN_ENTITLEMENTS" development
+  fi
   # --deep 미사용: 위에서 서명한 Sparkle framework의 서명 유지 필요.
   /usr/bin/codesign --force --options runtime \
     --sign "$CODESIGN_IDENTITY" \
     --entitlements "$SIGN_ENTITLEMENTS" \
     "$APP_BUNDLE" >/dev/null
+  /usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
   echo "==> signed with: $CODESIGN_IDENTITY"
 else
   /usr/bin/codesign --force --sign - "$CLI_BINARY" >/dev/null

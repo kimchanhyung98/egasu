@@ -12,6 +12,7 @@
 "Always Show Pacing" = "使用ペースを常に表示";
 "Appearance" = "外観";
 "Auto" = "自動";
+"Auto-Start Subscription Timers" = "サブスクリプションタイマーを自動開始";
 "Bars" = "バー";
 "Beta Updates" = "ベータ版アップデート";
 "Cancel" = "キャンセル";
@@ -87,6 +88,7 @@
 "Reveal in Finder" = "Finderに表示";
 "Running Tokscale…" = "Tokscaleを実行中…";
 "Save" = "保存";
+"Sends a short request to start an unused subscription window for all supported accounts. The request can use some of your quota. Turning this off keeps usage updates on." = "対応するすべてのアカウントで、まだ始まっていない利用枠を短いリクエストで開始します。このリクエストも利用枠を消費する場合があります。オフにしても使用量の更新は続きます。";
 "Share Anonymous Usage" = "匿名の使用統計を共有";
 "Shares anonymous usage counts and error types to help improve egasu. No account details, credentials, or usage values are sent." = "egasuの改善のため、匿名の使用回数とエラーの種類を共有します。アカウント情報、認証情報、使用量の値は送信されません。";
 "Shares usage history through iCloud, so you can see one combined summary for all your Macs." = "iCloudで使用履歴を共有し、すべてのMacの使用量をまとめて確認できます。";
@@ -203,3 +205,21 @@
 "Check Quota" = "使用量上限を確認";
 "Paste the command in Terminal. A new session starts only if the quota check allows it. The Codex start command uses the login saved in auth.json." = "コマンドをターミナルに貼り付けてください。上限の確認で許可された場合にだけ、新しいセッションを開始します。Codex の起動コマンドは auth.json に保存されたログインを使います。";
 "Couldn't copy the terminal command." = "ターミナルコマンドをコピーできませんでした。";
+"Account Recommendations" = "アカウント切り替えの提案";
+"Enable Account Recommendations" = "アカウント切り替えの提案を有効にする";
+"Recommend At" = "提案開始使用率";
+"Candidate Usage Below" = "候補の使用率上限";
+"Suggest another Claude or Codex account. Switching always requires confirmation." = "別のClaudeまたはCodexアカウントを提案します。切り替えには必ず確認が必要です。";
+"Suggest switching when any current base quota reaches this usage." = "現在のアカウントの基本利用枠のいずれかがこの使用率に達すると、切り替えを提案します。";
+"Every applicable base quota on a candidate must be below this usage." = "候補アカウントのすべての基本利用枠の使用率が、この値未満である必要があります。";
+"Weekly and Monthly Reset Reminders" = "週間・月間上限のリセット通知";
+"Notify 24 and 12 hours before weekly or monthly limits reset for Claude, Codex, and Cursor." = "Claude、Codex、Cursor の週間・月間上限がリセットされる24時間前と12時間前に通知します。";
+"Weekly Limit Reset" = "週間上限のリセット";
+"Monthly Limit Reset" = "月間上限のリセット";
+"This limit resets in %lld hours." = "この上限は%lld時間後にリセットされます。";
+"Show Metric Labels" = "指標名を表示";
+"Show Account Names" = "アカウント名を表示";
+"Show Reset Countdown" = "リセットまでの時間を表示";
+"Codex Reset Credit Expiry" = "Codexリセット権の有効期限";
+"Notify 24 and 12 hours before an unused Codex reset credit expires." = "未使用のCodexリセット権の有効期限の24時間前と12時間前に通知します。";
+"An unused reset credit expires in %lld hours." = "未使用のリセット権の有効期限まであと%lld時間です。";

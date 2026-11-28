@@ -188,7 +188,7 @@ final class UsageTimerCoverageTests: XCTestCase {
             UsageTimerCoordinator(
                 store: store,
                 isCurrent: { _, binding, account in self.current && binding == self.binding && account == "account" },
-                prepare: { _, _ in
+                prepare: { _, _, _ in
                     if self.preparationFails { throw UsageTimerError.usageUnavailable }
                     self.now.addTimeInterval(1); return Session(observation: self.observation())
                 },
@@ -200,7 +200,7 @@ final class UsageTimerCoverageTests: XCTestCase {
                     self.sends += 1
                     return .init(launched: true, completed: true)
                 },
-                verify: { _, _ in
+                verify: { _, _, _ in
                     self.verifications += 1
                     self.now.addTimeInterval(1)
                     var observation = self.observation()

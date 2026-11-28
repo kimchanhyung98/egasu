@@ -19,6 +19,12 @@ struct LocalizedMessage: Hashable, Sendable, Codable {
         return result
     }
 
+    /// 원문 오류나 동적 인자 없이 번역 리소스에서만 가져온 문구.
+    var staticText: String? {
+        guard !isVerbatim, arguments.isEmpty else { return nil }
+        return L10n.registeredText(key, table: table)
+    }
+
     var localized: String {
         isVerbatim ? key : L10n.string(key, table: table, arguments: arguments)
     }

@@ -31,6 +31,10 @@ struct LimitResourceDescriptor: Hashable, Sendable {
 }
 
 extension WidgetDescriptor {
+    func isCursorRequestLimitAlias(format: ProgressFormat) -> Bool {
+        id == "cursor.usage" && format == .count(suffix: "requests")
+    }
+
     /// 지표·프로바이더 매퍼 변경 없이 단일 수치를 limits API에 추가.
     func exportingLimit(
         _ key: String,

@@ -375,13 +375,13 @@ final class UsageTimerRouterTests: XCTestCase {
         let account = try fixture.account("first", cardID: "codex")
         let executor = fixture.executor()
         let preparing = expectation(description: "Timer waits before rechecking")
-        let finished = expectation(description: "Obsolete candidate finishes")
         var resume: CheckedContinuation<Void, Never>?
         var warning: String?
         let router = UsageTimerRouter(
             providers: [account.provider], isProviderEnabled: { _ in true },
             executor: executor, store: fixture.store, report: { _, message in warning = message?.joined(separator: " ") },
-            refresh: { _, _ in finished.fulfill() }, now: { fixture.clock.current() },
+            refresh: { _, _ in XCTFail("Obsolete timer requested a follow-up refresh") },
+            now: { fixture.clock.current() },
             wait: { _ in
                 preparing.fulfill()
                 await withCheckedContinuation { resume = $0 }
@@ -396,7 +396,7 @@ final class UsageTimerRouterTests: XCTestCase {
         XCTAssertNil(account.provider.weeklyTimerObservation)
         router.receive(snapshot, trigger: .manual)
         resume?.resume()
-        await fulfillment(of: [finished], timeout: 3)
+        await router.waitForPendingWork(providerIDs: [account.provider.provider.id])
 
         XCTAssertNil(warning)
         XCTAssertFalse(router.hasPendingWork)

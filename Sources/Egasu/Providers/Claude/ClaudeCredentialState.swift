@@ -7,6 +7,11 @@ struct ClaudeOAuth: Codable, Hashable, Sendable {
     var subscriptionType: String?
     var rateLimitTier: String?
     var scopes: [String]?
+
+    var hasOnlyProfileScope: Bool {
+        guard let scopes, !scopes.isEmpty else { return false }
+        return scopes.allSatisfy { $0 == ClaudeAuthStore.usageScope }
+    }
 }
 
 struct ClaudeCredentialsFile: Codable, Hashable, Sendable {

@@ -421,21 +421,23 @@ final class AccountSwitchJournalSourceTests: XCTestCase {
         return record
     }
 
-    func testRecoveryUsesTheRefreshInteractionPolicyForBothKeychainReads() async throws {
+    func testRecoveryReadsTheSharedLoginWithTheCLIToolInBothRefreshModes() async throws {
         for isManual in [false, true] {
             let fixture = try AccountSwitchRecoveryFixture(test: self)
             _ = try fixture.stageIntent()
             try fixture.switcher.applySharedAuthentication(fixture.entryB, family: "claude")
-            let before = fixture.keychain.noninteractiveReadServices.count
+            let beforeCLIReads = fixture.keychain.cliSharedReadServices.count
+            let beforeNativeReads = fixture.keychain.nativeReads.count
             let store = try fixture.freshStore()
             let result = try await ProviderRefreshContext.$isManual.withValue(isManual) {
                 try await fixture.importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: store)
             }
 
+            let cliReads = fixture.keychain.cliSharedReadServices.dropFirst(beforeCLIReads)
+            let nativeReads = fixture.keychain.nativeReads.dropFirst(beforeNativeReads)
             XCTAssertEqual(result, .updated(profileID: fixture.b.id))
-            XCTAssertEqual(
-                Array(fixture.keychain.noninteractiveReadServices.dropFirst(before)),
-                isManual ? [] : [fixture.baseService, fixture.baseService])
+            XCTAssertTrue(cliReads.contains(fixture.baseService))
+            XCTAssertFalse(nativeReads.contains { $0.service == fixture.baseService })
             XCTAssertNil(try fixture.journal.load())
         }
     }

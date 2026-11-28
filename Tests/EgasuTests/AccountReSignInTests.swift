@@ -416,7 +416,10 @@ final class AccountReSignInTests: XCTestCase {
         _ = try store.beginIdentityReplacement(
             profileID: profile.id,
             with: "acct-b",
-            replacesSharedAuthentication: true
+            replacesSharedAuthentication: true,
+            codexGeneration: .init(
+                sharedHome: switcher.sharedHomePath(family: "codex"), previousShared: previous,
+                previousSnapshot: previous, replacement: replacement)
         )
         try switcher.saveSnapshot(replacement, for: profile)
 
@@ -446,7 +449,10 @@ final class AccountReSignInTests: XCTestCase {
         _ = try store.beginIdentityReplacement(
             profileID: profile.id,
             with: "acct-b",
-            replacesSharedAuthentication: true
+            replacesSharedAuthentication: true,
+            codexGeneration: .init(
+                sharedHome: switcher.sharedHomePath(family: "codex"), previousShared: previous,
+                previousSnapshot: previous, replacement: incomplete)
         )
         try switcher.applySharedAuthentication(incomplete, family: "codex")
 

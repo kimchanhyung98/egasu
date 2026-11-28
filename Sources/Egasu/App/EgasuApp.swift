@@ -4,11 +4,27 @@ import AppKit
 public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var container: AppContainer?
     private var statusItemController: StatusItemController?
+    private var widgetNavigation = DesktopWidgetNavigation()
     private var singleInstanceLock: SingleInstanceLock.Token?
     private var isAwaitingProcessShutdown = false
+    private var terminationSignalSource: DispatchSourceSignal?
     private let updater = UpdaterController()
+    private var desktopWidgets: DesktopWidgetPublisher?
+    private let processOwner: StreamingProcessOwner
+    private let terminationReply: @MainActor (NSApplication, Bool) -> Void
 
     public override init() {
+        processOwner = .shared
+        terminationReply = { $0.reply(toApplicationShouldTerminate: $1) }
+        super.init()
+    }
+
+    init(
+        processOwner: StreamingProcessOwner,
+        terminationReply: @escaping @MainActor (NSApplication, Bool) -> Void
+    ) {
+        self.processOwner = processOwner
+        self.terminationReply = terminationReply
         super.init()
     }
 
@@ -20,6 +36,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     public func applicationDidFinishLaunching(_ notification: Notification) {
         // 다른 로그보다 먼저 bootstrap — 세션 첫 라인 캡처.
         AppLog.bootstrap()
+        // SIGTERM도 정상 종료 경로로 처리 — 개발 스크립트·`kill` 종료에서도 회전 저장 대기.
+        terminationSignalSource = TerminationSignalHandler.install { NSApp.terminate(nil) }
         // 커널 수준 single-instance lock (#874) — workspace guard snapshot이 놓치는 근접 동시 런치도 차단.
         var holdsLock = false
         if let bundleID = Bundle.main.bundleIdentifier {
@@ -106,6 +124,17 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { await finishLaunching(isFreshInstall: isFreshInstall) }
     }
 
+    public func application(_ application: NSApplication, open urls: [URL]) {
+        guard let scheme = Bundle.main.object(forInfoDictionaryKey: "EgasuWidgetURLScheme") as? String else { return }
+        widgetNavigation.receive(urls, scheme: scheme)
+        openPendingWidgetDestination()
+    }
+
+    private func openPendingWidgetDestination() {
+        guard let statusItemController, let destination = widgetNavigation.take() else { return }
+        statusItemController.openFromWidget(destination)
+    }
+
     private func finishLaunching(isFreshInstall: Bool) async {
         let migrationError: Error?
         do {
@@ -126,29 +155,47 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         updater.onBetaChannelChange = { [weak container] enabled in
             container?.softLimitSettings.setLabsAvailable(enabled)
+            container?.accountRecommendationSettings.setLabsAvailable(enabled)
             container?.popover.reconcileSettingsTab(betaUpdatesEnabled: enabled)
         }
         self.container = container
+        desktopWidgets = DesktopWidgetPublisher.start(for: container)
         statusItemController = StatusItemController(container: container, updater: updater)
+        openPendingWidgetDestination()
         // 백그라운드 업데이트 체크 시작 (release build 한정).
         updater.start()
     }
 
-    /// Runner 소유 process group 정리까지 app 종료 지연.
+    /// 계정 추가·재로그인 정리와 토큰 회전 저장, Runner 소유 프로세스 종료까지 대기.
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !isAwaitingProcessShutdown else { return .terminateLater }
-        guard let container, container.hasRunningBackgroundProcesses else { return .terminateNow }
+        let signIns = container?.popover.beginSignInShutdown() ?? []
+        TokenRotationShutdownGuard.beginTermination()
+        processOwner.beginShutdown()
+        let hasActiveRotation = !TokenRotationShutdownGuard.isIdle
+        guard hasActiveRotation || !processOwner.isIdle || container?.hasRunningBackgroundProcesses == true else {
+            return .terminateNow
+        }
         isAwaitingProcessShutdown = true
         Task { @MainActor in
-            await container.shutdownBackgroundProcesses()
+            if hasActiveRotation {
+                await TokenRotationShutdownGuard.waitForIdle(warnAfter: .seconds(20)) {
+                    AppLog.warn(.lifecycle, "still waiting for a token rotation before quitting")
+                }
+            }
+            if let container, container.hasRunningBackgroundProcesses {
+                await container.shutdownBackgroundProcesses(signIns: signIns)
+            }
+            await processOwner.shutdown()
             self.isAwaitingProcessShutdown = false
-            sender.reply(toApplicationShouldTerminate: true)
+            self.terminationReply(sender, true)
         }
         return .terminateLater
     }
 
     /// 종료 시 대기 telemetry flush — SDK lifecycle autocapture off라 자동 flush 부재, 저빈도 이벤트 유실 방지.
     public func applicationWillTerminate(_ notification: Notification) {
+        desktopWidgets?.finish()
         container?.telemetry.flush()
     }
 }

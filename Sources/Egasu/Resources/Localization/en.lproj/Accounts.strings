@@ -78,3 +78,17 @@
 
 "Moved metric %@ to position %lld of %lld." = "Moved metric %@ to position %lld of %lld.";
 "Claude login migration paused. %@" = "Claude login migration paused. %@";
+"To sign in to the default terminal account, run `codex login`." = "To sign in to the default terminal account, run `codex login`.";
+"Signed In" = "Signed In";
+"Check this account's sign-in status in Accounts." = "Check this account's sign-in status in Accounts.";
+"Sign In Again to %@" = "Sign In Again to %@";
+"Current Login" = "Current Login";
+"Shared Usage" = "Shared Usage";
+"Account %lld" = "Account %lld";
+"%@ · Account %lld" = "%@ · Account %lld";
+"Enter an organization Admin API key with access to costs. egasu saves it in Keychain." = "Enter an organization Admin API key with access to costs. egasu saves it in Keychain.";
+"egasu removes the Admin API key from Keychain and stops tracking costs." = "egasu removes the Admin API key from Keychain and stops tracking costs.";
+"Edit Billing Connection…" = "Edit Billing Connection…";
+"Project IDs" = "Project IDs";
+"Empty for the whole organization" = "Empty for the whole organization";
+"Separate project IDs with commas." = "Separate project IDs with commas.";

@@ -1,17 +1,26 @@
 import AppKit
 
-/// 화면별 측정 콘텐츠 높이 — Priority와 All Usage는 서로 다른 값으로 기록.
+/// 대시보드 탭과 계정 목록·상세의 측정 높이를 각각 보관.
 struct MeasuredPanelHeights: Equatable {
-    private struct Key: Hashable {
-        let screen: PopoverScreen
-        let tab: DashboardTab?
+    private enum Page: Hashable {
+        case dashboard(DashboardTab)
+        case accounts(String?)
+        case settings
+
+        init(screen: PopoverScreen, tab: DashboardTab, account: String?) {
+            switch screen {
+            case .dashboard: self = .dashboard(tab)
+            case .accounts: self = .accounts(account)
+            case .settings: self = .settings
+            }
+        }
     }
 
-    private var heights: [Key: CGFloat] = [:]
+    private var heights: [Page: CGFloat] = [:]
 
-    subscript(screen: PopoverScreen, tab: DashboardTab) -> CGFloat? {
-        get { heights[Key(screen: screen, tab: screen == .dashboard ? tab : nil)] }
-        set { heights[Key(screen: screen, tab: screen == .dashboard ? tab : nil)] = newValue }
+    subscript(screen: PopoverScreen, tab: DashboardTab, accountID: String? = nil) -> CGFloat? {
+        get { heights[Page(screen: screen, tab: tab, account: accountID)] }
+        set { heights[Page(screen: screen, tab: tab, account: accountID)] = newValue }
     }
 }
 
@@ -47,6 +56,10 @@ final class PanelHeightController {
 
     /// SwiftUI 측정 콜백과 시트 크기 추적 설치 — 시트가 패널보다 크면 패널 확장.
     func installBridge() {
+        MenuBarPopover.presentedHeight = { [weak panel] in
+            guard let panel, panel.isVisible else { return nil }
+            return panel.frame.height
+        }
         MenuBarPopover.applyHeight = { [weak self] height in
             self?.applyMorphHeight(height)
         }

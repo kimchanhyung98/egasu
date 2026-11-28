@@ -17,9 +17,9 @@ final class AccountsScreenTests: XCTestCase {
 
     func testReauthenticationRecordsASingleSavedOutcomeAfterAttemptCleanup() {
         let recorder = DiagnosticEventRecorder()
-        XCTAssertNil(RegisteredAccountRows.finishSignInAttempt(family: "codex", saved: true) {})
+        XCTAssertNil(AppContainer.finishSignInAttempt(family: "codex", saved: true) {})
         let failure = CocoaError(.fileWriteNoPermission)
-        XCTAssertNotNil(RegisteredAccountRows.finishSignInAttempt(family: "codex", saved: true) { throw failure })
+        XCTAssertNotNil(AppContainer.finishSignInAttempt(family: "codex", saved: true) { throw failure })
         XCTAssertEqual(
             recorder.events,
             [
@@ -30,14 +30,73 @@ final class AccountsScreenTests: XCTestCase {
 
     func testUnsuccessfulSignInAttemptRecordsOnlyTheFailedCleanup() {
         let recorder = DiagnosticEventRecorder()
-        XCTAssertNil(RegisteredAccountRows.finishSignInAttempt(family: "codex", saved: false) {})
+        XCTAssertNil(AppContainer.finishSignInAttempt(family: "codex", saved: false) {})
         XCTAssertNotNil(
-            RegisteredAccountRows.finishSignInAttempt(family: "codex", saved: false) {
+            AppContainer.finishSignInAttempt(family: "codex", saved: false) {
                 throw CocoaError(.fileWriteNoPermission)
             })
         XCTAssertEqual(
             recorder.events,
             [DiagnosticEvent(.accountRollback, result: .failure, category: .permission, providerID: "codex")])
+    }
+
+    func testClosingAndReopeningImmediatelyCancelsTheOldBrowserLogin() async throws {
+        let suite = "EgasuTests.PanelReSignIn.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let state = PopoverState(defaults: defaults)
+        state.show()
+        let started = expectation(description: "browser login started")
+        var finish: CheckedContinuation<Void, Never>?
+        var saved = false
+        let task = try XCTUnwrap(
+            state.startReSignIn(for: "c") {
+                await withCheckedContinuation { continuation in
+                    finish = continuation
+                    started.fulfill()
+                }
+                if !Task.isCancelled { saved = true }
+            })
+        await fulfillment(of: [started], timeout: 2)
+        state.popoverShown = false
+        state.show()
+        XCTAssertTrue(task.isCancelled)
+        XCTAssertEqual(state.signingInAgainAccountID, "c")
+        XCTAssertNil(state.startReSignIn(for: "y") { XCTFail("Previous attempt is still cleaning up") })
+        try XCTUnwrap(finish).resume()
+        await task.value
+        XCTAssertFalse(saved)
+        XCTAssertNil(state.signingInAgainAccountID)
+        let next = try XCTUnwrap(state.startReSignIn(for: "y") {})
+        await next.value
+    }
+
+    func testPrivateReSignInPreservesTheCauseAndHidesPathsAndRawErrors() {
+        let mismatch = AccountReSignInIssue.failed(AccountCredentialImporter.ImportError.differentAccount)
+        XCTAssertEqual(mismatch.message(concealsAccountNames: true), mismatch.message())
+        XCTAssertTrue(mismatch.allowsRetry)
+
+        let unverifiable = AccountReSignInIssue.failed(
+            AccountCredentialImporter.ImportError.reSignInIdentityUnavailable)
+        XCTAssertEqual(unverifiable.message(concealsAccountNames: true), unverifiable.message())
+        XCTAssertFalse(unverifiable.allowsRetry)
+
+        let privateName = "private-account"
+        XCTAssertNil(LocalizedMessage(privateName).staticText)
+        XCTAssertEqual(
+            CodexAuthError.tokenRevoked.presentationMessage.staticText,
+            UserFacingErrors.message(CodexAuthError.tokenRevoked))
+        for issue in [
+            AccountReSignInIssue.failed(AccountSignInWorkspace.WorkspaceError.symlinkedComponent(privateName)),
+            .failed(KeychainError.readFailed(privateName)),
+            .failed(AccountCredentialImporter.ImportError.noSignIn(family: privateName))
+        ] {
+            XCTAssertTrue(issue.message().contains(privateName))
+            XCTAssertFalse(issue.message(concealsAccountNames: true).contains(privateName))
+        }
+        for issue in [AccountReSignInIssue.processExited(family: "codex"), .savedWithCleanupFailure] {
+            XCTAssertEqual(issue.message(concealsAccountNames: true), issue.message())
+        }
     }
 
     func testRemovingADetectedProviderOnlyTurnsItOff() throws {

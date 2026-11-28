@@ -9,11 +9,11 @@ struct DashboardView: View {
     @Environment(\.reduceAnimations) private var reduceAnimations
     @State private var settingsOperations: SettingsOperations
     @State private var reorderLift: ReorderLift?
-    /// SwiftUI가 구동하는 패널 높이 — 0이면 첫 측정 전까지 패널 제어기가 정한 크기 유지.
-    @State private var animatedHeight: CGFloat = 0
-    @State private var didEstablishHeight = false
+    @State private var heightPath = PanelHeightPath()
+    @State private var heightPresentation = PanelHeightPresentation()
+    @State private var heightMotion = 0
     @State private var measuredIdeal = MeasuredPanelHeights()
-    @State private var isOpening = false
+    @State private var openingSlideID: Int?
     @State private var slideProgress: CGFloat = 1
     @State private var animatedSlideID = 0
     /// 전환을 마친 화면 ID — 완료 전까지 두 화면을 유지하여 떠나는 화면과 바를 함께 이동.
@@ -33,7 +33,19 @@ struct DashboardView: View {
             .background(Theme.panelBody)
             .accountRenameErrorAlert(renaming: renaming, isPopoverShown: popover.popoverShown)
             // `.animation(nil, ...)` 밖에서 패널 높이를 구동하여 화면 이동과 애니메이션 동기화.
-            .drivesPanelHeight(animatedHeight)
+            .background {
+                Color.clear
+                    .modifier(
+                        PanelHeightModifier(
+                            path: heightPath, progress: slideProgress, motion: heightMotion,
+                            presentation: heightPresentation
+                        )
+                    )
+                    .id(heightMotion)
+                    .transition(.identity)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
             .overlay(alignment: .topLeading) {
                 if let reorderLift {
                     ReorderLiftPreview(lift: reorderLift)
@@ -65,19 +77,14 @@ struct DashboardView: View {
                     }
                 )
             )
-            .onChange(of: popover.popoverShown) { _, shown in
+            .onChange(of: popover.popoverShown, initial: true) { wasShown, shown in
                 if shown {
-                    // 닫힌 뒤에도 SwiftUI 뷰가 유지되므로 다시 열 때 현재 높이를 애니메이션 없이 설정.
+                    openingSlideID = popover.screenSlideID
+                    settledSlideID = popover.screenSlideID
                     if let target = heightTarget(for: popover.screen) {
-                        didEstablishHeight = true
-                        animatedHeight = target
+                        heightPath = PanelHeightPath(start: target, end: target)
                     }
-                    isOpening = true
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(300))
-                        isOpening = false
-                    }
-                } else {
+                } else if wasShown {
                     resetTransientState()
                 }
             }
@@ -86,55 +93,63 @@ struct DashboardView: View {
                 reorderLift = nil
                 layout.cancelDrag()
             }
-            .onChange(of: popover.accountDetailID) { reorderLift = nil }
-            // 전환마다 시작 위치를 먼저 적용하고 다음 실행 순서에서 애니메이션 시작 — 한 클로저의 연속 변경은 병합 가능.
-            .onChange(of: popover.screenSlideID) { _, id in
-                guard id != 0 else { return }
-                if reduceAnimations {
-                    animatedSlideID = id
-                    settledSlideID = id
+            .onChange(of: Navigation(slide: popover.screenSlideID, detail: popover.accountDetailID)) { old, new in
+                reorderLift = nil
+                guard popover.popoverShown else { return }
+                let screenChanged = old.slide != new.slide
+                if !screenChanged, isSliding { return }
+                beginNavigation(animate: !reduceAnimations && !(screenChanged && new.slide == openingSlideID))
+            }
+            // 시작 프레임이 뷰에 반영된 뒤 같은 진행률로 화면과 패널 높이 이동.
+            .onChange(of: heightMotion) {
+                guard popover.popoverShown, slideProgress == 0 else { return }
+                let slide = popover.screenSlideID
+                withAnimation(Motion.navigation, completionCriteria: .removed) {
                     slideProgress = 1
-                    if let target = heightTarget(for: popover.screen) {
-                        didEstablishHeight = true
-                        animatedHeight = target
-                    }
-                    return
-                }
-                slideProgress = 0
-                animatedSlideID = id
-                let destination = popover.screen
-                Task { @MainActor in
-                    let coTarget: CGFloat? = heightTarget(for: destination)
-                        ?? (animatedHeight > 0 ? animatedHeight : nil)
-                    if coTarget != nil { didEstablishHeight = true }
-                    withAnimation(Motion.navigation, completionCriteria: .removed) {
-                        slideProgress = 1
-                        if let coTarget { animatedHeight = coTarget }
-                    } completion: {
-                        settledSlideID = id
-                        guard let target = heightTarget(for: popover.screen) else { return }
-                        if !didEstablishHeight {
-                            didEstablishHeight = true
-                            animatedHeight = target
-                        } else if abs(target - animatedHeight) > 1 {
-                            withAnimation(Motion.navigation) { animatedHeight = target }
-                        }
-                    }
+                } completion: {
+                    guard popover.isShowingSlide(slide) else { return }
+                    settledSlideID = slide
                 }
             }
-            // macOS 15에서 바 여백 적용 전에 측정될 수 있으므로 전환 중에도 보정된 높이 반영.
-            .onChange(of: measuredIdeal[popover.screen, popover.dashboardTab]) { _, _ in
-                guard let target = heightTarget(for: popover.screen) else { return }
-                if !didEstablishHeight {
-                    didEstablishHeight = true
-                    animatedHeight = target
-                } else if isOpening || !isSliding {
-                    // 화면 전환 중이 아니면 새 높이 즉시 적용.
-                    animatedHeight = target
-                } else if abs(target - animatedHeight) > 1 {
-                    withAnimation(Motion.navigation) { animatedHeight = target }
-                }
+            .onChange(of: heightTarget(for: popover.screen)) { _, target in
+                guard popover.popoverShown, let target else { return }
+                updateHeightTarget(target)
             }
+    }
+
+    private struct Navigation: Equatable {
+        let slide: Int
+        let detail: String?
+    }
+
+    private func updateHeightTarget(_ target: CGFloat) {
+        guard target != heightPath.end else { return }
+        let frame = heightPresentation.current
+        let start = frame.progress == 0 ? heightPath.start : frame.height
+        guard frame.progress < 1, start > 0, !reduceAnimations else {
+            heightMotion = heightPresentation.settle(at: target)
+            heightPath = PanelHeightPath(start: target, end: target)
+            return
+        }
+        heightPath = PanelHeightPath(start: start, end: target, startProgress: frame.progress)
+    }
+
+    private func beginNavigation(animate: Bool) {
+        let frame = heightPresentation.restart()
+        let start = MenuBarPopover.presentedHeight?() ?? (frame.height > 0 ? frame.height : heightPath.end)
+        let target = heightTarget(for: popover.screen) ?? start
+        let slide = popover.screenSlideID
+        // 표시된 높이를 시작점으로 사용하고 이전 움직임의 보간이 새 진행률에 섞이지 않도록 효과만 교체.
+        withAnimation(nil) {
+            heightMotion = frame.motion
+            animatedSlideID = slide
+            heightPath = PanelHeightPath(start: animate && start > 0 ? start : target, end: target)
+            slideProgress = animate ? 0 : 1
+            if !animate {
+                heightPresentation.present(target, at: 1, motion: frame.motion)
+                settledSlideID = slide
+            }
+        }
     }
 
     private func resetTransientState() {
@@ -148,8 +163,11 @@ struct DashboardView: View {
         reorderLift = nil
         layout.cancelDrag()
         // 다음 열기에서 새 높이를 애니메이션 없이 적용하도록 미설정 값 0으로 초기화.
-        animatedHeight = 0
-        didEstablishHeight = false
+        heightMotion = heightPresentation.restart().motion
+        heightPath = PanelHeightPath()
+        slideProgress = 1
+        settledSlideID = popover.screenSlideID
+        openingSlideID = nil
         dashboardScrollPosition.scrollTo(edge: .top)
     }
 
@@ -204,16 +222,23 @@ struct DashboardView: View {
 
     @ViewBuilder
     private func screenView(_ screen: PopoverScreen) -> some View {
-        scrollBody(for: screen)
-            .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                geometry.contentSize.height + geometry.contentInsets.top + geometry.contentInsets.bottom
-            } action: { _, height in
-                if height > 0 { measuredIdeal[screen, popover.dashboardTab] = height }
+        let detail = popover.displayedAccountDetail(on: screen)
+        let footer = PopoverFooter(screen: screen, accountDetailID: detail)
+        let hasFooter = footer != nil
+        let tab = popover.dashboardTab
+        scrollBody(for: screen, accountDetailID: detail)
+            .onScrollGeometryChange(for: PanelPageMeasurement?.self) { geometry in
+                PanelPageMeasurement(screen: screen, tab: tab, detail: detail, hasFooter: hasFooter, geometry: geometry)
+            } action: { _, measurement in
+                if let measurement, measurement.height > 0 {
+                    measuredIdeal[screen, measurement.tab, measurement.detail] = measurement.height
+                }
             }
             .panelBars {
-                PopoverTopBar(screen: screen)
+                PopoverTopBar(screen: screen, accountDetailID: detail)
+                    .animation(accountPageAnimation, value: detail)
             } bottom: {
-                PopoverFooter(screen: screen, accountDetailID: popover.accountDetailID)
+                footer
             }
             // 전환 중 두 페이지도 각 화면의 범위 유지 — Accounts 본문·상단 바·확인창은 항상 원문.
             .environment(\.concealsAccountNames, AccountNamePrivacy.concealsAccountNames(
@@ -221,12 +246,18 @@ struct DashboardView: View {
             ))
     }
 
+    private var accountPageAnimation: Animation? {
+        isSliding || reduceAnimations ? nil : Motion.navigation
+    }
+
     private func heightTarget(for screen: PopoverScreen) -> CGFloat? {
-        measuredIdeal[screen, popover.dashboardTab].map { MenuBarPopover.clampHeight?($0) ?? $0 }
+        measuredIdeal[screen, popover.dashboardTab, popover.accountDetailID].map {
+            MenuBarPopover.clampHeight?($0) ?? $0
+        }
     }
 
     @ViewBuilder
-    private func scrollBody(for screen: PopoverScreen) -> some View {
+    private func scrollBody(for screen: PopoverScreen, accountDetailID: String?) -> some View {
         switch screen {
         case .dashboard:
             DashboardContentView(
@@ -237,11 +268,14 @@ struct DashboardView: View {
         case .accounts:
             AccountsView(
                 reorderSpaceName: Self.reorderSpace,
-                reorderLift: $reorderLift
+                reorderLift: $reorderLift,
+                pageAnimation: accountPageAnimation,
+                accountDetailID: accountDetailID
             )
         case .settings:
             SettingsScreen(operations: settingsOperations)
                 .environment(container.iCloudSync)
+                .environment(container.usageTimerSetting)
                 .environment(container.notificationSettings)
         }
     }

@@ -23,7 +23,7 @@ Credits, Extra Usage, Org Credits, Org Spend, Chat, Completions는 기본으로 
 지표 표시와 순서는 [Accounts](/docs/accounts.md#계정-상세)의 Copilot 계정 상세에서 조정.
 할당량 미터에는 사용 백분율과 응답에 포함된 경우 다음 재설정까지의 카운트다운 표시.
 개인·조직 크레딧 수에는 한도나 백분율을 임의로 붙이지 않음.
-요금제 이름(Pro, Business, Free, …)은 프로바이더 옆에 표시.
+요금제 이름(Pro, Business, Free, …)은 대시보드 계정 줄의 배지에 표시.
 응답의 `access_type_sku=free_limited_copilot`은 `Free`로 표시.
 이 값이 없거나 다른 값이면 `copilot_plan` 이름 사용.
 `individual`만으로 무료 여부를 추정하지 않음.

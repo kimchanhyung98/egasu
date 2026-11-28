@@ -107,6 +107,54 @@ final class DevelopmentSigningScriptTests: XCTestCase {
         }
     }
 
+    func testRunningAppQuitsOnlyAfterTheBuildSucceedsAndBeforeStaging() throws {
+        let source = try String(
+            contentsOf: Self.repositoryRoot.appendingPathComponent("script/build_and_run.sh"), encoding: .utf8)
+        let build = try XCTUnwrap(source.range(of: "\nswift build -c \"$CONFIG\"\n"))
+        let quit = try XCTUnwrap(source.range(of: "os.kill(int(pid), signal.SIGTERM)"))
+        let staging = try XCTUnwrap(source.range(of: "\nrm -rf \"$APP_BUNDLE\"\n"))
+
+        XCTAssertLessThan(build.lowerBound, quit.lowerBound, "빌드 실패 시 실행 중인 앱과 진행 중인 토큰 회전 유지")
+        XCTAssertLessThan(quit.lowerBound, staging.lowerBound, "번들 교체 전에 종료")
+        XCTAssertTrue(source.contains("deadline = time.monotonic() + 25"), "종료를 기다리는 최대 시간")
+    }
+
+    func testQuitTimeoutKeepsTheExistingBundle() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("egasu-quit-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let bundle = directory.appendingPathComponent("egasu.app")
+        try "old bundle".write(to: bundle, atomically: true, encoding: .utf8)
+
+        let source = try String(
+            contentsOf: Self.repositoryRoot.appendingPathComponent("script/build_and_run.sh"), encoding: .utf8)
+        let start = try XCTUnwrap(source.range(of: "python3 - \"$APP_BINARY\""))
+        let end = try XCTUnwrap(source.range(of: "\nrm -rf \"$APP_BUNDLE\"\n"))
+        let script = directory.appendingPathComponent("build-fixture.sh")
+        try ("set -eu\n" + source[start.lowerBound..<end.upperBound])
+            .write(to: script, atomically: true, encoding: .utf8)
+        let mocks = """
+            import os, signal, subprocess, time
+            from unittest.mock import Mock
+            subprocess.check_output = Mock(return_value="789 " + os.environ["APP_BINARY"])
+            def fake_kill(pid, sig):
+                assert pid == 789 and sig in (signal.SIGTERM, 0), "unexpected signal"
+            os.kill = fake_kill
+            time.monotonic = Mock(side_effect=[0, 26])
+            """
+        try mocks.write(to: directory.appendingPathComponent("sitecustomize.py"), atomically: true, encoding: .utf8)
+        let result = try run(
+            "/bin/bash", arguments: [script.path],
+            environment: [
+                "APP_BINARY": bundle.appendingPathComponent("Contents/MacOS/egasu").path, "DIST_DIR": directory.path,
+                "APP_BUNDLE": bundle.path, "PYTHONPATH": directory.path, "PATH": "/usr/bin:/bin"
+            ])
+
+        XCTAssertNotEqual(result.status, 0, result.output)
+        XCTAssertTrue(result.output.contains("did not quit within 25 seconds"), result.output)
+        XCTAssertEqual(try String(contentsOf: bundle, encoding: .utf8), "old bundle")
+    }
+
     private func preflight(pin: String?, requested: String? = nil) throws -> (
         status: Int32, output: String, probeArguments: [String], remainingProbeCount: Int
     ) {

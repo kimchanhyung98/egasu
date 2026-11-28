@@ -14,6 +14,7 @@ enum ProviderRefreshDeadline {
     /// ContinuousClock을 쓰면 잠자기에서 깨자마자 정상 조회가 시간 초과로 폐기됨.
     static func run(
         timeout: Duration,
+        isCurrent: @escaping @MainActor () -> Bool = { true },
         sleep: @escaping @Sendable (Duration) async throws -> Void = {
             try await Task.sleep(for: $0, clock: .suspending)
         },
@@ -30,7 +31,7 @@ enum ProviderRefreshDeadline {
                     return
                 }
                 race.work = Task {
-                    guard !Task.isCancelled else {
+                    guard !Task.isCancelled, isCurrent() else {
                         race.finish(.cancelled)
                         return
                     }

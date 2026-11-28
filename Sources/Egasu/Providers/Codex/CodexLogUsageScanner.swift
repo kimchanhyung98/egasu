@@ -130,7 +130,7 @@ actor CodexLogUsageScanner {
                 return Self.parseFile(data)
             }
         ), !Task.isCancelled else { return nil }
-        var scan = Self.aggregate(events: result.items, since: since, pricing: pricing)
+        var scan = Self.aggregate(events: result.items, since: since, until: now, pricing: pricing)
         scan.readFailureCount = discoveryFailures + result.failedPaths.count
         return scan
     }
@@ -285,7 +285,7 @@ actor CodexLogUsageScanner {
     /// Event를 local calendar day로 bucket — 파일 간 동일 event(복사된 session log)는 1회 집계, cost는 per-event codex 계산 (`cost` 참고).
     /// 모델 가격이 없으면 측정 토큰을 유지하고 해당 날짜·기간의 비용을 미확정으로 처리.
     static func aggregate(
-        events: [Event], since: Date, pricing: ModelPricing
+        events: [Event], since: Date, until: Date = .distantFuture, pricing: ModelPricing
     ) -> LogUsageScan {
         var seen: Set<EventKey> = []
         var seenSnapshots: Set<LegacySnapshot> = []
@@ -302,7 +302,7 @@ actor CodexLogUsageScanner {
         var rejectedMetadataRows = 0
         var costEstimator = CodexUsagePricing.Resolver(pricing: pricing)
 
-        for event in events where event.timestamp >= since {
+        for event in events where event.timestamp >= since && event.timestamp <= until {
             guard !event.invalidMetadata else {
                 rejectedMetadataRows += 1
                 continue
@@ -355,7 +355,7 @@ actor CodexLogUsageScanner {
     }
 
     /// Codex cost 계산 (ccusage 방식) — non-cached input은 input rate, cached input은 명시적 cache-read rate(할인 미공표 시 full input rate), output(reasoning 포함)은 output rate.
-    /// 지원 OpenAI model은 272k 초과 시 request 전체를 상위 rate로 전환.
+    /// 장문 보정 대상 OpenAI 모델은 명시된 기준을 초과하면 요청 전체에 상위 요율 적용. 기준 생략 시 272k 사용.
     static func cost(
         rates: ModelRates,
         event: Event,

@@ -2,11 +2,20 @@ import Foundation
 
 extension AppContainer {
     func accountStatus(for profile: AccountProfile, localState: AccountSignInProbe.State?) -> AccountStatus {
-        let mapping = Dictionary(uniqueKeysWithValues: dataStore.knownProviderIDs.compactMap { cardID in
-            accountProfileID(for: cardID).map { (cardID, $0) }
-        })
-        let cardID = AccountUsageCardPlanner.statusCardID(for: profile, profileIDsByCard: mapping)
-        return dataStore.accountStatus(for: cardID, localState: localState)
+        dataStore.accountStatus(for: accountStatusCardID(for: profile), localState: localState)
+    }
+
+    func signInReasonWithoutAccountDetails(for profile: AccountProfile) -> String? {
+        guard let cardID = accountStatusCardID(for: profile) else { return nil }
+        return dataStore.refreshResults[cardID]?.failure?.presentation?.staticText
+    }
+
+    private func accountStatusCardID(for profile: AccountProfile) -> String? {
+        let mapping = Dictionary(
+            uniqueKeysWithValues: dataStore.knownProviderIDs.compactMap { cardID in
+                accountProfileID(for: cardID).map { (cardID, $0) }
+            })
+        return AccountUsageCardPlanner.statusCardID(for: profile, profileIDsByCard: mapping)
     }
 
     /// Keychain 접근 실패는 해당 카드만 수동 갱신하고, 나머지 문제는 계정 상세로 연결.
@@ -37,8 +46,12 @@ extension AppContainer {
         return refreshes
     }
 
-    static func externalClaudeReconciliationFailure(for error: Error) -> ProviderRefreshFailure {
+    static func externalClaudeReconciliationFailure(for error: Error, family: String = "claude") -> ProviderRefreshFailure {
         let category = ErrorCategory.classify(error)
+        if family == "codex" || error is CodexAuthError {
+            let presentation = UserFacingErrors.presentation(error)
+            return ProviderRefreshFailure(message: presentation.key, category: category, presentation: presentation)
+        }
         let fallback =
             "egasu couldn't update the selected Claude sign-in. The saved account was left unchanged. Check the app log and try again."
         let presentation: LocalizedMessage
@@ -59,9 +72,23 @@ extension AppContainer {
 
     static func applyExternalClaudeReconciliationError(
         _ failure: ProviderRefreshFailure?, to dataStore: WidgetDataStore,
-        accountSwitch: AccountSwitchCoordinator, startedAt generation: Int
+        accountSwitch: AccountSwitchCoordinator, startedAt generation: Int, family: String = "claude"
     ) {
         guard !accountSwitch.isSwitching, accountSwitch.generation == generation else { return }
-        dataStore.setClaudeReconciliationFailure(failure)
+        dataStore.setAccountReconciliationFailure(failure, for: family)
+    }
+
+    /// 저장이 끝난 인증 변경은 화면 작업이 취소돼도 카탈로그에 반영.
+    static func reconcileAndRefreshAccountCatalog(
+        in accountProfiles: AccountProfilesStore,
+        reconcile: () async -> Result<Bool, Error>?,
+        refreshCatalog: () -> Void
+    ) async -> Result<Bool, Error>? {
+        let authenticationRevision = accountProfiles.authenticationRevision
+        guard let result = await reconcile() else { return nil }
+        if (try? result.get()) == true || accountProfiles.authenticationRevision != authenticationRevision {
+            refreshCatalog()
+        }
+        return Task.isCancelled ? nil : result
     }
 }

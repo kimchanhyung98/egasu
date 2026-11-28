@@ -2,6 +2,50 @@
 
 This changelog starts with v0.8.0, the first release of this fork.
 
+## v1.0.0-beta.6
+
+### New Features
+
+- Claude·Codex 계정 전환 추천과 실험실의 추천 켜기·끄기·사용률 기준 설정 추가. 추천을 닫으면 출발·대상 계정의 5시간 세션이 초기화될 때까지 같은 대상의 재추천 차단. [#241](https://github.com/kimchanhyung98/egasu/pull/241) · [#245](https://github.com/kimchanhyung98/egasu/pull/245) · [#247](https://github.com/kimchanhyung98/egasu/pull/247) by @kimchanhyung98
+- General에 구독 타이머 자동 시작 전역 설정 추가. 끄면 대기·준비 중인 자동 메시지를 취소하고, 이미 시작한 전송과 인증 저장은 완료까지 보호. [#262](https://github.com/kimchanhyung98/egasu/pull/262) by @kimchanhyung98
+- macOS 데스크톱에 Priority·All Usage 위젯 추가. 위젯별 계정·지표 선택과 소형·중형·대형 표시 지원. [#263](https://github.com/kimchanhyung98/egasu/pull/263) by @kimchanhyung98
+
+### Bug Fixes
+
+- GPT-5.3 Codex의 하이픈 표기를 OpenAI 공식 요율로 연결. 일반·Fast 요청의 비용 추정에 배율을 한 번만 적용. [#264](https://github.com/kimchanhyung98/egasu/pull/264) by @kimchanhyung98
+- Claude 공유 Keychain 접근을 유지하고 토큰 갱신·저장 중 조회 취소와 앱 종료로 인한 인증 손실 방지. [#235](https://github.com/kimchanhyung98/egasu/pull/235) · [#239](https://github.com/kimchanhyung98/egasu/pull/239) by @kimchanhyung98
+- Codex 만료 계정의 격리 재로그인과 전환 동선 보완. 동일 사용자 검증과 중단 복구에서 이후 CLI 로그인 보존. [#240](https://github.com/kimchanhyung98/egasu/pull/240) · [#256](https://github.com/kimchanhyung98/egasu/pull/256) by @kimchanhyung98
+- Codex 추천 전환 직전 출발·대상 사용자와 워크스페이스 재검증. [#244](https://github.com/kimchanhyung98/egasu/pull/244) by @kimchanhyung98
+- Codex 초기화권을 만료 시각별로 묶어 표시하고 날짜 미확인 수량·큰 수량·Flex 잔액 처리 보완. [#243](https://github.com/kimchanhyung98/egasu/pull/243) · [#255](https://github.com/kimchanhyung98/egasu/pull/255) by @kimchanhyung98
+- Claude·Codex 사용 이력에서 조회 시각 이후의 기록 제외. 합산 범위를 넘는 동기화 이력은 경고와 함께 제외하고 정상 이력 보존. [#248](https://github.com/kimchanhyung98/egasu/pull/248) · [#257](https://github.com/kimchanhyung98/egasu/pull/257) by @kimchanhyung98
+- Kimi 조회 중 로그인이 바뀌면 이전 계정의 사용량 게시·저장 차단. 토큰 회전 응답·저장 완료까지 종료 대기. [#249](https://github.com/kimchanhyung98/egasu/pull/249) · [#259](https://github.com/kimchanhyung98/egasu/pull/259) by @kimchanhyung98
+- Cursor 개인·팀 추가 사용량의 지출과 한도를 같은 범위로 계산하고 정상 0원 표시 보완. [#250](https://github.com/kimchanhyung98/egasu/pull/250) by @kimchanhyung98
+- iCloud의 첫 수집 전 정상 이력을 보존하고 읽기 실패·충돌 시 교체와 구형 파일 삭제 보류. [#251](https://github.com/kimchanhyung98/egasu/pull/251) by @kimchanhyung98
+- 개인정보 보호 모드와 자동 업데이트 확인의 초기 기본값을 꺼짐으로 변경. 기존 사용자 선택 유지. [#252](https://github.com/kimchanhyung98/egasu/pull/252) by @kimchanhyung98
+- 설정 이전·복구에서 숨김·순서·계정별 선택을 보존하고 손상 데이터의 원문과 재시도 조건 유지. [#253](https://github.com/kimchanhyung98/egasu/pull/253) by @kimchanhyung98
+- 앱·CLI가 공유 사용량 캐시를 저장할 때 다른 카드의 최신 결과를 보존. [#254](https://github.com/kimchanhyung98/egasu/pull/254) by @kimchanhyung98
+- 앱 종료 시 소유한 재로그인 자식 프로세스의 취소와 임시 폴더 정리 완료까지 대기. [#258](https://github.com/kimchanhyung98/egasu/pull/258) by @kimchanhyung98
+- 계정 목록·상세 전환과 패널 높이를 동기화하고 뒤로 가기·닫기·재열기·애니메이션 줄이기 처리 보완. [#261](https://github.com/kimchanhyung98/egasu/pull/261) by @kimchanhyung98
+
+### Chores
+
+- 첫 실행·오프라인 추정에 사용하는 LiteLLM·models.dev 번들 가격 스냅샷 갱신. 과거 모델 항목 보존. [#264](https://github.com/kimchanhyung98/egasu/pull/264) by @kimchanhyung98
+- Pages 배포 재시도 시 기존 산출물을 재사용하고 태그·소스 검증 유지. [#234](https://github.com/kimchanhyung98/egasu/pull/234) by @kimchanhyung98
+- 터미널 도우미 제거 확인창의 취소·재표시 테스트 안정화. [#242](https://github.com/kimchanhyung98/egasu/pull/242) by @kimchanhyung98
+- 앱 저장 위치·Keychain 이전·기존 데이터 보존 조건 안내 정정. [#260](https://github.com/kimchanhyung98/egasu/pull/260) by @kimchanhyung98
+
+### Heads-up
+
+- 데스크톱 위젯 갤러리·macOS 15 실기기·실제 설치 업데이트·두 Mac iCloud 검증은 별도 확인 대상.
+- iCloud 사용 이력을 계속 동기화하려면 참여하는 모든 Mac을 새 버전으로 업데이트. 구버전은 새 저장 경로의 이력을 읽지 못함.
+- 초기 기본값 변경은 새 설정에 적용. 기존에 저장한 개인정보 보호·자동 업데이트 선택은 유지.
+
+---
+
+### Changelog
+
+**Full Changelog**: [v1.0.0-beta.5...v1.0.0-beta.6](https://github.com/kimchanhyung98/egasu/compare/1d8dcde4bcdb9dbfbe07b7b992379530e1aba0ce...13f2781e4ac0757a10b5d6078050acbd444c50b5)
+
 ## v1.0.0-beta.5
 
 ### New Features

@@ -103,6 +103,12 @@ docker-compose.local.yml
 *.swp
 *.swo
 
+# Temporary
+.docs
+.task
+.tasks
+.temp
+
 # Log
 *.log
 *.log.*
@@ -180,9 +186,6 @@ $RECYCLE.BIN/
 .codebuddy/*
 .crush/logs/
 .cursor/*
-!.cursor/rules/
-.cursor/rules/*
-!.cursor/rules/egasu-preview-launch.mdc
 .devin/*
 .goose/*
 .kilocode/*
@@ -235,7 +238,6 @@ agent-os/
 
 # etc
 .cmux/
-.docs
 .omx/
 .remember
 .serena

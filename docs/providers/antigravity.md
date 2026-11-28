@@ -18,7 +18,7 @@
 | Claude Weekly | 같은 Gemini 외 풀의 주간 기간 |
 | Argon Weekly | 계정에 별도로 제공되는 Argon 주간 한도 |
 
-Antigravity가 `Pro`, `Ultra` 같은 구독 등급을 보고하면 egasu의 프로바이더 이름 옆에 표시.
+Antigravity가 `Pro`, `Ultra` 같은 구독 등급을 보고하면 대시보드 계정 줄의 배지에 표시.
 Google AI Ultra는 미국 기준 월 $99.99·$199.99의 두 등급이며, [구독 요금제](/docs/pricing.md#구독-요금제) 참조.
 Cloud Code의 `g1-ultra-tier`·`g1-ultra-lite-tier`는 현재 공식 상품명인 Ultra로 표시.
 이름만으로 결제 금액이나 사용량 배수를 추정하지 않음.

@@ -12,6 +12,8 @@
 
 - [대시보드](/docs/dashboard.md) — Priority·All Usage 탭, 지표 표시·고정·순서, 키보드 단축키
 - [메뉴 막대](/docs/menu-bar.md) — 표시 기준 선택과 Priority 고정
+- [데스크톱 위젯](/docs/desktop-widgets.md) — 위젯 추가, Priority와 계정별 지표 선택
+- [프로바이더 활성화](/docs/provider-enablement.md) — 첫 실행과 업데이트 뒤에 사용 중인 프로바이더를 감지하는 조건
 - [계정](/docs/accounts.md) — 계정 추가·전환·복구, API 키, 계정 이름·순서와 지표 설정
 - [설정](/docs/settings.md) — General·Display·Alerts·Advanced의 설정과 베타 업데이트를 켜면 열리는 Labs
 - [새로 고침과 캐싱](/docs/refreshing.md) — 데이터가 갱신되는 시점과 가져오기 실패 시 일어나는 일
@@ -35,12 +37,15 @@
 - [Codex](/docs/providers/codex.md)
 - [Copilot](/docs/providers/copilot.md)
 - [Cursor](/docs/providers/cursor.md)
+- [DeepSeek](/docs/providers/deepseek.md)
 - [Devin](/docs/providers/devin.md)
 - [Grok](/docs/providers/grok.md)
 - [Kimi](/docs/providers/kimi.md)
 - [Kiro](/docs/providers/kiro.md)
+- [OpenAI API](/docs/providers/openai-api.md)
 - [OpenCode](/docs/providers/opencode.md)
 - [OpenRouter](/docs/providers/openrouter.md)
+- [QwenCloud](/docs/providers/qwencloud.md)
 - [Z.ai](/docs/providers/zai.md)
 
 ## 개발자용

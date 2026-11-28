@@ -1,6 +1,15 @@
 import CryptoKit
 import Foundation
 
+/// 타이머 준비·검증에서만 원래 후보의 유효성을 다음 제공자 요청까지 전달.
+enum UsageTimerReadContext {
+    @TaskLocal static var isCurrent: @MainActor @Sendable () -> Bool = { true }
+
+    @MainActor static func check() throws {
+        guard isCurrent() else { throw CancellationError() }
+    }
+}
+
 struct UsageTimerObservation: Equatable, Sendable {
     enum StartRule: Sendable {
         case movingReset, missingReset
@@ -80,6 +89,7 @@ struct UsageTimerExecutionResult: Sendable {
     var failureDescription: String? = nil
     var verificationCanClearFailure = true
     var launchObservationInvalidated = false
+    var loginNoLongerEligible = false
 }
 
 struct UsageTimerSession: UsageTimerPreparedSession {
@@ -103,10 +113,11 @@ struct UsageTimerExecutors {
 }
 
 enum UsageTimerError: Error, LocalizedError {
-    case accountChanged, usageUnavailable, currentLoginRequired
+    case accountChanged, usageUnavailable, currentLoginRequired, noLongerEligible
 
     var errorDescription: String? {
         switch self {
+        case .noLongerEligible: nil
         case .accountChanged: "Usage timer account changed. Refresh this account and try again."
         case .usageUnavailable: "Usage timer could not verify current quota data. No message was sent."
         case .currentLoginRequired: "Usage timer requires this account to be signed in to the provider's CLI."

@@ -27,11 +27,16 @@ interface SourceValue { source: string; rendered: string }
 const textSources = new WeakMap<Text, SourceValue>();
 const attributeSources = new WeakMap<Element, Map<string, SourceValue>>();
 const accountText = new WeakMap<Element, { template: string; name: string }>();
+const accountAccessibilityLabels = new WeakMap<Element, { template: string; name: string }>();
 const accountNameSlot = '\0';
 let currentLocale: PreviewLocale = 'en';
 
 function localeForLanguage(language: string): PreviewLocale {
   return language === '한국어' ? 'ko' : language === '日本語' ? 'ja' : 'en';
+}
+
+export function previewMetricLabel(state: PreviewState, label: string): string {
+  return translator(localeForLanguage(String(state.preferences.language)), 'Metrics')(label);
 }
 
 /** 기본 이름의 번역이 사용자 지정 이름과 겹치면 기본 이름만 영어로 표시. */
@@ -53,6 +58,13 @@ export function setPreviewAccountText(
   element.textContent = format(name);
   if (literal) accountText.set(element, { template: format(accountNameSlot), name });
   else accountText.delete(element);
+}
+
+export function setPreviewAccountAccessibilityLabel(
+  element: Element, format: (name: string) => string, name: string,
+): void {
+  element.setAttribute('aria-label', format(name));
+  if (name) accountAccessibilityLabels.set(element, { template: format(accountNameSlot), name });
 }
 
 function sourceValue(previous: SourceValue | undefined, value: string): SourceValue {
@@ -89,7 +101,11 @@ export function localizePreview(root: HTMLElement): void {
       const content = element.getAttribute(attribute);
       if (!content) continue;
       const value = sourceValue(values.get(attribute), content);
-      value.rendered = translator(currentLocale, contextFor(element))(value.source);
+      const translate = translator(currentLocale, contextFor(element));
+      const account = attribute === 'aria-label' ? accountAccessibilityLabels.get(element) : undefined;
+      value.rendered = account
+        ? translate(account.template).replace(accountNameSlot, () => account.name)
+        : translate(value.source);
       if (content !== value.rendered) element.setAttribute(attribute, value.rendered);
       values.set(attribute, value);
     }

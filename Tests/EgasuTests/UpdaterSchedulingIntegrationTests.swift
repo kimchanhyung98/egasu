@@ -78,6 +78,86 @@ final class UpdaterSchedulingIntegrationTests: XCTestCase {
         XCTAssertEqual(server.requests, ["/appcast.xml"])
     }
 
+    func testBetaChangeHonorsAutomaticCheckingAfterAManualCheck() async throws {
+        enum AutomaticChecks: CaseIterable {
+            case off, on, turnOffBeforeChannelChange, turnOnThenOffAfterChannelChange
+        }
+        for preference in AutomaticChecks.allCases {
+            let initiallyAutomatic = preference == .on || preference == .turnOffBeforeChannelChange
+            let identifier = "EgasuTests.ChannelPreference." + UUID().uuidString
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(identifier)
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: identifier))
+            let server = try SchedulingAppcastServer(includeBeta: true)
+            defer {
+                server.stop()
+                defaults.removePersistentDomain(forName: identifier)
+                try? FileManager.default.removeItem(at: root)
+            }
+            server.start()
+            try await waitUntil("listener", state: { server.description }) { server.feedURL != nil }
+            let bundle = try makeBundle(root: root, identifier: identifier, feedURL: XCTUnwrap(server.feedURL))
+            defaults.set(initiallyAutomatic, forKey: "SUEnableAutomaticChecks")
+            defaults.set(Date(), forKey: "SULastCheckTime")
+            let standard = SchedulingUserDriver()
+            standard.dismissOffers = true
+            standard.allowsManualCheck = true
+            let observer = SchedulingObserver()
+            let driver = BannerUpdateUserDriver(
+                standardDriver: standard, isBetaChannelEnabled: { observer.betaEnabled })
+            observer.betaEnabled = false
+            observer.channelDelegate = UpdaterChannelDelegate(defaults: defaults)
+            let updater = SPUUpdater(
+                hostBundle: bundle, applicationBundle: bundle, userDriver: driver, delegate: observer)
+            try updater.start()
+            let controller = UpdaterController(defaults: defaults)
+            controller.attachStartedUpdater(updater, userDriver: driver)
+            controller.onBetaChannelChange = { observer.betaEnabled = $0 }
+            try await waitUntil("startup schedule", state: { server.description }) {
+                !updater.sessionInProgress && observer.scheduledSessions.count + observer.skippedSchedules == 1
+            }
+            updater.checkForUpdates()
+            try await waitUntil("manual check and schedule", state: { server.description }) {
+                !updater.sessionInProgress && observer.finishedSessions.count == 1
+                    && observer.scheduledSessions.count + observer.skippedSchedules >= 2
+            }
+            XCTAssertEqual(server.requests, ["/appcast.xml"])
+
+            let previousSkipped = observer.skippedSchedules
+            if preference == .turnOffBeforeChannelChange { controller.automaticallyChecksForUpdates = false }
+            controller.betaChannelEnabled = true
+            if preference == .turnOnThenOffAfterChannelChange {
+                controller.automaticallyChecksForUpdates = true
+                controller.automaticallyChecksForUpdates = false
+            }
+
+            XCTAssertEqual(updater.sessionInProgress, preference == .on, "\(preference)")
+            if preference == .turnOffBeforeChannelChange || preference == .turnOnThenOffAfterChannelChange {
+                try await waitUntil("Sparkle preference reschedule", state: { server.description }) {
+                    observer.skippedSchedules > previousSkipped || server.requests.count > 1
+                }
+                XCTAssertEqual(server.requests.count, 1)
+                guard server.requests.count == 1 else { continue }
+            }
+            if preference == .on {
+                try await waitUntil("automatic beta check", state: { server.description }) {
+                    observer.finishedSessions.count == 2
+                }
+            } else {
+                XCTAssertEqual(server.requests, ["/appcast.xml"])
+                standard.dismissOffers = false
+                updater.checkForUpdates()
+                try await waitUntil("manual beta offer", state: { server.description }) { standard.foundVersion == "3" }
+                controller.betaChannelEnabled = false
+                try await waitUntil("withdrawn beta offer", state: { server.description }) {
+                    observer.finishedSessions.count == 2
+                }
+                XCTAssertTrue(driver.requiresFreshUpdater)
+                XCTAssertEqual(server.requests.count, 2)
+            }
+            XCTAssertEqual(observer.selectedVersions, ["2", "3"])
+        }
+    }
+
     func testDisablingBetaDismissesThePendingOfferAndAFreshCheckSelectsStable() async throws {
         try await verifyBetaChange(disableDuringDiscovery: false)
     }
@@ -97,6 +177,8 @@ final class UpdaterSchedulingIntegrationTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: identifier))
         let standard = SchedulingUserDriver()
         let observer = SchedulingObserver()
+        defaults.set(true, forKey: UpdaterController.betaChannelDefaultsKey)
+        observer.channelDelegate = UpdaterChannelDelegate(defaults: defaults)
         var driver = BannerUpdateUserDriver(standardDriver: standard, isBetaChannelEnabled: { observer.betaEnabled })
         let server = try SchedulingAppcastServer(includeBeta: true, informationalBeta: true)
         var updater: SPUUpdater?
@@ -137,6 +219,7 @@ final class UpdaterSchedulingIntegrationTests: XCTestCase {
         XCTAssertEqual(server.requests, ["/appcast.xml"])
 
         observer.betaEnabled = false
+        defaults.set(false, forKey: UpdaterController.betaChannelDefaultsKey)
         XCTAssertTrue(driver.dismissDisallowedUpdate())
         try await waitUntil("informational beta dismissed", state: state) {
             observer.finishedSessions.count == 1 && observer.scheduledSessions.count == 2
@@ -150,9 +233,16 @@ final class UpdaterSchedulingIntegrationTests: XCTestCase {
         XCTAssertEqual(standard.foundVersions, ["3"], "재개된 베타는 표준 UI에 다시 전달하지 않음")
         XCTAssertEqual(server.requests, ["/appcast.xml"], "기존 엔진은 피드 조회 없이 보관된 제안 재개")
 
+        updater!.automaticallyChecksForUpdates = false
+        updater!.checkForUpdatesInBackground()
+        try await waitUntil("resume with automatic checks off", state: state) { observer.finishedSessions.count == 3 }
+        XCTAssertEqual(observer.selectedVersions, ["3", "3", "3", "3"])
+        XCTAssertEqual(server.requests, ["/appcast.xml"])
+
         // 새 엔진의 안정 버전은 자동 다운로드하지 않고 선택 결과만 확인.
         updater!.automaticallyDownloadsUpdates = false
         updater = nil
+        defaults.set(true, forKey: "SUEnableAutomaticChecks")
         driver = BannerUpdateUserDriver(standardDriver: standard, isBetaChannelEnabled: { observer.betaEnabled })
         updater = SPUUpdater(hostBundle: bundle, applicationBundle: bundle, userDriver: driver, delegate: observer)
         XCTAssertFalse(updater!.automaticallyDownloadsUpdates)
@@ -162,16 +252,16 @@ final class UpdaterSchedulingIntegrationTests: XCTestCase {
         }
         updater!.checkForUpdatesInBackground()
         try await waitUntil("fresh updater selected stable", state: state) { standard.foundVersion == "2" }
-        XCTAssertEqual(observer.selectedVersions, ["3", "3", "3", "2"])
+        XCTAssertEqual(observer.selectedVersions, ["3", "3", "3", "3", "2"])
         XCTAssertEqual(standard.foundVersions, ["3", "2"])
         XCTAssertEqual(standard.foundInformationOnly, false)
         XCTAssertEqual(standard.foundState?.stage, .notDownloaded)
         XCTAssertEqual(server.requests, ["/appcast.xml", "/appcast.xml"])
         driver.dismissPendingUpdate()
         try await waitUntil("fresh stable session finished", state: state) {
-            observer.finishedSessions.count == 3 && observer.scheduledSessions.count == 5
+            observer.finishedSessions.count == 4 && observer.scheduledSessions.count == 5
         }
-        XCTAssertEqual(observer.finishedSessions, [false, false, false])
+        XCTAssertEqual(observer.finishedSessions, [false, false, false, false])
         XCTAssertEqual(observer.scheduledSessions, [false, false, false, false, false])
         XCTAssertTrue(observer.errors.isEmpty)
     }
@@ -297,19 +387,31 @@ final class UpdaterSchedulingIntegrationTests: XCTestCase {
 @MainActor
 private final class SchedulingObserver: NSObject, SPUUpdaterDelegate {
     var betaEnabled = true
+    var channelDelegate: UpdaterChannelDelegate?
     var disableBetaWhenFound = false
     var selectedVersions: [String] = []
     var scheduledSessions: [Bool] = []
+    var skippedSchedules = 0
     var finishedSessions: [Bool] = []
     var delays: [TimeInterval] = []
     var errors: [Error] = []
 
-    func allowedChannels(for updater: SPUUpdater) -> Set<String> { betaEnabled ? ["beta"] : [] }
+    func allowedChannels(for updater: SPUUpdater) -> Set<String> {
+        channelDelegate?.allowedChannels(for: updater) ?? (betaEnabled ? ["beta"] : [])
+    }
+
+    func updater(_ updater: SPUUpdater, mayPerform updateCheck: SPUUpdateCheck) throws {
+        try channelDelegate?.updater(updater, mayPerform: updateCheck)
+    }
 
     func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
         selectedVersions.append(item.versionString)
         // 채널 필터 완료 뒤, user driver에 넘기기 직전의 설정 변경 재현.
         if disableBetaWhenFound, item.channel == "beta" { betaEnabled = false }
+    }
+
+    func updaterWillNotScheduleUpdateCheck(_ updater: SPUUpdater) {
+        skippedSchedules += 1
     }
 
     func updater(_ updater: SPUUpdater, willScheduleUpdateCheckAfterDelay delay: TimeInterval) {
@@ -437,6 +539,8 @@ private final class SchedulingUserDriver: NSObject, SPUUserDriver {
     var foundInformationOnly: Bool?
     var foundVersions: [String] = []
     var dismissCount = 0
+    var dismissOffers = false
+    var allowsManualCheck = false
 
     func showUpdateFound(
         with appcastItem: SUAppcastItem, state: SPUUserUpdateState,
@@ -446,6 +550,7 @@ private final class SchedulingUserDriver: NSObject, SPUUserDriver {
         foundVersion = appcastItem.versionString
         foundInformationOnly = appcastItem.isInformationOnlyUpdate
         foundVersions.append(appcastItem.versionString)
+        if dismissOffers { reply(.dismiss) }
     }
 
     func dismissUpdateInstallation() { dismissCount += 1 }
@@ -453,7 +558,7 @@ private final class SchedulingUserDriver: NSObject, SPUUserDriver {
         XCTFail("The isolated bundle already enables automatic checks")
     }
     func showUserInitiatedUpdateCheck(cancellation: @escaping () -> Void) {
-        XCTFail("The fixture uses a scheduled check"); cancellation()
+        if !allowsManualCheck { XCTFail("The fixture uses a scheduled check"); cancellation() }
     }
     func showUpdateReleaseNotes(with downloadData: SPUDownloadData) { XCTFail("No release notes in fixture") }
     func showUpdateReleaseNotesFailedToDownloadWithError(_ error: Error) { XCTFail("Unexpected release notes request") }

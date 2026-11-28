@@ -6,9 +6,71 @@ import { settingGroups, settingsTabs, alertConditions } from '../src/data/settin
 import { providerMetrics, softLimitWindowFor, softLimitWindows } from '../src/data/metrics.ts';
 import { initialPreviewState, changePreference, activateAccount, renameAccount, restorePreviewState, previewTime } from '../src/data/preview-state.ts';
 
+test('subscription timer automation defaults on and restores the saved choice', () => {
+  const initial = initialPreviewState();
+  assert.equal(initial.preferences.autoStartSubscriptionTimers, true);
+  const changed = changePreference(initial, 'autoStartSubscriptionTimers', false);
+  assert.equal(restorePreviewState(JSON.parse(JSON.stringify(changed))).preferences.autoStartSubscriptionTimers, false);
+  assert.equal(restorePreviewState({ preferences: {}, activeAccounts: {} }).preferences.autoStartSubscriptionTimers, true);
+});
+
+test('menu bar text options default to metric labels and preserve saved choices', () => {
+  const initial = initialPreviewState();
+  assert.equal(initial.preferences.menuBarMetricLabels, true);
+  assert.equal(initial.preferences.menuBarAccountNames, false);
+  const changed = changePreference(changePreference(initial, 'menuBarMetricLabels', false), 'menuBarAccountNames', true);
+  const restored = restorePreviewState(JSON.parse(JSON.stringify(changed)));
+  assert.equal(restored.preferences.menuBarMetricLabels, false);
+  assert.equal(restored.preferences.menuBarAccountNames, true);
+  const legacy = restorePreviewState({ preferences: {}, activeAccounts: {} });
+  assert.equal(legacy.preferences.menuBarMetricLabels, true);
+  assert.equal(legacy.preferences.menuBarAccountNames, false);
+});
+
+test('menu bar reset countdown defaults off and restores the saved choice', () => {
+  const initial = initialPreviewState();
+  assert.equal(initial.preferences.menuBarResetCountdown, false);
+  assert.equal(restorePreviewState({ preferences: {}, activeAccounts: {} }).preferences.menuBarResetCountdown, false);
+  const enabled = changePreference(initial, 'menuBarResetCountdown', true);
+  assert.equal(restorePreviewState(JSON.parse(JSON.stringify(enabled))).preferences.menuBarResetCountdown, true);
+});
+
 const source = (path: string): string => readFileSync(new URL(`../../Sources/Egasu/${path}`, import.meta.url), 'utf8');
 const englishSource = (path: string): string => source(path)
   .replace(/\bL10n\.\w+\(\s*("(?:\\.|[^"\\])*")\s*\)/g, '$1');
+
+function nativeCodexCreditExpiry() {
+  const label = englishSource('Stores/CodexCreditExpiryReminders.swift')
+    .match(/static var label:\s*String\s*\{\s*"([^"]+)"\s*\}/)?.[1];
+  const info = englishSource('Views/Settings/SettingsAlertsTab.swift')
+    .match(/Toggle\(isOn:\s*\$notifications\.codexCreditExpiry\)\s*\{\s*SettingsTitle\(\s*title:\s*CodexCreditExpiryReminders\.label,\s*info:\s*"([^"]+)"/)?.[1];
+  assert.ok(label);
+  assert.ok(info);
+  return { label, info };
+}
+
+test('Codex reset credit expiry mirrors the native toggle and saved choice', () => {
+  const native = nativeCodexCreditExpiry();
+  const group = settingGroups.find((group) => group.id === 'notifications');
+  assert.ok(group);
+  const index = group.rows.findIndex((row) => row.id === 'codexCreditExpiry');
+  assert.ok(index > 0);
+  const row = group.rows[index];
+  assert.equal(group.rows[index - 1]?.id, 'quotaRecovered');
+  assert.equal(group.rows[index + 1]?.id, 'codexResetWatch');
+  assert.equal(row.label, native.label);
+  assert.equal(row.info, native.info);
+  assert.deepEqual(row.control, { kind: 'toggle', on: false });
+  assert.match(source('Stores/NotificationSettingsStore.swift'),
+    /self\.codexCreditExpiry = defaults\.bool\(forKey: Self\.creditExpiryKey\)/);
+  const initial = initialPreviewState();
+  assert.equal(initial.preferences.codexCreditExpiry, false);
+  const changed = changePreference(initial, 'codexCreditExpiry', true);
+  const restored = restorePreviewState(JSON.parse(JSON.stringify(changed)));
+  assert.equal(restored.preferences.codexCreditExpiry, true);
+  assert.equal(restored.preferences.quotaRecovered, false);
+  assert.equal(restored.preferences.codexResetWatch, false);
+});
 
 test('Settings follows the native tab order and covers its named sections', () => {
   const cases = source('Stores/PopoverState.swift').match(/enum SettingsTab:[^{]+\{\s*case ([^\n]+)/)?.[1];
@@ -58,7 +120,7 @@ test('Settings matches native control names within each tab', () => {
     const native = controlsIn(`Settings${tab}Tab`).concat(sectionsByTab[tab].flatMap(controlsIn))
       .filter((label) => !(tab === 'General' && label === 'iCloud Sync'));
     if (tab === 'Alerts') {
-      native.push(recoveryLabel, resetWatchLabel, ...conditions.flatMap(([, name]) => [
+      native.push(recoveryLabel, nativeCodexCreditExpiry().label, resetWatchLabel, ...conditions.flatMap(([, name]) => [
         `${name}, Show in Priority`, `${name}, Receive Alerts`,
       ]));
     }
@@ -77,6 +139,28 @@ test('Labs contains the same feature groups as the native app', () => {
   assert.match(labs, /TerminalHelperSettingsSection\(/);
   const helper = englishSource('Views/Settings/TerminalHelperSettingsSection.swift');
   for (const label of ['Install…', 'Uninstall', 'Unavailable']) assert.ok(helper.includes(`"${label}"`), label);
+});
+
+test('Weekly and monthly reset reminders mirror the native toggle and saved choice', () => {
+  const native = englishSource('Views/Settings/SettingsAlertsTab.swift')
+    .match(/Toggle\(isOn:\s*\$notifications\.weeklyMonthlyResetReminders\)\s*\{\s*SettingsTitle\(\s*title:\s*"([^"]+)",\s*info:\s*"([^"]+)"/);
+  assert.ok(native);
+  const group = settingGroups.find((group) => group.id === 'notifications');
+  assert.ok(group);
+  const row = group.rows[0];
+  assert.equal(row.id, 'weeklyMonthlyResetReminders');
+  assert.equal(row.label, native[1]);
+  assert.equal(row.info, native[2]);
+  assert.deepEqual(row.control, { kind: 'toggle', on: false });
+  assert.match(source('Stores/NotificationSettingsStore.swift'),
+    /self\.weeklyMonthlyResetReminders = defaults\.bool\(forKey: Self\.quotaResetKey\)/);
+  const initial = initialPreviewState();
+  assert.equal(initial.preferences.weeklyMonthlyResetReminders, false);
+  const changed = changePreference(initial, 'weeklyMonthlyResetReminders', true);
+  const restored = restorePreviewState(JSON.parse(JSON.stringify(changed)));
+  assert.equal(restored.preferences.weeklyMonthlyResetReminders, true);
+  assert.equal(restored.preferences.quotaRecovered, false);
+  assert.equal(restored.preferences.codexResetWatch, false);
 });
 
 test('Alerts, Soft Limit, and Tokscale expose their preview controls', () => {

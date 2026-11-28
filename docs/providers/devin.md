@@ -10,7 +10,7 @@ Devin CLI 또는 Devin 앱의 로그인으로 Devin 할당량 추적.
 | Weekly | 주간 할당량 사용량(Devin이 주간 할당량을 숨기면 미표시) |
 | Extra Balance | 초과/추가 사용 잔액(달러) |
 
-Devin이 요금제 이름을 보고하면 egasu의 프로바이더 이름 옆에 표시.
+Devin이 요금제 이름을 보고하면 대시보드 계정 줄의 배지에 표시.
 현행 Free·Pro·Max·Teams·Enterprise의 가격은 [구독 요금제](/docs/pricing.md#구독-요금제) 참조.
 
 ## 상단 통계 지원 범위

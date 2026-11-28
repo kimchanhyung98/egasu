@@ -58,7 +58,8 @@ final class ProviderStatusSourceTests: XCTestCase {
     func testCatalogExplicitlyCoversEveryProviderFamily() {
         let supported: Set<String> = ["claude", "codex", "copilot", "cursor"]
         let explicitlyUnsupported: Set<String> = [
-            "antigravity", "devin", "grok", "kimi", "kiro", "opencode", "openrouter", "zai",
+            "antigravity", "deepseek", "devin", "grok", "kimi", "kiro", "openai-api", "opencode", "openrouter",
+            "qwencloud", "zai"
         ]
         let installed = Set(ProviderCatalog.make().map { ProviderAccountID.family(of: $0.provider.id) })
 

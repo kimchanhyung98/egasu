@@ -24,13 +24,19 @@ enum LayoutBootstrap {
         defaults: LayoutDefaultSet,
         knownCardIDs: Set<String> = []
     ) -> LayoutInitialState {
-        let providerOrder = persistence.loadProviderOrder() ?? registry.providers.map(\.id)
-        let savedOrder = persistence.loadMetricOrder() ?? [:]
+        let savedProviderOrder = persistence.loadProviderOrder()
+        let providerOrder = savedProviderOrder ?? registry.providers.map(\.id)
+        let loadedOrder = persistence.loadMetricOrder()
+        let canReadOrder = loadedOrder != nil || !persistence.hasStoredMetricOrder
+        let savedOrder = loadedOrder ?? [:]
         let legacyCards = persistence.loadSeededCards().map(Set.init)
         let copiesFamily = !persistence.hasStoredDisabledMetrics && legacyCards == nil
+        let savedPlaced = persistence.hasStoredDisabledMetrics ? nil : persistence.loadPlaced()
         let pinnedCards = (persistence.loadPriorityPins() ?? []).map(ProviderAccountID.providerID(ofMetric:))
-        let cards = Set(registry.providers.map(\.id) + providerOrder + pinnedCards + Array(savedOrder.keys))
-            .union(knownCardIDs).union(legacyCards ?? [])
+        let placedCards = (savedPlaced ?? []).map { ProviderAccountID.providerID(ofMetric: $0.descriptorID) }
+        let recordedCards = Set(savedProviderOrder ?? []).union(savedOrder.keys).union(placedCards)
+        let cards = recordedCards.union(pinnedCards).union(knownCardIDs)
+            .union(registry.providers.map(\.id)).union(legacyCards ?? [])
         var order = copiesFamily
             ? LayoutOrdering.normalizedMetricOrder(savedOrder, registry: registry) : savedOrder
         let hasOnDemandState = persistence.hasOnDemandState
@@ -51,7 +57,9 @@ enum LayoutBootstrap {
 
         let currentIDs = Set(registry.descriptors.map(\.id).filter { !ProviderAccountID.isSharedMetricAlias($0) })
         var disabled: Set<String>
-        var mayPersist = true
+        let canInitialize = canReadOrder && !persistence.isUpstreamImportPending
+        var mayPersist = canInitialize
+        var mayPersistOrder = canInitialize
         var legacyPlaced: [PlacedWidget] = []
         if persistence.hasStoredDisabledMetrics {
             if let saved = persistence.loadDisabledMetrics() {
@@ -62,14 +70,26 @@ enum LayoutBootstrap {
                 mayPersist = false
             }
         } else if persistence.hasStoredLayout {
-            if let saved = persistence.loadPlaced() {
+            if let saved = savedPlaced {
                 legacyPlaced = copiesFamily
                     ? LayoutOrdering.copyingToCards(LayoutOrdering.foldingToCanonical(saved),
                                                     accountCards: cards.filter(ProviderAccountID.isAccountCard).sorted())
                     : saved
                 let enabled = Set(legacyPlaced.map(\.descriptorID))
-                // 등록된 적 없는 새 카드는 기본 켜짐. 부재 중인 기존 카드의 숨김도 함께 보존.
-                let existingCards = legacyCards ?? cards
+                let seededDefaults = persistence.loadSeededDefaults()
+                let legacyMetricOrder = persistence.legacyMetricOrderEvidence(savedOrder)
+                // 신규 감지 목록과 Priority 고정은 이전 도중에도 바뀌므로 기존 레이아웃의 근거에서 제외.
+                let existingCards: Set<String>
+                if let legacyCards {
+                    existingCards = legacyCards.union(placedCards)
+                } else {
+                    let legacyV1Cards = cards.filter {
+                        DefaultLayout.legacyV1ProviderIDs.contains(ProviderAccountID.family(of: $0))
+                    }
+                    existingCards = persistence.legacyProviderOrderCards(savedProviderOrder ?? [])
+                        .union(legacyMetricOrder.cards).union(placedCards).union(legacyV1Cards)
+                        .union((seededDefaults ?? []).map(ProviderAccountID.providerID(ofMetric:)))
+                }
                 var existingIDs = Set(order.filter { existingCards.contains($0.key) }.values.flatMap { $0 })
                 for card in existingCards {
                     let family = ProviderAccountID.family(of: card)
@@ -80,20 +100,24 @@ enum LayoutBootstrap {
                 }
                 disabled = existingIDs.subtracting(enabled)
                 // 이전 켜짐 목록에 존재할 수 없었던 지표는 새 지표의 표시 기본값 적용.
-                let seededDefaults = persistence.loadSeededDefaults()
                 let known = Set(
-                    (savedOrder.values.flatMap { $0 } + (seededDefaults ?? []))
+                    legacyMetricOrder.metrics.union(seededDefaults ?? []).union(saved.map(\.descriptorID))
                         .map(ProviderAccountID.canonicalMetricID))
-                let newMetrics = Set(defaults.metricIDs).intersection(LayoutOrdering.anchoredMetrics.map(\.id)).subtracting(
-                    known)
-                disabled = disabled.filter { !newMetrics.contains(ProviderAccountID.canonicalMetricID($0)) }
-                if let seeded = seededDefaults {
-                    let unseenDefaults = Set(defaults.metricIDs)
-                        .intersection(DefaultLayout.legacyV1DefaultMetricIDs)
-                        .subtracting(seeded.map(ProviderAccountID.canonicalMetricID))
-                    disabled = disabled.filter {
-                        !unseenDefaults.contains(ProviderAccountID.canonicalMetricID($0))
+                if !saved.isEmpty {
+                    var laterDefaults = Set(LayoutOrdering.anchoredMetrics.map(\.id))
+                    if seededDefaults != nil {
+                        laterDefaults.formUnion(DefaultLayout.legacyV1DefaultMetricIDs)
+                    } else if !persistence.hasStoredSeededDefaults {
+                        laterDefaults.formUnion(
+                            Set(DefaultLayout.legacyV1DefaultMetricIDs).subtracting(defaults.migrationBaselineMetricIDs)
+                        )
+                    } else {
+                        mayPersist = false
+                        // 보정한 순서가 복구 후 기존 지표의 근거로 사용되지 않도록 원본 유지.
+                        mayPersistOrder = false
                     }
+                    let newMetrics = Set(defaults.metricIDs).intersection(laterDefaults).subtracting(known)
+                    disabled = disabled.filter { !newMetrics.contains(ProviderAccountID.canonicalMetricID($0)) }
                 }
             } else {
                 disabled = currentIDs
@@ -106,17 +130,24 @@ enum LayoutBootstrap {
         if !persistence.hasStoredDisabledMetrics {
             disabled = disabled.filter { !ProviderAccountID.isSharedMetricAlias($0) }
         }
+        for (id, enabled) in persistence.deferredVisibility {
+            if enabled { disabled.remove(id) } else { disabled.insert(id) }
+        }
         let legacyByID = Dictionary(legacyPlaced.map { ($0.descriptorID, $0) }, uniquingKeysWith: { first, _ in first })
         var placed = registry.descriptors.compactMap { descriptor -> PlacedWidget? in
-            guard currentIDs.contains(descriptor.id), !disabled.contains(descriptor.id) else { return nil }
+            guard currentIDs.contains(descriptor.id),
+                !disabled.contains(descriptor.id) || persistence.isUnresolvedMetric(descriptor.id)
+            else { return nil }
             return legacyByID[descriptor.id] ?? PlacedWidget(descriptorID: descriptor.id)
         }
         placed.append(contentsOf: legacyPlaced.filter { !currentIDs.contains($0.descriptorID) })
+        order = order.mapValues { $0.filter { !persistence.isUnresolvedMetric($0) } }
         return LayoutInitialState(
             placed: placed, providerOrder: providerOrder, metricOrderByProvider: order,
-            disabledMetricIDs: disabled, shouldPersistVisibility: mayPersist,
-            shouldPersistMetricOrder: order != savedOrder,
-            shouldClearOnDemandState: hasOnDemandState
+            disabledMetricIDs: disabled,
+            shouldPersistVisibility: mayPersist,
+            shouldPersistMetricOrder: mayPersistOrder && order != savedOrder,
+            shouldClearOnDemandState: mayPersist && !persistence.hasUnresolvedProfileMapping && hasOnDemandState
         )
     }
 }

@@ -26,12 +26,16 @@ final class WidgetDataStore {
     private let softLimitSettings: (@MainActor () -> SoftLimitSettingsStore)?
     /// 할당량 알림의 계정명 조회 — 결과가 nil이면 프로바이더 이름 사용.
     @ObservationIgnored var resolveDisplayName: (@MainActor (String) -> String?)?
+    @ObservationIgnored var resolveCreditAccountName:
+        (@MainActor (_ profileID: String, _ workspace: String) -> String?)?
     /// 조건별 알림 전달 — false이면 전송 완료로 기록하지 않고 다음 평가에서 재시도.
     private let postNotification: QuotaNotificationEvaluator.Post
 
     private static let meterStyleKey = "meterStyle"
     private static let resetDisplayModeKey = "resetDisplayMode"
     private static let showsAccountEmailsKey = "showsAccountEmails"
+    private static let sharedCodexHome = URL(
+        fileURLWithPath: AccountCredentialSwitcher().sharedHomePath(family: "codex"))
     static let defaultSlowProviderRefreshThreshold: TimeInterval = 10
     static let defaultProviderRefreshTimeout: TimeInterval = 120
 
@@ -57,15 +61,33 @@ final class WidgetDataStore {
     var scheduledRefreshDates: [String: Date] { refreshCoordinator.scheduledRefreshDates }
     var nextGeneralRefreshAt: Date?
     nonisolated static let refreshScheduleDidChange = ProviderRefreshSchedule.didChange
+    var accountReconciliationNotice: String?
     var claudeReconciliationFailure: ProviderRefreshFailure? { refreshCoordinator.claudeReconciliationFailure }
+    func reconciliationFailure(for cardID: String) -> ProviderRefreshFailure? {
+        refreshCoordinator.accountReconciliationFailures[cardID]
+    }
+    func clearCodexReconciliationFailure(for priorCardID: String?) {
+        if let priorCardID {
+            setAccountReconciliationFailure(nil, for: priorCardID)
+        } else {
+            let cardIDs = refreshCoordinator.accountReconciliationFailures.keys.filter {
+                ProviderAccountID.family(of: $0) == "codex"
+            }
+            for cardID in cardIDs {
+                setAccountReconciliationFailure(nil, for: cardID)
+            }
+        }
+    }
+    var codexReconciliationFailure: ProviderRefreshFailure? { reconciliationFailure(for: "codex") }
     var refreshResults: [String: ProviderRefreshResult] {
         var results = refreshCoordinator.refreshResults
-        if let claudeReconciliationFailure { results["claude"] = .failed(claudeReconciliationFailure) }
+        for (family, failure) in refreshCoordinator.accountReconciliationFailures { results[family] = .failed(failure) }
         return results
     }
     var providerErrors: [String: String] {
         refreshResults.compactMapValues { $0.failure?.message }
     }
+    @ObservationIgnored private var creditExpiryReminders: CodexCreditExpiryReminders?
     /// 할당량 알림 평가기 — 저장소는 순회마다 활성 한도 지표를 수집하여 전달.
     @ObservationIgnored private let notificationEvaluator = QuotaNotificationEvaluator()
     @ObservationIgnored private var isEvaluatingNotifications = false
@@ -73,23 +95,14 @@ final class WidgetDataStore {
 
     /// 실제 조회의 성공·실패마다 한 번 호출하는 통계 콜백 — 캐시 사용·생략·실패 대기는 제외.
     /// 테스트·미리보기에서는 nil로 전달 생략.
-    var onRefreshOutcome: (@MainActor (String, RefreshOutcome, ErrorCategory?, RefreshTrigger, Bool) -> Void)? {
-        get { refreshCoordinator.onRefreshOutcome }
-        set { refreshCoordinator.onRefreshOutcome = newValue }
-    }
+    var onRefreshOutcome: (@MainActor (String, RefreshOutcome, ErrorCategory?, RefreshTrigger, Bool) -> Void)?
     /// GUI의 한도 자동 제어 입력 — 캐시·실패·취소·카탈로그 변경으로 폐기된 결과 제외.
-    var onFreshSnapshot: (@MainActor (ProviderSnapshot, [WidgetDescriptor], RefreshTrigger) -> Void)? {
-        get { refreshCoordinator.onFreshSnapshot }
-        set { refreshCoordinator.onFreshSnapshot = newValue }
-    }
+    var onFreshSnapshot: (@MainActor (ProviderSnapshot, [WidgetDescriptor], RefreshTrigger) -> Void)?
     var isRefreshSuspended: (@MainActor (String) -> Bool)? {
         get { refreshCoordinator.isRefreshSuspended }
         set { refreshCoordinator.isRefreshSuspended = newValue }
     }
-    var onQuotaInvalidated: (@MainActor (Set<String>?) -> Void)? {
-        get { refreshCoordinator.onQuotaInvalidated }
-        set { refreshCoordinator.onQuotaInvalidated = newValue }
-    }
+    var onQuotaInvalidated: (@MainActor (Set<String>?) -> Void)?
     /// 로컬 이력 변경 콜백 — ICloudUsageSyncStore에서 연속 변경을 병합하여 파일 한 번 작성.
     var onLocalHistoryChanged: (@MainActor () -> Void)? {
         get { refreshCoordinator.onLocalHistoryChanged }
@@ -170,10 +183,117 @@ final class WidgetDataStore {
         refreshCoordinator.onSnapshotsChanged = { [weak self] rendered in
             self?.remoteOnlySpend = rendered.remoteOnlySpend
             self?.snapshots = rendered.snapshots
+            if self?.notificationSettings?().codexCreditExpiry == true { self?.updateCodexCreditReminders() }
+        }
+        refreshCoordinator.onRefreshOutcome = { [weak self] id, outcome, category, trigger, degraded in
+            guard let self else { return }
+            if outcome == .failed, category == .authExpired || category == .authInvalid || category == .notLoggedIn {
+                self.invalidateCreditReminders([id])
+            }
+            self.onRefreshOutcome?(id, outcome, category, trigger, degraded)
+        }
+        refreshCoordinator.onQuotaInvalidated = { [weak self] ids in
+            guard let self else { return }
+            if let ids { self.invalidateCreditReminders(ids) }
+            self.onQuotaInvalidated?(ids)
+        }
+        refreshCoordinator.onFreshSnapshot = { [weak self] snapshot, descriptors, trigger in
+            guard let self else { return }
+            if self.creditExpiryReminders?.accept(snapshot) == true,
+                self.notificationSettings?().codexCreditExpiry == true
+            {
+                self.updateCodexCreditReminders()
+            }
+            self.onFreshSnapshot?(snapshot, descriptors, trigger)
         }
         refreshCoordinator.onCatalogInvalidated = { [weak self] ids in
             self?.notificationEvaluator.reset(providerIDs: ids)
         }
+    }
+
+    private func invalidateCreditReminders(_ ids: Set<String>) {
+        guard let creditExpiryReminders else { return }
+        creditExpiryReminders.invalidate(ids)
+        if notificationSettings?().codexCreditExpiry == true { updateCodexCreditReminders() }
+    }
+
+    func configureCodexCreditReminders(scheduler: ScheduledReminders) {
+        guard let settings = notificationSettings?() else { return }
+        creditExpiryReminders = CodexCreditExpiryReminders(scheduler: scheduler, defaults: defaults)
+        settings.onCodexCreditExpiryChange = { [weak self] in self?.updateCodexCreditReminders() }
+        updateCodexCreditReminders()
+    }
+
+    func codexCreditsUnavailable(cardID _: String, credits: CodexResetClaimService.UnavailableCredits) {
+        guard let creditExpiryReminders else { return }
+        switch credits {
+        case .credit(let credit, let expiries):
+            guard let account = credit.binding.verifiedAccountKey else { return }
+            creditExpiryReminders.consumed(
+                account: account, expiry: credit.expiry, creditID: credit.creditID,
+                remaining: credit.remainingAtExpiry, confirmedExpiries: expiries,
+                snapshots: codexSnapshots(for: account), at: now())
+        case .replayed(let credit, let expiries):
+            guard let account = credit.binding.verifiedAccountKey else { return }
+            if let expiries {
+                creditExpiryReminders.confirmedInventory(
+                    account: account, expiries: expiries, selectedExpiry: credit.expiry, consumedID: credit.creditID,
+                    snapshots: codexSnapshots(for: account), at: now())
+            } else {
+                // 재고가 불명확하면 사용 전 목록으로 입증한 상한까지만 예약.
+                creditExpiryReminders.consumed(
+                    account: account, expiry: credit.expiry, creditID: credit.creditID,
+                    remaining: credit.remainingAtExpiry ?? 0, at: now())
+            }
+        case .expiry(let binding, let date):
+            guard let account = binding.verifiedAccountKey else { return }
+            creditExpiryReminders.noneAvailable(account: account, expiry: date, at: now())
+        case .emptyInventory(let binding, let selected):
+            guard let account = binding.verifiedAccountKey else { return }
+            creditExpiryReminders.confirmedInventory(
+                account: account, expiries: [], selectedExpiry: selected, snapshots: codexSnapshots(for: account),
+                at: now())
+        }
+        updateCodexCreditReminders()
+    }
+
+    private func codexSnapshots(for account: String) -> [ProviderSnapshot] {
+        localSnapshots.values.filter {
+            ProviderAccountID.family(of: $0.providerID) == "codex" && creditReminderAccount($0) == account
+        }
+    }
+
+    private func creditReminderAccount(_ snapshot: ProviderSnapshot) -> String? {
+        if case .account(let workspace) = claimRefreshBinding(providerID: snapshot.providerID),
+            snapshot.codexSwitchIdentity != workspace
+        {
+            return nil
+        }
+        return snapshot.liveQuotaAccountKey
+    }
+
+    private func creditReminderName(_ snapshot: ProviderSnapshot) -> String? {
+        guard case .accountSnapshot(let profileID) = snapshot.codexResetClaimBinding?.source,
+            snapshot.providerID == AccountUsageCardPlanner.cardID(family: "codex", profileID: profileID),
+            let workspace = snapshot.codexSwitchIdentity
+        else { return nil }
+        return resolveCreditAccountName?(profileID, workspace)
+    }
+
+    private func updateCodexCreditReminders() {
+        guard let creditExpiryReminders else { return }
+        creditExpiryReminders.retainCards(Set(knownProviderIDs))
+        let enabled = notificationSettings?().codexCreditExpiry == true
+        let accounts = localSnapshots.compactMap { id, snapshot -> (String, String, ProviderSnapshot)? in
+            guard enabled, ProviderAccountID.family(of: id) == "codex", isProviderEnabled(id),
+                !creditExpiryReminders.invalidatedCards.contains(id), reconciliationFailure(for: id) == nil,
+                let account = creditReminderAccount(snapshot)
+            else { return nil }
+            let provider = ProviderAccountID.cardTitle(providerID: id, fallback: snapshot.displayName)
+            let name = creditReminderName(snapshot) ?? provider
+            return (account, name, snapshot)
+        }
+        creditExpiryReminders.reconcile(accounts: accounts, now: now())
     }
 
     /// 활성 프로바이더 순차 갱신 — force는 정상 캐시와 실패 대기 우회.
@@ -185,11 +305,12 @@ final class WidgetDataStore {
     @discardableResult
     func refresh(
         providerID: String, force: Bool = false, trigger: RefreshTrigger = .scheduled,
-        notifyHistoryChange: Bool = true, codexBinding: CodexResetClaimBinding? = nil
+        notifyHistoryChange: Bool = true, codexBinding: CodexResetClaimBinding? = nil,
+        isCurrent: @escaping @MainActor () -> Bool = { true }
     ) async -> RefreshOutcome {
         let outcome = await refreshCoordinator.refresh(
             providerID: providerID, force: force, trigger: trigger,
-            notifyHistoryChange: notifyHistoryChange, codexBinding: codexBinding)
+            notifyHistoryChange: notifyHistoryChange, codexBinding: codexBinding, isCurrent: isCurrent)
         if trigger == .manual, outcome == .refreshed { await evaluateNotifications(now: now()) }
         return outcome
     }
@@ -238,6 +359,10 @@ final class WidgetDataStore {
         refreshCoordinator.setClaudeReconciliationFailure(failure)
     }
 
+    func setAccountReconciliationFailure(_ failure: ProviderRefreshFailure?, for family: String) {
+        refreshCoordinator.setAccountReconciliationFailure(failure, for: family)
+    }
+
     func clearFailureBackoff(for providerID: String) { refreshCoordinator.clearFailureBackoff(for: providerID) }
     func providerEnablementDidChange() { refreshCoordinator.providerEnablementDidChange() }
     func invalidateAuthentication(for providerID: String) {
@@ -252,8 +377,12 @@ final class WidgetDataStore {
     }
 
     func clearPeerHistoryDocuments() { refreshCoordinator.clearPeerHistoryDocuments() }
-    func localHistoryDocument(deviceID: String, deviceName: String, updatedAt: Date = Date()) -> UsageHistoryDocument {
-        refreshCoordinator.localHistoryDocument(deviceID: deviceID, deviceName: deviceName, updatedAt: updatedAt)
+    func localHistoryDocument(
+        deviceID: String, deviceName: String, updatedAt: Date = Date(),
+        preserving previous: UsageHistoryDocument? = nil
+    ) -> UsageHistoryDocument {
+        refreshCoordinator.localHistoryDocument(
+            deviceID: deviceID, deviceName: deviceName, updatedAt: updatedAt, preserving: previous)
     }
 
     func refreshAfterAccountSelection(
@@ -268,8 +397,9 @@ final class WidgetDataStore {
     func refreshAfterWeeklyTimer(providerID: String, isCurrent: @escaping @MainActor () -> Bool) async {
         for _ in 0..<15 {
             guard !Task.isCancelled, isCurrent() else { return }
-            let outcome = await refresh(providerID: providerID, force: true, trigger: .weeklyTimer)
-            guard outcome == .skipped else { return }
+            let outcome = await refresh(
+                providerID: providerID, force: true, trigger: .weeklyTimer, isCurrent: isCurrent)
+            guard outcome == .skipped, isCurrent() else { return }
             do { try await Task.sleep(for: .seconds(1)) } catch { return }
         }
         AppDiagnostics.record(.weeklyTimer, result: .failure, providerID: providerID,
@@ -364,6 +494,54 @@ final class WidgetDataStore {
         )
     }
 
+    func recommendationQuota(for profile: AccountProfile, cardID: String, at now: Date) -> AccountSwitchQuota? {
+        guard isProviderEnabled(cardID), claimRefreshBinding(providerID: cardID) == .account(profile.identityKey),
+            let snapshot = freshLocalQuota(for: cardID, at: now), snapshot.authenticationIssue == nil
+        else { return nil }
+        switch profile.family {
+        case "claude":
+            var quota = AccountSwitchQuota.claude(lines: snapshot.lines)
+            if !profile.identityKey.contains("|") {
+                guard let verified = snapshot.legacyClaudeSwitchIdentity,
+                    verified.identityKey.hasPrefix(profile.identityKey + "|")
+                else { return nil }
+                quota.legacyClaudeIdentity = verified
+            }
+            let identity = quota.legacyClaudeIdentity?.identityKey ?? profile.identityKey
+            let accountKey = UsageTimerObservation.accountKey(family: "claude", identity: identity)
+            guard snapshot.liveQuotaAccountKey == accountKey else { return nil }
+            return quota
+        case "codex":
+            guard snapshot.codexSwitchIdentity == profile.identityKey,
+                let binding = snapshot.codexResetClaimBinding,
+                binding.verifiedAccountKey == snapshot.liveQuotaAccountKey
+            else { return nil }
+            if cardID == "codex" {
+                guard case .file(let path) = binding.source else { return nil }
+                let file = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+                let home = file.deletingLastPathComponent().standardizedFileURL
+                guard file.lastPathComponent == "auth.json",
+                    home.path == Self.sharedCodexHome.path
+                        || home.resolvingSymlinksInPath().path == Self.sharedCodexHome.resolvingSymlinksInPath().path
+                else { return nil }
+            }
+            guard var quota = snapshot.codexSwitchQuota else { return nil }
+            quota.codexAccountKey = binding.verifiedAccountKey
+            return quota
+        default:
+            return nil
+        }
+    }
+
+    private func freshLocalQuota(for id: String, at now: Date) -> ProviderSnapshot? {
+        guard refreshResults[id] == .succeeded, let snapshot = localSnapshots[id],
+            snapshot.liveQuotaAccountKey != nil, let observed = snapshot.liveQuotaObservedAt, observed <= now,
+            now.timeIntervalSince(observed) < RefreshSetting.interval(for: id),
+            !cache.isQuotaInvalidated(providerID: id, observedAt: observed)
+        else { return nil }
+        return snapshot
+    }
+
     /// 캐시와 다른 Mac의 합산 자료를 제외하고 현재 계정의 실측 한도만 알림에 사용.
     private func recoveryReading(for descriptor: WidgetDescriptor, now: Date) -> QuotaNotificationEvaluator
         .RecoveryReading?
@@ -372,16 +550,12 @@ final class WidgetDataStore {
         // 회복 대상으로 선언한 행은 실측 consumption 한 종류만 사용. 혼합·추정 리소스는 비교하지 않음.
         guard descriptor.limitResources.count == 1, let resource = descriptor.limitResources.first,
             resource.kind == .consumption, !resource.estimated,
-            refreshResults[id] == .succeeded, let snapshot = refreshCoordinator.localSnapshots[id],
-            let account = snapshot.liveQuotaAccountKey, let observed = snapshot.liveQuotaObservedAt, observed <= now,
-            now.timeIntervalSince(observed) < RefreshSetting.interval(for: id),
-            !cache.isQuotaInvalidated(providerID: id, observedAt: observed),
+            let snapshot = freshLocalQuota(for: id, at: now), let account = snapshot.liveQuotaAccountKey,
             let line = snapshot.line(label: descriptor.metricLabel),
             resource.matches(line), case let .progress(_, used, limit, format, reset, _, _) = line,
             used.isFinite, used >= 0, limit.isFinite, limit > 0, reset.map({ $0 > now }) != false
         else { return nil }
-        // Cursor 요청 수 대체값은 Requests 행에서만 관측해 Total Usage의 구독 기준선을 보존.
-        if descriptor.id == "cursor.usage", format == .count(suffix: "requests") { return nil }
+        guard !descriptor.isCursorRequestLimitAlias(format: format) else { return nil }
         let scope = snapshot.quotaRecoveryScopes[descriptor.metricLabel] ?? .account
         guard scope != .unverified else { return nil }
         return .init(account: account, isExhausted: used >= limit, scope: scope)
@@ -391,6 +565,10 @@ final class WidgetDataStore {
     /// backedOff는 실패 대기, skipped는 비활성·미등록·진행 중 등의 사유로 조회 생략.
     typealias RefreshOutcome = ProviderRefreshCoordinator.RefreshOutcome
 
+    func usageRefreshFailed(for providerID: String) -> Bool {
+        refreshCoordinator.refreshResults[providerID]?.failure != nil
+    }
+
     func errorMessage(for providerID: String) -> String? {
         refreshResults[providerID]?.failure?.localizedMessage
     }
@@ -399,7 +577,7 @@ final class WidgetDataStore {
     func needsKeychainApproval(_ providerID: String) -> Bool {
         ProviderAccountID.families.contains(ProviderAccountID.family(of: providerID))
             && (refreshCoordinator.refreshResults[providerID]?.failure?.category == .credentialAccess
-                || (providerID == "claude" && claudeReconciliationFailure?.category == .credentialAccess))
+                || refreshCoordinator.accountReconciliationFailures[providerID]?.category == .credentialAccess)
     }
 
     /// 마지막 정상 결과의 경고 — 이후 조회가 실패해도 유지될 수 있음.

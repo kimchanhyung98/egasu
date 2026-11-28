@@ -113,7 +113,7 @@ extension PricingSupplement {
                 cacheWriteAbove200kPerMillion: entry.longContext?.cacheWritePerMillion,
                 cacheReadAbove200kPerMillion: entry.longContext?.cacheReadPerMillion,
                 cacheReadIsExplicit: entry.cacheReadPerMillion != nil,
-                longContextThresholdTokens: entry.longContext?.thresholdTokens ?? 200_000,
+                longContextThresholdTokens: entry.longContext?.thresholdTokens,
                 // Claude speed 필드 등 요청별 Fast 신호에 사용할 배율 보존.
                 fastMultiplier: file.exactFastMultipliers?[model] ?? file.fastMultipliers?[model] ?? 1
             )

@@ -4,7 +4,11 @@
 
 ## 로컬 빌드 실행
 
-아래 명령은 빌드 전에 현재 checkout의 `dist/egasu.app`, 이전 `dist/Egasu.app` 또는 `dist/OpenUsage.app` 프로세스만 종료.
+아래 명령은 Swift 빌드가 성공한 뒤 앱 번들을 교체하기 전에 현재 checkout의 `dist/egasu.app`, 이전 `dist/Egasu.app` 또는 `dist/OpenUsage.app` 프로세스만 종료.
+Swift 빌드가 실패하면 실행 중인 앱 유지.
+앱은 종료 신호를 받으면 진행 중인 Claude·Codex·Kimi 토큰 갱신과 저장이 끝날 때까지 대기.
+20초가 지나면 경고를 기록하고, 갱신 요청이나 저장이 끝날 때까지 종료를 계속 대기.
+25초 안에 앱이 종료되지 않으면 기존 앱 번들을 유지하고 스크립트 중단.
 `/Applications` 등 다른 경로에서 실행 중인 앱은 종료하지 않음.
 지원 모드는 `run|build|logs|verify`이며 생략 시 `run`.
 잘못된 모드는 버전 스크립트 로딩·Git·서명 확인과 앱 종료·빌드 전에 사용법과 종료 코드 2로 거부.
@@ -22,6 +26,8 @@
 
 스크립트는 서명된 앱 번들을 `dist/`에 생성.
 서명 신원은 `CODESIGN_IDENTITY` 환경 변수, 저장소 루트의 `.env.local.codesign-identity`, Apple Development 자동 선택 순서로 결정.
+팀 식별자가 있는 인증서를 사용하면 [데스크톱 위젯](/docs/desktop-widgets.md)을 함께 빌드해 앱의 `Contents/PlugIns`에 포함.
+ad-hoc 서명으로 빌드하면 데스크톱 위젯이 제외되며 빌드 출력에 사유 표시.
 이 Mac의 인증서를 고정하려면 `.env.local.codesign-identity`에 인증서 지문 또는 정확한 이름을 한 줄로 저장.
 이 파일은 Git에서 제외되는 로컬 설정.
 명시하거나 고정한 서명 신원은 임시 실행 파일 복사본에 `codesign --dryrun`을 실행해 사용 가능 여부 확인.

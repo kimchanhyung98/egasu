@@ -14,7 +14,7 @@
 Z.ai가 주간·월간 토큰 한도를 함께 제공하면 두 기간을 각각 표시.
 웹 검색은 응답에 명시된 주간 또는 월간 주기에 맞춰 소프트 한도 적용.
 
-Z.ai가 요금제 이름을 반환하면 프로바이더 이름 옆에 표시.
+Z.ai가 요금제 이름을 반환하면 대시보드 계정 줄의 배지에 표시.
 구독 이름 조회가 실패하면 할당량 응답의 `data.level`로 요금제 표시.
 현행 Lite·Pro·Max의 월 정가·할인 표기·크레딧 한도는 [구독 요금제](/docs/pricing.md#구독-요금제) 참조.
 
@@ -171,7 +171,7 @@ Bearer 접두사는 추가하지 않음.
 - **"Z.ai API key invalid"** — 국제 서비스 `api.z.ai`에서 키 거부(401/403).
   중국 BigModel과 Z.ai는 별도 서비스이므로 Z.ai에서 발급한 키 확인.
   [Z.ai 콘솔](https://z.ai/manage-apikey/apikey-list)에서 다시 생성.
-- **"No active GLM Coding Plan"**(이름 옆 황색 안내) — 키는 유효하지만 계정에 GLM Coding Plan이 없어 측정할 항목이 없는 상태.
+- **"No active GLM Coding Plan"**(계정 줄의 경고 삼각형에 포인터를 올려 확인) — 키는 유효하지만 계정에 GLM Coding Plan이 없어 측정할 항목이 없는 상태.
   [z.ai/subscribe](https://z.ai/subscribe)에서 구독하면 요금제 활성화 후 사용량 표시.
 - **미터에 "No usage data" 표시** — 요금제가 있지만 할당량 엔드포인트에서 아직 사용 가능한 한도를 반환하지 않은 상태.
   [요금제](https://z.ai/manage-apikey/coding-plan/personal/my-plan) 확인.

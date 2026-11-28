@@ -20,8 +20,8 @@ struct ModelRates: Sendable, Equatable {
     /// 일반 추정용 기본값은 입력 요율의 10% — Codex는 미명시 상태에서 입력 요율 전액 사용.
     var cacheReadIsExplicit: Bool = true
 
-    /// 긴 문맥 요율 적용을 시작하는 프롬프트 토큰 기준.
-    var longContextThresholdTokens: Int = 200_000
+    /// 긴 문맥 요율의 프롬프트 토큰 기준. 생략 시 사용 경로의 기본값 적용.
+    var longContextThresholdTokens: Int?
 
     /// Fast 변형의 요율 배율 — 기본값은 1.
     var fastMultiplier: Double = 1
@@ -70,7 +70,7 @@ extension ModelRates {
     /// 요청 경계가 없는 집계 자료는 긴 문맥 요율 적용 생략 가능.
     func costDollars(for tokens: TokenBreakdown, applyLongContextRates: Bool = true) -> Double {
         let multiplier = tokens.isFast ? fastMultiplier : 1
-        let useLongContextRates = applyLongContextRates && tokens.promptTokens > longContextThresholdTokens
+        let useLongContextRates = applyLongContextRates && tokens.promptTokens > (longContextThresholdTokens ?? 200_000)
         let inputRate = selectedRate(base: inputPerMillion, longContext: inputAbove200kPerMillion,
                                      useLongContextRates: useLongContextRates)
         let outputRate = selectedRate(base: outputPerMillion, longContext: outputAbove200kPerMillion,

@@ -97,7 +97,8 @@ actor ClaudeLogUsageScanner {
         ), !Task.isCancelled else { return nil }
         let failures = discoveryFailures + result.failedPaths.count
         guard !discovery.files.isEmpty || failures > 0 else { return nil }
-        var scan = Self.aggregate(entries: Self.dedup(result.items), since: since, pricing: pricing)
+        let entries = result.items.filter { $0.timestamp <= now }
+        var scan = Self.aggregate(entries: Self.dedup(entries), since: since, pricing: pricing)
         scan.readFailureCount = failures
         return scan
     }

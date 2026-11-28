@@ -23,7 +23,11 @@ final class CodexCredentialRecoveryRaceTests: XCTestCase {
             credential: #"{"tokens":{"access_token":"replacement-B","account_id":"B"}}"#
         )
         try switcher.saveSnapshot(replacement, for: profile)
-        _ = try profiles.beginIdentityReplacement(profileID: profile.id, with: "B", replacesSharedAuthentication: true)
+        _ = try profiles.beginIdentityReplacement(
+            profileID: profile.id, with: "B", replacesSharedAuthentication: true,
+            codexGeneration: .init(
+                sharedHome: switcher.sharedHomePath(family: "codex"), previousShared: nil,
+                previousSnapshot: nil, replacement: replacement))
         keychain.onNextRead = { try switcher.switchAuthentication(to: profile, from: profile) }
 
         _ = try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: profiles)
@@ -57,7 +61,11 @@ final class CodexCredentialRecoveryRaceTests: XCTestCase {
         )
         try switcher.applySharedAuthentication(previous, family: "codex")
         try switcher.saveSnapshot(replacement, for: profile)
-        _ = try profiles.beginIdentityReplacement(profileID: profile.id, with: "B", replacesSharedAuthentication: true)
+        _ = try profiles.beginIdentityReplacement(
+            profileID: profile.id, with: "B", replacesSharedAuthentication: true,
+            codexGeneration: .init(
+                sharedHome: switcher.sharedHomePath(family: "codex"), previousShared: previous,
+                previousSnapshot: previous, replacement: replacement))
         let authStore = CodexAuthStore(environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
                                       scope: .accountSnapshot(profileID: profile.id))
         var rotated = try XCTUnwrap(authStore.loadAccountSnapshot(profileID: profile.id))

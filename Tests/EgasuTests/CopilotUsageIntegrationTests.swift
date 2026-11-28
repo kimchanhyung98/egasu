@@ -145,6 +145,50 @@ final class CopilotUsageIntegrationTests: XCTestCase {
         XCTAssertNil(restarted.providerErrors["copilot"])
     }
 
+    func testCacheHitPreservesRetainedLocalHistoryAfterNewerExternalReading() async throws {
+        let http = FakeHTTPClient(
+            response: try response([
+                "copilot_plan": "pro",
+                "quota_snapshots": ["premium_interactions": ["entitlement": 100, "remaining": 75], "chat": NSNull()]
+            ]))
+        let fixture = try makeFixture(rows: [row()], quotaHTTP: http)
+        let store = ProviderSnapshotStore(
+            registry: .from([fixture.provider]), cache: fixture.cache, identityKeys: ["copilot": "local"],
+            familyTotalHistoryCardIDs: [], isProviderEnabled: { _ in true }, now: { fixture.clock.date })
+        let success = await fixture.provider.refresh()
+        XCTAssertNotNil(success.warning)
+        XCTAssertNotNil(success.liveQuotaObservedAt)
+        _ = store.accept(success, from: fixture.provider)
+        var external = success
+        external.refreshedAt = now.addingTimeInterval(1)
+        fixture.clock.date = external.refreshedAt
+        let disk = ProviderSnapshotCache(
+            userDefaults: fixture.defaults, storageKey: "snapshots", now: { fixture.clock.date })
+        disk.store(external, producedByIdentityKey: "external")
+
+        fixture.clock.date = now.addingTimeInterval(2)
+        http.response = HTTPResponse(statusCode: 503, headers: [:], body: Data())
+        fixture.sqlite.json = try json([row(input: 3_000, output: 1_000, nanoAIU: 900_000_000)])
+        let failure = await fixture.provider.refresh()
+        guard case .failed = store.accept(failure, from: fixture.provider) else {
+            return XCTFail("Expected quota failure")
+        }
+        let retained = try XCTUnwrap(store.localSnapshots["copilot"])
+        XCTAssertEqual(retained.usageHistory?.series.daily.first?.totalTokens, 4_000)
+        XCTAssertEqual(retained.warning, failure.warning)
+        XCTAssertNotEqual(retained.warning, success.warning)
+        XCTAssertEqual(retained.quotaObservedAt, success.quotaObservedAt)
+        XCTAssertNil(retained.liveQuotaObservedAt)
+        XCTAssertEqual(retained.freshnessDate, success.freshnessDate)
+        let hit = try XCTUnwrap(store.cachedSnapshot(for: "copilot", currentIdentityKey: "local"))
+        XCTAssertFalse(store.useCachedSnapshot(hit))
+        XCTAssertEqual(store.localSnapshots["copilot"], retained)
+        XCTAssertEqual(fixture.cache.producedByIdentityKey(providerID: "copilot"), "local")
+        let reader = ProviderSnapshotCache(userDefaults: fixture.defaults, storageKey: "snapshots")
+        XCTAssertEqual(reader.producedByIdentityKey(providerID: "copilot"), "external")
+        XCTAssertEqual(reader.loadSnapshots(providerIDs: ["copilot"])["copilot"]?.usageHistory, external.usageHistory)
+    }
+
     func testQuotaAndHistoryFailuresBothAppearWithoutReplacingLastGoodData() async throws {
         let http = FakeHTTPClient(response: try response([
             "copilot_plan": "pro",

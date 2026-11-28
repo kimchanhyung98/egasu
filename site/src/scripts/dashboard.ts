@@ -1,9 +1,13 @@
-import { dashboardLines, priorityBoard, menuBarItems, priorityGauge } from '../data/preview-dashboard';
+import { dashboardLines, priorityBoard, menuBarItems, menuBarResetCountdown, menuBarText, priorityGauge } from '../data/preview-dashboard';
+import { accountFamilies } from '../data/accounts';
+import { boundedView } from '../data/demo';
 import { metricKey, providerMetrics } from '../data/metrics';
 import { orderedMetrics, accountName, accountEmail, type PreviewState } from '../data/preview-state';
 import { providers } from '../data/providers';
 import { alertConditions } from '../data/settings';
-import { previewAccountDisplayName, setPreviewAccountText } from './localization';
+import { previewAccountDisplayName, previewMetricLabel, setPreviewAccountAccessibilityLabel, setPreviewAccountText } from './localization';
+
+const accountNameSegmenter = new Intl.Segmenter();
 
 export function renderDashboard(mock: HTMLElement, state: PreviewState): void {
   if (!mock.querySelector('[data-dashboard-panel]')) return;
@@ -192,16 +196,61 @@ function renderMenuBar(mock: HTMLElement, state: PreviewState): void {
     const label = document.createElement('span');
     label.className = 'am-menu-preview-item';
     const provider = providers.find((provider) => provider.id === item.provider)!;
+    const hasAccount = accountFamilies.some((family) => family.id === item.provider
+      && family.profiles.some((profile) => profile.id === item.accountID));
+    const text = menuBarText(state, item, {
+      accountName: hasAccount ? previewAccountDisplayName(state, item.provider, item.accountID).displayed : undefined,
+      metricLabel: (label) => previewMetricLabel(state, label),
+    });
+    let value = '';
     if (item.row.kind === 'bounded') {
-      const fraction = state.preferences.showUsageAs === 'Left' ? 1 - item.row.used / item.row.limit : item.row.used / item.row.limit;
+      const mode = state.preferences.showUsageAs === 'Left' ? 'left' : 'used';
+      const quota = boundedView(item.row, mode, 'tray');
       if (state.preferences.iconStyle === 'Bars') {
         const bar = document.createElement('span');
         bar.className = 'am-menu-preview-bar';
-        bar.style.setProperty('--bar-fill', `${Math.round(fraction * 100)}%`);
-        bar.setAttribute('aria-label', `${provider.name} ${item.row.label} ${Math.round(fraction * 100)}%`);
+        bar.setAttribute('role', 'img');
+        bar.style.setProperty('--bar-fill', `${quota.fill}%`);
+        bar.setAttribute('aria-label', `${provider.name} ${text.metricLabel} ${quota.amount}`);
         label.append(bar);
-      } else label.textContent = `${provider.name} ${Math.round(fraction * 100)}%`;
-    } else label.textContent = `${provider.name} ${item.row.kind === 'text' ? item.row.values[0] : item.row.kind === 'forecast' ? `${item.row.probability}%` : ''}`;
+      } else value = quota.amount;
+    } else value = item.row.kind === 'text' ? item.row.values[0] : item.row.kind === 'forecast' ? `${item.row.probability}%` : '';
+    if (state.preferences.iconStyle !== 'Bars') {
+      const countdown = menuBarResetCountdown(state, item.row);
+      label.setAttribute('role', 'img');
+      setPreviewAccountAccessibilityLabel(label, (account) => {
+        const reading = [provider.name, account, text.metricLabel, value].filter(Boolean).join(' ');
+        return countdown ? `${reading}, Resets in ${countdown}` : reading;
+      }, text.accountName);
+      const mark = document.createElement('span');
+      mark.textContent = [provider.name, text.badge].filter(Boolean).join(' ');
+      mark.setAttribute('aria-hidden', 'true');
+      const detail = document.createElement('span');
+      detail.className = 'am-menu-preview-detail';
+      detail.setAttribute('aria-hidden', 'true');
+      const name = document.createElement('span');
+      name.className = 'am-menu-preview-label';
+      if (text.accountLabel) {
+        name.setAttribute('data-preview-literal', '');
+        const letters = Array.from(accountNameSegmenter.segment(text.label), ({ segment }) => segment);
+        const middle = Math.ceil(letters.length / 2);
+        const beginning = document.createElement('span');
+        beginning.textContent = letters.slice(0, middle).join('');
+        const ending = document.createElement('span');
+        ending.textContent = letters.slice(middle).join('');
+        name.append(beginning, ending);
+      } else name.textContent = text.label;
+      const amount = document.createElement('span');
+      amount.textContent = value;
+      if (countdown) {
+        amount.className = 'am-menu-preview-countdown';
+        const duration = document.createElement('span');
+        duration.textContent = countdown;
+        amount.append(' ', duration);
+      }
+      detail.append(name, amount);
+      label.append(mark, detail);
+    }
     container.append(label);
   }
   if (selection.overflow) container.append(document.createTextNode(` +${selection.overflow}`));

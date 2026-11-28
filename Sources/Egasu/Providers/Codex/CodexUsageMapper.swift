@@ -3,6 +3,7 @@ import Foundation
 struct CodexMappedUsage: Equatable, Sendable {
     var plan: String?
     var lines: [MetricLine]
+    var switchQuota: AccountSwitchQuota
     var incompleteQuotaWindows: Set<SoftLimitWindow>
 }
 
@@ -96,7 +97,9 @@ enum CodexUsageMapper {
 
         // "no usage data" badge는 `CodexProvider.probe`가 스캔된 spend line *뒤에* 추가 — 빈 live 응답의 badge가 Today/Yesterday와 공존 불가.
         return CodexMappedUsage(
-            plan: formatCodexPlan(body["plan_type"]), lines: lines, incompleteQuotaWindows: incompleteWindows)
+            plan: formatCodexPlan(body["plan_type"]), lines: lines,
+            switchQuota: switchQuota(body: body, response: response, now: now),
+            incompleteQuotaWindows: incompleteWindows)
     }
 
     /// 워크스페이스의 개인 크레딧 상한. Flex 잔액·일반 rate limit과 별개.
@@ -134,10 +137,33 @@ enum CodexUsageMapper {
         )
     }
 
-    private enum WindowKind {
-        case session
-        case weekly
-        case monthly
+    private typealias WindowKind = AccountSwitchQuota.Period
+
+    /// 화면 표시용 슬롯 추정과 헤더 대체값은 계정 추천 근거에서 제외.
+    private static func switchQuota(body: [String: Any], response: HTTPResponse, now: Date) -> AccountSwitchQuota {
+        var result = AccountSwitchQuota()
+        guard let base = body["rate_limit"] as? [String: Any] else { return result }
+        var seen: Set<WindowKind> = []
+        for slot in ["primary", "secondary"] {
+            guard let raw = base[slot + "_window"], !(raw is NSNull) else {
+                if response.header("x-codex-" + slot + "-used-percent") != nil { result.incomplete = true }
+                continue
+            }
+            guard let window = raw as? [String: Any], let period = exactKind(for: window) else {
+                result.incomplete = true
+                continue
+            }
+            guard seen.insert(period).inserted,
+                let percent = ProviderParse.number(window["used_percent"]), (0...100).contains(percent),
+                !hasMalformedReset(window)
+            else {
+                result.incomplete = true
+                result.windows[period] = nil
+                continue
+            }
+            result.windows[period] = .init(percent: percent, reset: resetDate(window, now: now))
+        }
+        return result
     }
 
     private struct WindowCandidate {
@@ -290,11 +316,11 @@ enum CodexUsageMapper {
     /// Flex credit을 raw 값으로 — floored count와 dollar 값(count × 4¢), "$32.84 · 821 credits" 형태로 결합 표시.
     /// count를 pricing *전에* floor — Codex CLI/plugin과 dollar 일치. 음수 잔액은 0으로 clamp — "$0.00 · 0 credits"는 측정된 zero, "No data" 아님.
     static func creditValues(remaining: Double) -> [MetricValue] {
-        let credits = max(0, Int(remaining.rounded(.down)))
-        let usd = Double(credits) * creditUSDRate
+        let credits = max(0, remaining.rounded(.down))
+        let usd = credits * creditUSDRate
         return [
             MetricValue(number: usd, kind: .dollars),
-            MetricValue(number: Double(credits), kind: .count, label: "credits")
+            MetricValue(number: credits, kind: .count, label: "credits")
         ]
     }
 
@@ -305,15 +331,16 @@ enum CodexUsageMapper {
         resetCredits: HTTPResponse?
     ) -> (count: Int, expiries: [Date])? {
         guard let source = resetCreditsSource(body: body, resetCredits: resetCredits),
-              let count = ProviderParse.number(source["available_count"]), count >= 0
+              let count = ProviderParse.number(source["available_count"]), count >= 0,
+              let available = Int(exactly: count.rounded(.down))
         else {
             return nil
         }
-        return (Int(count.rounded(.down)), availableExpiries(in: source["credits"]))
+        return (available, availableExpiries(in: source["credits"]))
     }
 
-    /// count·expiry를 읽을 source — 전용 endpoint body가 usable(2xx, 파싱 가능, 0 이상 numeric `available_count`)일 때만 채택, 아니면 usage body의 embedded object.
-    /// bare nil-check 금지 — JSON `null`은 `NSNull`(non-nil)이라 unusable한 전용 body를 선택해 usage-body count로의 fallback을 막음.
+    /// 초기화권 개수·만료 출처 — 전용 응답이 정상이며 개수가 비음수 정수 범위이면 우선, 아니면 사용량 본문.
+    /// JSON null은 NSNull이므로 값 존재 여부만으로 전용 응답의 유효성을 판단하지 않음.
     private static func resetCreditsSource(
         body: [String: Any],
         resetCredits: HTTPResponse?
@@ -327,7 +354,8 @@ enum CodexUsageMapper {
     static func resetCreditsPayload(_ response: HTTPResponse) -> [String: Any]? {
         guard (200..<300).contains(response.statusCode),
               let body = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any],
-              let count = ProviderParse.number(body["available_count"]), count >= 0
+              let count = ProviderParse.number(body["available_count"]), count >= 0,
+              Int(exactly: count.rounded(.down)) != nil
         else { return nil }
         return body
     }

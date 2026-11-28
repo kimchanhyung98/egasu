@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import XCTest
 @testable import Egasu
 
@@ -23,6 +24,7 @@ final class PanelGeometryTests: XCTestCase {
             controller.finishClosing()
             MenuBarPopover.applyHeight = nil
             MenuBarPopover.clampHeight = nil
+            MenuBarPopover.presentedHeight = nil
             panel.close()
             sheet.close()
         }
@@ -114,12 +116,33 @@ final class PanelGeometryTests: XCTestCase {
         ), 200)
     }
 
+    func testAccountDetailExcludesTheDepartedFooterWhileWaitingForVisibleBars() {
+        func measure(_ detail: String?, top: CGFloat, bottom: CGFloat) -> CGFloat? {
+            let geometry = ScrollGeometry(
+                contentOffset: .zero, contentSize: CGSize(width: 340, height: 500),
+                contentInsets: EdgeInsets(top: top, leading: 0, bottom: bottom, trailing: 0),
+                containerSize: CGSize(width: 340, height: 200))
+            return PanelPageMeasurement(
+                screen: .accounts, tab: .priority, detail: detail, hasFooter: detail == nil, geometry: geometry
+            )?.height
+        }
+        XCTAssertEqual(measure("codex", top: 30, bottom: 47), 530)
+        XCTAssertEqual(measure("codex", top: 30, bottom: 0), 530)
+        XCTAssertNil(measure("codex", top: 0, bottom: 47))
+        XCTAssertNil(measure(nil, top: 30, bottom: 0))
+        XCTAssertEqual(measure(nil, top: 30, bottom: 47), 577)
+    }
+
     func testMeasuredHeightsKeepScreensIndependentOfDashboardTabs() {
         var heights = MeasuredPanelHeights()
         heights[.dashboard, .allUsage] = 600
         heights[.dashboard, .priority] = 250
         heights[.accounts, .allUsage] = 400
         heights[.settings, .priority] = 700
+        heights[.accounts, .priority, "codex"] = 310
+        heights[.accounts, .priority, "claude"] = 525
+        XCTAssertEqual(heights[.accounts, .allUsage, "codex"], 310)
+        XCTAssertEqual(heights[.accounts, .priority, "claude"], 525)
         XCTAssertEqual(heights[.dashboard, .allUsage], 600)
         XCTAssertEqual(heights[.dashboard, .priority], 250)
         XCTAssertEqual(heights[.accounts, .priority], 400)

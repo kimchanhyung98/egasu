@@ -95,10 +95,32 @@ final class NewProviderSeederTests: XCTestCase {
         XCTAssertEqual(enableCallbacks, ["windsurf"], "the seeder must not fire a second enable")
     }
 
+    func testUserDisablingNewProviderDuringDetectionKeepsItOff() async throws {
+        let enablement = seededStore("disable-during-probe", enabled: ["claude"], known: ["claude"])
+        let providers = [probe("windsurf", hasCredentials: true), probe("grok", hasCredentials: true)]
+        let queue = BackgroundWorkQueue()
+        let acquired = await queue.acquire("blocker")
+        let ticket = try XCTUnwrap(acquired)
+        let task = try XCTUnwrap(
+            NewProviderSeeder.reconcileIfNeeded(providers: providers, enablement: enablement, workQueue: queue)
+        )
+        for _ in 0..<1_000 where queue.pendingCount == 0 { await Task.yield() }
+        XCTAssertEqual(queue.pendingCount, 1)
+
+        enablement.setEnabled(true, for: "windsurf")
+        enablement.setEnabled(false, for: "windsurf")
+        queue.finish(ticket)
+        await task.value
+
+        XCTAssertEqual(enablement.enabledIDs, ["claude", "grok"])
+        XCTAssertEqual(enablement.knownIDs, ["claude", "grok", "windsurf"])
+    }
+
     func testCancelledQueuedDetectionRemainsUnknownAndRetries() async throws {
         let enablement = seededStore("cancelled", enabled: ["claude"], known: ["claude"])
         let newcomers = [probe("grok", hasCredentials: true), probe("windsurf", hasCredentials: false)]
-        let providers = [probe("claude", hasCredentials: true)] + newcomers
+        let keptOff = probe("deepseek", hasCredentials: true)
+        let providers = [probe("claude", hasCredentials: true), keptOff] + newcomers
         let queue = BackgroundWorkQueue()
         let acquired = await queue.acquire("blocker")
         let ticket = try XCTUnwrap(acquired)
@@ -108,10 +130,11 @@ final class NewProviderSeederTests: XCTestCase {
         )
         for _ in 0..<1_000 where queue.pendingCount == 0 { await Task.yield() }
         XCTAssertEqual(queue.pendingCount, 1)
+        enablement.setEnabled(false, for: keptOff.provider.id)
         task?.cancel()
         await task?.value
 
-        XCTAssertEqual(enablement.knownIDs, ["claude"])
+        XCTAssertEqual(enablement.knownIDs, ["claude", "deepseek"])
         XCTAssertEqual(enablement.enabledIDs, ["claude"])
         XCTAssertTrue(newcomers.allSatisfy { $0.probeCount == 0 })
         XCTAssertEqual(queue.pendingCount, 0)
@@ -122,9 +145,10 @@ final class NewProviderSeederTests: XCTestCase {
         )
         XCTAssertNotNil(retry)
         await retry?.value
-        XCTAssertEqual(enablement.knownIDs, ["claude", "grok", "windsurf"])
+        XCTAssertEqual(enablement.knownIDs, ["claude", "deepseek", "grok", "windsurf"])
         XCTAssertEqual(enablement.enabledIDs, ["claude", "grok"])
         XCTAssertTrue(newcomers.allSatisfy { $0.probeCount == 1 })
+        XCTAssertEqual(keptOff.probeCount, 0)
     }
 
     // MARK: - Helpers

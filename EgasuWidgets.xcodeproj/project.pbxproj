@@ -1,0 +1,97 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		100000000000000000000001 /* ProviderIcons in Resources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000002 /* ProviderIcons */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		100000000000000000000002 /* ProviderIcons */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Sources/Egasu/Resources/ProviderIcons; sourceTree = SOURCE_ROOT; };
+		100000000000000000000003 /* EgasuWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; path = EgasuWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		100000000000000000000014 /* Widget.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Widgets/Configuration/Widget.xcconfig; sourceTree = SOURCE_ROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		100000000000000000000004 /* EgasuWidgets */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Widgets/EgasuWidgets; sourceTree = SOURCE_ROOT; };
+		100000000000000000000005 /* DesktopWidgetSupport */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Sources/DesktopWidgetSupport; sourceTree = SOURCE_ROOT; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXGroup section */
+		100000000000000000000006 = {
+			isa = PBXGroup;
+			children = (
+				100000000000000000000004 /* EgasuWidgets */,
+				100000000000000000000005 /* DesktopWidgetSupport */,
+				100000000000000000000002 /* ProviderIcons */,
+				100000000000000000000014 /* Widget.xcconfig */,
+				100000000000000000000007 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		100000000000000000000007 /* Products */ = {isa = PBXGroup; children = (100000000000000000000003 /* EgasuWidgets.appex */,); name = Products; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		100000000000000000000008 /* EgasuWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 100000000000000000000009;
+			buildPhases = (
+				10000000000000000000000A /* Sources */,
+				10000000000000000000000B /* Frameworks */,
+				10000000000000000000000C /* Resources */,
+			);
+			buildRules = ();
+			dependencies = ();
+			fileSystemSynchronizedGroups = (
+				100000000000000000000004 /* EgasuWidgets */,
+				100000000000000000000005 /* DesktopWidgetSupport */,
+			);
+			name = EgasuWidgets;
+			productName = EgasuWidgets;
+			productReference = 100000000000000000000003 /* EgasuWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		10000000000000000000000D /* Project object */ = {
+			isa = PBXProject;
+			attributes = { BuildIndependentTargetsInParallel = YES; };
+			buildConfigurationList = 10000000000000000000000E;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, ko, ja, Base);
+			mainGroup = 100000000000000000000006;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 100000000000000000000007 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (100000000000000000000008 /* EgasuWidgets */,);
+		};
+/* End PBXProject section */
+
+/* Begin PBXBuildPhase sections */
+		10000000000000000000000A /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		10000000000000000000000B /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		10000000000000000000000C /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000001 /* ProviderIcons in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXBuildPhase sections */
+
+/* Begin XCBuildConfiguration section */
+		100000000000000000000010 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = { SDKROOT = macosx; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; }; name = Debug; };
+		100000000000000000000011 /* Release */ = {isa = XCBuildConfiguration; buildSettings = { SDKROOT = macosx; SWIFT_COMPILATION_MODE = wholemodule; }; name = Release; };
+		100000000000000000000012 /* Debug */ = {isa = XCBuildConfiguration; baseConfigurationReference = 100000000000000000000014; buildSettings = {}; name = Debug; };
+		100000000000000000000013 /* Release */ = {isa = XCBuildConfiguration; baseConfigurationReference = 100000000000000000000014; buildSettings = {}; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		100000000000000000000009 = {isa = XCConfigurationList; buildConfigurations = (100000000000000000000012, 100000000000000000000013); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		10000000000000000000000E = {isa = XCConfigurationList; buildConfigurations = (100000000000000000000010, 100000000000000000000011); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+	};
+	rootObject = 10000000000000000000000D /* Project object */;
+}

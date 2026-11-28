@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { initialPreviewState, setMetric, activateAccount, changePreference, restorePreviewState, moveMetric, orderedMetrics, setProviderEnabled } from '../src/data/preview-state.ts';
+import { initialPreviewState, setMetric, activateAccount, changePreference, restorePreviewState, moveMetric, orderedMetrics, setProviderEnabled, renameAccount } from '../src/data/preview-state.ts';
 import { cards } from '../src/data/dashboard.ts';
 import { metricID } from '../src/data/metrics.ts';
-import { priorityBoard, dashboardLines, menuBarItems, softLimitAccountStatuses } from '../src/data/preview-dashboard.ts';
+import { priorityBoard, dashboardLines, menuBarItems, menuBarResetCountdown, menuBarText, softLimitAccountStatuses } from '../src/data/preview-dashboard.ts';
 
 test('Priority separates low and spent limits and keeps pinned limits in one section', () => {
   let state = initialPreviewState();
@@ -96,6 +96,35 @@ test('menu bar Bars excludes non-limit pins while explicit Used Up pins still co
   assert.equal(menuBarItems(state).overflow, 0);
   state = changePreference(state, 'menuBarLimit', 'App Icon Only');
   assert.deepEqual(menuBarItems(state), { items: [], overflow: 0 });
+});
+
+test('menu bar countdown uses the frozen reset time of active percent limits', () => {
+  let state = initialPreviewState();
+  state = setProviderEnabled(setProviderEnabled(state, 'kiro', true), 'opencode', true);
+  const lines = dashboardLines(state);
+  const session = lines.find((line) => line.key === 'codex.session@account-1');
+  const weekly = lines.find((line) => line.key === 'codex.weekly@account-1');
+  assert.ok(session?.row.kind === 'bounded');
+  assert.ok(weekly?.row.kind === 'bounded');
+  const { row } = session;
+  assert.equal(menuBarResetCountdown(state, row), undefined);
+
+  state = changePreference(state, 'menuBarResetCountdown', true);
+  assert.equal(menuBarResetCountdown(state, row), '3h+');
+  assert.equal(menuBarResetCountdown(state, weekly.row), '4d+');
+  assert.equal(menuBarResetCountdown(state, { ...row, resetRelative: 'Resets in 32m' }), '32m');
+  assert.equal(menuBarResetCountdown(state, { ...row, resetRelative: 'Resets in <1m' }), '<1m');
+  assert.equal(menuBarResetCountdown(state, { ...row, resetRelative: 'Resets in 0m' }), undefined);
+  assert.equal(menuBarResetCountdown(state, { ...row, resetRelative: undefined }), undefined);
+  assert.equal(menuBarResetCountdown(state, { ...row, used: 0 }), '3h+');
+  assert.equal(menuBarResetCountdown(state, { ...row, used: 0, notStarted: true }), undefined);
+  for (const id of ['codex.resetWatch', 'codex.today', 'kiro.credits', 'opencode.monthly']) {
+    const item = lines.find((line) => line.id === id);
+    assert.ok(item, id);
+    assert.equal(menuBarResetCountdown(state, item.row), undefined, id);
+  }
+  assert.equal(menuBarResetCountdown(changePreference(state, 'iconStyle', 'Bars'), row), undefined);
+  assert.equal(menuBarResetCountdown(changePreference(state, 'menuBarLimit', 'App Icon Only'), row), undefined);
 });
 
 test('thresholds remain ordered and update Priority without changing sample values', () => {
@@ -254,4 +283,53 @@ test('dashboard restore rejects unknown metric ids, private scopes and unsupport
     assert.throws(() => restorePreviewState({ ...before, hiddenMetrics: [key] }), key);
   }
   assert.throws(() => restorePreviewState({ ...before, pinnedMetrics: ['codex.trend'] }));
+});
+
+
+test('menu bar text separates account names, period badges, metric labels and private names', () => {
+  let state = initialPreviewState();
+  const line = dashboardLines(state).find((line) => line.key === 'claude.weekly@account-1');
+  assert.ok(line);
+  assert.deepEqual(menuBarText(state, line), {
+    label: 'Weekly', accountLabel: false, badge: 'A1', accountName: 'Account 1', metricLabel: 'Weekly',
+  });
+  state = renameAccount(state, 'claude', 'account-1', 'Personal');
+  state = changePreference(state, 'menuBarAccountNames', true);
+  assert.deepEqual(menuBarText(state, line), {
+    label: 'Personal', accountLabel: true, badge: '7d', accountName: 'Personal', metricLabel: 'Weekly',
+  });
+  state = changePreference(state, 'menuBarMetricLabels', false);
+  assert.deepEqual(menuBarText(state, line), {
+    label: 'Personal', accountLabel: true, badge: '', accountName: 'Personal', metricLabel: 'Weekly',
+  });
+  state = changePreference(state, 'privacyMode', true);
+  assert.deepEqual(menuBarText(state, line), {
+    label: '', accountLabel: false, badge: '', accountName: '', metricLabel: 'Weekly',
+  });
+  state = changePreference(state, 'menuBarMetricLabels', true);
+  assert.equal(menuBarText(state, line).label, 'Weekly');
+  const noAccount = dashboardLines(state).find((line) => line.key === 'claude.today');
+  assert.ok(noAccount);
+  assert.equal(menuBarText(state, noAccount).label, 'T');
+  state = changePreference(state, 'privacyMode', false);
+  assert.ok(line.row.kind === 'bounded');
+  assert.equal(menuBarText(state, { ...line, row: { ...line.row, periodHours: 0.5 } }).badge, '30m');
+  assert.equal(menuBarText(state, { ...line, row: { ...line.row, periodHours: 5 } }).badge, '5h');
+});
+
+test('menu bar accessibility and visible labels share the localized metric title', () => {
+  const initial = initialPreviewState();
+  const line = dashboardLines(initial).find((line) => line.key === 'claude.weekly@account-1');
+  assert.ok(line);
+  for (const [name, title] of [['계정 1', '주간'], ['アカウント1', '週間']]) {
+    const localized = { accountName: name, metricLabel: (label: string) => label === 'Weekly' ? title : label };
+    const text = menuBarText(initial, line, localized);
+    assert.equal(text.label, title);
+    assert.equal(text.accountName, name);
+    assert.equal(text.metricLabel, title);
+    const privateState = changePreference(initial, 'privacyMode', true);
+    const hidden = menuBarText(privateState, line, localized);
+    assert.equal(hidden.accountName, '');
+    assert.equal(hidden.metricLabel, title);
+  }
 });

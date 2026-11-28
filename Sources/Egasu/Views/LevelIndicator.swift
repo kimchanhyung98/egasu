@@ -10,9 +10,11 @@ struct LevelIndicator: View {
     let fill: Double
     let severity: WidgetData.MeterSeverity
     var paceMark: Double?
+    var isFaded = false
     /// Soft Limit 위치(0…1) — 실제 막대 가운데 표시하는 기준선.
     var softLimitMark: Double?
 
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.drawsLevelsAsShapes) private var drawsAsShapes
 
     private static let shape = RoundedRectangle(cornerRadius: 2, style: .continuous)
@@ -34,19 +36,25 @@ struct LevelIndicator: View {
                         .accessibilityHidden(true)
                 }
             }
+            .opacity(isFaded ? 0.5 : 1)
             .overlay {
                 if let softLimitMark {
-                    let isOnFill = fill > 0 && softLimitMark <= fill
                     GeometryReader { proxy in
                         Rectangle()
-                            .fill(isOnFill ? Color.black.opacity(0.8) : Theme.severityTextColor(.warning))
+                            .fill(colorScheme == .dark ? Color.white : Color.black)
                             .frame(width: 1)
                             .offset(
                                 x: MeterMarkerGeometry.offset(
                                     track: proxy.size.width, fraction: softLimitMark, markerWidth: 1))
                     }
-                    .frame(height: 4)
-                    .clipShape(Capsule())
+                    .mask {
+                        if drawsAsShapes {
+                            Self.shape
+                        } else {
+                            // OS별 기본 막대의 실제 외곽으로 자름. 컨트롤의 배치 높이에는 여백도 포함.
+                            nativeLevel(fill: 1)
+                        }
+                    }
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
                 }
@@ -58,11 +66,15 @@ struct LevelIndicator: View {
         if drawsAsShapes {
             shapes
         } else {
-            ProgressView(value: min(max(fill, 0), 1))
-                .progressViewStyle(.linear)
-                .tint(Theme.severityColor(severity))
+            nativeLevel(fill: min(max(fill, 0), 1))
                 .accessibilityHidden(true)
         }
+    }
+
+    private func nativeLevel(fill: Double) -> some View {
+        ProgressView(value: fill)
+            .progressViewStyle(.linear)
+            .tint(Theme.severityColor(severity))
     }
 
     private var shapes: some View {

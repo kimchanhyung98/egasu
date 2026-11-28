@@ -5,12 +5,15 @@ extension AccountCredentialSwitcher {
 
     /// 이전 계정의 갱신된 인증을 보존하고 대상 계정의 인증을 적용.
     /// 선택 계정은 이 함수의 검증이 끝난 뒤 호출자가 저장.
+    /// Codex 추천의 출발 콜백에는 사용자·워크스페이스 키 전달.
     func switchAuthentication(
         to selected: AccountProfile,
         from current: AccountProfile?,
         verifiedClaudeDeparture: VerifiedClaudeExternalAuthentication? = nil,
         expectedTarget: AccountCredentialVault.Entry? = nil,
-        expectedClaudeState: AccountSwitchJournal.SharedState? = nil
+        expectedClaudeState: AccountSwitchJournal.SharedState? = nil,
+        validateCodexDeparture: ((String?) throws -> Void)? = nil,
+        validateTarget: ((AccountCredentialVault.Entry) throws -> Void)? = nil
     ) throws {
         guard AccountProfilesStore.isSupportedFamily(selected.family) else {
             throw Error.unsupportedFamily(selected.family)
@@ -57,6 +60,33 @@ extension AccountCredentialSwitcher {
         if selected.family == "claude", let verifiedClaudeDeparture, active != verifiedClaudeDeparture.observed {
             throw ClaudeAuthError.credentialsChanged
         }
+        let checksCodexDeparture = selected.family == "codex" && validateCodexDeparture != nil
+        var expectedCodexSnapshot =
+            try checksCodexDeparture
+            ? current.flatMap { try loadSnapshot(for: $0, allowInteraction: true) } : nil
+        func validateCodexRecommendation() throws {
+            guard selected.family == "codex", validateCodexDeparture != nil || validateTarget != nil else { return }
+            let saved =
+                try checksCodexDeparture
+                ? current.flatMap { try loadSnapshot(for: $0, allowInteraction: true) } : nil
+            if let validateTarget {
+                guard let latestTarget = try loadSnapshot(for: selected, allowInteraction: true), latestTarget == target
+                else {
+                    throw CodexAuthError.credentialsChanged
+                }
+                try validateTarget(latestTarget)
+            }
+            let latest = try readSharedAuthentication(family: "codex")
+            guard latest == active else { throw CodexAuthError.credentialsChanged }
+            if let validateCodexDeparture {
+                guard saved == expectedCodexSnapshot else { throw CodexAuthError.credentialsChanged }
+                guard
+                    let accountKey = latest.flatMap({ CodexResetClaimBinding.verifiedAccountKey(for: $0.credential) }),
+                    saved.flatMap({ CodexResetClaimBinding.verifiedAccountKey(for: $0.credential) }) == accountKey
+                else { throw AccountSwitchRecommendation.NoLongerAvailable() }
+                try validateCodexDeparture(accountKey)
+            }
+        }
         if let current, current.family == selected.family, let active {
             let activeIdentity = identity(of: active, family: current.family)?.identityKey
             var preserved: AccountCredentialVault.Entry?
@@ -77,18 +107,21 @@ extension AccountCredentialSwitcher {
             } else if activeIdentity == current.identityKey {
                 preserved = active
                 if current.family == "codex",
-                   let snapshot = try loadSnapshot(for: current, allowInteraction: true),
+                    let snapshot = try checksCodexDeparture
+                        ? expectedCodexSnapshot : loadSnapshot(for: current, allowInteraction: true),
                    snapshot.codexStaleSharedCredentialFingerprints?.contains(CodexAuthStore.credentialFingerprint(active.credential)) == true,
                    identity(of: snapshot, family: current.family)?.identityKey == current.identityKey {
                     preserved = snapshot
                 }
             }
             if let preserved {
+                try validateCodexRecommendation()
                 if let initialClaudeState, try readClaudeSwitchState() != initialClaudeState {
                     throw ClaudeAuthError.credentialsChanged
                 }
                 try saveSnapshot(preserved, for: current)
                 try writeWorkspaceAuthentication(preserved, for: current)
+                if checksCodexDeparture { expectedCodexSnapshot = preserved }
             }
         }
 
@@ -102,6 +135,7 @@ extension AccountCredentialSwitcher {
                 throw ClaudeAuthError.credentialsChanged
             }
         }
+        try validateCodexRecommendation()
         do {
             try applySharedAuthentication(target, family: selected.family, expectedClaudeState: initialClaudeState)
             let applied = try readSharedAuthentication(family: selected.family)
@@ -117,7 +151,13 @@ extension AccountCredentialSwitcher {
         } catch {
             if selected.family == "codex", let active {
                 do {
-                    try applySharedAuthentication(active, family: selected.family)
+                    let current = try readSharedAuthentication(family: "codex")
+                        .map { AccountSwitchJournal.fingerprint($0.credential) }
+                    if current == AccountSwitchJournal.fingerprint(target.credential) {
+                        try applySharedAuthentication(active, family: selected.family)
+                    } else if current != AccountSwitchJournal.fingerprint(active.credential) {
+                        throw CodexAuthError.credentialsChanged
+                    }
                 } catch {
                     AppDiagnostics.failure(
                         .accountRollback, error: error, providerID: selected.family,

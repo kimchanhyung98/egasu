@@ -166,6 +166,37 @@ for (const name of ['Quota Available Again', 'Codex Reset Watch']) {
   });
 }
 
+test('Codex reset credit expiry uses the Mac app notification permission notice', async ({ page }) => {
+  await openHome(page);
+  await openSettings(page);
+  const app = page.locator('[data-mock]');
+  const tab = app.getByRole('tab', { name: 'Alerts', exact: true });
+  const setting = app.getByRole('switch', { name: 'Codex Reset Credit Expiry', exact: true });
+  const permission = app.getByRole('button', { name: 'Allow Notifications', exact: true });
+  await tab.click();
+  await expect(setting).toHaveAttribute('aria-checked', 'false');
+  await expect(permission).toBeHidden();
+  await expect(app.getByRole('button', {
+    name: 'Notify 24 and 12 hours before an unused Codex reset credit expires.', exact: true,
+  })).toBeVisible();
+
+  await setting.click();
+  await expect(permission).toBeVisible();
+  await expect(app.locator('[data-pill]')).toHaveText('Preview value changed. Apply this setting in the Mac app.');
+  await permission.click();
+  await expect(app.locator('[data-pill]')).toHaveText('Allow notifications in the Mac app to receive usage alerts.');
+  await expect(app.getByRole('switch', { name: 'Quota Available Again', exact: true })).toHaveAttribute('aria-checked', 'false');
+  await expect(app.getByRole('switch', { name: 'Codex Reset Watch', exact: true })).toHaveAttribute('aria-checked', 'false');
+
+  await page.reload();
+  await openSettings(page);
+  await tab.click();
+  await expect(setting).toHaveAttribute('aria-checked', 'true');
+  await expect(permission).toBeVisible();
+  await setting.click();
+  await expect(permission).toBeHidden();
+});
+
 test('unused allowance reminders preserve their choice without enabling other alerts', async ({ page }) => {
   await openHome(page);
   await openSettings(page);
@@ -183,6 +214,44 @@ test('unused allowance reminders preserve their choice without enabling other al
   await openSettings(page);
   await tab.click();
   await expect(setting).toHaveAttribute('aria-checked', 'true');
+});
+
+test('Weekly and monthly reset reminders use the Mac app notification permission notice', async ({ page }) => {
+  await openHome(page);
+  await openSettings(page);
+  const app = page.locator('[data-mock]');
+  const tab = app.getByRole('tab', { name: 'Alerts', exact: true });
+  const setting = app.getByRole('switch', { name: 'Weekly and Monthly Reset Reminders', exact: true });
+  const creditExpiry = app.getByRole('switch', { name: 'Codex Reset Credit Expiry', exact: true });
+  const permission = app.getByRole('button', { name: 'Allow Notifications', exact: true });
+  await tab.click();
+  await expect(setting).toHaveAttribute('aria-checked', 'false');
+  await expect(permission).toBeHidden();
+  await expect(app.getByRole('button', {
+    name: 'Notify 24 and 12 hours before weekly or monthly limits reset for Claude, Codex, and Cursor.', exact: true,
+  })).toBeVisible();
+
+  await setting.click();
+  await expect(permission).toBeVisible();
+  await expect(app.locator('[data-pill]')).toHaveText('Preview value changed. Apply this setting in the Mac app.');
+  await permission.click();
+  await expect(app.locator('[data-pill]')).toHaveText('Allow notifications in the Mac app to receive usage alerts.');
+  await expect(app.getByRole('switch', { name: 'Quota Available Again', exact: true })).toHaveAttribute('aria-checked', 'false');
+  await expect(app.getByRole('switch', { name: 'Codex Reset Watch', exact: true })).toHaveAttribute('aria-checked', 'false');
+
+  await page.reload();
+  await openSettings(page);
+  await tab.click();
+  await expect(setting).toHaveAttribute('aria-checked', 'true');
+  await expect(creditExpiry).toHaveAttribute('aria-checked', 'false');
+  await expect(permission).toBeVisible();
+  await creditExpiry.click();
+  await expect(setting).toHaveAttribute('aria-checked', 'true');
+  await setting.click();
+  await expect(creditExpiry).toHaveAttribute('aria-checked', 'true');
+  await expect(permission).toBeVisible();
+  await creditExpiry.click();
+  await expect(permission).toBeHidden();
 });
 
 test('dashboard context menu confirms the selected account before switching', async ({ page }) => {

@@ -44,15 +44,15 @@ extension CodexAuthError: UserPresentableError {
     var presentationMessage: LocalizedMessage {
         switch self {
         case .notLoggedIn:
-            .init("Not logged in. Run `codex` to authenticate.")
+            .init("This Codex account isn't signed in.")
         case .sessionExpired:
-            .init("Session expired. Run `codex` to log in again.")
+            .init("This Codex account's sign-in has expired.")
         case .tokenConflict:
-            .init("Token conflict. Run `codex` to log in again.")
+            .init("The Codex refresh token has already been used.")
         case .tokenRevoked:
-            .init("Token revoked. Run `codex` to log in again.")
+            .init("The Codex token has been revoked.")
         case .tokenExpired:
-            .init("Token expired. Run `codex` to log in again.")
+            .init("The Codex token has expired.")
         case .usageAPIKey:
             .init("Usage not available for API key.")
         case .invalidAuthPayload:

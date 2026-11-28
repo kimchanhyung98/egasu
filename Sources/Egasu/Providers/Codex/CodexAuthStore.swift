@@ -66,6 +66,14 @@ struct CodexSharedCredentialSynchronizationError: LocalizedError {
     }
 }
 
+struct CodexCredentialSourceReadError: LocalizedError, CategorizedError, UserPresentableError {
+    let underlyingError: Error
+
+    var errorDescription: String? { underlyingError.localizedDescription }
+    var errorCategory: ErrorCategory { ErrorCategory.classify(underlyingError) }
+    var presentationMessage: LocalizedMessage { UserFacingErrors.presentation(underlyingError) }
+}
+
 /// 관찰된 기본 카드의 인증 홈과 사용량 귀속 계정을 함께 고정.
 struct CodexAccountBinding: Equatable, Sendable {
     var home: String
@@ -83,24 +91,7 @@ enum CodexAuthError: Error, LocalizedError, Equatable {
     case credentialsChanged
 
     var errorDescription: String? {
-        switch self {
-        case .notLoggedIn:
-            return "Not logged in. Run `codex` to authenticate."
-        case .sessionExpired:
-            return "Session expired. Run `codex` to log in again."
-        case .tokenConflict:
-            return "Token conflict. Run `codex` to log in again."
-        case .tokenRevoked:
-            return "Token revoked. Run `codex` to log in again."
-        case .tokenExpired:
-            return "Token expired. Run `codex` to log in again."
-        case .usageAPIKey:
-            return "Usage not available for API key."
-        case .invalidAuthPayload:
-            return "Codex auth data is invalid."
-        case .credentialsChanged:
-            return "Codex sign-in changed during this operation. Reload the current account and try again."
-        }
+        presentationMessage.key
     }
 
     var allowsAuthFallback: Bool {
@@ -183,8 +174,11 @@ struct CodexAuthStore: Sendable {
 
     /// 지정한 인증 파일에서 토큰이나 API 키를 읽음. 파일이 없거나 인증을 읽을 수 없으면 `nil`.
     func loadAuth(at path: String) -> CodexAuthState? {
-        guard files.exists(path),
-              let text = try? files.readText(path),
+        try? readAuth(at: path)
+    }
+
+    func readAuth(at path: String) throws -> CodexAuthState? {
+        guard let text = try files.readTextIfPresent(path),
               let auth = Self.parseAuth(text),
               Self.hasTokenLikeAuth(auth)
         else {
@@ -194,9 +188,13 @@ struct CodexAuthStore: Sendable {
     }
 
     func loadKeychainAuth() -> CodexAuthState? {
+        try? readKeychainAuth()
+    }
+
+    func readKeychainAuth() throws -> CodexAuthState? {
         // scoped 카드는 공유 "Codex Auth" item 접근 금지 — 다른 카드의 login이고, 읽기만으로도 Keychain prompt 유발 가능.
         guard case .standard = scope else { return nil }
-        guard let value = try? keychain.readGenericPassword(service: Self.keychainService),
+        guard let value = try keychain.readGenericPassword(service: Self.keychainService),
               let auth = Self.parseAuth(value),
               Self.hasTokenLikeAuth(auth)
         else {
@@ -226,7 +224,7 @@ struct CodexAuthStore: Sendable {
                 LogTag.auth("codex"),
                 "credential verification before saving failed: \(AppLog.errorDetails(error))"
             )
-            throw CodexAuthError.credentialsChanged
+            throw CodexCredentialSourceReadError(underlyingError: error)
         }
         guard let current, current.utf8.elementsEqual(original.utf8) else {
             preserveRotatedManagedSnapshot(state, original: original, allowInteraction: allowInteraction)
@@ -331,7 +329,7 @@ struct CodexAuthStore: Sendable {
     private func sourceText(_ state: CodexAuthState, allowInteraction: Bool) throws -> String? {
         switch state.source {
         case .file(let path):
-            return files.exists(path) ? try files.readText(path) : nil
+            return try files.readTextIfPresent(path)
         case .keychain:
             if state.usesNativeKeychainRead {
                 return try keychain.readGenericPassword(service: Self.keychainService, allowInteraction: allowInteraction)

@@ -5,6 +5,31 @@ import XCTest
 final class OpenAIPricingTests: XCTestCase {
     private let pricing = TestPricing.bundled
 
+    func testGPT62CostsAtTheContextBoundaryAndExplicitSpeeds() throws {
+        let atLimit = TokenBreakdown(input: 200_000, cacheWrite5m: 12_000, cacheRead: 60_000, output: 1_000)
+        var aboveLimit = atLimit
+        aboveLimit.input += 1
+        for (model, shortCost, longCost) in [
+            ("gpt-6.2-astra", 1.784, 3.548016),
+            ("gpt-6.2-sol", 0.446, 0.887004)
+        ] {
+            for (suffix, multiplier) in [("", 1.0), ("-fast", 2.0), ("-ultrafast", 6.0)] {
+                let name = "openai/" + model + "-high" + suffix + "-20261117"
+                let rates = try XCTUnwrap(pricing.resolve(model: name), name)
+                XCTAssertEqual(rates.costDollars(for: atLimit), shortCost * multiplier, accuracy: 1e-9, name)
+                XCTAssertEqual(rates.costDollars(for: aboveLimit), longCost * multiplier, accuracy: 1e-9, name)
+                let codex = try XCTUnwrap(CodexUsagePricing.estimate(model: name, tokens: aboveLimit, pricing: pricing))
+                XCTAssertEqual(codex, longCost * multiplier, accuracy: 1e-9, name)
+            }
+            aboveLimit.isFast = true
+            let ultra = try XCTUnwrap(
+                CodexUsagePricing.estimate(model: model, tokens: aboveLimit, pricing: pricing, isUltrafast: true))
+            XCTAssertEqual(ultra, longCost * 6, accuracy: 1e-9, model)
+            aboveLimit.isFast = false
+            XCTAssertNil(pricing.supplement.canonicalName(for: model + "-none"))
+        }
+    }
+
     func testNewModelsUsePublishedStandardRates() throws {
         let cases: [(String, Double, Double, Double, Double)] = [
             ("gpt-6.1-sol", 2, 2.5, 0.1, 10),
@@ -53,7 +78,10 @@ final class OpenAIPricingTests: XCTestCase {
     func testUltrafastKeepsExplicitQualifiedRates() throws {
         let rates = ModelRates(
             inputPerMillion: 7, outputPerMillion: 21, cacheWritePerMillion: 7, cacheReadPerMillion: 1)
-        for name in ["openai/gpt-6-astra-ultrafast", "gpt-6-astra-high-ultrafast-20260929"] {
+        for name in [
+            "openai/gpt-6-astra-ultrafast", "gpt-6-astra-high-ultrafast-20260929",
+            "openai/gpt-6.2-astra-ultrafast", "gpt-6.2-sol-high-ultrafast-20261117"
+        ] {
             for secondary in [false, true] {
                 let catalog = PricingCatalog(entries: [name: rates])
                 let snapshot = ModelPricing(

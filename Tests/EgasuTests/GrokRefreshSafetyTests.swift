@@ -8,6 +8,101 @@ final class GrokRefreshSafetyTests: XCTestCase {
     private nonisolated static let original = #"{"https://auth.x.ai::client":{"key":"token-A","refresh_token":"refresh-A","expires_at":"2020-01-01T00:00:00Z","custom":"keep"}}"#
     private nonisolated static let replacement = #"{"https://auth.x.ai::client":{"key":"token-B","refresh_token":"refresh-B","expires_at":"2099-01-01T00:00:00Z"}}"#
 
+    func testQuitProtectsRotatedTokensUntilSavedAfterUsageCancellation() async throws {
+        defer { TokenRotationShutdownGuard.cancelTermination() }
+        let files = GrokReadFailingFiles([GrokAuthStore.authPath: Self.original])
+        files.beforeWrite = { XCTAssertFalse(TokenRotationShutdownGuard.isIdle) }
+        let requested = expectation(description: "Synthetic service received the refresh")
+        let (responses, response) = AsyncStream<Void>.makeStream()
+        let http = RoutingHTTPClient { request in
+            XCTAssertEqual(request.url, GrokUsageClient.refreshURL)
+            requested.fulfill()
+            for await _ in responses { break }
+            try Task.checkCancellation()
+            return Self.rotationResponse
+        }
+        let provider = makeProvider(files: files, http: http)
+        let refresh = Task { await provider.refresh() }
+        defer { refresh.cancel(); response.finish() }
+        await fulfillment(of: [requested], timeout: 5)
+        TokenRotationShutdownGuard.beginTermination()
+
+        XCTAssertFalse(TokenRotationShutdownGuard.isIdle)
+        refresh.cancel()
+        response.yield(())
+        response.finish()
+        _ = await refresh.value
+
+        let saved = try XCTUnwrap(files.backing.files[GrokAuthStore.authPath])
+        XCTAssertEqual(GrokAuthStore.parseAuth(saved)?[Self.entryKey]?.refreshToken, "rotated-refresh-A")
+        XCTAssertEqual(files.writeAttempts, 1)
+        XCTAssertEqual(http.requests.map(\.url), [GrokUsageClient.refreshURL])
+        XCTAssertTrue(TokenRotationShutdownGuard.isIdle)
+    }
+
+    func testTerminationPreventsProactiveAndUnauthorizedRetryRotations() async {
+        defer { TokenRotationShutdownGuard.cancelTermination() }
+        TokenRotationShutdownGuard.beginTermination()
+        for (year, expectedRequests) in [("2020", 0), ("2099", 1)] {
+            let original = Self.original.replacingOccurrences(of: "2020", with: year)
+            let files = FakeFiles([GrokAuthStore.authPath: original])
+            let http = GrokSafetyHTTP { _ in HTTPResponse(statusCode: 401, headers: [:], body: Data()) }
+
+            _ = await makeProvider(files: files, http: http).refresh()
+
+            XCTAssertEqual(
+                http.requests.map(\.url), Array(repeating: GrokUsageClient.creditsConfigURL, count: expectedRequests))
+            XCTAssertEqual(files.files[GrokAuthStore.authPath], original)
+            XCTAssertTrue(TokenRotationShutdownGuard.isIdle)
+        }
+    }
+
+    func testCancelledRefreshDoesNotStartRotation() async {
+        let files = FakeFiles([GrokAuthStore.authPath: Self.original])
+        let http = GrokSafetyHTTP { _ in Self.rotationResponse }
+        let provider = makeProvider(files: files, http: http)
+        let refresh = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await provider.refresh()
+        }
+
+        _ = await refresh.value
+
+        XCTAssertTrue(http.requests.isEmpty)
+        XCTAssertEqual(files.files[GrokAuthStore.authPath], Self.original)
+        XCTAssertTrue(TokenRotationShutdownGuard.isIdle)
+    }
+
+    func testRotationGuardIsReleasedAfterRequestResponseAndSaveFailures() async {
+        let responses: [HTTPResponse?] = [
+            nil,
+            HTTPResponse(statusCode: 503, headers: [:], body: Data()),
+            HTTPResponse(statusCode: 200, headers: [:], body: Data("malformed".utf8)),
+            Self.rotationResponse
+        ]
+        for response in responses {
+            let files = GrokReadFailingFiles([GrokAuthStore.authPath: Self.original])
+            files.beforeWrite = {
+                XCTAssertFalse(TokenRotationShutdownGuard.isIdle)
+                throw CocoaError(.fileWriteNoPermission)
+            }
+            let http = GrokSafetyHTTP { request in
+                if request.url == GrokUsageClient.refreshURL {
+                    XCTAssertFalse(TokenRotationShutdownGuard.isIdle)
+                    guard let response else { throw URLError(.timedOut) }
+                    return response
+                }
+                return Self.usageResponse
+            }
+
+            _ = await makeProvider(files: files, http: http).refresh()
+
+            XCTAssertEqual(files.backing.files[GrokAuthStore.authPath], Self.original)
+            XCTAssertEqual(files.writeAttempts, response?.body == Self.rotationResponse.body ? 1 : 0)
+            XCTAssertTrue(TokenRotationShutdownGuard.isIdle)
+        }
+    }
+
     func testInitialCredentialReadSeparatesMissingMalformedAndInaccessibleFiles() async {
         let cases: [(String?, CocoaError?, ErrorCategory)] = [
             (nil, nil, .notLoggedIn), ("malformed", nil, .authInvalid),
@@ -102,6 +197,7 @@ final class GrokRefreshSafetyTests: XCTestCase {
             XCTAssertNotNil(snapshot.errorCategory)
             XCTAssertNil(snapshot.authenticationIssue)
             XCTAssertEqual(http.requests.map(\.url), [GrokUsageClient.refreshURL])
+            XCTAssertTrue(TokenRotationShutdownGuard.isIdle)
         }
     }
 
@@ -169,6 +265,7 @@ final class GrokRefreshSafetyTests: XCTestCase {
                 XCTAssertEqual(files.writeAttempts, 0)
                 XCTAssertEqual(http.requests.map(\.url), expiryYear == "2020"
                     ? [GrokUsageClient.refreshURL] : [GrokUsageClient.creditsConfigURL, GrokUsageClient.refreshURL])
+                XCTAssertTrue(TokenRotationShutdownGuard.isIdle)
             }
         }
     }
@@ -313,6 +410,7 @@ private final class GrokWriteFailingFiles: TextFileAccessing, @unchecked Sendabl
 private final class GrokReadFailingFiles: TextFileAccessing, @unchecked Sendable {
     let backing: FakeFiles
     var readError: CocoaError?
+    var beforeWrite: (@Sendable () throws -> Void)?
     private(set) var writeAttempts = 0
 
     init(_ files: [String: String]) { backing = FakeFiles(files) }
@@ -325,6 +423,7 @@ private final class GrokReadFailingFiles: TextFileAccessing, @unchecked Sendable
     func remove(_ path: String) throws { try backing.remove(path) }
     func writeText(_ path: String, _ text: String) throws {
         writeAttempts += 1
+        try beforeWrite?()
         try backing.writeText(path, text)
     }
 }

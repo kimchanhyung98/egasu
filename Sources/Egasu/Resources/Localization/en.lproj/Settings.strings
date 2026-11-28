@@ -12,6 +12,7 @@
 "Always Show Pacing" = "Always Show Pacing";
 "Appearance" = "Appearance";
 "Auto" = "Auto";
+"Auto-Start Subscription Timers" = "Auto-Start Subscription Timers";
 "Bars" = "Bars";
 "Beta Updates" = "Beta Updates";
 "Cancel" = "Cancel";
@@ -87,6 +88,7 @@
 "Reveal in Finder" = "Reveal in Finder";
 "Running Tokscale…" = "Running Tokscale…";
 "Save" = "Save";
+"Sends a short request to start an unused subscription window for all supported accounts. The request can use some of your quota. Turning this off keeps usage updates on." = "Sends a short request to start an unused subscription window for all supported accounts. The request can use some of your quota. Turning this off keeps usage updates on.";
 "Share Anonymous Usage" = "Share Anonymous Usage";
 "Shares anonymous usage counts and error types to help improve egasu. No account details, credentials, or usage values are sent." = "Shares anonymous usage counts and error types to help improve egasu. No account details, credentials, or usage values are sent.";
 "Shares usage history through iCloud, so you can see one combined summary for all your Macs." = "Shares usage history through iCloud, so you can see one combined summary for all your Macs.";
@@ -203,3 +205,21 @@
 "Check Quota" = "Check Quota";
 "Paste the command in Terminal. A new session starts only if the quota check allows it. The Codex start command uses the login saved in auth.json." = "Paste the command in Terminal. A new session starts only if the quota check allows it. The Codex start command uses the login saved in auth.json.";
 "Couldn't copy the terminal command." = "Couldn't copy the terminal command.";
+"Account Recommendations" = "Account Recommendations";
+"Enable Account Recommendations" = "Enable Account Recommendations";
+"Recommend At" = "Recommend At";
+"Candidate Usage Below" = "Candidate Usage Below";
+"Suggest another Claude or Codex account. Switching always requires confirmation." = "Suggest another Claude or Codex account. Switching always requires confirmation.";
+"Suggest switching when any current base quota reaches this usage." = "Suggest switching when any current base quota reaches this usage.";
+"Every applicable base quota on a candidate must be below this usage." = "Every applicable base quota on a candidate must be below this usage.";
+"Weekly and Monthly Reset Reminders" = "Weekly and Monthly Reset Reminders";
+"Notify 24 and 12 hours before weekly or monthly limits reset for Claude, Codex, and Cursor." = "Notify 24 and 12 hours before weekly or monthly limits reset for Claude, Codex, and Cursor.";
+"Weekly Limit Reset" = "Weekly Limit Reset";
+"Monthly Limit Reset" = "Monthly Limit Reset";
+"This limit resets in %lld hours." = "This limit resets in %lld hours.";
+"Show Metric Labels" = "Show Metric Labels";
+"Show Account Names" = "Show Account Names";
+"Show Reset Countdown" = "Show Reset Countdown";
+"Codex Reset Credit Expiry" = "Codex Reset Credit Expiry";
+"Notify 24 and 12 hours before an unused Codex reset credit expires." = "Notify 24 and 12 hours before an unused Codex reset credit expires.";
+"An unused reset credit expires in %lld hours." = "An unused reset credit expires in %lld hours.";

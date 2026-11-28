@@ -16,6 +16,10 @@ final class UsageTimerRouter {
     private var warningsByAccount: [String: [String: String]] = [:]
     private var scheduledCheckRequests: Set<String> = []
     private var followUpRefreshes: [UUID: (providerID: String, task: Task<Void, Never>)] = [:]
+    let usageTimerSetting: UsageTimerSetting
+    private var scheduledCheckGeneration = UUID()
+    private var activeLaunch:
+        (providerID: String, observation: UsageTimerObservation, permission: StreamingProcessLaunchPermission)?
     private let isProviderEnabled: (String) -> Bool
     private let executors: UsageTimerExecutors
     private let store: UsageTimerAttemptStore
@@ -29,14 +33,16 @@ final class UsageTimerRouter {
     private lazy var coordinator = UsageTimerCoordinator<UsageTimerSession>(
         store: store,
         isCurrent: { [weak self] in self?.isCurrent($0, bindingID: $1, accountKey: $2) == true },
-        prepare: { [weak self] providerID, observation in
+        prepare: { [weak self] providerID, observation, isCurrent in
             guard let self, let ticket = await self.workQueue.acquire("weekly-timer:prepare") else { return nil }
             defer { self.workQueue.finish(ticket) }
             try Task.checkCancellation()
-            guard let provider = self.bindings[providerID]?.provider else { return nil }
-            return try await provider.prepareUsageTimer(observation, executors: self.executors)
+            guard isCurrent(), let provider = self.bindings[providerID]?.provider else { return nil }
+            return try await UsageTimerReadContext.$isCurrent.withValue(isCurrent) {
+                try await provider.prepareUsageTimer(observation, executors: self.executors)
+            }
         },
-        execute: { [weak self] _, _, session, canLaunch in
+        execute: { [weak self] providerID, _, session, canLaunch in
             guard let self, let ticket = await self.workQueue.acquire("weekly-timer:execute") else {
                 return UsageTimerExecutionResult(launched: false, completed: false)
             }
@@ -45,7 +51,13 @@ final class UsageTimerRouter {
                 return UsageTimerExecutionResult(launched: false, completed: false)
             }
             let hadStartupFailure = self.executors.codex.startupFailureDescription != nil
-            let result = await session.send { canLaunch() }
+            let permission = StreamingProcessLaunchPermission()
+            self.activeLaunch = (providerID, session.observation, permission)
+            defer { self.activeLaunch = nil }
+            var result = await StreamingProcessLaunchPermission.$current.withValue(permission) {
+                await session.send { canLaunch() }
+            }
+            if !result.launched, permission.isRevoked { result.launchObservationInvalidated = true }
             if !self.isShuttingDown, hadStartupFailure, self.executors.codex.startupFailureDescription == nil {
                 for (id, binding) in self.bindings where binding.provider is CodexProvider && self.isProviderEnabled(id) {
                     self.report(id, binding.accountKey.flatMap { self.warning(for: $0) })
@@ -53,11 +65,12 @@ final class UsageTimerRouter {
             }
             return result
         },
-        verify: { [weak self] _, session in
+        verify: { [weak self] _, session, isCurrent in
             guard let self, let ticket = await self.workQueue.acquire("weekly-timer:verify") else { return nil }
             defer { self.workQueue.finish(ticket) }
             try Task.checkCancellation()
-            return try await session.verify()
+            guard isCurrent() else { return nil }
+            return try await UsageTimerReadContext.$isCurrent.withValue(isCurrent) { try await session.verify() }
         },
         report: { [weak self] providerID, bindingID, timerID, message in
             guard let self, let binding = self.bindings[providerID], binding.id == bindingID,
@@ -69,14 +82,16 @@ final class UsageTimerRouter {
             AppDiagnostics.record(.weeklyTimer, result: message == nil ? .success : .failure,
                                   providerID: providerID)
         },
-        finished: { [weak self] providerID, _ in
-            guard let self, !self.isShuttingDown, let currentBindingID = self.bindings[providerID]?.id else { return }
+        finished: { [weak self] providerID, bindingID in
+            guard let self, !self.isShuttingDown, self.usageTimerSetting.isEnabled,
+                self.bindings[providerID]?.id == bindingID
+            else { return }
             let id = UUID()
             let task = Task { [weak self] in
                 guard let self else { return }
                 defer { self.followUpRefreshes[id] = nil }
                 await self.refresh(providerID) { [weak self] in
-                    self?.isShuttingDown == false && self?.bindings[providerID]?.id == currentBindingID
+                    self?.isShuttingDown == false && self?.bindings[providerID]?.id == bindingID
                         && self?.isProviderEnabled(providerID) == true
                 }
             }
@@ -90,6 +105,7 @@ final class UsageTimerRouter {
         providers: [any ProviderRuntime],
         identityKeys: [String: String] = [:],
         isProviderEnabled: @escaping (String) -> Bool,
+        usageTimerSetting: UsageTimerSetting = UsageTimerSetting(),
         executor: any CodexWeeklyTimerExecuting = CodexWeeklyTimerExecutor(),
         cliExecutor: any UsageTimerCLIExecuting = UsageTimerCLIExecutor(),
         store: UsageTimerAttemptStore = UsageTimerAttemptStore(),
@@ -102,6 +118,7 @@ final class UsageTimerRouter {
         self.bindings = Dictionary(uniqueKeysWithValues: providers.compactMap { $0 as? any UsageTimerProviding }.map { ($0.provider.id, Binding(provider: $0)) })
         self.identityKeys = identityKeys
         self.isProviderEnabled = isProviderEnabled
+        self.usageTimerSetting = usageTimerSetting
         self.executors = UsageTimerExecutors(codex: executor, cli: cliExecutor)
         self.store = store
         self.publishWarning = report
@@ -114,6 +131,20 @@ final class UsageTimerRouter {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.clockDidChange() }
         }
+        usageTimerSetting.onDisable = { [weak self] in
+            guard let self else { return }
+            self.activeLaunch?.permission.revoke()
+            self.scheduledCheckGeneration = UUID()
+            let accountKeys = self.bindings.compactMapValues(\.accountKey)
+            // 즉시 다시 켜도 대기 중이던 이전 전송이 살아나지 않도록 바인딩 교체.
+            self.invalidate(providerIDs: Set(self.bindings.keys))
+            // 이미 실행 중인 작업을 같은 계정의 다른 카드에서도 기다릴 수 있게 연결 보존.
+            if self.hasPendingWork || !self.followUpRefreshes.isEmpty {
+                for (providerID, accountKey) in accountKeys {
+                    self.bindings[providerID]?.accountKey = accountKey
+                }
+            }
+        }
         reportStartupFailure()
     }
 
@@ -122,7 +153,7 @@ final class UsageTimerRouter {
     }
 
     func receive(_ snapshot: ProviderSnapshot, trigger: RefreshTrigger) {
-        guard !isShuttingDown, trigger != .cli, trigger != .weeklyTimer,
+        guard !isShuttingDown, usageTimerSetting.isEnabled, trigger != .cli, trigger != .weeklyTimer,
               var binding = bindings[snapshot.providerID],
               let quotaObservedAt = snapshot.liveQuotaObservedAt else { return }
         let observedAt = snapshot.usageTimerObservedAt ?? quotaObservedAt
@@ -138,6 +169,7 @@ final class UsageTimerRouter {
         guard observation.observedAt == observedAt else { return }
         let accountChanged = binding.accountKey != observation.accountKey
         if let accountKey = binding.accountKey, accountKey != observation.accountKey {
+            if let launch = activeLaunch, launch.providerID == snapshot.providerID { launch.permission.revoke() }
             coordinator.invalidate(providerID: snapshot.providerID)
             binding = Binding(provider: binding.provider)
             report(snapshot.providerID, nil)
@@ -149,47 +181,63 @@ final class UsageTimerRouter {
             report(snapshot.providerID, warning)
         }
         do {
-            if try store.discardFutureObservations(now: now()) {
-                coordinator.invalidateObservations()
-                scheduledCheckRequests.formUnion(bindings.keys.filter { isProviderEnabled($0) })
-            }
-            if warningsByAccount[observation.accountKey]?["state"] == Self.stateReadWarning {
+            let discard = { try self.store.discardFutureObservations(now: self.now()) }
+            if try activeLaunch?.permission.revokeIf(discard) ?? discard() { invalidateObservations() }
+            if warningsByAccount[observation.accountKey]?["state"] != nil {
                 warningsByAccount[observation.accountKey]?["state"] = nil
                 for (id, current) in bindings where current.accountKey == observation.accountKey && isProviderEnabled(id) {
                     report(id, warning(for: observation.accountKey))
                 }
             }
         } catch {
-            AppDiagnostics.record(.weeklyTimer, result: .failure, providerID: snapshot.providerID, error: error,
-                                  localContext: "Could not check timer observation state")
-            coordinator.clearReportedSendLimit(for: observation.accountKey)
-            let message = Self.stateReadWarning
-            warningsByAccount[observation.accountKey, default: [:]]["state"] = message
-            for (id, current) in bindings where current.accountKey == observation.accountKey && isProviderEnabled(id) {
-                report(id, warning(for: observation.accountKey))
-            }
+            reportStateReadFailure(error, providerID: snapshot.providerID, accountKey: observation.accountKey)
             return
         }
         let scheduledRequested = scheduledCheckRequests.remove(snapshot.providerID) != nil
         let checkTimer = scheduledRequested || trigger == .weeklyTimerCheck
         for observation in observations {
-            coordinator.receive(
-                providerID: snapshot.providerID, bindingID: binding.id, observation: observation,
-                checkUnconfirmedReset: checkTimer
-            )
+            let receiveObservation = {
+                self.coordinator.receive(
+                    providerID: snapshot.providerID, bindingID: binding.id, observation: observation,
+                    checkUnconfirmedReset: checkTimer
+                )
+            }
+            if let launch = activeLaunch, launch.observation.storageKey == observation.storageKey,
+                !launch.permission.isRevoked
+            {
+                do {
+                    try launch.permission.revokeIf {
+                        guard receiveObservation() else { return true }
+                        return try !store.isLatest(launch.observation)
+                    }
+                } catch {
+                    reportStateReadFailure(error, providerID: launch.providerID, accountKey: observation.accountKey)
+                }
+            } else {
+                _ = receiveObservation()
+            }
+        }
+    }
+
+    func scheduledCheckValidity() -> @MainActor () -> Bool {
+        let generation = scheduledCheckGeneration
+        return { [weak self] in
+            guard let self else { return false }
+            return !self.isShuttingDown && self.usageTimerSetting.isEnabled
+                && self.scheduledCheckGeneration == generation
         }
     }
 
     /// 15분 경계 조회가 진행 중인 요청과 겹치면 다음 정상 응답에서 재검증.
     func requestScheduledCheck() -> [String] {
-        guard !isShuttingDown else { return [] }
+        guard !isShuttingDown, usageTimerSetting.isEnabled else { return [] }
         let providerIDs = bindings.keys.filter { isProviderEnabled($0) }.sorted()
         scheduledCheckRequests.formUnion(providerIDs)
         return providerIDs
     }
 
     func isRunning(providerID: String) -> Bool {
-        coordinator.isRunning(providerID: providerID)
+        relatedProviderIDs(to: [providerID]).contains { coordinator.isRunning(providerID: $0) }
     }
 
     var hasPendingWork: Bool { coordinator.hasPendingWork }
@@ -219,11 +267,13 @@ final class UsageTimerRouter {
 
     func shutdown() async {
         isShuttingDown = true
+        activeLaunch?.permission.revoke()
         await coordinator.shutdown()
     }
 
     func invalidate(providerIDs: Set<String>? = nil) {
         let affected = providerIDs ?? Set(bindings.keys.filter { !isProviderEnabled($0) })
+        if let launch = activeLaunch, affected.contains(launch.providerID) { launch.permission.revoke() }
         for providerID in affected {
             scheduledCheckRequests.remove(providerID)
             guard let binding = bindings[providerID] else { continue }
@@ -271,9 +321,29 @@ final class UsageTimerRouter {
 
     /// 새 응답을 기다리지 않고 이전 시각 기준의 검증·실행 준비를 무효화.
     private func clockDidChange() {
-        guard !isShuttingDown else { return }
+        guard !isShuttingDown, usageTimerSetting.isEnabled else { return }
+        activeLaunch?.permission.revoke()
+        invalidateObservations()
+    }
+
+    private func invalidateObservations() {
         coordinator.invalidateObservations()
         scheduledCheckRequests.formUnion(bindings.keys.filter { isProviderEnabled($0) })
+    }
+
+    private func reportStateReadFailure(_ error: Error, providerID: String, accountKey: String) {
+        AppDiagnostics.record(
+            .weeklyTimer, result: .failure, providerID: providerID, error: error,
+            localContext: "Could not check timer observation state")
+        coordinator.clearReportedSendLimit(for: accountKey)
+        let message =
+            activeLaunch == nil
+            ? Self.stateReadWarning
+            : "Usage timer automation could not update its saved state."
+        warningsByAccount[accountKey, default: [:]]["state"] = message
+        for (id, binding) in bindings where binding.accountKey == accountKey && isProviderEnabled(id) {
+            report(id, warning(for: accountKey))
+        }
     }
 
     private func warning(for accountKey: String) -> [String]? {

@@ -6,17 +6,35 @@ struct UsageHistoryLoadResult: Sendable {
     private(set) var invalidFileMessages: [String] = []
     private(set) var failureCategories: Set<ErrorCategory> = []
 
+    private var unreadableFileNames: Set<String> = []
+    private var directoryReadFailed = false
+
+    func canReplaceDocument(for deviceID: String) -> Bool {
+        !directoryReadFailed && !unreadableFileNames.contains(deviceID.lowercased() + ".json")
+    }
+
     init(documents: [UsageHistoryDocument]) { self.documents = documents }
 
-    mutating func appendFailure(_ error: Error, fileName: String) {
+    mutating func appendFailure(_ error: Error, fileName: String, isDirectory: Bool = false) {
+        if isDirectory {
+            directoryReadFailed = true
+        } else {
+            unreadableFileNames.insert(fileName.lowercased())
+        }
         invalidFileMessages.append("\(fileName): \(error.localizedDescription)")
         failureCategories.insert(ErrorCategory.classify(error))
     }
 }
 
+struct ICloudHistoryChangedDuringWrite: UserPresentableError {
+    var presentationMessage: LocalizedMessage {
+        .init("This Mac’s synced history changed again. egasu will retry on the next update.")
+    }
+}
+
 protocol UsageHistoryFileStoring: Sendable {
     func loadDocuments() async throws -> UsageHistoryLoadResult
-    func write(_ document: UsageHistoryDocument) async throws
+    func write(_ document: UsageHistoryDocument, replacing previous: UsageHistoryDocument?) async throws
     func delete(deviceID: String) async throws
 }
 
@@ -80,12 +98,14 @@ final class ICloudUsageSyncStore {
     private var notificationTokens: [NSObjectProtocol] = []
     private var syncActivityCount = 0
     private var enablementGeneration = 0
+    private var canReplaceOwnDocument = false
 
     let deviceID: String
     let deviceName: String
     var enabled: Bool {
         didSet {
             guard enabled != oldValue else { return }
+            canReplaceOwnDocument = false
             enablementGeneration &+= 1
             let generation = enablementGeneration
             let expectedEnabled = enabled
@@ -198,8 +218,24 @@ final class ICloudUsageSyncStore {
                 }
             } catch {
                 guard isCurrent(expectedEnabled: expectedEnabled, generation: generation),
-                      pendingDeletionDeviceID == persistedDeviceID else { return }
+                    pendingDeletionDeviceID == persistedDeviceID
+                else {
+                    if enabled { await writeNow(generation: enablementGeneration) }
+                    return
+                }
                 reportDeletion(error)
+                guard !expectedEnabled, pendingDeviceID != deviceID else { return }
+                do {
+                    _ = try await workQueue.run("icloud:delete") {
+                        guard isCurrent(expectedEnabled: false, generation: generation),
+                            pendingDeletionDeviceID == persistedDeviceID
+                        else { return }
+                        try await fileStore.delete(deviceID: deviceID)
+                    }
+                } catch {
+                    AppDiagnostics.failure(.iCloudDelete, error: error)
+                }
+                if enabled { await writeNow(generation: enablementGeneration) }
             }
         }
     }
@@ -220,6 +256,7 @@ final class ICloudUsageSyncStore {
             guard let self else { return }
             try? await Task.sleep(for: writeDebounce)
             guard !Task.isCancelled else { return }
+            if !canReplaceOwnDocument { await reload(generation: generation) }
             await writeNow(generation: generation)
         }
     }
@@ -243,19 +280,35 @@ final class ICloudUsageSyncStore {
         }
     }
 
-    private func writeNow(generation: Int) async {
+    private func writeNow(generation: Int, retryOnChange: Bool = true) async {
         guard isCurrent(expectedEnabled: true, generation: generation) else { return }
         await withSyncActivity {
             guard isCurrent(expectedEnabled: true, generation: generation) else { return }
             do {
                 let written = try await workQueue.run("icloud:write") {
-                    guard isCurrent(expectedEnabled: true, generation: generation) else { return false }
-                    let document = dataStore.localHistoryDocument(deviceID: deviceID, deviceName: deviceName)
-                    try await fileStore.write(document)
+                    guard isCurrent(expectedEnabled: true, generation: generation), canReplaceOwnDocument else {
+                        return false
+                    }
+                    let previous = documents.first { $0.deviceID == deviceID }
+                    let document = dataStore.localHistoryDocument(
+                        deviceID: deviceID, deviceName: deviceName, preserving: previous)
+                    try await fileStore.write(document, replacing: previous)
                     return true
                 }
                 guard written == true else { return }
                 AppDiagnostics.record(.iCloudWrite, result: .success)
+            } catch let error as ICloudHistoryChangedDuringWrite {
+                guard isCurrent(expectedEnabled: true, generation: generation) else { return }
+                await reload(generation: generation)
+                guard isCurrent(expectedEnabled: true, generation: generation),
+                    canReplaceOwnDocument, !Task.isCancelled
+                else { return }
+                if retryOnChange {
+                    await writeNow(generation: generation, retryOnChange: false)
+                } else {
+                    report(error, operation: .iCloudWrite)
+                }
+                return
             } catch {
                 if isCurrent(expectedEnabled: true, generation: generation) {
                     report(error, operation: .iCloudWrite)
@@ -281,13 +334,11 @@ final class ICloudUsageSyncStore {
         guard isCurrent(expectedEnabled: true, generation: generation) else { return }
         let pendingAtStart = Self.normalizedDeviceID(pendingDeletionDeviceID)
         await withSyncActivity {
+            guard let ticket = await workQueue.acquire("icloud:read") else { return }
+            defer { workQueue.finish(ticket) }
+            guard !Task.isCancelled, isCurrent(expectedEnabled: true, generation: generation) else { return }
             do {
-                guard let result = try await workQueue.run("icloud:read", operation: {
-                    guard isCurrent(expectedEnabled: true, generation: generation) else {
-                        throw CancellationError()
-                    }
-                    return try await fileStore.loadDocuments()
-                }) else { return }
+                let result = try await fileStore.loadDocuments()
                 guard isCurrent(expectedEnabled: true, generation: generation) else { return }
                 let excludedDeviceIDs = Set([
                     pendingAtStart,
@@ -296,6 +347,7 @@ final class ICloudUsageSyncStore {
                 let visibleDocuments = result.documents.filter { document in
                     !excludedDeviceIDs.contains(document.deviceID.lowercased())
                 }
+                canReplaceOwnDocument = result.canReplaceDocument(for: deviceID)
                 documents = UsageHistoryDocument.newestByDevice(visibleDocuments)
                 invalidFileMessages = result.invalidFileMessages
                 if result.invalidFileMessages.isEmpty {
@@ -311,6 +363,7 @@ final class ICloudUsageSyncStore {
                     : L10n.errors("Some synced usage data couldn’t be read. Check the log for details.")
             } catch {
                 if isCurrent(expectedEnabled: true, generation: generation) {
+                    canReplaceOwnDocument = false
                     report(error, operation: .iCloudRead)
                 }
             }

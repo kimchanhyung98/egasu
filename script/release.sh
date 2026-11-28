@@ -93,6 +93,9 @@ BUILD_CLI_BINARY="$BUILD_DIR/egasu-cli"
 [ -x "$BUILD_BINARY" ] || { echo "missing built binary: $BUILD_BINARY" >&2; exit 1; }
 [ -x "$BUILD_CLI_BINARY" ] || { echo "missing built CLI: $BUILD_CLI_BINARY" >&2; exit 1; }
 
+WIDGET_PRODUCT="$("$ROOT_DIR/script/build_widget_extension.sh" "$BUNDLE_ID" "$VERSION" "$BUILD" \
+  release "arm64 x86_64")"
+
 echo "==> staging $APP_BUNDLE"
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS" "$APP_HELPERS" "$APP_RESOURCES"
@@ -195,7 +198,7 @@ cat >"$APP_CONTENTS/Info.plist" <<PLIST
   <key>NSHighResolutionCapable</key><true/>
   <key>SUFeedURL</key><string>$FEED_URL</string>
   <key>SUPublicEDKey</key><string>$SPARKLE_PUBLIC_KEY</string>
-  <key>SUEnableAutomaticChecks</key><true/>
+  <key>SUEnableAutomaticChecks</key><false/>
   <key>SUScheduledCheckInterval</key><integer>3600</integer>
   <key>NSUbiquitousContainers</key>
   <dict>
@@ -218,6 +221,9 @@ cp "$ICLOUD_PROVISIONING_PROFILE" "$APP_CONTENTS/embedded.provisionprofile"
 # Sparkle embed 및 서명(Developer ID, hardened runtime, secure timestamp).
 "$ROOT_DIR/script/embed_sparkle.sh" "$APP_BUNDLE" "$APP_BINARY" "$CODESIGN_IDENTITY" "--options runtime --timestamp"
 codesign --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$CLI_BINARY"
+
+"$ROOT_DIR/script/embed_widget_extension.sh" "$APP_BUNDLE" "$WIDGET_PRODUCT" \
+  "$CODESIGN_IDENTITY" "$ENTITLEMENTS" release
 
 echo "==> signing app (Developer ID, hardened runtime)"
 # --deep 미사용: 위에서 서명한 Sparkle framework의 서명 유지 필요.

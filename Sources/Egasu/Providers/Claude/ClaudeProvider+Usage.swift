@@ -121,9 +121,12 @@ extension ClaudeProvider {
             usageTimerCredentialState?.sourceText = nil
             let verifiedKey = UsageTimerObservation.accountKey(family: "claude", identity: accountKey)
             mapped.liveQuotaAccountKey = verifiedKey
+            if let identity, !identity.contains("|"), let token = working.oauth.accessToken {
+                mapped.legacySwitchIdentity = .init(identityKey: accountKey, accessToken: token)
+            }
             let haikuLimits = mapped.lines.filter { $0.label == "Session" || $0.label == "Weekly" }
             usageTimerObservations =
-                UsageTimerObservation.hasExhaustedQuota(haikuLimits)
+                working.oauth.hasOnlyProfileScope || UsageTimerObservation.hasExhaustedQuota(haikuLimits)
                 ? []
                 : [
                     UsageTimerObservation.from(
@@ -276,6 +279,40 @@ extension ClaudeProvider {
         }
         defer { withExtendedLifetime(rotation) {} }
         try Task.checkCancellation()
+        // 요청 전송부터 저장까지 앱 종료 보류.
+        try TokenRotationShutdownGuard.begin()
+        defer { TokenRotationShutdownGuard.end() }
+
+        // 서버가 기존 토큰을 소비한 뒤 조회 취소로 응답이나 저장을 잃지 않도록 별도 Task에서 완료.
+        let rotationTask = Task { @MainActor [state, rejectedGrant] in
+            var state = state
+            var rejectedGrant = rejectedGrant
+            let result: Result<RefreshedAccess, Error>
+            do {
+                result = .success(
+                    try await performRotation(
+                        state: &state, refreshToken: refreshToken, expectedGeneration: expectedGeneration,
+                        rejectedGrant: &rejectedGrant, config: config, allowAccountInteraction: allowAccountInteraction
+                    ))
+            } catch {
+                result = .failure(error)
+            }
+            return (state, rejectedGrant, result)
+        }
+        let (updatedState, updatedRejectedGrant, result) = await rotationTask.value
+        state = updatedState
+        rejectedGrant = updatedRejectedGrant
+        return try result.get()
+    }
+
+    private func performRotation(
+        state: inout ClaudeCredentialState,
+        refreshToken: String,
+        expectedGeneration: ClaudeCredentialGeneration,
+        rejectedGrant: inout ClaudeUsageStateStore.AuthenticationFailure?,
+        config: ClaudeOAuthConfig,
+        allowAccountInteraction: Bool
+    ) async throws -> RefreshedAccess {
         AppLog.info(LogTag.auth("claude"), "token refresh attempt")
         let decoded: ClaudeRefreshResponse
         do {
@@ -326,6 +363,7 @@ extension ClaudeProvider {
             }
             persisted = true
             AppDiagnostics.record(.credentialSave, result: .success, providerID: provider.id)
+            AppLog.info(LogTag.auth("claude"), "token refresh ok (rotated)")
         } catch let error as ClaudeAuthError where error == .credentialsChanged {
             AppDiagnostics.record(.credentialSave, result: .bindingChanged, providerID: provider.id)
             throw error
@@ -335,7 +373,6 @@ extension ClaudeProvider {
             AppDiagnostics.record(.credentialSave, result: .degraded, providerID: provider.id, error: error,
                                   localContext: "failed to persist rotated credentials; using the refreshed token for this session only")
         }
-        AppLog.info(LogTag.auth("claude"), "token refresh ok (rotated)")
         // 회전한 인증을 저장한 뒤 새 권한으로 프로필·사용량 재시도 여부 확인.
         guard authStore.liveUsageAvailability(state) != .missingProfileScope else {
             throw ProfileScopeRemoved(persisted: persisted)

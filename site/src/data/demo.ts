@@ -38,6 +38,7 @@ export interface BoundedRow {
   used: number;
   limit: number;
   periodHours: number;
+  unit?: 'count' | 'dollars';
   estimated?: boolean;
   /** 리셋 주기 중 지난 비율 0~1. pace 눈금 위치이자 소진 투영의 입력. */
   elapsed: number;
@@ -99,21 +100,23 @@ export function paceView(r: BoundedRow): { severity: Severity; pace: string; fla
 }
 
 /** bounded 행의 표시 상태를 mode에 따라 계산. 앱의 displayedValue/fraction/paceTick 규칙 그대로. */
-export function boundedView(r: BoundedRow, mode: 'used' | 'left') {
-  // 값이 없으면 mode와 무관하게 em dash + 빈 트랙. tick -1은 "눈금 없음".
-  if (r.noData) return { headline: '—', fill: 0, tick: -1, opposite: '' };
+export function boundedView(r: BoundedRow, mode: 'used' | 'left', surface: 'row' | 'tray' = 'row') {
+  if (r.noData) return { amount: '—', fill: 0, tick: -1 };
   const shown = mode === 'left' ? Math.max(0, r.limit - r.used) : r.used;
-  const pct = Math.min(100, Math.max(0, Math.round((shown / r.limit) * 100)));
-  if (r.notStarted) return { headline: `${pct}% ${mode === 'left' ? 'left' : 'used'}`, fill: pct, tick: -1, opposite: '' };
-  return {
-    headline: `${pct}% ${mode === 'left' ? 'left' : 'used'}`,
-    /** 막대 채움 — mode에 따라 반전됨. 색은 반전되지 않음. */
-    fill: pct,
-    /** pace 눈금 — mode에 따라 미러링됨. */
-    tick: Math.round((mode === 'left' ? 1 - r.elapsed : r.elapsed) * 100),
-    /** 반대 mode 문구. 앱은 hover tooltip으로 보여 줌. */
-    opposite: `${100 - pct}% ${mode === 'left' ? 'used' : 'left'}`,
-  };
+  const fill = Math.min(100, Math.max(0, Math.round((shown / r.limit) * 100)));
+  let amount: string;
+  switch (r.unit) {
+    case 'count':
+      amount = Math.abs(shown) >= 1000 ? compact(shown) : num1(shown);
+      break;
+    case 'dollars':
+      amount = surface === 'tray' || Math.abs(shown) >= 1000 ? trayDollars(shown) : currency2(shown);
+      break;
+    default:
+      amount = `${fill}%`;
+  }
+  const tick = r.notStarted ? -1 : Math.round((mode === 'left' ? 1 - r.elapsed : r.elapsed) * 100);
+  return { amount, fill, tick };
 }
 
 export const appVersion = '1.0.0';

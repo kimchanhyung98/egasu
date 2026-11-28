@@ -31,7 +31,8 @@ final class ProviderRefreshCoordinator {
     var refreshingProviderIDs: Set<String> { refreshWork.refreshingProviderIDs }
     var scheduledRefreshDates: [String: Date] { refreshSchedule.dates }
     private(set) var refreshResults: [String: ProviderRefreshResult] = [:]
-    private(set) var claudeReconciliationFailure: ProviderRefreshFailure?
+    private(set) var accountReconciliationFailures: [String: ProviderRefreshFailure] = [:]
+    var claudeReconciliationFailure: ProviderRefreshFailure? { accountReconciliationFailures["claude"] }
     private(set) var automationWarnings: [String: [String]] = [:]
     var lastRefreshAt: Date?
     nonisolated static let refreshScheduleDidChange = ProviderRefreshSchedule.didChange
@@ -168,6 +169,11 @@ final class ProviderRefreshCoordinator {
     func credentialsDidChange(for providerID: String) -> Int {
         let generation = credentialGenerations[providerID, default: 0] + 1
         credentialGenerations[providerID] = generation
+        if providersByID[providerID] is DeepSeekProvider || providersByID[providerID] is OpenAICostsProvider,
+            snapshotStore.discardMismatchedReading(for: providerID, currentIdentityKey: nil)
+        {
+            rebuildRenderedSnapshots()
+        }
         snapshotStore.invalidateLiveQuota(for: providerID)
         onQuotaInvalidated?([providerID])
         providersNeedingCredentialRefresh.insert(providerID)
@@ -213,7 +219,7 @@ final class ProviderRefreshCoordinator {
             registry: registry, identityKeys: identityKeys, familyTotalHistoryCardIDs: familyTotalHistoryCardIDs
         )
         refreshResults = refreshResults.filter { keepsState($0.key) }
-        if !keepsState("claude") { claudeReconciliationFailure = nil }
+        accountReconciliationFailures = accountReconciliationFailures.filter { keepsState($0.key) }
         automationWarnings = automationWarnings.filter { keepsState($0.key) }
         authenticationGenerations = authenticationGenerations.filter { liveIDs.contains($0.key) }
         invalidatedAuthentication.formIntersection(liveIDs)
@@ -236,11 +242,15 @@ final class ProviderRefreshCoordinator {
 
     /// Claude 로그인 반영은 사용량 조회와 독립적으로 성공하거나 실패.
     func setClaudeReconciliationFailure(_ failure: ProviderRefreshFailure?) {
-        guard claudeReconciliationFailure != failure else { return }
-        claudeReconciliationFailure = failure
+        setAccountReconciliationFailure(failure, for: "claude")
+    }
+
+    func setAccountReconciliationFailure(_ failure: ProviderRefreshFailure?, for family: String) {
+        guard accountReconciliationFailures[family] != failure else { return }
+        accountReconciliationFailures[family] = failure
         if failure != nil {
-            snapshotStore.invalidateLiveQuota(for: "claude")
-            onQuotaInvalidated?(["claude"])
+            snapshotStore.invalidateLiveQuota(for: family)
+            onQuotaInvalidated?([family])
         }
     }
 
@@ -260,21 +270,26 @@ final class ProviderRefreshCoordinator {
         force: Bool = false,
         trigger: RefreshTrigger = .scheduled,
         notifyHistoryChange: Bool = true,
-        codexBinding: CodexResetClaimBinding? = nil
+        codexBinding: CodexResetClaimBinding? = nil,
+        isCurrent: @escaping @MainActor () -> Bool = { true }
     ) async -> RefreshOutcome {
-        guard !Task.isCancelled, isProviderEnabled(providerID) else { return .skipped }
+        guard !Task.isCancelled, isCurrent(), isProviderEnabled(providerID) else { return .skipped }
         guard isRefreshSuspended?(providerID) != true else { return .skipped }
         let family = AppLog.providerFamily(providerID)
         var cacheIdentity = snapshotStore.identityKeys[providerID]
-        if !force, let cursor = providersByID[providerID] as? CursorProvider,
-            snapshotStore.localSnapshots[providerID] != nil
+        if !force || providerID == "openai-api",
+            let runtime = providersByID[providerID] as? any CredentialBoundSnapshotProvider,
+            let snapshot = snapshotStore.localSnapshots[providerID]
         {
             let generation = catalogGeneration
-            cacheIdentity = await cursor.currentIdentityKey()
-            guard !Task.isCancelled, generation == catalogGeneration, isProviderEnabled(providerID),
-                isRefreshSuspended?(providerID) != true
+            let credentialGeneration = credentialGenerations[providerID, default: 0]
+            cacheIdentity = await runtime.currentIdentityKey(allowKeychainInteraction: true)
+            guard !Task.isCancelled, isCurrent(), generation == catalogGeneration, isProviderEnabled(providerID),
+                isRefreshSuspended?(providerID) != true,
+                credentialGeneration == credentialGenerations[providerID, default: 0],
+                snapshotStore.localSnapshots[providerID] == snapshot
             else { return .skipped }
-            if snapshotStore.discardMismatchedCursorReading(for: providerID, currentIdentityKey: cacheIdentity) {
+            if snapshotStore.discardMismatchedReading(for: providerID, currentIdentityKey: cacheIdentity) {
                 credentialsDidChange(for: providerID)
                 rebuildRenderedSnapshots()
             }
@@ -309,15 +324,20 @@ final class ProviderRefreshCoordinator {
         var authenticationGeneration = authenticationGenerations[providerID, default: 0]
         var boundCredentialGeneration = credentialGenerations[providerID, default: 0]
         var start: TimeInterval = 0
-        guard let result = await refreshWork.run(lease, provider: provider, trigger: trigger, prepare: {
-            guard self.isProviderEnabled(providerID), self.isRefreshSuspended?(providerID) != true,
-                  self.providersByID[providerID] === provider else { return false }
-            boundGeneration = self.catalogGeneration
-            authenticationGeneration = self.authenticationGenerations[providerID, default: 0]
-            boundCredentialGeneration = self.credentialGenerations[providerID, default: 0]
-            start = self.monotonicNow()
-            return true
-        }) else { return .skipped }
+        guard
+            let result = await refreshWork.run(
+                lease, provider: provider, trigger: trigger, isCurrent: isCurrent,
+                prepare: {
+                    guard self.isProviderEnabled(providerID), self.isRefreshSuspended?(providerID) != true,
+                        self.providersByID[providerID] === provider
+                    else { return false }
+                    boundGeneration = self.catalogGeneration
+                    authenticationGeneration = self.authenticationGenerations[providerID, default: 0]
+                    boundCredentialGeneration = self.credentialGenerations[providerID, default: 0]
+                    start = self.monotonicNow()
+                    return true
+                })
+        else { return .skipped }
         var snapshot: ProviderSnapshot
         switch result {
         case .snapshot(let value):
@@ -330,11 +350,11 @@ final class ProviderRefreshCoordinator {
                 presentation: .init("Refresh timed out. Retrying is available after the previous request finishes.")
             )
             snapshot = timeout
-            if let cursor = provider as? CursorProvider {
+            if let runtime = provider as? any CredentialBoundSnapshotProvider {
                 // 제한 시간 뒤에는 현재 로그인만 짧게 확인. 확인한 계정의 캐시만 표시.
                 let verification = await ProviderRefreshDeadline.run(timeout: .seconds(1)) {
                     var verified = timeout
-                    verified.producedByIdentityKey = await cursor.currentIdentityKey(allowKeychainInteraction: false)
+                    verified.producedByIdentityKey = await runtime.currentIdentityKey(allowKeychainInteraction: false)
                     return verified
                 }
                 if case .snapshot(let verified) = verification { snapshot = verified }
@@ -347,6 +367,10 @@ final class ProviderRefreshCoordinator {
         guard !Task.isCancelled else {
             needsScheduleWake = true
             AppLog.debug(.refresh, "cancelled \(family) refresh; keeping last-good snapshot")
+            return .skipped
+        }
+        guard isCurrent() else {
+            needsScheduleWake = true
             return .skipped
         }
         // 조회 중 카탈로그가 바뀌면 결과 폐기 — 같은 카드 ID가 다른 계정을 가리킬 수 있음.
@@ -386,6 +410,7 @@ final class ProviderRefreshCoordinator {
         case .failed(let failure, let render, let historyChanged):
             refreshResults[providerID] = .failed(failure)
             refreshSchedule.failed(providerID)
+            if snapshot.invalidatesQuotaIdentity { onQuotaInvalidated?([providerID]) }
             if render { rebuildRenderedSnapshots() }
             if historyChanged, notifyHistoryChange { onLocalHistoryChanged?() }
             var diagnostic = "result=failure \(context) category=\(failure.category.rawValue)"
@@ -398,7 +423,7 @@ final class ProviderRefreshCoordinator {
             onRefreshOutcome?(providerID, .failed, failure.category, trigger, false)
             return .failed
         case .succeeded(let accepted, let degraded):
-            let hasReconciliationFailure = providerID == "claude" && claudeReconciliationFailure != nil
+            let hasReconciliationFailure = accountReconciliationFailures[providerID] != nil
             if hasReconciliationFailure { snapshotStore.invalidateLiveQuota(for: providerID) }
             refreshResults[providerID] = .succeeded
             invalidatedAuthentication.remove(providerID)
@@ -444,8 +469,12 @@ final class ProviderRefreshCoordinator {
         if snapshotStore.clearPeerHistoryDocuments() { rebuildRenderedSnapshots() }
     }
 
-    func localHistoryDocument(deviceID: String, deviceName: String, updatedAt: Date = Date()) -> UsageHistoryDocument {
-        snapshotStore.localHistoryDocument(deviceID: deviceID, deviceName: deviceName, updatedAt: updatedAt)
+    func localHistoryDocument(
+        deviceID: String, deviceName: String, updatedAt: Date = Date(),
+        preserving previous: UsageHistoryDocument? = nil
+    ) -> UsageHistoryDocument {
+        snapshotStore.localHistoryDocument(
+            deviceID: deviceID, deviceName: deviceName, updatedAt: updatedAt, preserving: previous)
     }
 
     private func rebuildRenderedSnapshots() {
@@ -460,7 +489,7 @@ final class ProviderRefreshCoordinator {
         onQuotaInvalidated?([providerID])
         invalidatedAuthentication.insert(providerID)
         refreshResults[providerID] = nil
-        if providerID == "claude" { claudeReconciliationFailure = nil }
+        accountReconciliationFailures[providerID] = nil
         if snapshotStore.invalidateAuthentication(for: providerID) { rebuildRenderedSnapshots() }
     }
 

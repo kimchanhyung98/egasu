@@ -1,5 +1,39 @@
 import Darwin
 import Foundation
+import os
+
+/// 자동 전송 작업에만 연결되며, 설정 해제와 실제 자식 프로세스 생성을 직렬화.
+struct StreamingProcessLaunchPermission: Sendable {
+    @TaskLocal static var current: Self?
+    private let revoked = OSAllocatedUnfairLock(initialState: false)
+
+    var isRevoked: Bool { revoked.withLock { $0 } }
+
+    func revoke() { revoked.withLock { $0 = true } }
+
+    /// 동기 관측 반영과 자식 생성을 직렬화. 반영 실패 시 권한 회수, 같은 권한에 재진입 금지.
+    @discardableResult
+    func revokeIf(_ shouldRevoke: () throws -> Bool) rethrows -> Bool {
+        try revoked.withLockUnchecked { revoked in
+            do {
+                let invalidated = try shouldRevoke()
+                if invalidated { revoked = true }
+                return invalidated
+            } catch {
+                revoked = true
+                throw error
+            }
+        }
+    }
+
+    static func withPermission(_ spawn: () -> Int32) throws -> Int32 {
+        guard let current else { return spawn() }
+        return try current.revoked.withLockUnchecked { revoked in
+            guard !revoked else { throw CancellationError() }
+            return spawn()
+        }
+    }
+}
 
 struct StreamingProcessRequest: Sendable, Equatable {
     var executableURL: URL
@@ -68,7 +102,11 @@ extension StreamingProcessRunning {
 }
 
 struct StreamingProcessRunner: StreamingProcessRunning {
-    init() {}
+    private let owner: StreamingProcessOwner
+
+    init(owner: StreamingProcessOwner = .shared) {
+        self.owner = owner
+    }
 
     func run(
         _ request: StreamingProcessRequest,
@@ -83,6 +121,10 @@ struct StreamingProcessRunner: StreamingProcessRunning {
         onOutput: @escaping @Sendable (String) -> Void
     ) async throws -> StreamingProcessResult {
         try Self.validate(request)
+        let drainStop = DrainStopSignal()
+        let termination = ProcessTerminationController { drainStop.requestStop() }
+        let operation = try owner.register(termination)
+        defer { owner.unregister(operation) }
 
         let stdinPipe = try Self.makeStandardInputPipe(request.standardInput)
         let stdoutPipe = Pipe()
@@ -94,7 +136,6 @@ struct StreamingProcessRunner: StreamingProcessRunning {
         let standardError = request.captureStandardErrorSeparately
             ? StreamingProcessOutput(limit: request.outputLimit, onOutput: { _ in }) : output
         let drains = DrainCompletion(count: 2)
-        let drainStop = DrainStopSignal()
         Self.startDrain(
             stdoutRead,
             channel: .stdout,
@@ -111,9 +152,6 @@ struct StreamingProcessRunner: StreamingProcessRunning {
         )
 
         let exit = ProcessExitSignal()
-        let termination = ProcessTerminationController {
-            drainStop.requestStop()
-        }
 
         let executableName = request.executableURL.lastPathComponent
         AppLog.debug(.subprocess, "launch \(executableName) (\(request.arguments.count) args)")
@@ -122,15 +160,20 @@ struct StreamingProcessRunner: StreamingProcessRunning {
             do {
                 try termination.prepareToLaunch()
                 try Task.checkCancellation()
-                let pid = try Self.spawn(
-                    request,
-                    stdinPipe: stdinPipe,
-                    stdoutPipe: stdoutPipe,
-                    stderrPipe: stderrPipe
-                )
+                let pid = try owner.withLaunchPermission {
+                    try Self.spawn(
+                        executable: request.executableURL.path, arguments: request.arguments,
+                        environment: request.environment,
+                        currentDirectoryURL: request.currentDirectoryURL, stdinPipe: stdinPipe,
+                        stdoutPipe: stdoutPipe,
+                        stderrPipe: stderrPipe
+                    )
+                }
                 termination.didLaunch(processGroupID: pid)
                 onLaunch()
-                Self.startWait(pid: pid, signal: exit, termination: termination)
+                Self.startWait(pid: pid, signal: exit) { observedExit in
+                    if observedExit { termination.didCompleteNaturally() } else { termination.relinquishProcessGroup() }
+                }
             } catch {
                 Self.closeWriteEnds(stdoutPipe: stdoutPipe, stderrPipe: stderrPipe)
                 _ = await drains.wait()
@@ -250,20 +293,13 @@ struct StreamingProcessRunner: StreamingProcessRunning {
         }
     }
 
-    private static func spawn(
-        _ request: StreamingProcessRequest,
-        stdinPipe: Pipe?,
-        stdoutPipe: Pipe,
-        stderrPipe: Pipe
+    static func spawn(
+        executable path: String, arguments: [String], environment: [String: String], currentDirectoryURL: URL? = nil,
+        stdinPipe: Pipe? = nil, stdoutPipe: Pipe? = nil, stderrPipe: Pipe? = nil, resetSignalState: Bool = false
     ) throws -> pid_t {
         var fileActions: posix_spawn_file_actions_t?
         try requireSpawnSuccess(posix_spawn_file_actions_init(&fileActions))
         defer { posix_spawn_file_actions_destroy(&fileActions) }
-
-        let stdoutRead = stdoutPipe.fileHandleForReading.fileDescriptor
-        let stdoutWrite = stdoutPipe.fileHandleForWriting.fileDescriptor
-        let stderrRead = stderrPipe.fileHandleForReading.fileDescriptor
-        let stderrWrite = stderrPipe.fileHandleForWriting.fileDescriptor
 
         if let stdinPipe {
             let descriptor = stdinPipe.fileHandleForReading.fileDescriptor
@@ -278,14 +314,19 @@ struct StreamingProcessRunner: StreamingProcessRunning {
                 )
             }
         }
-        try requireSpawnSuccess(posix_spawn_file_actions_adddup2(&fileActions, stdoutWrite, STDOUT_FILENO))
-        try requireSpawnSuccess(posix_spawn_file_actions_adddup2(&fileActions, stderrWrite, STDERR_FILENO))
-        for descriptor in [stdoutRead, stdoutWrite, stderrRead, stderrWrite]
-            where descriptor > STDERR_FILENO
-        {
-            try requireSpawnSuccess(posix_spawn_file_actions_addclose(&fileActions, descriptor))
+        for (pipe, target) in [(stdoutPipe, STDOUT_FILENO), (stderrPipe, STDERR_FILENO)] {
+            if let pipe {
+                let write = pipe.fileHandleForWriting.fileDescriptor
+                try requireSpawnSuccess(posix_spawn_file_actions_adddup2(&fileActions, write, target))
+                for descriptor in [pipe.fileHandleForReading.fileDescriptor, write] where descriptor > STDERR_FILENO {
+                    try requireSpawnSuccess(posix_spawn_file_actions_addclose(&fileActions, descriptor))
+                }
+            } else {
+                try requireSpawnSuccess(
+                    posix_spawn_file_actions_addopen(&fileActions, target, "/dev/null", O_WRONLY, 0))
+            }
         }
-        if let directory = request.currentDirectoryURL {
+        if let directory = currentDirectoryURL {
             try directory.path.withCString { path in
                 try requireSpawnSuccess(posix_spawn_file_actions_addchdir_np(&fileActions, path))
             }
@@ -294,27 +335,36 @@ struct StreamingProcessRunner: StreamingProcessRunning {
         var attributes: posix_spawnattr_t?
         try requireSpawnSuccess(posix_spawnattr_init(&attributes))
         defer { posix_spawnattr_destroy(&attributes) }
-        let flags = Int16(POSIX_SPAWN_SETPGROUP) | Int16(POSIX_SPAWN_CLOEXEC_DEFAULT)
+        var flags = Int16(POSIX_SPAWN_SETPGROUP) | Int16(POSIX_SPAWN_CLOEXEC_DEFAULT)
+        if resetSignalState {
+            // 로그인 CLI는 실행 스레드의 차단 마스크와 앱의 무시 처리를 상속하지 않음.
+            var mask = sigset_t()
+            sigemptyset(&mask)
+            try requireSpawnSuccess(posix_spawnattr_setsigmask(&attributes, &mask))
+            var defaults = sigset_t()
+            sigfillset(&defaults)
+            try requireSpawnSuccess(posix_spawnattr_setsigdefault(&attributes, &defaults))
+            flags |= Int16(POSIX_SPAWN_SETSIGMASK) | Int16(POSIX_SPAWN_SETSIGDEF)
+        }
         try requireSpawnSuccess(posix_spawnattr_setflags(&attributes, flags))
         try requireSpawnSuccess(posix_spawnattr_setpgroup(&attributes, 0))
 
-        let path = request.executableURL.path
-        let argv = [path] + request.arguments
-        let environment = request.environment
-            .map { "\($0.key)=\($0.value)" }
-            .sorted()
+        let argv = [path] + arguments
+        let environmentStrings = environment.map { "\($0.key)=\($0.value)" }.sorted()
         var pid = pid_t(0)
-        let spawnStatus = path.withCString { executable in
-            withCStringArray(argv) { argvPointer in
-                withCStringArray(environment) { environmentPointer in
-                    posix_spawn(
-                        &pid,
-                        executable,
-                        &fileActions,
-                        &attributes,
-                        argvPointer,
-                        environmentPointer
-                    )
+        let spawnStatus = try path.withCString { executable in
+            try withCStringArray(argv) { argvPointer in
+                try withCStringArray(environmentStrings) { environmentPointer in
+                    try StreamingProcessLaunchPermission.withPermission {
+                        posix_spawn(
+                            &pid,
+                            executable,
+                            &fileActions,
+                            &attributes,
+                            argvPointer,
+                            environmentPointer
+                        )
+                    }
                 }
             }
         }
@@ -344,10 +394,11 @@ struct StreamingProcessRunner: StreamingProcessRunning {
         }
     }
 
-    private static func startWait(
+    /// 종료 관측 후 회수 전, 또는 wait 실패 시 호출자에게 PID 소유권 해제 전달.
+    static func startWait(
         pid: pid_t,
         signal: ProcessExitSignal,
-        termination: ProcessTerminationController
+        releasePID: @escaping @Sendable (_ observedExit: Bool) -> Void
     ) {
         DispatchQueue.global(qos: .utility).async {
             var info = siginfo_t()
@@ -357,13 +408,12 @@ struct StreamingProcessRunner: StreamingProcessRunning {
             } while observed == -1 && errno == EINTR
             guard observed == 0 else {
                 let code = errno
-                termination.relinquishProcessGroup()
+                releasePID(false)
                 AppLog.error(.subprocess, "Failed to observe command exit (errno \(code))")
                 signal.finish(ProcessExit(waitStatus: 1 << 8, waitError: code))
                 return
             }
-            // WNOWAIT로 leader PID를 유지한 채 원래 group 정리 후 reap.
-            termination.didCompleteNaturally()
+            releasePID(true)
             var status = Int32(0)
             var result: pid_t
             repeat {

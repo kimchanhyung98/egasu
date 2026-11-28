@@ -160,11 +160,20 @@ struct MenuBarTextStrip: View {
     }
 
     private func labelledValue(_ item: MenuBarContent.Item) -> some View {
-        VStack(alignment: .leading, spacing: -2) {
-            Text(item.shortLabel)
-                .font(.system(size: 9, weight: .medium))
-            Text(item.value)
+        let isBillingScope = ProviderAccountID.canonicalMetricID(item.id) == "openai-api.scope"
+        return VStack(alignment: .leading, spacing: -2) {
+            if !item.displayedLabel.isEmpty {
+                Text(item.displayedLabel)
+                    .font(.system(size: 9, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: item.accountLabel == nil ? nil : 96, alignment: .leading)
+            }
+            Text(item.displayedValue)
                 .font(.system(size: 11, weight: .bold))
+                .lineLimit(isBillingScope ? 1 : nil)
+                .truncationMode(isBillingScope ? .middle : .tail)
+                .frame(maxWidth: isBillingScope ? 96 : nil, alignment: .leading)
         }
         .fixedSize()
     }

@@ -45,7 +45,7 @@ struct AccountListView: View {
         if container.accountProfiles.hasUnreadableRegistry {
             return UserFacingErrors.message(AccountProfileError.registryUnreadable)
         }
-        return container.accountCardPresentation.errorMessage
+        return container.dataStore.accountReconciliationNotice ?? container.accountCardPresentation.errorMessage
     }
 
     @ViewBuilder
@@ -55,7 +55,7 @@ struct AccountListView: View {
             account: account,
             isInUse: account.isInUse,
             grip: { ReorderGrip().highPriorityGesture(dragGesture(for: account, in: accounts)) },
-            onOpen: { withAnimation(Motion.navigation) { popover.accountDetailID = account.id } }
+            onOpen: { popover.accountDetailID = account.id }
         )
         .opacity(activeAccountID == account.id ? 0 : 1)
         .reorderFrame(id: account.id, in: .named(reorderSpaceName))

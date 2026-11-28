@@ -108,6 +108,7 @@ enum SettingsSchema {
 enum SettingsMigrator {
     /// 적용된 스키마 버전의 기록 key (정수). 부재 = 미마이그레이션 — fresh 또는 legacy, 런타임 판별.
     static let schemaVersionKey = "openusage.settings.schemaVersion"
+    static let upstreamLayoutImportPendingKey = "openusage.upstreamLayoutImportPending.v1"
 
     /// 기존 egasu 레이아웃이 없을 때만 원본 설정 복사. v1은 기존 배치 규칙, v2는 원본 계정 ID 사용.
     @discardableResult
@@ -118,13 +119,17 @@ enum SettingsMigrator {
     ) -> Bool {
         guard !domainName.isEmpty, domainName != sourceDomainName else { return false }
         let existing = defaults.persistentDomain(forName: domainName) ?? [:]
-        guard !existing.keys.contains(where: { $0.hasPrefix("openusage.layout.") }) else { return false }
+        guard !existing.keys.contains(where: { $0.hasPrefix("openusage.layout.") }) else {
+            defaults.removeObject(forKey: upstreamLayoutImportPendingKey)
+            return false
+        }
         let source = defaults.persistentDomain(forName: sourceDomainName) ?? [:]
         let layoutKey = "openusage.layout.v1"
         let values: [String: Any]
         if let savedV2 = source["openusage.layout.v2"] {
             guard let data = savedV2 as? Data else {
                 AppLog.warn(.config, "upstream layout v2 is not readable data; layout import skipped")
+                defaults.set(true, forKey: upstreamLayoutImportPendingKey)
                 return false
             }
             do {
@@ -137,6 +142,7 @@ enum SettingsMigrator {
                 ]
             } catch {
                 AppLog.warn(.config, "upstream layout v2 import failed: \(error.localizedDescription)")
+                defaults.set(true, forKey: upstreamLayoutImportPendingKey)
                 return false
             }
         } else {
@@ -151,6 +157,7 @@ enum SettingsMigrator {
         }
         guard !values.isEmpty else { return false }
         for (key, value) in values { defaults.set(value, forKey: key) }
+        defaults.removeObject(forKey: upstreamLayoutImportPendingKey)
         if source["openusage.layout.v2"] == nil {
             SettingsSchema.migrateResetWatchLayout(defaults)
         }

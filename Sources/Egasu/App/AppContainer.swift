@@ -30,6 +30,7 @@ final class AppContainer {
     /// Settings와 알림 평가가 공유하는 조건별 설정.
     let notificationSettings: NotificationSettingsStore
     let softLimitSettings: SoftLimitSettingsStore
+    let accountRecommendationSettings: AccountRecommendationSettingsStore
     let softLimitCoordinator: SoftLimitCoordinator
     /// Settings opt-in 토글과 앱 종료 flush가 공유하는 일간 rollup.
     let telemetry: TelemetryRecorder
@@ -40,6 +41,7 @@ final class AppContainer {
     /// 되돌릴 수 없는 claim이 항상 카드가 표시하는 계정의 credential을 사용하도록 보장.
     let codexResetClaim: CodexResetClaimRouter
     private let usageTimer: UsageTimerRouter
+    var usageTimerSetting: UsageTimerSetting { usageTimer.usageTimerSetting }
     /// 런치 패스가 reconcile한 account registry. 계정 이름은 여기서 render 시점에 해석.
     let accounts: ProviderAccountsStore
     /// 관리형 launch-profile registry. 런치 account 패스와 Settings 계정 UI가 공유하는 단일 인스턴스.
@@ -116,6 +118,7 @@ final class AppContainer {
         let enablement = ProviderEnablementStore()
         let notificationSettings = NotificationSettingsStore()
         let softLimitSettings = SoftLimitSettingsStore(labsAvailable: labsAvailable)
+        let accountRecommendationSettings = AccountRecommendationSettingsStore(labsAvailable: labsAvailable)
         let layout = LayoutStore(
             registry: registry,
             knownCardIDs: enablement.knownIDs.union(enablement.enabledIDs ?? []),
@@ -223,6 +226,7 @@ final class AppContainer {
         self.apiKeyProviders = apiKeyProviders
         self.notificationSettings = notificationSettings
         self.softLimitSettings = softLimitSettings
+        self.accountRecommendationSettings = accountRecommendationSettings
         let softLimitCoordinator = SoftLimitCoordinator(
             settings: softLimitSettings,
             adapters: [CodexSoftLimitAdapter()],
@@ -243,19 +247,34 @@ final class AppContainer {
         )
         self.usageTimer = usageTimer
         dataStore.isRefreshSuspended = { [weak usageTimer] in usageTimer?.isRunning(providerID: $0) == true }
+        let quotaResetReminders = QuotaResetReminders()
         dataStore.onRefreshOutcome = { [weak telemetry, weak softLimitCoordinator] providerID, outcome, category, trigger, degraded in
             telemetry?.record(providerID: providerID, outcome: outcome, category: category, trigger: trigger, degraded: degraded)
-            if outcome == .failed { softLimitCoordinator?.invalidate(providerID: providerID) }
+            if outcome == .failed {
+                quotaResetReminders.refreshFailed(for: providerID, category: category)
+                softLimitCoordinator?.invalidate(providerID: providerID)
+            }
         }
         softLimitSettings.onChange = { [weak softLimitCoordinator] in softLimitCoordinator?.settingsDidChange() }
         dataStore.onQuotaInvalidated = { [weak softLimitCoordinator, weak usageTimer] providerIDs in
+            quotaResetReminders.invalidate(providerIDs)
             softLimitCoordinator?.accountsDidChange(providerIDs)
             usageTimer?.invalidate(providerIDs: providerIDs)
         }
-        dataStore.onFreshSnapshot = { [weak softLimitCoordinator, weak usageTimer] snapshot, descriptors, trigger in
+        dataStore.onFreshSnapshot = {
+            [
+                weak softLimitCoordinator, weak usageTimer, weak accountProfiles,
+                weak accountRecommendationSettings, weak dataStore
+            ] snapshot, descriptors, trigger in
+            quotaResetReminders.receivedSnapshot(snapshot)
             softLimitCoordinator?.receive(snapshot, descriptors: descriptors)
             Task { [weak softLimitCoordinator] in await softLimitCoordinator?.check(providerID: snapshot.providerID) }
             usageTimer?.receive(snapshot, trigger: trigger)
+            if let accountProfiles, let accountRecommendationSettings, let dataStore {
+                Self.observeAccountRecommendationSession(
+                    snapshot, profiles: accountProfiles, dataStore: dataStore,
+                    settings: accountRecommendationSettings, at: .now)
+            }
         }
         self.layout = layout
         self.dataStore = dataStore
@@ -289,6 +308,12 @@ final class AppContainer {
         Self.configureQuotaNotificationNames(dataStore: dataStore, accounts: accounts, profiles: accountProfiles) { [weak self] in
             self?.accountProfileID(for: $0)
         }
+        quotaResetReminders.observe(settings: notificationSettings, dataStore: dataStore, enablement: enablement)
+        dataStore.configureCodexCreditReminders(
+            scheduler: ScheduledReminders(prefix: CodexCreditExpiryReminders.prefix))
+        codexResetClaim.onUnavailable = { [weak dataStore] cardID, credits in
+            dataStore?.codexCreditsUnavailable(cardID: cardID, credits: credits)
+        }
         resetWatchCoordinator.observeActivity { [layout, resetWatchNotifications] in
             resetWatchNotifications.configurationDidChange()
             return Self.needsResetWatch(
@@ -310,10 +335,7 @@ final class AppContainer {
             scheduleChanged: { [weak self] in self?.nextUsageTimerCheckAt = $0 }
         ) { [weak usageTimer, weak dataStore] in
             guard let usageTimer, let dataStore else { return }
-            AppLog.info(.refresh, "Checking usage timer reset times (every 15 minutes)")
-            await UsageTimerCheckSchedule.refreshAccounts(usageTimer.requestScheduledCheck()) { providerID in
-                await dataStore.refresh(providerID: providerID, force: true, trigger: .weeklyTimerCheck)
-            }
+            await UsageTimerCheckSchedule.checkAccounts(router: usageTimer, dataStore: dataStore)
         }
         localAPI.start()
         softLimitCoordinator.start()
@@ -328,15 +350,16 @@ final class AppContainer {
     }
 
     var hasRunningBackgroundProcesses: Bool {
-        tokscaleSync.isRunning || usageTimer.hasPendingWork
+        popover.hasRunningAccountSignIn || tokscaleSync.isRunning || usageTimer.hasPendingWork
     }
 
-    func shutdownBackgroundProcesses() async {
+    func shutdownBackgroundProcesses(signIns: [Task<Void, Never>]) async {
         refreshTask.task?.cancel()
         usageTimerCheckTask.task?.cancel()
         softLimitCoordinator.stop()
         async let timer: Void = usageTimer.shutdown()
         async let tokscale: Void = tokscaleSync.shutdown()
+        for task in signIns { await task.value }
         _ = await (timer, tokscale)
     }
 
@@ -479,12 +502,22 @@ final class AppContainer {
         await resetWatchTask?.value
     }
 
-    /// 단일 카드 사용자 새로 고침 — Claude managed binding을 먼저 반영.
+    /// 단일 카드 새로 고침 — Claude 로그인 반영 또는 미완료 Codex 복구를 먼저 재시도.
     func refresh(providerID: String, force: Bool = false) async -> WidgetDataStore.RefreshOutcome {
         guard !accountSwitch.blocksRefresh(for: providerID) else { return .skipped }
         if ProviderAccountID.family(of: providerID) == "claude" {
             await ProviderRefreshContext.$isManual.withValue(true) {
                 await reconcileExternalClaudeAuthenticationAndRefreshCatalog()
+            }
+        } else if ProviderAccountID.family(of: providerID) == "codex" {
+            let transaction = try? accountProfiles.pendingIdentityReplacement()
+            if Self.shouldRetryCodexReconciliation(
+                for: providerID, transaction: transaction, in: accountProfiles, to: dataStore,
+                profileIDsByCard: accountProfileIDsByCardID)
+            {
+                await ProviderRefreshContext.$isManual.withValue(true) {
+                    await reconcileExternalClaudeAuthenticationAndRefreshCatalog(codexRetryCardID: providerID)
+                }
             }
         }
         guard !accountSwitch.blocksRefresh(for: providerID) else { return .skipped }
@@ -498,7 +531,9 @@ final class AppContainer {
         return outcome
     }
 
-    private func reconcileExternalClaudeAuthentication() async -> Result<Bool, Error>? {
+    private func reconcileExternalClaudeAuthentication(
+        codexRetryCardID: String?, observeCodexProfile: (String) -> Void
+    ) async -> Result<Bool, Error>? {
         while ProviderRefreshContext.isManual && isReconcilingExternalClaudeAuthentication && !Task.isCancelled {
             await withCheckedContinuation { authenticationReconciliationWaiters.append($0) }
         }
@@ -514,40 +549,161 @@ final class AppContainer {
         guard let ticket = await workQueue.acquire("accounts:reconcile") else { return nil }
         defer { workQueue.finish(ticket) }
         guard !Task.isCancelled, !accountSwitch.isSwitching else { return nil }
+        let initialRecord = try? accountProfiles.pendingIdentityReplacement()
+        if let codexRetryCardID,
+            !Self.shouldRetryCodexReconciliation(
+                for: codexRetryCardID, transaction: initialRecord, in: accountProfiles, to: dataStore,
+                profileIDsByCard: accountProfileIDsByCardID)
+        {
+            return nil
+        }
+        let codexRecoveryOnly = codexRetryCardID != nil
+        if let initialRecord, let owner = accountProfiles.profile(id: initialRecord.profileID), owner.family == "codex"
+        {
+            observeCodexProfile(owner.id)
+        }
         do {
-            switch try await AccountCredentialImporter()
-                .reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: accountProfiles) {
+            let importer = AccountCredentialImporter()
+            let result: AccountCredentialImporter.ExternalReauthenticationResult
+            if codexRecoveryOnly {
+                result = try await importer.reconcileCodexIdentityReplacementAfterStartup(in: accountProfiles)
+            } else {
+                result = try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: accountProfiles)
+            }
+            switch result {
             case .updated(let profileID):
-                AppDiagnostics.record(.accountReconcile, result: .success, providerID: "claude")
-                AppLog.info(.auth, "external Claude reauthentication updated selected profile (\(profileID.prefix(8))…)")
+                let family = accountProfiles.profile(id: profileID)?.family ?? "claude"
+                AppDiagnostics.record(.accountReconcile, result: .success, providerID: family)
+                AppLog.info(.auth, "account authentication reconciliation updated \(family) profile (\(profileID.prefix(8))…)")
                 return .success(true)
             case .unchanged:
-                AppDiagnostics.record(.accountReconcile, result: .success, providerID: "claude")
+                AppDiagnostics.record(.accountReconcile, result: .success, providerID: codexRecoveryOnly ? "codex" : "claude")
                 return .success(false)
             case .noUsableAuthentication:
                 return .success(false)
             }
         } catch {
-            AppDiagnostics.failure(.accountReconcile, error: error, providerID: "claude",
-                                   localContext: "External Claude reauthentication reconciliation failed")
+            let family = Self.reconciliationFamily(
+                for: error, codexRecoveryOnly: codexRecoveryOnly, in: accountProfiles,
+                journal: Result { try accountProfiles.pendingIdentityReplacement() })
+            AppDiagnostics.failure(
+                .accountReconcile, error: error, providerID: family,
+                localContext: "Account authentication reconciliation failed")
             return .failure(error)
         }
     }
 
-    /// 사용량 조회 결과와 별도로 외부 Claude 로그인 반영 상태 게시.
-    func reconcileExternalClaudeAuthenticationAndRefreshCatalog() async {
+    static func reconciliationFamily(
+        for error: Error, codexRecoveryOnly: Bool, in accountProfiles: AccountProfilesStore,
+        journal: Result<AccountIdentityReplacement?, Error>
+    ) -> String? {
+        if codexRecoveryOnly || error is CodexAuthError { return "codex" }
+        if error is ClaudeAuthError { return "claude" }
+        if case .failure = journal, case AccountIdentityReplacementError.invalidTransaction = error { return nil }
+        let transaction = try? journal.get()
+        return transaction.flatMap { accountProfiles.profile(id: $0.profileID)?.family } ?? "claude"
+    }
+
+    static func shouldRetryCodexReconciliation(
+        for cardID: String, transaction: AccountIdentityReplacement?, in profiles: AccountProfilesStore,
+        to dataStore: WidgetDataStore, profileIDsByCard: [String: String]
+    ) -> Bool {
+        if let transaction, let owner = profiles.profile(id: transaction.profileID), owner.family == "codex" {
+            return AccountUsageCardPlanner.statusCardID(for: owner, profileIDsByCard: profileIDsByCard) == cardID
+        }
+        return dataStore.reconciliationFailure(for: cardID) != nil
+    }
+
+    /// 사용량 조회와 별도로 계정 복구·외부 Claude 로그인 반영 상태 게시.
+    func reconcileExternalClaudeAuthenticationAndRefreshCatalog(codexRetryCardID: String? = nil) async {
+        let codexRecoveryOnly = codexRetryCardID != nil
+        var initialCodexProfileID: String?
         let generation = accountSwitch.generation
-        guard let result = await reconcileExternalClaudeAuthentication(), !Task.isCancelled else { return }
+        guard
+            let result = await Self.reconcileAndRefreshAccountCatalog(
+                in: accountProfiles,
+                reconcile: {
+                    await reconcileExternalClaudeAuthentication(codexRetryCardID: codexRetryCardID) {
+                        initialCodexProfileID = $0
+                    }
+                },
+                refreshCatalog: { refreshAccountCatalog() }
+            )
+        else { return }
+        Self.publishAccountReconciliation(
+            result, codexRecoveryOnly: codexRecoveryOnly, in: accountProfiles, to: dataStore,
+            accountSwitch: accountSwitch, startedAt: generation, profileIDsByCard: accountProfileIDsByCardID,
+            codexRetryCardID: codexRetryCardID, previousCodexProfileID: initialCodexProfileID)
+    }
+
+    static func publishAccountReconciliation(
+        _ result: Result<Bool, Error>, codexRecoveryOnly: Bool, in accountProfiles: AccountProfilesStore,
+        to dataStore: WidgetDataStore, accountSwitch: AccountSwitchCoordinator, startedAt generation: Int,
+        profileIDsByCard: [String: String] = [:], codexRetryCardID: String? = nil, previousCodexProfileID: String? = nil
+    ) {
+        guard !Task.isCancelled, !accountSwitch.isSwitching, accountSwitch.generation == generation else { return }
+        let journal = Result { try accountProfiles.pendingIdentityReplacement() }
+        if case .success = journal { dataStore.accountReconciliationNotice = nil }
+        let family: String
         let failure: ProviderRefreshFailure?
         switch result {
         case .success(let updated):
-            if updated { refreshAccountCatalog() }
+            let pending: AccountIdentityReplacement?
+            do {
+                pending = try journal.get()
+            } catch {
+                dataStore.accountReconciliationNotice = UserFacingErrors.message(error)
+                return
+            }
+            if let pending, codexRecoveryOnly || !updated {
+                guard codexRecoveryOnly, accountProfiles.profile(id: pending.profileID)?.family == "claude"
+                else { return }
+            }
+            family = codexRecoveryOnly ? "codex" : "claude"
             failure = nil
         case .failure(let error):
-            failure = Self.externalClaudeReconciliationFailure(for: error)
+            guard
+                let owner = reconciliationFamily(
+                    for: error, codexRecoveryOnly: codexRecoveryOnly, in: accountProfiles, journal: journal)
+            else {
+                dataStore.accountReconciliationNotice = UserFacingErrors.message(error)
+                return
+            }
+            family = owner
+            failure = externalClaudeReconciliationFailure(for: error, family: family)
         }
-        Self.applyExternalClaudeReconciliationError(
-            failure, to: dataStore, accountSwitch: accountSwitch, startedAt: generation)
+        func cardID(for profileID: String) -> String? {
+            guard let profile = accountProfiles.profile(id: profileID), profile.family == "codex" else { return nil }
+            return AccountUsageCardPlanner.statusCardID(for: profile, profileIDsByCard: profileIDsByCard)
+        }
+        func clearRecoveredCodexFailure() {
+            if let previousCodexProfileID {
+                if let card = cardID(for: previousCodexProfileID) {
+                    dataStore.setAccountReconciliationFailure(nil, for: card)
+                }
+            } else {
+                dataStore.clearCodexReconciliationFailure(for: codexRetryCardID)
+            }
+        }
+        if family == "codex" {
+            guard let failure else {
+                clearRecoveredCodexFailure()
+                return
+            }
+            let pending = try? journal.get()
+            if let profileID = previousCodexProfileID ?? pending?.profileID {
+                guard let card = cardID(for: profileID) else {
+                    dataStore.accountReconciliationNotice = failure.localizedMessage
+                    return
+                }
+                dataStore.setAccountReconciliationFailure(failure, for: card)
+            } else {
+                dataStore.setAccountReconciliationFailure(failure, for: codexRetryCardID ?? "codex")
+            }
+        } else {
+            if case .success(nil) = journal { clearRecoveredCodexFailure() }
+            dataStore.setAccountReconciliationFailure(failure, for: family)
+        }
     }
 
     /// account runtime은 한 provider의 대체 view — Customize 마스터 토글은 family 전체 카드를 함께 on/off.
