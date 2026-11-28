@@ -6,16 +6,22 @@ import XCTest
 final class CodexCreditExpiryReminderTests: XCTestCase {
     private let start = Date(timeIntervalSince1970: 1_800_000_000)
 
-    @MainActor private final class Center {
+    @MainActor final class Center {
         var now: Date
         var requests: [String: ScheduledReminder] = [:]
+        var nextPendingRead: XCTestExpectation?
         var attempts = 0
         var capacity = Int.max
         init(_ now: Date) { self.now = now }
 
         func scheduler() -> ScheduledReminders {
             ScheduledReminders(
-                prefix: CodexCreditExpiryReminders.prefix, now: { self.now }, pending: { Array(self.requests.values) },
+                prefix: CodexCreditExpiryReminders.prefix, now: { self.now },
+                pending: {
+                    self.nextPendingRead?.fulfill()
+                    self.nextPendingRead = nil
+                    return Array(self.requests.values)
+                },
                 schedule: { reminder, current in
                     guard current() else { return }
                     self.attempts += 1
@@ -24,13 +30,13 @@ final class CodexCreditExpiryReminderTests: XCTestCase {
         }
     }
 
-    private func defaults() -> UserDefaults {
+    func defaults() -> UserDefaults {
         let suite = "EgasuTests.CreditExpiry.\(UUID())"
         addTeardownBlock { UserDefaults().removePersistentDomain(forName: suite) }
         return UserDefaults(suiteName: suite)!
     }
 
-    private func snapshot(count: Int, expiries: [Date], observed: Date? = nil, card: String = "codex")
+    func snapshot(count: Int, expiries: [Date], observed: Date? = nil, card: String = "codex")
         -> ProviderSnapshot
     {
         ProviderSnapshot(
@@ -43,7 +49,7 @@ final class CodexCreditExpiryReminderTests: XCTestCase {
             quotaObservedAt: observed)
     }
 
-    private func auth(
+    func auth(
         subject: String, workspace: String = "workspace", source: CodexAuthState.Source, generation: Int = 1
     ) throws -> CodexAuthState {
         let payload = try JSONSerialization.data(withJSONObject: ["sub": subject, "iat": generation])
@@ -51,7 +57,7 @@ final class CodexCreditExpiryReminderTests: XCTestCase {
         return CodexAuthState(auth: CodexAuth(tokens: tokens), source: source)
     }
 
-    private func verified(_ snapshot: ProviderSnapshot, using state: CodexAuthState) throws -> ProviderSnapshot {
+    func verified(_ snapshot: ProviderSnapshot, using state: CodexAuthState) throws -> ProviderSnapshot {
         let binding = try XCTUnwrap(CodexResetClaimBinding(authState: state))
         var reading = snapshot
         reading.codexResetClaimBinding = binding

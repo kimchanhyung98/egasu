@@ -21,14 +21,12 @@ OpenAI API Platform 조직이 보고한 오늘 포함 최근 30일의 비용을 
 
 ## 표시 기준
 
-![OpenAI API 카드의 최근 30일 비용, 조회 범위, 크레딧 잔액 및 마지막 조회 시각](/docs/assets/openai-api-costs.png)
-
-*테스트용 계정의 프로젝트 `proj_demo` 표시 예시.*
-
 - **Last 30 Days** — 일별 비용을 통화별로 합산.
   1센트 미만 금액과 음수 조정액도 API가 반환한 정밀도로 표시.
   비용 항목을 받지 못하면 **No costs reported**, 0이 보고되면 해당 통화와 0 표시.
 - **Billing Scope** — 조직 전체 또는 조회한 프로젝트 ID.
+  긴 프로젝트 목록은 대시보드와 메뉴 막대에서 일부 생략.
+  전체 ID는 **Accounts → OpenAI API → Edit Billing Connection… → Project IDs**에서 확인·편집.
 - **Credit Balance** — 비용 응답은 크레딧 잔액과 만료일을 제공하지 않아 확인 불가.
 - **Last Updated** — 마지막으로 모든 페이지를 조회한 시각.
   같은 키와 조회 범위에서 새로고침이 실패하면 마지막 정상 결과와 현재 오류 표시.

@@ -358,5 +358,6 @@
 "No active QwenCloud personal Token Plan." = "有効な QwenCloud 個人 Token Plan がありません。";
 "QwenCloud did not report credit usage for this period." = "QwenCloud からこの期間のクレジット使用率が返されませんでした。";
 "The QwenCloud CLI could not retrieve the subscription. Check the CLI and refresh." = "QwenCloud CLI でサブスクリプションを取得できませんでした。CLI を確認してから更新してください。";
-"Sign in to the QwenCloud CLI using Keychain or encrypted file storage and refresh." = "キーチェーンまたは暗号化ファイルを使用して QwenCloud CLI にログインし、更新してください。";
+"Move the credentials file to a new, private location outside the QwenCloud CLI configuration folder. If you need to sign in again, use Keychain or encrypted file storage." = "credentials ファイルを QwenCloud CLI の設定フォルダの外にある、自分だけがアクセスできる新しい場所に移して保管してください。再ログインが必要な場合は、キーチェーンまたは暗号化ファイルを使用してください。";
+"Unset QWENCLOUD_KEYRING=plaintext and restart egasu." = "QWENCLOUD_KEYRING=plaintext の設定を解除し、egasu を再起動してください。";
 "QwenCloud sign-in changed while refreshing. Refresh again to use the current account." = "更新中に QwenCloud のログインが変わりました。現在のアカウントで再度更新してください。";

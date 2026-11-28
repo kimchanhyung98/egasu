@@ -79,8 +79,12 @@ final class PopoverState {
     var isAddingAccount = false
     /// 브라우저 재로그인이 진행 중인 등록 계정 — 취소 처리가 끝날 때까지 외부 클릭으로 닫지 않음.
     private(set) var signingInAgainAccountID: String?
+    /// 취소된 계정 추가의 정리가 끝날 때까지 새 추가 로그인 차단.
+    private(set) var isSigningInForNewAccount = false
     private var isTerminating = false
     @ObservationIgnored private var reSignInTask: Task<Void, Never>?
+    @ObservationIgnored private var addAccountTask: Task<Void, Never>?
+    var hasRunningAccountSignIn: Bool { reSignInTask != nil || addAccountTask != nil }
     private let displaySettings: DisplaySettingsStore
     private var selectedDashboardTab: DashboardTab
     var showsDashboardTabs: Bool { displaySettings.hasVisiblePriorityConditions }
@@ -95,7 +99,13 @@ final class PopoverState {
     /// 창 가림·키 창 상태로 추정하지 않음 — Space 전환 중 잠깐 가려지는 상태와 닫힘 구분.
     var popoverShown = false {
         didSet {
-            if !popoverShown { reSignInTask?.cancel() }
+            if !popoverShown {
+                reSignInTask?.cancel()
+                if let addAccountTask {
+                    isAddingAccount = false
+                    addAccountTask.cancel()
+                }
+            }
         }
     }
 
@@ -113,10 +123,25 @@ final class PopoverState {
         return task
     }
 
-    func beginReSignInShutdown() -> Task<Void, Never>? {
+    func startAddingAccount(operation: @escaping @MainActor () async -> Void) -> Task<Void, Never>? {
+        guard !isTerminating, popoverShown, addAccountTask == nil else { return nil }
+        isSigningInForNewAccount = true
+        let task = Task {
+            defer {
+                isSigningInForNewAccount = false
+                addAccountTask = nil
+            }
+            if !Task.isCancelled { await operation() }
+        }
+        addAccountTask = task
+        return task
+    }
+
+    func beginSignInShutdown() -> [Task<Void, Never>] {
         isTerminating = true
-        reSignInTask?.cancel()
-        return reSignInTask
+        let tasks = [reSignInTask, addAccountTask].compactMap { $0 }
+        for task in tasks { task.cancel() }
+        return tasks
     }
 
     let shareNotice = TransientNotice<Bool>(clearedValue: false, timeout: .seconds(2.5))

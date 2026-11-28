@@ -258,12 +258,12 @@ final class CodexProvider: ProviderRuntime {
 
         if authStore.needsRefresh(authState.auth) {
             // `codex` CLI가 디스크의 token을 이미 회전시켰을 수 있음 — live credential을 먼저 재판독해 최신 access token 채택 (stale 사본 refresh 시 `refresh_token_reused`, issue #516).
-            if let live = try await reloadLiveAuth(source: authState.source),
-               let liveToken = live.auth.tokens?.accessToken, !liveToken.isEmpty {
-                try validateTimerIdentity(live.auth, expectedAccountKey: expectedAccountKey)
-                authState = live
-                accessToken = liveToken
-            }
+            guard let live = try await reloadLiveAuth(source: authState.source),
+                let liveToken = live.auth.tokens?.accessToken, !liveToken.isEmpty
+            else { throw CodexAuthError.credentialsChanged }
+            try validateTimerIdentity(live.auth, expectedAccountKey: expectedAccountKey)
+            authState = live
+            accessToken = liveToken
         }
 
         if authStore.needsRefresh(authState.auth),
@@ -333,13 +333,26 @@ final class CodexProvider: ProviderRuntime {
         }
 
         MetricLine.appendNoDataIfNeeded(&mapped.lines)
-        if authStore.expectedIdentityKey != nil {
-            guard let live = try await reloadLiveAuth(source: authState.source) else {
+        let binding = CodexResetClaimBinding(authState: authState)
+        guard let live = try await reloadLiveAuth(source: authState.source) else {
+            throw CodexAuthError.credentialsChanged
+        }
+        try authStore.validateAccountIdentity(live.auth)
+        if let accountKey = binding?.verifiedAccountKey {
+            let liveBinding = CodexResetClaimBinding(authState: live)
+            // 자체 갱신으로 신원을 처음 확인하고 저장만 실패하면 바뀌지 않은 원본만 허용.
+            guard let liveBinding,
+                liveBinding.verifiedAccountKey == accountKey
+                    || (liveBinding.verifiedAccountKey == nil
+                        && live.auth == authState.sourceText.flatMap(CodexAuthStore.parseAuth))
+            else {
                 throw CodexAuthError.credentialsChanged
             }
-            try authStore.validateAccountIdentity(live.auth)
+        } else if live.auth != authState.auth {
+            guard binding != nil, live.auth == authState.sourceText.flatMap(CodexAuthStore.parseAuth) else {
+                throw CodexAuthError.credentialsChanged
+            }
         }
-        let binding = CodexResetClaimBinding(authState: authState)
         var snapshot = ProviderSnapshot.make(
             provider: provider,
             plan: mapped.plan,
@@ -400,6 +413,24 @@ final class CodexProvider: ProviderRuntime {
                     accessToken: token, accountID: working.auth.tokens?.accountID)
             },
             refreshAccessToken: {
+                try UsageTimerReadContext.check()
+                guard let live = try await self.reloadLiveAuth(source: working.source),
+                    let liveToken = live.auth.tokens?.accessToken, !liveToken.isEmpty
+                else { throw CodexAuthError.credentialsChanged }
+
+                // 저장이 실패하면 메모리 인증만 갱신되므로 마지막 저장 원문의 인증도 비교.
+                let storedAuth = working.sourceText.flatMap(CodexAuthStore.parseAuth)
+                if live != working, live.auth != storedAuth {
+                    try self.validateTimerIdentity(live.auth, expectedAccountKey: expectedAccountKey)
+                    guard liveToken != accessToken,
+                        let accountKey = CodexResetClaimBinding(authState: working)?.verifiedAccountKey,
+                        CodexResetClaimBinding(authState: live)?.verifiedAccountKey == accountKey
+                    else { throw CodexAuthError.credentialsChanged }
+                    working = live
+                    return liveToken
+                }
+
+                working.sourceText = live.sourceText
                 guard let refreshToken = working.auth.tokens?.refreshToken, !refreshToken.isEmpty else {
                     throw CodexAuthError.tokenExpired
                 }
@@ -410,6 +441,8 @@ final class CodexProvider: ProviderRuntime {
                 } catch let error as CodexWeeklyTimerProviderError {
                     throw error
                 } catch let error as CodexAuthError {
+                    throw error
+                } catch let error as CodexCredentialSourceReadError {
                     throw error
                 } catch {
                     try ProviderAuthRetry.rethrowCancellation(error)
@@ -429,10 +462,10 @@ final class CodexProvider: ProviderRuntime {
         return try await loadOffMainActor { [authStore] in
             switch source {
             case .file(let path):
-                return authStore.loadAuth(at: path)
+                return try authStore.readAuth(at: path)
             case .keychain:
                 if isResetClaim { return try authStore.loadKeychainAuth(allowInteraction: false) }
-                return authStore.loadKeychainAuth()
+                return try authStore.readKeychainAuth()
             case .accountSnapshot(let profileID):
                 return try authStore.loadAccountSnapshot(profileID: profileID, allowInteraction: allowInteraction)
             }
@@ -493,6 +526,11 @@ final class CodexProvider: ProviderRuntime {
             AppDiagnostics.failure(.credentialSave, error: CodexAuthError.credentialsChanged, providerID: provider.id,
                                    localContext: "sign-in changed during token refresh; stopping shared-source writeback")
             throw CodexAuthError.credentialsChanged
+        } catch let error as CodexCredentialSourceReadError {
+            AppDiagnostics.failure(
+                .credentialSave, error: error.underlyingError, providerID: provider.id,
+                localContext: "could not verify sign-in before saving rotated credentials")
+            throw error
         } catch {
             refreshIsDegraded = true
             AppDiagnostics.record(.credentialSave, result: .degraded, providerID: provider.id, error: error,

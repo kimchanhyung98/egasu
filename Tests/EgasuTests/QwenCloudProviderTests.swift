@@ -123,10 +123,91 @@ final class QwenCloudProviderTests: XCTestCase {
             let detectable = await provider.hasLocalCredentials()
             XCTAssertFalse(detectable)
             let snapshot = await provider.refresh()
-            XCTAssertEqual(snapshot.refreshFailure?.message, QwenCloudError.unsafeCredentialFile.rawValue)
+            let notice = L10n.withLanguage(.english) { snapshot.refreshFailure?.localizedMessage }
+            XCTAssertEqual(
+                notice,
+                "Move the credentials file to a new, private location outside the QwenCloud CLI configuration folder. "
+                    + "If you need to sign in again, use Keychain or encrypted file storage.")
             XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent("queried").path))
             XCTAssertEqual(try Data(contentsOf: credential), original)
         }
+    }
+
+    func testKeychainLogoutDuringRefreshDiscardsSuccessfulUsage() async throws {
+        let folder = try fixtureDirectory()
+        let item = folder.appendingPathComponent("keychain-item")
+        try Data().write(to: item)
+        let runner = SuccessfulUsageRunner { try FileManager.default.removeItem(at: item) }
+        let provider = try stubProvider(folder: folder, runner: runner) {
+            FileManager.default.fileExists(atPath: item.path)
+        }
+
+        let snapshot = await provider.refresh()
+        let calls = await runner.calls
+        XCTAssertEqual(calls, 1)
+        XCTAssertNotNil(snapshot.refreshFailure)
+        XCTAssertNil(snapshot.line(label: "Weekly"))
+        XCTAssertNil(snapshot.liveQuotaObservedAt)
+    }
+
+    func testRemovingCLIDuringRefreshDiscardsSuccessfulUsage() async throws {
+        let folder = try fixtureDirectory()
+        let runner = SuccessfulUsageRunner {
+            try FileManager.default.removeItem(at: folder.appendingPathComponent("qwencloud"))
+        }
+        let provider = try stubProvider(folder: folder, runner: runner) { true }
+
+        let snapshot = await provider.refresh()
+        let calls = await runner.calls
+        XCTAssertEqual(calls, 1)
+        XCTAssertNotNil(snapshot.refreshFailure)
+        XCTAssertNil(snapshot.line(label: "Weekly"))
+        XCTAssertNil(snapshot.liveQuotaObservedAt)
+    }
+
+    func testUnknownKeychainStillAcceptsFreshUsageFromTheCLI() async throws {
+        let folder = try fixtureDirectory()
+        let runner = SuccessfulUsageRunner()
+        let provider = try stubProvider(folder: folder, runner: runner) { nil }
+
+        let detected = await provider.hasLocalCredentials()
+        XCTAssertFalse(detected)
+        let snapshot = await provider.refresh()
+        let calls = await runner.calls
+        XCTAssertEqual(calls, 1)
+        XCTAssertNil(snapshot.refreshFailure)
+        XCTAssertNotNil(snapshot.line(label: "Weekly"))
+        XCTAssertNotNil(snapshot.liveQuotaObservedAt)
+        XCTAssertNil(snapshot.producedByIdentityKey)
+    }
+
+    func testPlaintextModeWithEncryptedFileSkipsDetectionAndCommand() async throws {
+        let folder = try fixtureDirectory()
+        let credential = folder.appendingPathComponent("credentials")
+        let original = Data(#"{"version":1,"salt":"s","nonce":"n","ciphertext":"c"}"#.utf8)
+        try original.write(to: credential)
+        let runner = SuccessfulUsageRunner()
+        let provider = try stubProvider(folder: folder, runner: runner, keyring: "plaintext") { true }
+
+        let detected = await provider.hasLocalCredentials()
+        XCTAssertFalse(detected)
+        let snapshot = await provider.refresh()
+        let calls = await runner.calls
+        XCTAssertEqual(calls, 0)
+        XCTAssertEqual(snapshot.refreshFailure?.message, "Unset QWENCLOUD_KEYRING=plaintext and restart egasu.")
+        XCTAssertNil(snapshot.liveQuotaObservedAt)
+        XCTAssertEqual(try Data(contentsOf: credential), original)
+    }
+
+    private func stubProvider(
+        folder: URL, runner: SuccessfulUsageRunner, keyring: String = "",
+        hasKeychainItem: @escaping @Sendable () -> Bool?
+    ) throws -> QwenCloudProvider {
+        try FileManager.default.createSymbolicLink(
+            at: folder.appendingPathComponent("qwencloud"), withDestinationURL: URL(fileURLWithPath: "/usr/bin/true"))
+        var cli = fixtureCLI(folder, keyring: keyring, hasKeychainItem: hasKeychainItem)
+        cli.runner = runner
+        return QwenCloudProvider(cli: cli)
     }
 
     func testFailedUsageLookupIsDistinguishedFromAMissingWindow() {
@@ -177,6 +258,25 @@ final class QwenCloudProviderTests: XCTestCase {
             },
             hasKeychainItem: hasKeychainItem
         )
+    }
+}
+
+private actor SuccessfulUsageRunner: StreamingProcessRunning {
+    private(set) var calls = 0
+    private let duringRequest: @Sendable () throws -> Void
+
+    init(duringRequest: @escaping @Sendable () throws -> Void = {}) {
+        self.duringRequest = duringRequest
+    }
+
+    func run(
+        _ request: StreamingProcessRequest, onOutput: @escaping @Sendable (String) -> Void
+    ) async throws -> StreamingProcessResult {
+        calls += 1
+        try duringRequest()
+        return .init(
+            exitCode: 0,
+            output: #"{"individual":{"edition":"individual","status":"active","weeklyCredits":{"usedPct":17}}}"#)
     }
 }
 

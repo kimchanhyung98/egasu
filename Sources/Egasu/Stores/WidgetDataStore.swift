@@ -224,20 +224,43 @@ final class WidgetDataStore {
         updateCodexCreditReminders()
     }
 
-    func codexCreditsUnavailable(cardID: String, credits: CodexResetClaimService.UnavailableCredits) {
-        guard let creditExpiryReminders, let snapshot = localSnapshots[cardID],
-            let binding = snapshot.codexResetClaimBinding, let account = creditReminderAccount(snapshot)
-        else { return }
+    func codexCreditsUnavailable(cardID _: String, credits: CodexResetClaimService.UnavailableCredits) {
+        guard let creditExpiryReminders else { return }
         switch credits {
-        case .credit(let credit) where credit.binding == binding:
+        case .credit(let credit, let expiries):
+            guard let account = credit.binding.verifiedAccountKey else { return }
             creditExpiryReminders.consumed(
                 account: account, expiry: credit.expiry, creditID: credit.creditID,
-                remaining: credit.remainingAtExpiry, at: now())
-        case .expiry(let confirmedBinding, let date) where confirmedBinding == binding:
+                remaining: credit.remainingAtExpiry, confirmedExpiries: expiries,
+                snapshots: codexSnapshots(for: account), at: now())
+        case .replayed(let credit, let expiries):
+            guard let account = credit.binding.verifiedAccountKey else { return }
+            if let expiries {
+                creditExpiryReminders.confirmedInventory(
+                    account: account, expiries: expiries, selectedExpiry: credit.expiry, consumedID: credit.creditID,
+                    snapshots: codexSnapshots(for: account), at: now())
+            } else {
+                // 재고가 불명확하면 사용 전 목록으로 입증한 상한까지만 예약.
+                creditExpiryReminders.consumed(
+                    account: account, expiry: credit.expiry, creditID: credit.creditID,
+                    remaining: credit.remainingAtExpiry ?? 0, at: now())
+            }
+        case .expiry(let binding, let date):
+            guard let account = binding.verifiedAccountKey else { return }
             creditExpiryReminders.noneAvailable(account: account, expiry: date, at: now())
-        default: return
+        case .emptyInventory(let binding, let selected):
+            guard let account = binding.verifiedAccountKey else { return }
+            creditExpiryReminders.confirmedInventory(
+                account: account, expiries: [], selectedExpiry: selected, snapshots: codexSnapshots(for: account),
+                at: now())
         }
         updateCodexCreditReminders()
+    }
+
+    private func codexSnapshots(for account: String) -> [ProviderSnapshot] {
+        localSnapshots.values.filter {
+            ProviderAccountID.family(of: $0.providerID) == "codex" && creditReminderAccount($0) == account
+        }
     }
 
     private func creditReminderAccount(_ snapshot: ProviderSnapshot) -> String? {

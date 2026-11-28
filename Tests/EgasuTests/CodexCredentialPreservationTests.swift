@@ -90,6 +90,219 @@ final class CodexCredentialPreservationTests: XCTestCase {
         XCTAssertEqual(http.requests.map(\.url), [CodexUsageClient.usageURL, CodexUsageClient.refreshURL])
     }
 
+    func testProactiveRefreshStopsBeforeNetworkWhenTheOriginalOAuthLoginIsGone() async throws {
+        let original = try retryCredential(version: 0, expiresIn: 60)
+        let home = "/proactive-auth-revalidation"
+        let path = "\(home)/auth.json"
+        let scenarios: [(name: String, replacement: String?)] = [
+            ("OAuth login removed", nil),
+            ("OAuth login replaced by API key", #"{"OPENAI_API_KEY":"fixture-key"}"#),
+            ("OAuth access token emptied", #"{"tokens":{"access_token":"","refresh_token":"refresh-0"}}"#)
+        ]
+        for (name, replacement) in scenarios {
+            let files = FakeFiles([path: original.text])
+            let store = CodexAuthStore(
+                environment: FakeEnvironment(), files: files, keychain: FakeKeychain(), scope: .home(path: home),
+                now: {
+                    // 첫 만료 확인은 초기 인증 읽기와 출처 재확인 사이에 실행.
+                    files.files[path] = replacement
+                    return Self.retryInstant
+                }
+            )
+            let http = RoutingHTTPClient { _ in
+                HTTPResponse(
+                    statusCode: 200, headers: [:],
+                    body: Data(
+                        #"{"access_token":"rotated-access","refresh_token":"rotated-refresh"}"#.utf8))
+            }
+
+            let snapshot = await makeProvider(store: store, http: http).refresh()
+
+            XCTAssertEqual(http.requests.map { "\($0.method) \($0.url)" }, [], name)
+            XCTAssertEqual(
+                snapshot.errorPresentation, UserFacingErrors.presentation(CodexAuthError.credentialsChanged), name)
+            XCTAssertNil(snapshot.liveQuotaObservedAt, name)
+            XCTAssertEqual(files.files[path], replacement, name)
+        }
+    }
+
+    func testUnauthorizedUsageRetryReusesAnExternalRotation() async throws {
+        let original = try retryCredential(version: 1)
+        let rotated = try retryCredential(version: 2)
+
+        for status in [401, 403] {
+            let files = FakeFiles([Self.path: original.text])
+            let store = CodexAuthStore(
+                environment: FakeEnvironment(), files: files, keychain: FakeKeychain(),
+                scope: .home(path: "/credential-preservation"), now: { Self.retryInstant }
+            )
+            let http = RoutingHTTPClient { request in
+                if request.url == CodexUsageClient.usageURL,
+                    request.headers["Authorization"] == "Bearer \(original.token)"
+                {
+                    files.files[Self.path] = rotated.text
+                    return HTTPResponse(statusCode: status, headers: [:], body: Data())
+                }
+                if request.url == CodexUsageClient.refreshURL { return Self.reusedTokenResponse }
+                return Self.retryUsageResponse(request)
+            }
+
+            let snapshot = await makeProvider(store: store, http: http).refresh()
+
+            XCTAssertNil(snapshot.errorCategory, "HTTP \(status)")
+            XCTAssertNotNil(snapshot.line(label: "Session"), "HTTP \(status)")
+            XCTAssertEqual(
+                http.requests.filter { $0.url == CodexUsageClient.usageURL }.map { $0.headers["Authorization"] },
+                ["Bearer \(original.token)", "Bearer \(rotated.token)"], "HTTP \(status)"
+            )
+            XCTAssertFalse(http.requests.contains { $0.method == "POST" }, "HTTP \(status)")
+            XCTAssertEqual(files.files[Self.path].map { Data($0.utf8) }, Data(rotated.text.utf8))
+        }
+    }
+
+    func testUnauthorizedUsageRetryStopsWhenTheOriginalLoginIsGoneOrChangedAccounts() async throws {
+        let original = try retryCredential(version: 1)
+        let rotated = try retryCredential(version: 2)
+        let otherUser = try retryCredential(version: 2, subject: "other-user")
+        let otherWorkspace = try retryCredential(version: 2, workspace: "other-workspace")
+        let cases: [(name: String, replacement: String?, moved: String?)] = [
+            ("different user in the same workspace", otherUser.text, nil),
+            ("same user in a different workspace", otherWorkspace.text, nil),
+            ("deleted login", nil, nil),
+            ("login moved to a different source", nil, rotated.text)
+        ]
+        for scenario in cases {
+            let files = FakeFiles()
+            let store = CodexAuthStore(
+                environment: FakeEnvironment(), files: files, keychain: FakeKeychain(), now: { Self.retryInstant }
+            )
+            let originalPath = try XCTUnwrap(store.authPaths().first)
+            let alternatePath = try XCTUnwrap(store.authPaths().dropFirst().first)
+            files.files[originalPath] = original.text
+            let http = RoutingHTTPClient { request in
+                if request.url == CodexUsageClient.usageURL,
+                    request.headers["Authorization"] == "Bearer \(original.token)"
+                {
+                    files.files[originalPath] = scenario.replacement
+                    files.files[alternatePath] = scenario.moved
+                    return HTTPResponse(statusCode: 401, headers: [:], body: Data())
+                }
+                if request.url == CodexUsageClient.refreshURL { return Self.reusedTokenResponse }
+                return Self.retryUsageResponse(request)
+            }
+
+            let snapshot = await makeProvider(store: store, http: http).refresh()
+
+            XCTAssertNotNil(snapshot.errorCategory, scenario.name)
+            XCTAssertNil(snapshot.liveQuotaObservedAt, scenario.name)
+            XCTAssertEqual(http.requests.map(\.url), [CodexUsageClient.usageURL], scenario.name)
+            XCTAssertEqual(files.files[originalPath], scenario.replacement, scenario.name)
+            XCTAssertEqual(files.files[alternatePath], scenario.moved, scenario.name)
+        }
+    }
+
+    func testUnauthorizedUsageRetryStillRefreshesAnUnchangedLogin() async throws {
+        let original = try retryCredential(version: 1)
+        let rotated = try retryCredential(version: 2)
+        let files = FakeFiles([Self.path: original.text])
+        let store = CodexAuthStore(
+            environment: FakeEnvironment(), files: files, keychain: FakeKeychain(),
+            scope: .home(path: "/credential-preservation"), now: { Self.retryInstant }
+        )
+        let rotatedResponse = try JSONEncoder().encode([
+            "access_token": rotated.token, "refresh_token": "refresh-2"
+        ])
+        let http = RoutingHTTPClient { request in
+            if request.url == CodexUsageClient.usageURL,
+                request.headers["Authorization"] == "Bearer \(original.token)"
+            {
+                return HTTPResponse(statusCode: 401, headers: [:], body: Data())
+            }
+            if request.url == CodexUsageClient.refreshURL {
+                return HTTPResponse(statusCode: 200, headers: [:], body: rotatedResponse)
+            }
+            return Self.retryUsageResponse(request)
+        }
+
+        let snapshot = await makeProvider(store: store, http: http).refresh()
+
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertEqual(
+            http.requests.map(\.url),
+            [
+                CodexUsageClient.usageURL, CodexUsageClient.refreshURL,
+                CodexUsageClient.usageURL, CodexUsageClient.resetCreditsURL
+            ]
+        )
+        XCTAssertEqual(
+            http.requests.filter { $0.url == CodexUsageClient.usageURL }.map { $0.headers["Authorization"] },
+            ["Bearer \(original.token)", "Bearer \(rotated.token)"]
+        )
+        let saved = try XCTUnwrap(CodexAuthStore.parseAuth(try XCTUnwrap(files.files[Self.path])))
+        XCTAssertEqual(saved.tokens?.accessToken, rotated.token)
+        XCTAssertEqual(saved.tokens?.refreshToken, "refresh-2")
+    }
+
+    func testUnauthorizedUsageRetryKeepsTheInMemoryRotationAfterAWriteFailure() async throws {
+        let original = try retryCredential(version: 0, expiresIn: 60)
+        let firstRotation = try retryCredential(version: 1)
+        let secondRotation = try retryCredential(version: 2)
+        let firstResponse = try JSONEncoder().encode([
+            "access_token": firstRotation.token, "refresh_token": "refresh-1"
+        ])
+        let secondResponse = try JSONEncoder().encode([
+            "access_token": secondRotation.token, "refresh_token": "refresh-2"
+        ])
+        let keychain = SwitchRecoveryKeychain()
+        let service = CodexAuthStore.keychainService
+        keychain.values[service] = original.text
+        keychain.beforeWrite = { @Sendable _, text in
+            if CodexAuthStore.parseAuth(text)?.tokens?.refreshToken == "refresh-1" {
+                throw SwitchRecoveryKeychain.Failure.injected
+            }
+        }
+        let store = CodexAuthStore(
+            environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain, now: { Self.retryInstant }
+        )
+        let http = RoutingHTTPClient { request in
+            if request.url == CodexUsageClient.refreshURL {
+                let body = String(decoding: request.body ?? Data(), as: UTF8.self)
+                if body.hasSuffix("&refresh_token=refresh-0") {
+                    return HTTPResponse(statusCode: 200, headers: [:], body: firstResponse)
+                }
+                if body.hasSuffix("&refresh_token=refresh-1") {
+                    return HTTPResponse(statusCode: 200, headers: [:], body: secondResponse)
+                }
+                return Self.reusedTokenResponse
+            }
+            if request.url == CodexUsageClient.usageURL,
+                request.headers["Authorization"] != "Bearer \(secondRotation.token)"
+            {
+                return HTTPResponse(statusCode: 401, headers: [:], body: Data())
+            }
+            return Self.retryUsageResponse(request)
+        }
+
+        let snapshot = await makeProvider(store: store, http: http).refresh()
+
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertEqual(snapshot.isDegraded, true)
+        XCTAssertEqual(
+            http.requests.filter { $0.url != CodexUsageClient.resetCreditsURL }.map(\.url),
+            [
+                CodexUsageClient.refreshURL, CodexUsageClient.usageURL,
+                CodexUsageClient.refreshURL, CodexUsageClient.usageURL
+            ]
+        )
+        XCTAssertEqual(
+            http.requests.filter { $0.url == CodexUsageClient.usageURL }.map { $0.headers["Authorization"] },
+            ["Bearer \(firstRotation.token)", "Bearer \(secondRotation.token)"]
+        )
+        let saved = try XCTUnwrap(CodexAuthStore.parseAuth(try XCTUnwrap(keychain.values[service])))
+        XCTAssertEqual(saved.tokens?.accessToken, secondRotation.token)
+        XCTAssertEqual(saved.tokens?.refreshToken, "refresh-2")
+    }
+
     func testSavePreservesUnknownRootAndTokenFields() throws {
         for input in [Self.original, Self.original.utf8.map { String(format: "%02x", $0) }.joined()] {
             let files = FakeFiles([Self.path: input])
@@ -213,7 +426,36 @@ final class CodexCredentialPreservationTests: XCTestCase {
         )), as: UTF8.self)
     }
 
-    private func makeProvider(store: CodexAuthStore, http: PreservationHTTP) -> CodexProvider {
+    nonisolated static let retryInstant = Date(timeIntervalSince1970: 1_800_000_000)
+
+    nonisolated static var reusedTokenResponse: HTTPResponse {
+        HTTPResponse(statusCode: 400, headers: [:], body: Data(#"{"error":"refresh_token_reused"}"#.utf8))
+    }
+
+    nonisolated static func retryUsageResponse(_ request: HTTPRequest) -> HTTPResponse {
+        let body =
+            request.url == CodexUsageClient.resetCreditsURL
+            ? #"{"available_count":0}"#
+            : #"{"rate_limit":{"primary_window":{"used_percent":10,"limit_window_seconds":18000}}}"#
+        return HTTPResponse(statusCode: 200, headers: [:], body: Data(body.utf8))
+    }
+
+    func retryCredential(
+        version: Int, subject: String = "user", workspace: String = "workspace", expiresIn: TimeInterval = 7_200
+    ) throws -> (token: String, text: String) {
+        let payload = try JSONSerialization.data(withJSONObject: [
+            "sub": subject, "exp": Self.retryInstant.addingTimeInterval(expiresIn).timeIntervalSince1970,
+            "version": version,
+            "https://api.openai.com/auth": ["chatgpt_account_id": workspace]
+        ]).base64EncodedString().replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        let token = "e30.\(payload).signature"
+        let tokens = CodexTokens(accessToken: token, refreshToken: "refresh-\(version)", accountID: workspace)
+        let text = String(decoding: try JSONEncoder().encode(CodexAuth(tokens: tokens)), as: UTF8.self)
+        return (token, text + "\n")
+    }
+
+    func makeProvider(store: CodexAuthStore, http: any HTTPClient) -> CodexProvider {
         CodexProvider(
             authStore: store, usageClient: CodexUsageClient(http: http),
             logUsageScanner: CodexLogUsageScanner(environment: FakeEnvironment(),

@@ -23,6 +23,13 @@ final class CodexCreditExpiryReminders {
         let count: Int?
         let expiries: [Date]
 
+        init(confirmedExpiries: [Date], at date: Date) {
+            observedAt = date
+            quotaObservedAt = date
+            count = confirmedExpiries.count
+            expiries = confirmedExpiries.sorted()
+        }
+
         init(_ snapshot: ProviderSnapshot) {
             quotaObservedAt = snapshot.liveQuotaObservedAt ?? snapshot.quotaObservedAt
             observedAt = quotaObservedAt ?? snapshot.refreshedAt
@@ -81,11 +88,20 @@ final class CodexCreditExpiryReminders {
     }
 
     /// 소비 직후의 조회가 실패하거나 재시작해도 이전 캐시로 사용한 권을 다시 예약하지 않음.
-    func consumed(account: String, expiry: Date, creditID: String, remaining: Int?, at date: Date) {
+    func consumed(
+        account: String, expiry: Date, creditID: String, remaining: Int?, confirmedExpiries: [Date]? = nil,
+        snapshots: [ProviderSnapshot] = [], at date: Date
+    ) {
         let bucket = Self.bucket(account: account, expiry: expiry)
         let credit = Self.digest(creditID)
         var consumed = claims[bucket]?.creditIDs ?? []
         guard consumed.insert(credit).inserted else { return }
+        if let confirmedExpiries {
+            confirmedInventory(
+                account: account, expiries: confirmedExpiries, selectedExpiry: expiry, consumedID: creditID,
+                snapshots: snapshots, at: date)
+            return
+        }
         let previousBound = claims[bucket]?.remaining.map { max(0, $0 - 1) }
         let upperBound = [remaining, previousBound].compactMap { $0 }.min()
         claims[bucket] = Claim(at: date, expiry: expiry, remaining: upperBound, creditIDs: consumed)
@@ -99,9 +115,34 @@ final class CodexCreditExpiryReminders {
     }
 
     func noneAvailable(account: String, expiry: Date, at date: Date) {
-        let key = Self.bucket(account: account, expiry: expiry)
-        claims[key] = Claim(at: date, expiry: expiry, remaining: 0, creditIDs: [])
+        let bucket = Self.bucket(account: account, expiry: expiry)
+        claims[bucket] = Claim(at: date, expiry: expiry, remaining: 0, creditIDs: claims[bucket]?.creditIDs ?? [])
         observations[account]?.remaining.removeValue(forKey: floor(expiry.timeIntervalSince1970))
+        saveClaims()
+    }
+
+    /// 전체 목록으로 현재 계정의 예약을 교체하고 이전 관측에 적용할 만료일별 예약 상한 저장.
+    func confirmedInventory(
+        account: String, expiries: [Date], selectedExpiry: Date, consumedID: String? = nil,
+        snapshots: [ProviderSnapshot], at date: Date
+    ) {
+        let inventory = Inventory(confirmedExpiries: expiries, at: date)
+        let counts = Dictionary(grouping: expiries, by: { floor($0.timeIntervalSince1970) }).mapValues(\.count)
+        let selected = floor(selectedExpiry.timeIntervalSince1970)
+        var seconds = Set(counts.keys)
+        seconds.insert(selected)
+        if let previous = observations[account] { seconds.formUnion(previous.remaining.keys) }
+        for snapshot in snapshots {
+            seconds.formUnion(Inventory(snapshot).expiries.map { floor($0.timeIntervalSince1970) })
+        }
+        for second in seconds {
+            let expiry = Date(timeIntervalSince1970: second)
+            let bucket = Self.bucket(account: account, expiry: expiry)
+            var credits = claims[bucket]?.creditIDs ?? []
+            if selected == second, let consumedID { credits.insert(Self.digest(consumedID)) }
+            claims[bucket] = Claim(at: date, expiry: expiry, remaining: counts[second] ?? 0, creditIDs: credits)
+        }
+        observations[account] = Observation(inventory: inventory, undatedCount: 0, remaining: counts)
         saveClaims()
     }
 

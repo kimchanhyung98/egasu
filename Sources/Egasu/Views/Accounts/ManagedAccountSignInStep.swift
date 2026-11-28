@@ -65,12 +65,17 @@ struct ManagedAccountSignInStep: View {
     private var isBlocked: Bool {
         Self.blocksAdding(
             isSwitching: container.accountSwitch.isSwitching, hasUnreadableRegistry: store.hasUnreadableRegistry,
-            activeProfileCount: store.profiles(family: family).count)
+            activeProfileCount: store.profiles(family: family).count,
+            isSigningInForNewAccount: container.popover.isSigningInForNewAccount)
     }
 
-    /// 계정 전환 중이거나 목록을 읽지 못하면 추가 차단 — 공유 홈 로그인 변경 후 등록 실패 방지.
-    static func blocksAdding(isSwitching: Bool, hasUnreadableRegistry: Bool, activeProfileCount: Int) -> Bool {
-        isSwitching || hasUnreadableRegistry || activeProfileCount >= AccountProfilesStore.maxProfilesPerFamily
+    /// 이전 추가 로그인 정리·계정 전환 중이거나 목록을 읽지 못하면 추가 차단.
+    static func blocksAdding(
+        isSwitching: Bool, hasUnreadableRegistry: Bool, activeProfileCount: Int,
+        isSigningInForNewAccount: Bool = false
+    ) -> Bool {
+        isSigningInForNewAccount || isSwitching || hasUnreadableRegistry
+            || activeProfileCount >= AccountProfilesStore.maxProfilesPerFamily
     }
 
     private var primaryTitle: String {
@@ -104,13 +109,12 @@ struct ManagedAccountSignInStep: View {
 
     private func addAccount(signInAgain: Bool = false) {
         guard !isBlocked else { return }
-        phase = .signingIn
         let family = family
         let importer = AccountCredentialImporter()
 
         // 첫 계정 → Shared Runtime Home으로 공식 로그인; 추가 계정 → 새 Sign-In Workspace 범위의 공식 로그인.
         let profileID = isFirstAccount ? nil : UUID().uuidString
-        signInTask = Task {
+        let task = container.popover.startAddingAccount {
             var importingDefault = false
             var pendingWorkspace: String?
             defer {
@@ -203,6 +207,9 @@ struct ManagedAccountSignInStep: View {
                 fail(error, allowsSignInAgain: allowsSignInAgain)
             }
         }
+        guard let task else { return }
+        phase = .signingIn
+        signInTask = task
     }
 
     private func finish() {

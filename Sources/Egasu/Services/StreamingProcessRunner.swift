@@ -11,6 +11,21 @@ struct StreamingProcessLaunchPermission: Sendable {
 
     func revoke() { revoked.withLock { $0 = true } }
 
+    /// 동기 관측 반영과 자식 생성을 직렬화. 반영 실패 시 권한 회수, 같은 권한에 재진입 금지.
+    @discardableResult
+    func revokeIf(_ shouldRevoke: () throws -> Bool) rethrows -> Bool {
+        try revoked.withLockUnchecked { revoked in
+            do {
+                let invalidated = try shouldRevoke()
+                if invalidated { revoked = true }
+                return invalidated
+            } catch {
+                revoked = true
+                throw error
+            }
+        }
+    }
+
     static func withPermission(_ spawn: () -> Int32) throws -> Int32 {
         guard let current else { return spawn() }
         return try current.revoked.withLockUnchecked { revoked in
@@ -87,7 +102,11 @@ extension StreamingProcessRunning {
 }
 
 struct StreamingProcessRunner: StreamingProcessRunning {
-    init() {}
+    private let owner: StreamingProcessOwner
+
+    init(owner: StreamingProcessOwner = .shared) {
+        self.owner = owner
+    }
 
     func run(
         _ request: StreamingProcessRequest,
@@ -102,6 +121,10 @@ struct StreamingProcessRunner: StreamingProcessRunning {
         onOutput: @escaping @Sendable (String) -> Void
     ) async throws -> StreamingProcessResult {
         try Self.validate(request)
+        let drainStop = DrainStopSignal()
+        let termination = ProcessTerminationController { drainStop.requestStop() }
+        let operation = try owner.register(termination)
+        defer { owner.unregister(operation) }
 
         let stdinPipe = try Self.makeStandardInputPipe(request.standardInput)
         let stdoutPipe = Pipe()
@@ -113,7 +136,6 @@ struct StreamingProcessRunner: StreamingProcessRunning {
         let standardError = request.captureStandardErrorSeparately
             ? StreamingProcessOutput(limit: request.outputLimit, onOutput: { _ in }) : output
         let drains = DrainCompletion(count: 2)
-        let drainStop = DrainStopSignal()
         Self.startDrain(
             stdoutRead,
             channel: .stdout,
@@ -130,9 +152,6 @@ struct StreamingProcessRunner: StreamingProcessRunning {
         )
 
         let exit = ProcessExitSignal()
-        let termination = ProcessTerminationController {
-            drainStop.requestStop()
-        }
 
         let executableName = request.executableURL.lastPathComponent
         AppLog.debug(.subprocess, "launch \(executableName) (\(request.arguments.count) args)")
@@ -141,13 +160,15 @@ struct StreamingProcessRunner: StreamingProcessRunning {
             do {
                 try termination.prepareToLaunch()
                 try Task.checkCancellation()
-                let pid = try Self.spawn(
-                    executable: request.executableURL.path, arguments: request.arguments,
-                    environment: request.environment,
-                    currentDirectoryURL: request.currentDirectoryURL, stdinPipe: stdinPipe,
-                    stdoutPipe: stdoutPipe,
-                    stderrPipe: stderrPipe
-                )
+                let pid = try owner.withLaunchPermission {
+                    try Self.spawn(
+                        executable: request.executableURL.path, arguments: request.arguments,
+                        environment: request.environment,
+                        currentDirectoryURL: request.currentDirectoryURL, stdinPipe: stdinPipe,
+                        stdoutPipe: stdoutPipe,
+                        stderrPipe: stderrPipe
+                    )
+                }
                 termination.didLaunch(processGroupID: pid)
                 onLaunch()
                 Self.startWait(pid: pid, signal: exit) { observedExit in

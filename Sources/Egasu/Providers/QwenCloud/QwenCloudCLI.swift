@@ -52,7 +52,8 @@ struct QwenCloudCLI: Sendable {
             fileRevision = Data(SHA256.hash(data: data)).base64EncodedString()
         }
         let mode = env["QWENCLOUD_KEYRING"]?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
-        let allowKeychain = !["no", "0", "false", "off", "plaintext"].contains(mode)
+        guard mode != "plaintext" else { throw QwenCloudError.plaintextMode }
+        let allowKeychain = !["no", "0", "false", "off"].contains(mode)
         let keychainItem = allowKeychain ? hasKeychainItem() : false
         let present = saved ? true : keychainItem
         // 같은 초에 교체한 Keychain 항목은 메타데이터로 구분할 수 없어 CLI의 새 응답만 사용.

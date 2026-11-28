@@ -245,7 +245,7 @@ Mac 로컬 소스는 기기별 파일을 합산할 수 있지만, Cursor처럼 �
 
 ## 알림
 
-`NotificationSettingsStore`는 사용량 알림 4종과 Codex Reset Watch의 개별 설정 저장.
+`NotificationSettingsStore`는 잔량·속도·한도 회복 알림, 주간·월간 한도 초기화, Codex 초기화권 만료 및 Reset Watch의 개별 설정 저장.
 `DisplaySettingsStore`는 공통 임계값과 사용 속도 표시 설정 저장.
 `PriorityLimits`의 기본값은 Warning 30%·Critical 10%이며 Priority 데이터 모델과 할당량 알림에서 같은 값 사용.
 Settings의 권한 요청과 거부 안내는 이 스토어의 활성 설정을 함께 확인.
@@ -258,6 +258,11 @@ flowchart LR
     Coordinator --> Display[WidgetDataStore 표시]
     Quota --> Notifications[AppNotifications]
     Watch --> Notifications
+    Usage --> Reset[QuotaResetReminders]
+    Usage --> Credit[CodexCreditExpiryReminders]
+    Claim[초기화권 사용 결과] --> Credit
+    Reset --> Scheduled[ScheduledReminders]
+    Credit --> Scheduled
 ```
 
 `QuotaNotificationEvaluator`는 계정·지표별 잔량, 사용 속도, 기간 종료 전 남은 할당량의 상태 변화 판정.
@@ -265,7 +270,12 @@ flowchart LR
 할당량 알림의 표시명은 카드에 연결된 등록 계정명을 매번 조회하며, 이름 변경·계정 전환 후에도 현재 매핑 사용.
 등록 계정 연결이 없는 카드는 기존 프로바이더 표시명 유지.
 `CodexResetWatchNotificationEvaluator`는 계정과 무관한 공개 예측·예정 이벤트 판정.
-중복 방지 기준과 조회 주기가 다르므로 두 판정 모듈을 분리하고 macOS 발송 경로 공유.
+
+`QuotaResetReminders`는 Claude·Codex·Cursor의 계정별 주간·월간 한도 초기화 시각을 기준으로 예약.
+`CodexCreditExpiryReminders`는 조회한 사용자의 초기화권 만료 목록과 소비 영수증으로 예약 수량 판정.
+소비 영수증은 사용 요청에서 확인한 사용자·워크스페이스에 귀속.
+서버가 재전송한 요청을 이미 처리했다면 원래 인증으로 초기화권 목록을 다시 읽어 만료일별 예약 상한 갱신.
+`ScheduledReminders`는 각 종류의 미래 예약을 macOS 대기 목록과 대조하고 바뀐 예약만 추가·교체·취소.
 
 Reset Watch의 조회·응답 정규화·캐시는 기존 스토어가 소유.
 조정 객체는 표시·핀·알림 설정과 Codex 활성 여부를 관찰하고 독립 15분 조회 유지.
@@ -278,7 +288,7 @@ Reset Watch 평가기의 입력은 조회 결과인 `receive`와 설정 변경�
 최근 확인한 식별자 128개를 이 Mac에 저장해 재시작 후에도 중복 방지 기록 유지.
 현재 시각·설정 저장소·발송 함수를 주입해 실제 시스템 알림 없이 판정과 전달 중 상태 변경 검증 가능.
 
-`AppNotifications.shared.post`는 두 판정 모듈이 공유하는 macOS 알림 진입점.
+`AppNotifications.shared.post`는 할당량과 Reset Watch의 즉시 알림 발송 담당.
 권한 요청·재허용 확인, 배너·사운드·그룹화, 오류 기록, 무효 요청 제거와 알림 클릭 처리 담당.
 권한 요청 결과를 재사용하더라도 매 전달 전 시스템의 현재 허용 상태 확인.
 실제 배너 표시와 권한 창은 별도의 앱 실행 검증 대상.
@@ -315,6 +325,9 @@ All Usage의 프로바이더 섹션 공유 이미지는 표시 중인 계정·�
 
 `StreamingProcessRunner`는 비동기 명령의 실시간 출력·출력 상한·취소·소유 프로세스 그룹 정리 담당.
 구독 타이머는 이 실행기 사용.
+실행 중인 명령은 프로바이더 인스턴스와 독립된 `StreamingProcessOwner`에 등록.
+정상 앱 종료는 새 명령 생성을 차단하고, 등록된 프로세스 그룹 정리와 출력 처리 완료까지 대기.
+OAuth 토큰 저장과 기존 타이머·Tokscale 작업의 종료 대기 유지.
 두 실행기는 반환 방식과 출력·취소 계약이 달라 별도 인터페이스 유지.
 
 `CodexControlConnection`은 직접 소켓·심볼릭 링크 검증과 WebSocket·RPC 연결 수명 관리.

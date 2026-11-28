@@ -31,9 +31,9 @@ Claude와 Codex로 시작한 뒤 Mac의 로컬 인증 정보·사용 흔적을 �
 계정명을 클릭하면 All Usage와 함께 로그인 이메일 표시로 전환.
 새 터미널 세션용으로 선택한 Claude·Codex 계정은 별명과 이메일을 강조.
 
-| 밝은 화면 | 어두운 화면 |
-|---|---|
-| ![Priority 밝은 화면](/docs/assets/priority-light.png) | ![Priority 어두운 화면](/docs/assets/priority-dark.png) |
+![Priority 화면 구성 예시](/docs/assets/priority-light.png)
+
+이미지의 계정·수치·버전 표시는 설명용.
 
 | 구역 | 내용 |
 |---|---|
@@ -60,8 +60,6 @@ Claude와 Codex로 시작한 뒤 Mac의 로컬 인증 정보·사용 흔적을 �
   한 번 표시되면 예상 기말 사용량이 한도의 90% 이하로 내려올 때까지 유지.
 - 행 우클릭으로 고정·해제(**Pin**/**Unpin**)와 숨기기(**Hide**).
 - 푸터의 복사 버튼으로 Priority 목록을 공유 이미지로 복사.
-
-![표시 조건에 맞는 한도가 없을 때 전체 사용량으로 이동하는 Priority 화면](/docs/assets/priority-all-clear-light.png)
 
 ### 고정
 
@@ -93,7 +91,8 @@ Claude·Codex 등록 계정은 두 방식 모두 같은 프로바이더 섹션�
 | Minimal | Cards |
 |---|---|
 | ![All Usage Minimal 밝은 화면](/docs/assets/all-usage-light.png) | ![All Usage Cards 밝은 화면](/docs/assets/all-usage-cards-light.png) |
-| ![All Usage Minimal 어두운 화면](/docs/assets/all-usage-dark.png) | ![All Usage Cards 어두운 화면](/docs/assets/all-usage-cards-dark.png) |
+
+이미지의 계정·수치·버전 표시는 설명용.
 
 - 섹션 머리: 프로바이더 아이콘·이름, 공식 상태 페이지 장애 아이콘, 마우스를 올리면 섹션 복사 버튼.
 - 계정 줄: 계정명(같은 프로바이더 계정이 여럿이거나 등록 계정일 때), 요금제 배지, 상태(새로 고침 중 표시, 문제 경고 삼각형 — 누르면 계정 상세 또는 Claude·Codex의 Keychain 읽기 실패 시 승인 창, 오래됨 시계).
@@ -103,8 +102,6 @@ Claude·Codex 등록 계정은 두 방식 모두 같은 프로바이더 섹션�
   공유 이미지의 계정명은 [공유](/docs/dashboard.md#공유)의 개인정보 규칙 적용.
 - 지표 행: Minimal은 이름 · 막대 또는 값 · 초기화 시각, Cards의 한도는 여러 줄로 표시.
   Minimal에서 긴 막대 지표 이름은 최대 두 줄로 표시.
-  개인 크레딧 이름은 수량과 전체 한도 설명을 합친 높이의 가운데에 배치.
-  [긴 지표명의 두 줄 표시 예시](/docs/assets/minimal-metric-labels-en.png) 참조.
 
 ### 계정 전환 추천
 
@@ -138,10 +135,6 @@ C의 세션 초기화와 주간 한도 초기화만으로는 A→B 차단을 해
 화면 이동·앱 재시작·기능 끄기와 켜기 후에도 차단 유지.
 여러 추천의 차단은 각각 관리.
 
-![계정 전환 추천 예시](/docs/assets/account-switch-recommendation.png)
-
-합성 계정과 사용량으로 렌더링한 전환 추천 예시.
-
 ## 헤더 상태
 
 조회 상태는 계정 줄에 표시 — 조회 중 진행 표시, 조회 문제의 경고 삼각형, 오래된 값의 시계 순서.
@@ -157,15 +150,11 @@ VoiceOver에서 조회 오류·오래됨 상태의 안내 확인.
 해골에 마우스를 올리면 영향을 받은 컴포넌트와 장애 정도 표시.
 해골을 클릭하면 해당 프로바이더의 공식 상태 페이지를 기본 브라우저에서 열기.
 
-![서비스 장애 아이콘의 설명](/docs/assets/service-issue-details.png)
-
 예약된 유지보수, 관련 없는 컴포넌트 문제, 상태 확인을 지원하지 않는 프로바이더는 해골을 만들지 않음.
 상태 피드 접근 실패·잘못된 응답·스키마 변경은 새 해골을 만들 수 없지만, 직전에 확인된 문제는 새로 고침 순회에서 마지막 성공 확인 후 15분 이상 경과를 확인하거나 정상 해석된 유지보수 전용 결과를 받을 때까지 유지.
 서버 상태는 선택 계정이 아닌 프로바이더 패밀리 단위이며 메모리에만 유지.
 
 ## 총 지출
-
-![Total Spend의 기간과 Cost/MTok 보기](/docs/assets/total-spend-light.png)
 
 대시보드 위쪽에 표시하는 카드.
 켜진 프로바이더 중 하나라도 기간별 비용·토큰을 추적하면(Claude, Codex, Cursor, Antigravity, Copilot, Devin, Grok, Kimi, Kiro, OpenCode, OpenRouter, Z.ai) 표시.
@@ -239,7 +228,6 @@ Kiro는 로컬 CLI V3의 턴별 크레딧 환산 비용과 대화 길이 기반 
 - **실험실 → 소프트 한도**(Labs → Soft Limit)를 켜면 해당 주간·월간 구독 한도의 사용량 막대 안에 기준선 표시.
   미니멀·카드 레이아웃과 공유 이미지에서 선을 막대 높이만큼 표시.
   다크 모드에서는 흰색, 라이트 모드에서는 검정으로 표시.
-  [소프트 한도선 예시](/docs/assets/soft-limit-marker-dark.png) 참조.
   저장된 임계값이 없으면 기본값 90%.
   프로바이더의 강제 한도와 별개인 사용자 기준선이며, 채움·사용량·속도 판정·초기화에는 영향 없음.
   사용량 95%를 기준으로 설정하면 Used에서는 95%, Left에서는 5% 위치에 표시.
@@ -293,8 +281,6 @@ Today / Yesterday / Last 30 Days 행은 비용과 토큰을 함께 묶어 표시
 값에 마우스를 올리면 정확한 수치와 로컬 추정치 같은 출처 안내 확인.
 
 ### 사용 내역
-
-![기간별 모델 사용 내역](/docs/assets/usage-breakdown-light.png)
 
 Claude, Codex, Cursor, Grok, OpenCode 기간 행에서 사용 내역을 열 수 있는 값에 마우스를 올리면 강조 표시.
 잠시 올려 두거나 클릭하면 해당 기간의 사용 내역 패널 열기.
