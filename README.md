@@ -32,6 +32,7 @@ Spotlight에서도 `egasu`, `openusage`, `usage`로 검색해 앱 실행 가능.
   OAuth 갱신은 기존 로그인 권한 범위 유지.
   앱은 종료 요청을 받으면 진행 중인 OAuth 갱신 처리가 끝날 때까지 대기.
   CLI 인증 실패 후 남은 토큰에 조회 권한이 없으면 같은 계정의 Desktop 로그인 확인.
+  Claude Desktop 로그인은 기본 운영 OAuth 환경에서만 사용.
 - **[Codex](/docs/providers/codex.md)** — 기본·Spark 풀의 세션·주간·월간 한도, 추가 사용 및 한도 재설정 크레딧, 로컬 기록의 일별 지출·토큰.
   중단된 [재로그인 복구](/docs/accounts.md#재로그인)가 완료되면 계정 목록과 대시보드에도 반영.
   재설정 크레딧 상세에는 만료 시각별 수량과 만료 시각을 확인할 수 없는 수량 표시.

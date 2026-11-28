@@ -98,7 +98,8 @@ struct ClaudeAuthStore: Sendable {
         } catch {
             return ClaudeCredentialLoad(candidates: [], desktopStatus: .notChecked, credentialError: error)
         }
-        let desktopAllowed = scope == .standard && allowsDesktopFallback
+        // Desktop 캐시는 운영 API용 토큰만 보유하므로 다른 OAuth 환경에서는 읽지 않음.
+        let desktopAllowed = scope == .standard && allowsDesktopFallback && resolveOAuthEndpoints().suffix.isEmpty
         // 강제 폴백은 Desktop 권한 응답 뒤의 CLI 로그인과 홈 신원을 같은 세대에 반영.
         let forcedDesktop =
             desktopAllowed && forceDesktopFallback ? desktop.load(allowInteraction: allowDesktopInteraction) : nil
