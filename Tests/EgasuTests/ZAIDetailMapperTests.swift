@@ -37,6 +37,21 @@ final class ZAIDetailMapperTests: XCTestCase {
         XCTAssertNil(day.costUSD)
     }
 
+    func testUnscopedGLM54CatalogPriceKeepsDirectCostIncomplete() throws {
+        let unscoped = try XCTUnwrap(TestPricing.bundled.secondary.findExact("glm-5.4")?.rates)
+        XCTAssertGreaterThan(unscoped.inputPerMillion, 0)
+        for name in ["glm-5.4", "zai/glm-5.4", "z-ai/glm-5.4"] {
+            let parsed = try map(models: [
+                model("glm-5.3", input: 1_000_000),
+                model(name, input: 100_000, cached: 200_000, output: 50_000)
+            ])
+            let day = try XCTUnwrap(parsed.days["2026-11-02"])
+            XCTAssertEqual(day.tokens, 1_350_000, name)
+            XCTAssertTrue(day.tokensComplete, name)
+            XCTAssertNil(day.costUSD, name)
+        }
+    }
+
     func testUnrepresentableCostPreservesCompleteDetailTokens() throws {
         let data = Data(
             #"""

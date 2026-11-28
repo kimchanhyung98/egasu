@@ -163,6 +163,34 @@ final class ModelPricingTests: XCTestCase {
         XCTAssertEqual(pricing.resolve(model: "claude-4.5-sonnet-thinking")?.inputPerMillion, 3)
     }
 
+    func testNeonAliasesKeepDirectPricesAndProviderBoundaries() {
+        let direct = rates(3, 15, cacheRead: 0.15)
+        let reseller = rates(6, 30, cacheRead: 3)
+        let pricing = ModelPricing(
+            supplement: TestPricing.bundled.supplement,
+            primary: PricingCatalog(entries: [
+                "gemini/gemini-4-neon": direct,
+                "databricks/system.ai.gemini-4-neon": reseller,
+                "vertex_ai/gemini-4-neon": reseller
+            ]),
+            secondary: PricingCatalog()
+        )
+        for prefix in ["", "google/", "gemini/"] {
+            for suffix in ["", "-low", "-medium", "-high", "-xhigh"] {
+                let model = prefix + "gemini-4-neon" + suffix
+                XCTAssertEqual(pricing.resolve(model: model, source: .api), direct, model)
+            }
+            let unknown = prefix + "gemini-4-neon-unregistered"
+            XCTAssertNil(pricing.resolve(model: unknown, source: .api), unknown)
+        }
+        XCTAssertEqual(pricing.resolve(model: "Google/Gemini-4-Neon-XHigh"), direct)
+        for model in ["databricks/system.ai.gemini-4-neon", "vertex_ai/gemini-4-neon"] {
+            XCTAssertNil(pricing.supplement.canonicalName(for: model), model)
+            XCTAssertEqual(pricing.resolve(model: model, source: .api), reseller, model)
+            XCTAssertNil(pricing.resolve(model: model + "-xhigh", source: .api), model)
+        }
+    }
+
     func testBundledDaybreakAliasesResolveToCurrentModels() throws {
         let pricing = TestPricing.bundled
         let aliasesByCanonical = [
